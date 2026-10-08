@@ -23,33 +23,30 @@ uv run --frozen --no-sync underwrite --help
 The repository includes the `underwrite-core` workspace package. No adjacent
 checkout is needed to install or use the example workflows.
 
-## PyPI release preparation
+## Install from PyPI
 
-The functional `0.0.1` release is prepared for `underwrite-core` and `underwrite`;
-publication is not yet confirmed. The existing `underwrite` `0.0.0` entry is a
-reserved placeholder. Use the source installation above until both `0.0.1`
-releases are available. After publication, the planned CLI installation is:
+Version `0.0.1` is available on PyPI for
+[underwrite-core](https://pypi.org/project/underwrite-core/0.0.1/) and
+[underwrite](https://pypi.org/project/underwrite/0.0.1/), each with a wheel and source
+distribution. Install the CLI with Python 3.12 or later and uv:
 
 ```sh
 uv tool install 'underwrite==0.0.1'
 underwrite --help
 ```
 
-Maintainers: create the GitHub environment `pypi`, restrict it to `main`, and
-configure a PyPI GitHub Trusted Publisher on each project with owner `ntts9990`,
-repository `underwrite`, workflow filename `publish.yml`, and environment `pypi`.
-For the new `underwrite-core` project, register a pending publisher under that
-project name; add the publisher to the existing `underwrite` project in its
-Publishing settings. No stored PyPI API token is required.
+The source installation above remains available for development and repository
+examples.
 
-Once configured, run **Publish PyPI** manually from the `main` branch in
-GitHub Actions. It tests both packages, builds and validates the exact
-distributions, and installs the wheels in a clean
-environment before publishing core and then the application. Only the separate
-publish job receives OIDC permission. Retry with the same artifacts after a
-partial upload; existing registry files must match exactly. A changed artifact
-requires a new version. Confirm both PyPI project releases and a fresh indexed
-installation before describing the release as available.
+For future OIDC releases, maintainers must first create the GitHub environment
+`pypi`, restrict it to `main`, and configure a PyPI GitHub Trusted Publisher on
+each project with owner `ntts9990`, repository `underwrite`, workflow filename
+`publish.yml`, and environment `pypi`. Once configured, run **Publish PyPI**
+manually from `main` in GitHub Actions. It validates both packages before
+publishing core and then the application; only the separate publish job receives
+OIDC permission. No stored PyPI API token is required. Retry a partial upload with
+the same artifacts; existing registry files must match exactly, and changed
+artifacts require a new version.
 
 The workflow follows the official [uv publishing guide](https://docs.astral.sh/uv/guides/package/)
 and [PyPI Trusted Publisher guide](https://docs.pypi.org/trusted-publishers/using-a-publisher/).
