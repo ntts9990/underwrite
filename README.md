@@ -1,6 +1,6 @@
 <div align="center">
 
-# underwrite
+<h1><img src="assets/brand/underwrite-logo.png" alt="underwrite" width="640"></h1>
 
 **Turn evaluation artifacts into evidence you can inspect.**
 
