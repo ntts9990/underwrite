@@ -1,0 +1,928 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:read.v1",
+  "title": "read.v1",
+  "description": "One measurement read per subject. Measured reads carry pass, warn or fail with a score. An unmeasured read uses verdict not_measured, null score and explicit reasons. Sparse or unavailable views remain present with null values. The availability cap is always recorded. Finite canonical numbers and producer-checked arithmetic invariants apply. Reads grant no acceptance or deployment authority.",
+  "type": "object",
+  "required": [
+    "schema",
+    "subject",
+    "verdict",
+    "score",
+    "escalate",
+    "signals",
+    "eprocess",
+    "jury",
+    "calibration",
+    "availability",
+    "strata",
+    "seed",
+    "sources",
+    "reason_codes"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "read.v1"
+    },
+    "subject": {
+      "$ref": "#/$defs/subject"
+    },
+    "verdict": {
+      "type": "string",
+      "description": "Constrained by the top-level oneOf: pass|warn|fail for a measured read, not_measured otherwise."
+    },
+    "score": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Fused score for a measured read; null for not_measured, never 0 (registry forbidden mapping not_measured->0_score). The availability cap leaves it unchanged."
+    },
+    "escalate": {
+      "type": "boolean",
+      "description": "Higher evidence is needed: set by jury disagreement or by the availability cap."
+    },
+    "signals": {
+      "type": "array",
+      "description": "One entry per (method, instrument) the jury saw. A signal that could not be measured is listed with availability not_measured, not dropped.",
+      "items": {
+        "$ref": "#/$defs/signal"
+      }
+    },
+    "eprocess": {
+      "description": "The sequential-validity projection of the e-process stream , or null when no stream ran. if/then/else rather than oneOf: the object and null shapes are disjoint, and a oneOf branch is evaluated exhaustively, so its uniqueItems would run on an array its items already refused.",
+      "if": {
+        "type": "object"
+      },
+      "then": {
+        "$ref": "#/$defs/eprocess"
+      },
+      "else": {
+        "type": "null"
+      }
+    },
+    "jury": {
+      "$ref": "#/$defs/jury"
+    },
+    "calibration": {
+      "$ref": "#/$defs/calibration"
+    },
+    "availability": {
+      "$ref": "#/$defs/availability"
+    },
+    "strata": {
+      "type": "array",
+      "description": "Condition-keyed cells. A sparse cell is present with availability not_measured; it is never dropped or zero-filled.",
+      "items": {
+        "$ref": "#/$defs/stratum"
+      }
+    },
+    "seed": {
+      "$ref": "urn:underwrite:contract:statistical_seed.v1"
+    },
+    "sources": {
+      "$ref": "#/$defs/sources"
+    },
+    "reason_codes": {
+      "$ref": "#/$defs/reason_codes"
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/measured_read"
+    },
+    {
+      "$ref": "#/$defs/not_measured_read"
+    }
+  ],
+  "$defs": {
+    "sha256_digest": {
+      "type": "string",
+      "description": "Full 'sha256:<hex>' digest (underwrite_core.canonical.content_digest output shape).",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "availability_state": {
+      "type": "string",
+      "description": "Whether the value fields beside it are populated. not_measured is absence, not a low value.",
+      "enum": [
+        "measured",
+        "not_measured"
+      ]
+    },
+    "measured_verdict": {
+      "type": "string",
+      "description": "-parity verdict set ; not_measured is never a sibling here.",
+      "enum": [
+        "pass",
+        "warn",
+        "fail"
+      ]
+    },
+    "reason_codes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "below_quorum",
+          "required_instrument_missing",
+          "required_instrument_error",
+          "cell_below_min_n",
+          "bin_below_min_n",
+          "n_below_k",
+          "wealth_absorbed",
+          "no_observations",
+          "signal_not_measured"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "subject": {
+      "type": "object",
+      "description": "What was measured: an identifier the consumer can bind to, plus the condition axis values the read was taken under.",
+      "required": [
+        "subject_id",
+        "conditions"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "subject_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        "label": {
+          "type": "string"
+        },
+        "conditions": {
+          "type": "object",
+          "description": "Condition key -> value, as strings. Empty means the read is aggregate over every condition seen.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "measured_read": {
+      "description": "A read whose jury saw at least a quorum of required instruments.",
+      "properties": {
+        "verdict": {
+          "$ref": "#/$defs/measured_verdict"
+        },
+        "score": {
+          "type": "number"
+        },
+        "availability": {
+          "properties": {
+            "state": {
+              "enum": [
+                "full",
+                "partial"
+              ]
+            }
+          }
+        }
+      },
+      "if": {
+        "properties": {
+          "availability": {
+            "properties": {
+              "state": {
+                "const": "partial"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "description": "Partial loss above quorum: the full-panel score stands, a pass is capped to warn (warn and fail stay), and escalate is on. triggered/missing follow from the state in $defs/availability.",
+        "properties": {
+          "verdict": {
+            "enum": [
+              "warn",
+              "fail"
+            ]
+          },
+          "escalate": {
+            "const": true
+          }
+        }
+      }
+    },
+    "not_measured_read": {
+      "description": "A read that could not be taken because of quorum loss or unavailable mandatory fusion/panel. Producers guarantee escalation and the causal below_quorum reason for quorum loss. Full/partial unknowns require escalation and an honest absence reason. Absence is never a numeric score.",
+      "properties": {
+        "verdict": {
+          "const": "not_measured"
+        },
+        "score": {
+          "type": "null"
+        },
+        "reason_codes": {
+          "minItems": 1
+        }
+      },
+      "if": {
+        "properties": {
+          "availability": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "full",
+                  "partial"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "escalate": {
+            "const": true
+          },
+          "reason_codes": {
+            "contains": {
+              "enum": [
+                "signal_not_measured",
+                "wealth_absorbed",
+                "no_observations"
+              ]
+            },
+            "not": {
+              "contains": {
+                "const": "below_quorum"
+              }
+            }
+          }
+        }
+      }
+    },
+    "signal": {
+      "type": "object",
+      "required": [
+        "method",
+        "instrument",
+        "availability",
+        "verdict",
+        "score",
+        "confidence",
+        "e_value",
+        "null_id",
+        "reason_codes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "type": "string",
+          "minLength": 1
+        },
+        "instrument": {
+          "type": "string",
+          "minLength": 1
+        },
+        "availability": {
+          "$ref": "#/$defs/availability_state"
+        },
+        "verdict": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/measured_verdict"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "score": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "e_value": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Non-negative e-value under null_id, or null for a deterministic check."
+        },
+        "null_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "availability": {
+                "const": "measured"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "verdict": {
+                "type": "string"
+              },
+              "score": {
+                "type": "number"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "verdict": {
+                "type": "null"
+              },
+              "score": {
+                "type": "null"
+              },
+              "e_value": {
+                "type": "null"
+              },
+              "reason_codes": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "e_value": {
+                "type": "number"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "null_id": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "eprocess": {
+      "type": "object",
+      "description": "sequential_validity fields plus the two one-sided wealths are carried separately and e_value is their equal mixture. stop_reason absorbed is: wealth reached 0, the stream is closed and not measured.",
+      "required": [
+        "method",
+        "availability",
+        "e_value",
+        "e_upper",
+        "e_lower",
+        "pass_e",
+        "stop_reason",
+        "stopped_sequence",
+        "observations_used",
+        "observations_total",
+        "trials_used",
+        "cost_used",
+        "max_observations",
+        "max_cost",
+        "null_id",
+        "reason_codes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "type": "string",
+          "minLength": 1
+        },
+        "availability": {
+          "$ref": "#/$defs/availability_state"
+        },
+        "e_value": {
+          "type": "number",
+          "minimum": 0
+        },
+        "e_upper": {
+          "type": "number",
+          "minimum": 0
+        },
+        "e_lower": {
+          "type": "number",
+          "minimum": 0
+        },
+        "pass_e": {
+          "type": "number",
+          "minimum": 1
+        },
+        "stop_reason": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "threshold",
+            "budget_observations",
+            "budget_cost",
+            "absorbed"
+          ]
+        },
+        "stopped_sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "observations_used": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "observations_total": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "trials_used": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cost_used": {
+          "type": "number",
+          "minimum": 0
+        },
+        "max_observations": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "max_cost": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0
+        },
+        "null_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        }
+      },
+      "if": {
+        "properties": {
+          "stop_reason": {
+            "const": "absorbed"
+          }
+        }
+      },
+      "then": {
+        "description": "Absorbed: both one-sided wealths are 0, so their equal mixture is 0; nothing else could make e_value 0.",
+        "properties": {
+          "availability": {
+            "const": "not_measured"
+          },
+          "e_value": {
+            "const": 0
+          },
+          "e_upper": {
+            "const": 0
+          },
+          "e_lower": {
+            "const": 0
+          },
+          "reason_codes": {
+            "minItems": 1,
+            "contains": {
+              "const": "wealth_absorbed"
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "availability": {
+            "const": "measured"
+          }
+        }
+      }
+    },
+    "jury": {
+      "type": "object",
+      "description": "How the signals' e-values were fused.",
+      "required": [
+        "combine",
+        "availability",
+        "e_value",
+        "disagreement",
+        "members",
+        "independence",
+        "reason_codes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "combine": {
+          "type": "string",
+          "enum": [
+            "mean",
+            "product"
+          ]
+        },
+        "availability": {
+          "$ref": "#/$defs/availability_state"
+        },
+        "e_value": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "disagreement": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "members": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Signals the fusion actually used."
+        },
+        "independence": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Why the members are independent; required text when combine is product, null otherwise."
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "combine": {
+                "const": "product"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "independence": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "independence": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "availability": {
+                "const": "measured"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "e_value": {
+                "type": "number"
+              },
+              "disagreement": {
+                "type": "number"
+              },
+              "members": {
+                "minimum": 1
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "e_value": {
+                "type": "null"
+              },
+              "disagreement": {
+                "type": "null"
+              },
+              "reason_codes": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "measure": {
+      "type": "object",
+      "description": "One calibration view: a value when measured, null with a reason when not.",
+      "required": [
+        "availability",
+        "value",
+        "n",
+        "reason_codes"
+      ],
+      "properties": {
+        "availability": {
+          "$ref": "#/$defs/availability_state"
+        },
+        "value": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "n": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        }
+      },
+      "if": {
+        "properties": {
+          "availability": {
+            "const": "measured"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "value": {
+            "type": "number"
+          },
+          "n": {
+            "minimum": 1
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "value": {
+            "type": "null"
+          },
+          "reason_codes": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    "calibration": {
+      "type": "object",
+      "description": "Brier is always computed on valid pairs; ECE only when every bin holds min_bin_n points; pass^k only when n >= k.",
+      "required": [
+        "brier",
+        "ece",
+        "pass_k"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "brier": {
+          "$ref": "#/$defs/measure",
+          "unevaluatedProperties": false
+        },
+        "ece": {
+          "$ref": "#/$defs/measure",
+          "required": [
+            "bins",
+            "min_bin_n"
+          ],
+          "unevaluatedProperties": false,
+          "properties": {
+            "bins": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "min_bin_n": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "pass_k": {
+          "$ref": "#/$defs/measure",
+          "required": [
+            "k"
+          ],
+          "unevaluatedProperties": false,
+          "properties": {
+            "k": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      }
+    },
+    "availability": {
+      "type": "object",
+      "description": "The availability cap, recorded on every read (triggered false included). full: every required instrument reported; partial: some missing but at least quorum reported; below_quorum: fewer than quorum reported.",
+      "required": [
+        "required_instruments",
+        "quorum",
+        "available",
+        "missing",
+        "state",
+        "triggered"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "required_instruments": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "quorum": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "available": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "missing": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "full",
+            "partial",
+            "below_quorum"
+          ]
+        },
+        "triggered": {
+          "type": "boolean"
+        }
+      },
+      "if": {
+        "properties": {
+          "state": {
+            "const": "full"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "missing": {
+            "maxItems": 0
+          },
+          "triggered": {
+            "const": false
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "missing": {
+            "minItems": 1
+          },
+          "triggered": {
+            "const": true
+          }
+        }
+      }
+    },
+    "stratum": {
+      "type": "object",
+      "required": [
+        "key",
+        "n",
+        "availability",
+        "verdict",
+        "score",
+        "reason_codes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "n": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "availability": {
+          "$ref": "#/$defs/availability_state"
+        },
+        "verdict": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/measured_verdict"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "score": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        }
+      },
+      "if": {
+        "properties": {
+          "availability": {
+            "const": "measured"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "verdict": {
+            "type": "string"
+          },
+          "score": {
+            "type": "number"
+          },
+          "n": {
+            "minimum": 1
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "verdict": {
+            "type": "null"
+          },
+          "score": {
+            "type": "null"
+          },
+          "reason_codes": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    "sources": {
+      "type": "object",
+      "description": "What the read is bound to: the observation digests it was computed from and the measurement_policy.v1 or measurement_policy.v2 instance it was taken under. Digests establish identity, not authority or historical preregistration.",
+      "required": [
+        "observations",
+        "policy"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "observations": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/sha256_digest"
+          },
+          "uniqueItems": true
+        },
+        "policy": {
+          "$ref": "#/$defs/sha256_digest"
+        }
+      }
+    }
+  }
+}

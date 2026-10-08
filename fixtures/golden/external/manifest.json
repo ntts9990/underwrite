@@ -1,0 +1,46 @@
+{
+  "formats": [
+    {
+      "format": "deepeval.test-run",
+      "path": "fixtures/golden/external/deepeval/test_run_20260914_132634.json",
+      "raw_sha256": "acf917784efd482e4af90dde180bf1e88dda0017afa8a73747b5ebeec939ae9c",
+      "version": "4.1.1"
+    },
+    {
+      "format": "inspect.eval-log",
+      "path": "fixtures/golden/external/inspect/2026-09-15T01-07-55-00-00_underwrite-capture_WaX6koaYGQoZ7VpAhPpEN8.json",
+      "raw_sha256": "ec86cc7011f50d8e1703136ff19934df80c5f4bd68f8b65cda051cd2ae098ed5",
+      "version": "0.3.263"
+    },
+    {
+      "format": "langfuse.observations-v2",
+      "path": "fixtures/golden/external/langfuse/observations_v2-2026-09-14T06-40-00.json",
+      "raw_sha256": "f3a0b109799dfaa26558bfc72d31c9c1497ff2ef06deef293e0ee303e8a2be23",
+      "version": "4.35.0"
+    },
+    {
+      "format": "langfuse.scores",
+      "path": "fixtures/golden/external/langfuse/scores-2026-09-14T06-40-00.json",
+      "raw_sha256": "702a63154a94ec73fa132810323a07f1d1b3a4182e42c80c295e6fb3d36bfdd4",
+      "version": "4.35.0"
+    },
+    {
+      "format": "openinference.traces",
+      "path": "fixtures/golden/external/openinference/capture.json",
+      "raw_sha256": "a97fd5a771fd678fac58020d37b432d6ce472c1518fdfe4bcf1e1acbe9cf7695",
+      "version": "0.1.38"
+    },
+    {
+      "format": "otlp-json.traces",
+      "path": "fixtures/golden/external/otlp-json/capture.json",
+      "raw_sha256": "20a4e4c11681ee949f3e10aa8eedd56ea7b4a4996b48353f2205a412f390a202",
+      "version": "0.160.0"
+    },
+    {
+      "format": "promptfoo.eval-output",
+      "path": "fixtures/golden/external/promptfoo/results.json",
+      "raw_sha256": "5ca8a83c6af55b1ee254519e9983c1122cf3356e5b3054522b2cc1c824047ca8",
+      "version": "0.123.0"
+    }
+  ]
+}

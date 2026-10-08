@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:term_registry.v1",
+  "title": "term_registry.v1",
+  "description": "Caller-supplied canonical vocabulary, aliases, forbidden mappings and first-mention rules. Canonical entries and aliases resolve deterministically; incompatible meanings remain distinct.",
+  "type": "object",
+  "required": [
+    "schema",
+    "terms",
+    "forbidden_mappings",
+    "first_mention_rules"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "term_registry.v1"
+    },
+    "terms": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/term"
+      }
+    },
+    "forbidden_mappings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/forbidden_mapping"
+      }
+    },
+    "first_mention_rules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/first_mention_rule"
+      }
+    }
+  },
+  "$defs": {
+    "term": {
+      "type": "object",
+      "description": "One canonical vocabulary entry. `id` is the machine key; `canonical` is the literal string as it appears (or should appear) in an underwrite contract schema or UI surface.",
+      "required": [
+        "id",
+        "canonical",
+        "meaning",
+        "tier",
+        "layer",
+        "aliases",
+        "forbidden_merges",
+        "source"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Slug key, unique across the registry. Referenced by other terms' forbidden_merges and by forbidden_mappings.from/to.",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "canonical": {
+          "type": "string",
+          "description": "The canonical term exactly as used in contracts (e.g. \"not_measured\", \"Approve\", \"HITL-only\"). Unique across the registry.",
+          "minLength": 1
+        },
+        "meaning": {
+          "type": "string",
+          "description": "The one canonical meaning of this term.",
+          "minLength": 1
+        },
+        "tier": {
+          "type": "string",
+          "description": "Vocabulary tier: core = basic user-facing concepts; contract = state, decision and classification terms; appendix = method names and contract versions.",
+          "enum": [
+            "core",
+            "contract",
+            "appendix"
+          ]
+        },
+        "layer": {
+          "type": "string",
+          "description": "Architectural home. \"core\" = the underwrite_core package (canonical/seal/chain/boundary/absence/registry/bundle/verify); \"cross\" = spans multiple layers or sits outside all five (product-philosophy vocabulary, Non-Goal boundary concepts).",
+          "enum": [
+            "measurement",
+            "acceptance",
+            "adjudication",
+            "instrument",
+            "fleet",
+            "cli",
+            "core",
+            "cross"
+          ]
+        },
+        "aliases": {
+          "type": "array",
+          "description": "Names other repos/papers/tools use for this canonical term.",
+          "items": {
+            "$ref": "#/$defs/alias"
+          }
+        },
+        "forbidden_merges": {
+          "type": "array",
+          "description": "ids of other terms in this registry that must never be treated as synonyms of this one.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "source": {
+          "type": "string",
+          "description": "Reference identifying the declared source of this vocabulary entry.",
+          "minLength": 1
+        },
+        "next_action": {
+          "type": "string",
+          "description": "The usual next action when this term applies (Backup 1's '다음 행동' column, where the term has one)."
+        }
+      }
+    },
+    "alias": {
+      "type": "object",
+      "required": [
+        "term",
+        "source"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "term": {
+          "type": "string",
+          "description": "The alias string as actually used elsewhere.",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "description": "Where this alias is used (repo:path[:line] or research/spec citation).",
+          "minLength": 1
+        },
+        "note": {
+          "type": "string",
+          "description": "Clarifying note, e.g. why the mapping isn't 1:1, or a false-friend warning."
+        }
+      }
+    },
+    "forbidden_mapping": {
+      "type": "object",
+      "description": "A 'wrong merge' pair: from must never be collapsed onto to. from/to each resolve to a term id or canonical string in this registry.",
+      "required": [
+        "from",
+        "to",
+        "reason"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "first_mention_rule": {
+      "type": "object",
+      "description": "A rule for how a term must be introduced on first mention per surface (doc, UI, API) to avoid collision with an external false-friend usage.",
+      "required": [
+        "term",
+        "surface_rule"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "term": {
+          "type": "string",
+          "minLength": 1
+        },
+        "surface_rule": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

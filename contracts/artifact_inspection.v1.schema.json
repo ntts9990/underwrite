@@ -1,0 +1,247 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:artifact_inspection.v1",
+  "title": "artifact_inspection.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "manifest_hash",
+    "source",
+    "raw_hash",
+    "observation",
+    "expected_hash_check",
+    "projection",
+    "diagnostics",
+    "limitations"
+  ],
+  "properties": {
+    "schema": {
+      "const": "artifact_inspection.v1"
+    },
+    "manifest_hash": {
+      "$ref": "#/$defs/hash"
+    },
+    "raw_hash": {
+      "$ref": "#/$defs/hash"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "format_version"
+      ],
+      "properties": {
+        "format": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "format_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "observation": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "digest"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "digest": {
+              "$ref": "#/$defs/hash"
+            }
+          }
+        }
+      ]
+    },
+    "expected_hash_check": {
+      "enum": [
+        "not_supplied",
+        "matched",
+        "mismatched"
+      ]
+    },
+    "projection": {
+      "enum": [
+        "created",
+        "not_created"
+      ]
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/diagnostic"
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "enum": [
+          "SOURCE_CLAIMS_UNVERIFIED",
+          "RELEASE_BINDING_NOT_CHECKED",
+          "MEASUREMENT_NOT_PERFORMED",
+          "NO_DEPLOYMENT_DECISION"
+        ]
+      },
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}(?![\\s\\S])"
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "reason",
+        "location",
+        "next_action",
+        "retryable"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "EXPECTED_HASH_MISMATCH",
+            "INVALID_INPUT",
+            "INVALID_OBSERVATION",
+            "CANONICAL_NUMBER_INCOMPATIBLE",
+            "INPUT_LIMIT_EXCEEDED"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*(?![\\s\\S])",
+          "maxLength": 80
+        },
+        "location": {
+          "type": "string",
+          "pattern": "^/artifact(?:/expected_hash)?(?![\\s\\S])"
+        },
+        "next_action": {
+          "enum": [
+            "CHECK_EXPECTED_HASH",
+            "CORRECT_ARTIFACT"
+          ]
+        },
+        "retryable": {
+          "const": false
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "projection": {
+            "const": "created"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "observation": {
+            "type": "object"
+          },
+          "diagnostics": {
+            "maxItems": 0
+          },
+          "expected_hash_check": {
+            "enum": [
+              "matched",
+              "not_supplied"
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "observation": {
+            "type": "null"
+          },
+          "diagnostics": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "expected_hash_check": {
+            "const": "mismatched"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "projection": {
+            "const": "not_created"
+          },
+          "diagnostics": {
+            "minItems": 1,
+            "maxItems": 1,
+            "items": {
+              "properties": {
+                "code": {
+                  "const": "EXPECTED_HASH_MISMATCH"
+                },
+                "reason": {
+                  "const": "EXPECTED_HASH_MISMATCH"
+                },
+                "location": {
+                  "pattern": "^/artifact/expected_hash(?![\\s\\S])"
+                },
+                "next_action": {
+                  "const": "CHECK_EXPECTED_HASH"
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "diagnostics": {
+            "items": {
+              "properties": {
+                "code": {
+                  "not": {
+                    "const": "EXPECTED_HASH_MISMATCH"
+                  }
+                },
+                "location": {
+                  "pattern": "^/artifact(?![\\s\\S])"
+                },
+                "next_action": {
+                  "const": "CORRECT_ARTIFACT"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

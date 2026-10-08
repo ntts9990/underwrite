@@ -1,0 +1,37 @@
+{
+  "source_record": "SOURCE.md",
+  "capture_kind": "sanitized_tool_payload_example",
+  "tool": {
+    "name": "otelcol-contrib",
+    "version": "0.160.0",
+    "release_tag_commit": "e66c67e1d2b9246feeb5beff684c1460f5a96ecb",
+    "contrib_tag_commit": "97a2cdd7876501c39b3b7cbac82025b1e41e0282",
+    "binary_sha256": "ceb5309ba16f2587dbef765d54e15c803354d038b0495b0b691e1eb9876d17c9",
+    "binary_asset": "otelcol-contrib_0.160.0_darwin_arm64.tar.gz",
+    "license": "Apache-2.0",
+    "producer_sdk": "opentelemetry-sdk==1.44.0 + opentelemetry-exporter-otlp-proto-http==1.44.0 (opentelemetry-proto 1.44.0)",
+    "semconv_genai_commit": "0c87594975195608dc91b3f702e250a7b240c151",
+    "semconv_genai_stability": "development",
+    "writer_modules": "go.opentelemetry.io/collector/pdata@v1.66.0, go.opentelemetry.io/proto/otlp@v1.11.0 (from the binary's build info)",
+    "field_sets_derived_from": "opentelemetry-proto 1.44.0 descriptors (sender side)"
+  },
+  "files": {
+    "capture.json": {
+      "source": {
+        "format": "otlp-json.traces",
+        "format_version": "0.160.0"
+      },
+      "ref": "sha256:20a4e4c11681ee949f3e10aa8eedd56ea7b4a4996b48353f2205a412f390a202",
+      "raw_hash": "sha256:20a4e4c11681ee949f3e10aa8eedd56ea7b4a4996b48353f2205a412f390a202",
+      "observation_digest": "sha256:9f206231b016f8008b2d043b54370cb1a7b73f6d24f1196c7a74b647fb7f5d7a"
+    }
+  },
+  "recipe": {
+    "capture-config.yaml": {
+      "sha256": "70dde6454ce47374b8f1de3d571e5b46a12820c73a222f7f64025d82b2665c04"
+    },
+    "sample_trace.py": {
+      "sha256": "a9dc802736cc1705d8415418ecf1518595d52d46a110d2e1fb5b682e5e08e88c"
+    }
+  }
+}

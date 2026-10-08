@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:exemptions.v1",
+  "title": "exemptions.v1",
+  "description": "Declared, dated exemptions for the absence/drift gates: a reasoned, unexpired exemption downgrades a below-population/UNCONFIGURED failure to a reported skip, never a silent pass. Loaded by the CLI (underwrite.cli.commands.load_exemptions) from rules/exemptions.json and evaluated by underwrite_core.absence.check_population / underwrite.fleet.drift.drift_check. Validated in tests only -- the CLI itself validates the shape with plain checks.",
+  "type": "object",
+  "required": [
+    "schema",
+    "exemptions"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "exemptions.v1"
+    },
+    "exemptions": {
+      "type": "object",
+      "description": "Keyed by exemption key (e.g. \"ci-no-siblings\", \"empty-pins\") -- the key a caller passes as --exemption-key, or that underwrite.fleet.drift.drift_check looks up for its two branches.",
+      "additionalProperties": {
+        "$ref": "#/$defs/exemption"
+      }
+    }
+  },
+  "$defs": {
+    "exemption": {
+      "type": "object",
+      "description": "A single declared exemption: reason + dated expiry + owning ADR (underwrite_core.absence.Exemption).",
+      "required": [
+        "reason",
+        "expiry"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expiry": {
+          "type": "string",
+          "description": "ISO-8601 date (YYYY-MM-DD); compared against the caller-supplied --now (no wall-clock fallback).",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "adr": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The ADR that authorizes this exemption (optional -- underwrite_core.absence.Exemption.adr defaults to None)."
+        }
+      }
+    }
+  }
+}

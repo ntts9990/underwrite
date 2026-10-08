@@ -1,0 +1,29 @@
+{
+  "source_record": "SOURCE.md",
+  "capture_kind": "sanitized_tool_payload_example",
+  "tool": {
+    "name": "promptfoo",
+    "version": "0.123.0",
+    "commit": "3ec974043eb9941af5b605f6f21f71f24bf46c3c",
+    "commit_source": "npm registry metadata gitHead for 0.123.0; equals the GitHub tag 0.123.0 object",
+    "tarball_integrity": "sha512-t2ADh6vU6OVGMu31hdcGZJLCfl4csqg+Ei8uRKzAaA2MZ/r9cTcsko43U8hdG6WfxqG+kqfx4Llplv6N0IfxZg==",
+    "license": "MIT",
+    "provider": "echo"
+  },
+  "files": {
+    "results.json": {
+      "source": {
+        "format": "promptfoo.eval-output",
+        "format_version": "0.123.0"
+      },
+      "ref": "sha256:5ca8a83c6af55b1ee254519e9983c1122cf3356e5b3054522b2cc1c824047ca8",
+      "raw_hash": "sha256:5ca8a83c6af55b1ee254519e9983c1122cf3356e5b3054522b2cc1c824047ca8",
+      "observation_digest": "sha256:458061b5197cfecef6eecf4e9726d31b7d9173e40a7b0801625e6388eecd1dfb"
+    }
+  },
+  "recipe": {
+    "promptfooconfig.yaml": {
+      "sha256": "aca2ddbdd9705f407519bede5f62f3de9a20abfb429eeaeb7f4108baaa93658e"
+    }
+  }
+}

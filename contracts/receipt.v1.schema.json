@@ -1,0 +1,220 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:receipt.v1",
+  "title": "receipt.v1",
+  "description": "in-toto Statement v1 execution receipt. subject binds to sha256 content digests (bare hex, in-toto ResourceDescriptor shape); predicate.limitations is the mandatory honesty block (signature_verification, raw_included, ledger_anchored, evaluator ladder) that keeps a not-yet-verified property from reading as a silent pass. Produced by underwrite_core.receipt.build_statement.",
+  "type": "object",
+  "required": [
+    "_type",
+    "subject",
+    "predicateType",
+    "predicate"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "_type": {
+      "const": "https://in-toto.io/Statement/v1"
+    },
+    "subject": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/subject"
+      }
+    },
+    "predicateType": {
+      "type": "string",
+      "format": "uri",
+      "minLength": 1,
+      "description": "Org-namespaced predicate URI (underwrite_core.receipt.PREDICATE_TYPE); not pinned to a const here so the URI can change without a schema break."
+    },
+    "predicate": {
+      "$ref": "#/$defs/predicate"
+    }
+  },
+  "$defs": {
+    "sha256_hex": {
+      "type": "string",
+      "description": "Bare lowercase-hex sha256 digest (no 'sha256:' prefix) -- the in-toto subject.digest.sha256 shape.",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sha256_digest": {
+      "type": "string",
+      "description": "Full 'sha256:<hex>' digest (underwrite_core.canonical.content_digest output shape).",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "subject": {
+      "type": "object",
+      "description": "in-toto ResourceDescriptor: role name + bare-hex sha256 digest map.",
+      "required": [
+        "name",
+        "digest"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "digest": {
+          "type": "object",
+          "required": [
+            "sha256"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "sha256": {
+              "$ref": "#/$defs/sha256_hex"
+            }
+          }
+        }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "description": "receipt.v1's own artifact shape: a role name and its full sha256: digest.",
+      "required": [
+        "role",
+        "digest"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256_digest"
+        }
+      }
+    },
+    "ladder_state": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "fail",
+        "not_measured"
+      ]
+    },
+    "ladder": {
+      "type": "object",
+      "description": "Evaluator-ladder status.",
+      "required": [
+        "selfcheck",
+        "mock_replay",
+        "aa_vacuous_rate",
+        "mutation_kill_rate"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "selfcheck": {
+          "$ref": "#/$defs/ladder_state"
+        },
+        "mock_replay": {
+          "$ref": "#/$defs/ladder_state"
+        },
+        "aa_vacuous_rate": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "mutation_kill_rate": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "limitations": {
+      "type": "object",
+      "description": "Mandatory honesty block: a not-yet-verified property is a required, explicit state -- never a silently omitted field.",
+      "required": [
+        "signature_verification",
+        "raw_included",
+        "ledger_anchored",
+        "ladder"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "signature_verification": {
+          "enum": [
+            "verified",
+            "not_measured"
+          ]
+        },
+        "raw_included": {
+          "enum": [
+            "yes",
+            "no",
+            "retention_expired"
+          ]
+        },
+        "ledger_anchored": {
+          "enum": [
+            "anchored",
+            "not_measured"
+          ]
+        },
+        "ladder": {
+          "$ref": "#/$defs/ladder"
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "predicate": {
+      "type": "object",
+      "required": [
+        "schema",
+        "run_id",
+        "produced_at",
+        "artifacts",
+        "limitations",
+        "authenticity",
+        "honesty_note"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "receipt.v1"
+        },
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "produced_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO-8601 timestamp injected by the caller; the core module never reads a wall clock."
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact"
+          }
+        },
+        "limitations": {
+          "$ref": "#/$defs/limitations"
+        },
+        "authenticity": {
+          "const": "not asserted",
+          "description": "This statement never asserts issuer authenticity; see honesty_note."
+        },
+        "honesty_note": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

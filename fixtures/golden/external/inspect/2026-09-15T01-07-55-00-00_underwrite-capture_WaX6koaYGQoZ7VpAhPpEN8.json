@@ -1,0 +1,1496 @@
+{
+  "version": 2,
+  "status": "success",
+  "eval": {
+    "eval_id": "Hi3KFEJ5incn4HMFksmHgg",
+    "run_id": "MuUxvLKi4UNWN6y7ubSZMX",
+    "created": "2026-09-15T01:07:55+00:00",
+    "task": "underwrite_capture",
+    "task_id": "WaX6koaYGQoZ7VpAhPpEN8",
+    "task_version": 0,
+    "task_file": "sample_task.py",
+    "task_display_name": "underwrite_capture",
+    "task_registry_name": "underwrite_capture",
+    "task_attribs": {},
+    "task_args": {},
+    "task_args_passed": {},
+    "dataset": {
+      "name": "underwrite-capture",
+      "samples": 3,
+      "sample_ids": [
+        "s1-default",
+        "s2-korean",
+        "s3-partial"
+      ],
+      "shuffled": false
+    },
+    "model": "mockllm/model",
+    "model_generate_config": {},
+    "model_args": {},
+    "config": {
+      "epochs": 1,
+      "fail_on_error": true,
+      "continue_on_fail": false,
+      "score_on_error": false,
+      "sandbox_cleanup": true,
+      "sandbox_prebuilt": false,
+      "log_samples": true,
+      "log_realtime": true,
+      "log_images": true,
+      "log_shared": 0,
+      "score_display": true
+    },
+    "packages": {
+      "inspect_ai": "0.3.263"
+    },
+    "metadata": {
+      "purpose": "underwrite example"
+    },
+    "scorers": [
+      {
+        "name": "includes",
+        "options": {},
+        "metrics": [
+          {
+            "name": "inspect_ai/accuracy",
+            "options": {}
+          },
+          {
+            "name": "inspect_ai/stderr",
+            "options": {}
+          }
+        ],
+        "metadata": {}
+      }
+    ]
+  },
+  "plan": {
+    "name": "plan",
+    "steps": [
+      {
+        "solver": "system_message",
+        "params": {
+          "template": "You are a deterministic test model."
+        },
+        "params_passed": {
+          "template": "You are a deterministic test model."
+        }
+      },
+      {
+        "solver": "generate",
+        "params": {
+          "tool_calls": "loop"
+        },
+        "params_passed": {}
+      }
+    ],
+    "config": {}
+  },
+  "results": {
+    "total_samples": 3,
+    "completed_samples": 3,
+    "scores": [
+      {
+        "name": "includes",
+        "scorer": "includes",
+        "scored_samples": 3,
+        "unscored_samples": 0,
+        "params": {},
+        "metrics": {
+          "accuracy": {
+            "name": "accuracy",
+            "value": 0.6666666666666666,
+            "params": {}
+          },
+          "stderr": {
+            "name": "stderr",
+            "value": 0.33333333333333337,
+            "params": {}
+          }
+        }
+      }
+    ],
+    "headline": {
+      "scorer": "includes",
+      "score": "includes",
+      "metric": "accuracy"
+    }
+  },
+  "stats": {
+    "started_at": "2026-09-15T01:07:55+00:00",
+    "completed_at": "2026-09-15T01:08:07+00:00",
+    "model_usage": {
+      "mockllm/model": {
+        "input_tokens": 48,
+        "output_tokens": 99,
+        "total_tokens": 147
+      }
+    },
+    "role_usage": {},
+    "connection_limit_history": []
+  },
+  "invalidated": false,
+  "tags": [],
+  "metadata": {
+    "purpose": "underwrite example"
+  },
+  "samples": [
+    {
+      "id": "s1-default",
+      "epoch": 1,
+      "input": "이 모델의 기본 출력 문장을 그대로 답하세요.",
+      "target": "Default output from mockllm/model",
+      "messages": [
+        {
+          "id": "cpLUKPkaMvvK7G2MXfayyi",
+          "content": "You are a deterministic test model.",
+          "role": "system"
+        },
+        {
+          "id": "YdZeKrKRjhjcwvhptHxnr8",
+          "content": "이 모델의 기본 출력 문장을 그대로 답하세요.",
+          "source": "input",
+          "role": "user"
+        },
+        {
+          "id": "WAbdJLt4CTAEtFBzXXuxec",
+          "content": "Default output from mockllm/model",
+          "source": "generate",
+          "role": "assistant",
+          "model": "mockllm"
+        }
+      ],
+      "output": {
+        "model": "mockllm",
+        "choices": [
+          {
+            "message": {
+              "id": "WAbdJLt4CTAEtFBzXXuxec",
+              "content": "Default output from mockllm/model",
+              "source": "generate",
+              "role": "assistant",
+              "model": "mockllm"
+            },
+            "stop_reason": "stop"
+          }
+        ],
+        "completion": "Default output from mockllm/model",
+        "usage": {
+          "input_tokens": 19,
+          "output_tokens": 33,
+          "total_tokens": 52
+        },
+        "time": 11.084690125004272
+      },
+      "scores": {
+        "includes": {
+          "value": "C",
+          "answer": "default output from mockllm/model",
+          "explanation": "Default output from mockllm/model",
+          "history": []
+        }
+      },
+      "metadata": {
+        "lang": "ko",
+        "expect": "correct"
+      },
+      "store": {},
+      "events": [
+        {
+          "uuid": "cq73L4yTvEfAQU3v6oWtci",
+          "span_id": "RpjQYwY9fd3dC7NaaNVvmp",
+          "timestamp": "2026-09-15T01:07:55.779145+00:00",
+          "working_start": 57583.543337875,
+          "event": "span_begin",
+          "id": "RpjQYwY9fd3dC7NaaNVvmp",
+          "type": "init",
+          "name": "init"
+        },
+        {
+          "uuid": "UGvyiHdx7fhoCjfizqjCiE",
+          "span_id": "RpjQYwY9fd3dC7NaaNVvmp",
+          "timestamp": "2026-09-15T01:07:55.779498+00:00",
+          "working_start": 57583.543688833,
+          "event": "sample_init",
+          "sample": {
+            "input": "이 모델의 기본 출력 문장을 그대로 답하세요.",
+            "target": "Default output from mockllm/model",
+            "id": "s1-default",
+            "metadata": {
+              "lang": "ko",
+              "expect": "correct"
+            }
+          },
+          "state": {
+            "messages": [
+              {
+                "id": "YdZeKrKRjhjcwvhptHxnr8",
+                "content": "이 모델의 기본 출력 문장을 그대로 답하세요.",
+                "source": "input",
+                "role": "user"
+              }
+            ],
+            "tools": [],
+            "tool_choice": null,
+            "store": {},
+            "output": {
+              "model": "mockllm/model",
+              "choices": [],
+              "completion": ""
+            },
+            "completed": false,
+            "metadata": {
+              "lang": "ko",
+              "expect": "correct"
+            }
+          }
+        },
+        {
+          "uuid": "XqbppqUgcJKpsixApBrwoN",
+          "span_id": "RpjQYwY9fd3dC7NaaNVvmp",
+          "timestamp": "2026-09-15T01:07:55.779665+00:00",
+          "working_start": 57583.543856125,
+          "event": "span_end",
+          "id": "RpjQYwY9fd3dC7NaaNVvmp"
+        },
+        {
+          "uuid": "bBJ5PZ9j6xi3YtfipKY9Zs",
+          "span_id": "BuknG6AVLFi3zb8yPquUw2",
+          "timestamp": "2026-09-15T01:07:55.781061+00:00",
+          "working_start": 0.0013034160001552664,
+          "event": "span_begin",
+          "id": "BuknG6AVLFi3zb8yPquUw2",
+          "type": "solvers",
+          "name": "solvers"
+        },
+        {
+          "uuid": "d9AyTJtFeN2hULYQY4ukYc",
+          "span_id": "HPdvwuWePs7DfvRe73XnkB",
+          "timestamp": "2026-09-15T01:07:55.782035+00:00",
+          "working_start": 0.0022766250040149316,
+          "event": "span_begin",
+          "id": "HPdvwuWePs7DfvRe73XnkB",
+          "parent_id": "BuknG6AVLFi3zb8yPquUw2",
+          "type": "solver",
+          "name": "system_message"
+        },
+        {
+          "uuid": "X5EN8vMWBWnYjTxgfejsXw",
+          "span_id": "HPdvwuWePs7DfvRe73XnkB",
+          "timestamp": "2026-09-15T01:07:55.782309+00:00",
+          "working_start": 0.002551375000621192,
+          "event": "state",
+          "changes": [
+            {
+              "op": "remove",
+              "path": "/messages/0/source"
+            },
+            {
+              "op": "replace",
+              "path": "/messages/0/content",
+              "value": "You are a deterministic test model.",
+              "replaced": "이 모델의 기본 출력 문장을 그대로 답하세요."
+            },
+            {
+              "op": "replace",
+              "path": "/messages/0/id",
+              "value": "cpLUKPkaMvvK7G2MXfayyi",
+              "replaced": "YdZeKrKRjhjcwvhptHxnr8"
+            },
+            {
+              "op": "replace",
+              "path": "/messages/0/role",
+              "value": "system",
+              "replaced": "user"
+            },
+            {
+              "op": "add",
+              "path": "/messages/1",
+              "value": {
+                "id": "YdZeKrKRjhjcwvhptHxnr8",
+                "content": "이 모델의 기본 출력 문장을 그대로 답하세요.",
+                "source": "input",
+                "role": "user"
+              }
+            }
+          ]
+        },
+        {
+          "uuid": "6ywapey9A36tEmXPBsqVq2",
+          "span_id": "HPdvwuWePs7DfvRe73XnkB",
+          "timestamp": "2026-09-15T01:07:55.782459+00:00",
+          "working_start": 0.002700707998883445,
+          "event": "span_end",
+          "id": "HPdvwuWePs7DfvRe73XnkB"
+        },
+        {
+          "uuid": "PUh8jf3QDoqe7ux4nFcDwA",
+          "span_id": "hqEfuA8HUfLPitMHDouL88",
+          "timestamp": "2026-09-15T01:07:55.782527+00:00",
+          "working_start": 0.0027695829994627275,
+          "event": "span_begin",
+          "id": "hqEfuA8HUfLPitMHDouL88",
+          "parent_id": "BuknG6AVLFi3zb8yPquUw2",
+          "type": "solver",
+          "name": "generate"
+        },
+        {
+          "uuid": "abRB5LAyDd6iNzE4tY8afR",
+          "span_id": "hqEfuA8HUfLPitMHDouL88",
+          "timestamp": "2026-09-15T01:07:55.782650+00:00",
+          "working_start": 0.002892415999667719,
+          "event": "model",
+          "model": "mockllm/model",
+          "input": [],
+          "input_refs": [
+            [
+              0,
+              2
+            ]
+          ],
+          "tools": [],
+          "tool_choice": "none",
+          "config": {},
+          "output": {
+            "model": "mockllm",
+            "choices": [
+              {
+                "message": {
+                  "id": "WAbdJLt4CTAEtFBzXXuxec",
+                  "content": "Default output from mockllm/model",
+                  "source": "generate",
+                  "role": "assistant",
+                  "model": "mockllm"
+                },
+                "stop_reason": "stop"
+              }
+            ],
+            "completion": "Default output from mockllm/model",
+            "usage": {
+              "input_tokens": 19,
+              "output_tokens": 33,
+              "total_tokens": 52
+            },
+            "time": 11.084690125004272
+          },
+          "call": {
+            "request": {
+              "model": "model"
+            },
+            "response": {
+              "content": "Default output from mockllm/model"
+            },
+            "call_refs": [
+              [
+                0,
+                2
+              ]
+            ],
+            "call_key": "messages"
+          },
+          "completed": "2026-09-15T01:08:06.940032+00:00",
+          "working_time": 11.084690125004272
+        },
+        {
+          "uuid": "d4PkNEBbuJ2AZghYApAsQB",
+          "span_id": "hqEfuA8HUfLPitMHDouL88",
+          "timestamp": "2026-09-15T01:08:06.942350+00:00",
+          "working_start": 11.090080374997342,
+          "event": "state",
+          "changes": [
+            {
+              "op": "add",
+              "path": "/messages/2",
+              "value": {
+                "id": "WAbdJLt4CTAEtFBzXXuxec",
+                "content": "Default output from mockllm/model",
+                "source": "generate",
+                "role": "assistant",
+                "model": "mockllm"
+              }
+            },
+            {
+              "op": "add",
+              "path": "/output/time",
+              "value": 11.084690125004272
+            },
+            {
+              "op": "add",
+              "path": "/output/usage",
+              "value": {
+                "input_tokens": 19,
+                "output_tokens": 33,
+                "total_tokens": 52
+              }
+            },
+            {
+              "op": "add",
+              "path": "/output/choices/0",
+              "value": {
+                "message": {
+                  "id": "WAbdJLt4CTAEtFBzXXuxec",
+                  "content": "Default output from mockllm/model",
+                  "source": "generate",
+                  "role": "assistant",
+                  "model": "mockllm"
+                },
+                "stop_reason": "stop"
+              }
+            },
+            {
+              "op": "replace",
+              "path": "/output/model",
+              "value": "mockllm",
+              "replaced": "mockllm/model"
+            },
+            {
+              "op": "replace",
+              "path": "/output/completion",
+              "value": "Default output from mockllm/model",
+              "replaced": ""
+            }
+          ]
+        },
+        {
+          "uuid": "gJweqPkCMocLkTCTPrkirn",
+          "span_id": "hqEfuA8HUfLPitMHDouL88",
+          "timestamp": "2026-09-15T01:08:06.942581+00:00",
+          "working_start": 11.09031104099995,
+          "event": "span_end",
+          "id": "hqEfuA8HUfLPitMHDouL88"
+        },
+        {
+          "uuid": "F6awmQfqmv8qmLamNUxR6j",
+          "span_id": "BuknG6AVLFi3zb8yPquUw2",
+          "timestamp": "2026-09-15T01:08:06.942709+00:00",
+          "working_start": 11.090438958002778,
+          "event": "span_end",
+          "id": "BuknG6AVLFi3zb8yPquUw2"
+        },
+        {
+          "uuid": "ECsgV5BAoJsWEmTyGWSjgK",
+          "span_id": "Yf4oWCpGDhavv7SLdVaTDW",
+          "timestamp": "2026-09-15T01:08:06.960016+00:00",
+          "working_start": 11.10774745800154,
+          "event": "span_begin",
+          "id": "Yf4oWCpGDhavv7SLdVaTDW",
+          "type": "scorers",
+          "name": "scorers"
+        },
+        {
+          "uuid": "VLSer2EzZdkTNqwgTemwLV",
+          "span_id": "EySXF8fBpmuuxvWAk4f59t",
+          "timestamp": "2026-09-15T01:08:06.960126+00:00",
+          "working_start": 11.107856875001744,
+          "event": "span_begin",
+          "id": "EySXF8fBpmuuxvWAk4f59t",
+          "parent_id": "Yf4oWCpGDhavv7SLdVaTDW",
+          "type": "scorer",
+          "name": "includes"
+        },
+        {
+          "uuid": "ScEFAp2ZFHyxV937mGcqLf",
+          "span_id": "EySXF8fBpmuuxvWAk4f59t",
+          "timestamp": "2026-09-15T01:08:06.960223+00:00",
+          "working_start": 11.10795345799852,
+          "event": "score",
+          "score": {
+            "value": "C",
+            "answer": "default output from mockllm/model",
+            "explanation": "Default output from mockllm/model",
+            "history": []
+          },
+          "target": "Default output from mockllm/model",
+          "intermediate": false,
+          "scorer": "includes",
+          "scorer_args": {},
+          "model_usage": {
+            "mockllm/model": {
+              "input_tokens": 19,
+              "output_tokens": 33,
+              "total_tokens": 52
+            }
+          }
+        },
+        {
+          "uuid": "XGXowku3LeQocrGziQHfb5",
+          "span_id": "EySXF8fBpmuuxvWAk4f59t",
+          "timestamp": "2026-09-15T01:08:06.960373+00:00",
+          "working_start": 11.108103457998368,
+          "event": "span_end",
+          "id": "EySXF8fBpmuuxvWAk4f59t"
+        },
+        {
+          "uuid": "Wt6mK6qrCKVYzMbFN2Dcem",
+          "span_id": "Yf4oWCpGDhavv7SLdVaTDW",
+          "timestamp": "2026-09-15T01:08:06.960448+00:00",
+          "working_start": 11.108178583002882,
+          "event": "span_end",
+          "id": "Yf4oWCpGDhavv7SLdVaTDW"
+        }
+      ],
+      "model_usage": {
+        "mockllm/model": {
+          "input_tokens": 19,
+          "output_tokens": 33,
+          "total_tokens": 52
+        }
+      },
+      "role_usage": {},
+      "started_at": "2026-09-15T01:07:55.779759+00:00",
+      "completed_at": "2026-09-15T01:08:06.961394+00:00",
+      "total_time": 11.182,
+      "working_time": 11.109,
+      "uuid": "7GpAc3CZN9YNyQ7JMF4T6r",
+      "error_retries": [],
+      "attachments": {},
+      "events_data": {
+        "messages": [
+          {
+            "id": "cpLUKPkaMvvK7G2MXfayyi",
+            "content": "You are a deterministic test model.",
+            "role": "system"
+          },
+          {
+            "id": "YdZeKrKRjhjcwvhptHxnr8",
+            "content": "이 모델의 기본 출력 문장을 그대로 답하세요.",
+            "source": "input",
+            "role": "user"
+          }
+        ],
+        "calls": [
+          {
+            "id": "cpLUKPkaMvvK7G2MXfayyi",
+            "content": "You are a deterministic test model.",
+            "source": null,
+            "metadata": null,
+            "role": "system"
+          },
+          {
+            "id": "YdZeKrKRjhjcwvhptHxnr8",
+            "content": "이 모델의 기본 출력 문장을 그대로 답하세요.",
+            "source": "input",
+            "metadata": null,
+            "role": "user",
+            "tool_call_id": null
+          }
+        ]
+      },
+      "turn_count": 1
+    },
+    {
+      "id": "s2-korean",
+      "epoch": 1,
+      "input": "대한민국의 수도는 어디입니까?",
+      "target": "서울",
+      "messages": [
+        {
+          "id": "cYHowQcW7yztC4B9awYap3",
+          "content": "You are a deterministic test model.",
+          "role": "system"
+        },
+        {
+          "id": "KB8jyRSHmXGKzA58GeyErZ",
+          "content": "대한민국의 수도는 어디입니까?",
+          "source": "input",
+          "role": "user"
+        },
+        {
+          "id": "3Aaa4tukiVWW82DoLR4PVf",
+          "content": "Default output from mockllm/model",
+          "source": "generate",
+          "role": "assistant",
+          "model": "mockllm"
+        }
+      ],
+      "output": {
+        "model": "mockllm",
+        "choices": [
+          {
+            "message": {
+              "id": "3Aaa4tukiVWW82DoLR4PVf",
+              "content": "Default output from mockllm/model",
+              "source": "generate",
+              "role": "assistant",
+              "model": "mockllm"
+            },
+            "stop_reason": "stop"
+          }
+        ],
+        "completion": "Default output from mockllm/model",
+        "usage": {
+          "input_tokens": 17,
+          "output_tokens": 33,
+          "total_tokens": 50
+        },
+        "time": 0.00011487500160001218
+      },
+      "scores": {
+        "includes": {
+          "value": "I",
+          "answer": "default output from mockllm/model",
+          "explanation": "Default output from mockllm/model",
+          "history": []
+        }
+      },
+      "metadata": {
+        "lang": "ko",
+        "expect": "incorrect"
+      },
+      "store": {},
+      "events": [
+        {
+          "uuid": "AjCTYMZgy2BSw2MB7ftip3",
+          "span_id": "KFLFSAZBRqZdyfHABjEjpH",
+          "timestamp": "2026-09-15T01:07:55.780033+00:00",
+          "working_start": 57583.544224625,
+          "event": "span_begin",
+          "id": "KFLFSAZBRqZdyfHABjEjpH",
+          "type": "init",
+          "name": "init"
+        },
+        {
+          "uuid": "BrrZnGMmmUWpvqGzAc4QeH",
+          "span_id": "KFLFSAZBRqZdyfHABjEjpH",
+          "timestamp": "2026-09-15T01:07:55.780204+00:00",
+          "working_start": 57583.544395625,
+          "event": "sample_init",
+          "sample": {
+            "input": "대한민국의 수도는 어디입니까?",
+            "target": "서울",
+            "id": "s2-korean",
+            "metadata": {
+              "lang": "ko",
+              "expect": "incorrect"
+            }
+          },
+          "state": {
+            "messages": [
+              {
+                "id": "KB8jyRSHmXGKzA58GeyErZ",
+                "content": "대한민국의 수도는 어디입니까?",
+                "source": "input",
+                "role": "user"
+              }
+            ],
+            "tools": [],
+            "tool_choice": null,
+            "store": {},
+            "output": {
+              "model": "mockllm/model",
+              "choices": [],
+              "completion": ""
+            },
+            "completed": false,
+            "metadata": {
+              "lang": "ko",
+              "expect": "incorrect"
+            }
+          }
+        },
+        {
+          "uuid": "2JraS8WbQcSEKyhSuEhEJF",
+          "span_id": "KFLFSAZBRqZdyfHABjEjpH",
+          "timestamp": "2026-09-15T01:07:55.780299+00:00",
+          "working_start": 57583.544490583,
+          "event": "span_end",
+          "id": "KFLFSAZBRqZdyfHABjEjpH"
+        },
+        {
+          "uuid": "fzevXWmxpMLkJzkkRgUbMw",
+          "span_id": "QvWdFcypfoPF5W7qXeSZt3",
+          "timestamp": "2026-09-15T01:07:55.782713+00:00",
+          "working_start": 0.002355458003876265,
+          "event": "span_begin",
+          "id": "QvWdFcypfoPF5W7qXeSZt3",
+          "type": "solvers",
+          "name": "solvers"
+        },
+        {
+          "uuid": "4P43mjaJRbMktzvYPa6bJG",
+          "span_id": "Xd5b9ZpvHoGnKpYxLqHYci",
+          "timestamp": "2026-09-15T01:07:55.782776+00:00",
+          "working_start": 0.002418000003672205,
+          "event": "span_begin",
+          "id": "Xd5b9ZpvHoGnKpYxLqHYci",
+          "parent_id": "QvWdFcypfoPF5W7qXeSZt3",
+          "type": "solver",
+          "name": "system_message"
+        },
+        {
+          "uuid": "iKf9U7kyGtiuuYuwoVTAJj",
+          "span_id": "Xd5b9ZpvHoGnKpYxLqHYci",
+          "timestamp": "2026-09-15T01:07:55.782947+00:00",
+          "working_start": 0.002589208001154475,
+          "event": "state",
+          "changes": [
+            {
+              "op": "remove",
+              "path": "/messages/0/source"
+            },
+            {
+              "op": "replace",
+              "path": "/messages/0/content",
+              "value": "You are a deterministic test model.",
+              "replaced": "대한민국의 수도는 어디입니까?"
+            },
+            {
+              "op": "replace",
+              "path": "/messages/0/id",
+              "value": "cYHowQcW7yztC4B9awYap3",
+              "replaced": "KB8jyRSHmXGKzA58GeyErZ"
+            },
+            {
+              "op": "replace",
+              "path": "/messages/0/role",
+              "value": "system",
+              "replaced": "user"
+            },
+            {
+              "op": "add",
+              "path": "/messages/1",
+              "value": {
+                "id": "KB8jyRSHmXGKzA58GeyErZ",
+                "content": "대한민국의 수도는 어디입니까?",
+                "source": "input",
+                "role": "user"
+              }
+            }
+          ]
+        },
+        {
+          "uuid": "24Anqy4BNfaUsZCEGgfx5u",
+          "span_id": "Xd5b9ZpvHoGnKpYxLqHYci",
+          "timestamp": "2026-09-15T01:07:55.783031+00:00",
+          "working_start": 0.0026732500045909546,
+          "event": "span_end",
+          "id": "Xd5b9ZpvHoGnKpYxLqHYci"
+        },
+        {
+          "uuid": "aYyLWF75AtfsSXG8tx6oZ7",
+          "span_id": "e7mTBCPwBWuGFYSG45tozR",
+          "timestamp": "2026-09-15T01:07:55.783099+00:00",
+          "working_start": 0.002741333002632018,
+          "event": "span_begin",
+          "id": "e7mTBCPwBWuGFYSG45tozR",
+          "parent_id": "QvWdFcypfoPF5W7qXeSZt3",
+          "type": "solver",
+          "name": "generate"
+        },
+        {
+          "uuid": "X444TkJWpijnM3QVWKVh9P",
+          "span_id": "e7mTBCPwBWuGFYSG45tozR",
+          "timestamp": "2026-09-15T01:07:55.783199+00:00",
+          "working_start": 0.0028414160042302683,
+          "event": "model",
+          "model": "mockllm/model",
+          "input": [],
+          "input_refs": [
+            [
+              0,
+              2
+            ]
+          ],
+          "tools": [],
+          "tool_choice": "none",
+          "config": {},
+          "output": {
+            "model": "mockllm",
+            "choices": [
+              {
+                "message": {
+                  "id": "3Aaa4tukiVWW82DoLR4PVf",
+                  "content": "Default output from mockllm/model",
+                  "source": "generate",
+                  "role": "assistant",
+                  "model": "mockllm"
+                },
+                "stop_reason": "stop"
+              }
+            ],
+            "completion": "Default output from mockllm/model",
+            "usage": {
+              "input_tokens": 17,
+              "output_tokens": 33,
+              "total_tokens": 50
+            },
+            "time": 0.00011487500160001218
+          },
+          "call": {
+            "request": {
+              "model": "model"
+            },
+            "response": {
+              "content": "Default output from mockllm/model"
+            },
+            "call_refs": [
+              [
+                0,
+                2
+              ]
+            ],
+            "call_key": "messages"
+          },
+          "completed": "2026-09-15T01:08:06.950553+00:00",
+          "working_time": 0.00011487500160001218
+        },
+        {
+          "uuid": "cBeuUdwVhw5S43JX5Gcy96",
+          "span_id": "e7mTBCPwBWuGFYSG45tozR",
+          "timestamp": "2026-09-15T01:08:06.954454+00:00",
+          "working_start": 0.006949999013158958,
+          "event": "state",
+          "changes": [
+            {
+              "op": "add",
+              "path": "/messages/2",
+              "value": {
+                "id": "3Aaa4tukiVWW82DoLR4PVf",
+                "content": "Default output from mockllm/model",
+                "source": "generate",
+                "role": "assistant",
+                "model": "mockllm"
+              }
+            },
+            {
+              "op": "add",
+              "path": "/output/time",
+              "value": 0.00011487500160001218
+            },
+            {
+              "op": "add",
+              "path": "/output/usage",
+              "value": {
+                "input_tokens": 17,
+                "output_tokens": 33,
+                "total_tokens": 50
+              }
+            },
+            {
+              "op": "add",
+              "path": "/output/choices/0",
+              "value": {
+                "message": {
+                  "id": "3Aaa4tukiVWW82DoLR4PVf",
+                  "content": "Default output from mockllm/model",
+                  "source": "generate",
+                  "role": "assistant",
+                  "model": "mockllm"
+                },
+                "stop_reason": "stop"
+              }
+            },
+            {
+              "op": "replace",
+              "path": "/output/model",
+              "value": "mockllm",
+              "replaced": "mockllm/model"
+            },
+            {
+              "op": "replace",
+              "path": "/output/completion",
+              "value": "Default output from mockllm/model",
+              "replaced": ""
+            }
+          ]
+        },
+        {
+          "uuid": "HbDyv34atLcbux7nU7kBAW",
+          "span_id": "e7mTBCPwBWuGFYSG45tozR",
+          "timestamp": "2026-09-15T01:08:06.954549+00:00",
+          "working_start": 0.0070447080142912455,
+          "event": "span_end",
+          "id": "e7mTBCPwBWuGFYSG45tozR"
+        },
+        {
+          "uuid": "ESUAYTRRQL3tJ7VBMTfyvm",
+          "span_id": "QvWdFcypfoPF5W7qXeSZt3",
+          "timestamp": "2026-09-15T01:08:06.954613+00:00",
+          "working_start": 0.007108541009074543,
+          "event": "span_end",
+          "id": "QvWdFcypfoPF5W7qXeSZt3"
+        },
+        {
+          "uuid": "jgnJ5BqyLPNwffS7ftG6Vh",
+          "span_id": "VsbodYV4yPXi9fh8Hvxsmy",
+          "timestamp": "2026-09-15T01:08:06.960583+00:00",
+          "working_start": 0.013078291012789123,
+          "event": "span_begin",
+          "id": "VsbodYV4yPXi9fh8Hvxsmy",
+          "type": "scorers",
+          "name": "scorers"
+        },
+        {
+          "uuid": "i7XSPDoSq64t2Fm49aBS2V",
+          "span_id": "j455vQjZZxWjJCGr5EZ9dE",
+          "timestamp": "2026-09-15T01:08:06.960652+00:00",
+          "working_start": 0.013147708014003001,
+          "event": "span_begin",
+          "id": "j455vQjZZxWjJCGr5EZ9dE",
+          "parent_id": "VsbodYV4yPXi9fh8Hvxsmy",
+          "type": "scorer",
+          "name": "includes"
+        },
+        {
+          "uuid": "2pPj2DKsCG3bEwm4sBb7JP",
+          "span_id": "j455vQjZZxWjJCGr5EZ9dE",
+          "timestamp": "2026-09-15T01:08:06.960726+00:00",
+          "working_start": 0.013221458015323151,
+          "event": "score",
+          "score": {
+            "value": "I",
+            "answer": "default output from mockllm/model",
+            "explanation": "Default output from mockllm/model",
+            "history": []
+          },
+          "target": "서울",
+          "intermediate": false,
+          "scorer": "includes",
+          "scorer_args": {},
+          "model_usage": {
+            "mockllm/model": {
+              "input_tokens": 17,
+              "output_tokens": 33,
+              "total_tokens": 50
+            }
+          }
+        },
+        {
+          "uuid": "CZPCpH8QMqnKLntJ6kR3CJ",
+          "span_id": "j455vQjZZxWjJCGr5EZ9dE",
+          "timestamp": "2026-09-15T01:08:06.960800+00:00",
+          "working_start": 0.01329570801317459,
+          "event": "span_end",
+          "id": "j455vQjZZxWjJCGr5EZ9dE"
+        },
+        {
+          "uuid": "MnEzSZuFbN6ibLuiXPTnje",
+          "span_id": "VsbodYV4yPXi9fh8Hvxsmy",
+          "timestamp": "2026-09-15T01:08:06.960865+00:00",
+          "working_start": 0.013360458011447918,
+          "event": "span_end",
+          "id": "VsbodYV4yPXi9fh8Hvxsmy"
+        }
+      ],
+      "model_usage": {
+        "mockllm/model": {
+          "input_tokens": 17,
+          "output_tokens": 33,
+          "total_tokens": 50
+        }
+      },
+      "role_usage": {},
+      "started_at": "2026-09-15T01:07:55.780359+00:00",
+      "completed_at": "2026-09-15T01:08:06.962265+00:00",
+      "total_time": 11.182,
+      "working_time": 0.015,
+      "uuid": "HhREZ3ZcByKmNTjHwEvPQv",
+      "error_retries": [],
+      "attachments": {},
+      "events_data": {
+        "messages": [
+          {
+            "id": "cYHowQcW7yztC4B9awYap3",
+            "content": "You are a deterministic test model.",
+            "role": "system"
+          },
+          {
+            "id": "KB8jyRSHmXGKzA58GeyErZ",
+            "content": "대한민국의 수도는 어디입니까?",
+            "source": "input",
+            "role": "user"
+          }
+        ],
+        "calls": [
+          {
+            "id": "cYHowQcW7yztC4B9awYap3",
+            "content": "You are a deterministic test model.",
+            "source": null,
+            "metadata": null,
+            "role": "system"
+          },
+          {
+            "id": "KB8jyRSHmXGKzA58GeyErZ",
+            "content": "대한민국의 수도는 어디입니까?",
+            "source": "input",
+            "metadata": null,
+            "role": "user",
+            "tool_call_id": null
+          }
+        ]
+      },
+      "turn_count": 1
+    },
+    {
+      "id": "s3-partial",
+      "epoch": 1,
+      "input": "Name the provider.",
+      "target": "mockllm",
+      "messages": [
+        {
+          "id": "Pzo7SB7tRKmDF6949G229s",
+          "content": "You are a deterministic test model.",
+          "role": "system"
+        },
+        {
+          "id": "3kJBngFAK39QxQTBYegVe2",
+          "content": "Name the provider.",
+          "source": "input",
+          "role": "user"
+        },
+        {
+          "id": "8wJbQ9ifDKFxo256MSPhVo",
+          "content": "Default output from mockllm/model",
+          "source": "generate",
+          "role": "assistant",
+          "model": "mockllm"
+        }
+      ],
+      "output": {
+        "model": "mockllm",
+        "choices": [
+          {
+            "message": {
+              "id": "8wJbQ9ifDKFxo256MSPhVo",
+              "content": "Default output from mockllm/model",
+              "source": "generate",
+              "role": "assistant",
+              "model": "mockllm"
+            },
+            "stop_reason": "stop"
+          }
+        ],
+        "completion": "Default output from mockllm/model",
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 33,
+          "total_tokens": 45
+        },
+        "time": 0.000054207994253374636
+      },
+      "scores": {
+        "includes": {
+          "value": "C",
+          "answer": "default output from mockllm/model",
+          "explanation": "Default output from mockllm/model",
+          "history": []
+        }
+      },
+      "metadata": {
+        "lang": "en",
+        "expect": "correct"
+      },
+      "store": {},
+      "events": [
+        {
+          "uuid": "PtF3c4zd6CzPgkTM3M9fju",
+          "span_id": "KYRvV4k5i3GwqMrcXW3uQ5",
+          "timestamp": "2026-09-15T01:07:55.780608+00:00",
+          "working_start": 57583.544799208,
+          "event": "span_begin",
+          "id": "KYRvV4k5i3GwqMrcXW3uQ5",
+          "type": "init",
+          "name": "init"
+        },
+        {
+          "uuid": "Bfud262jjG9LXJsY4db2c3",
+          "span_id": "KYRvV4k5i3GwqMrcXW3uQ5",
+          "timestamp": "2026-09-15T01:07:55.780746+00:00",
+          "working_start": 57583.544937166,
+          "event": "sample_init",
+          "sample": {
+            "input": "Name the provider.",
+            "target": "mockllm",
+            "id": "s3-partial",
+            "metadata": {
+              "lang": "en",
+              "expect": "correct"
+            }
+          },
+          "state": {
+            "messages": [
+              {
+                "id": "3kJBngFAK39QxQTBYegVe2",
+                "content": "Name the provider.",
+                "source": "input",
+                "role": "user"
+              }
+            ],
+            "tools": [],
+            "tool_choice": null,
+            "store": {},
+            "output": {
+              "model": "mockllm/model",
+              "choices": [],
+              "completion": ""
+            },
+            "completed": false,
+            "metadata": {
+              "lang": "en",
+              "expect": "correct"
+            }
+          }
+        },
+        {
+          "uuid": "W5SNCfPeFbtfJ62F3fYAQw",
+          "span_id": "KYRvV4k5i3GwqMrcXW3uQ5",
+          "timestamp": "2026-09-15T01:07:55.780844+00:00",
+          "working_start": 57583.545035625,
+          "event": "span_end",
+          "id": "KYRvV4k5i3GwqMrcXW3uQ5"
+        },
+        {
+          "uuid": "VoWJoUDMvkA52eJFDW98Fa",
+          "span_id": "GzDHdaSdAgbqEuNnzAaBxy",
+          "timestamp": "2026-09-15T01:07:55.783240+00:00",
+          "working_start": 0.0023382500003208406,
+          "event": "span_begin",
+          "id": "GzDHdaSdAgbqEuNnzAaBxy",
+          "type": "solvers",
+          "name": "solvers"
+        },
+        {
+          "uuid": "PsaPr2hgr27VLJmvFTetmJ",
+          "span_id": "2KhxhpNRzCunpBz9b7GqKf",
+          "timestamp": "2026-09-15T01:07:55.783300+00:00",
+          "working_start": 0.002398208001977764,
+          "event": "span_begin",
+          "id": "2KhxhpNRzCunpBz9b7GqKf",
+          "parent_id": "GzDHdaSdAgbqEuNnzAaBxy",
+          "type": "solver",
+          "name": "system_message"
+        },
+        {
+          "uuid": "AcJUk7LnLFmQCh77DGFP2A",
+          "span_id": "2KhxhpNRzCunpBz9b7GqKf",
+          "timestamp": "2026-09-15T01:07:55.783439+00:00",
+          "working_start": 0.0025369159993715584,
+          "event": "state",
+          "changes": [
+            {
+              "op": "remove",
+              "path": "/messages/0/source"
+            },
+            {
+              "op": "replace",
+              "path": "/messages/0/content",
+              "value": "You are a deterministic test model.",
+              "replaced": "Name the provider."
+            },
+            {
+              "op": "replace",
+              "path": "/messages/0/id",
+              "value": "Pzo7SB7tRKmDF6949G229s",
+              "replaced": "3kJBngFAK39QxQTBYegVe2"
+            },
+            {
+              "op": "replace",
+              "path": "/messages/0/role",
+              "value": "system",
+              "replaced": "user"
+            },
+            {
+              "op": "add",
+              "path": "/messages/1",
+              "value": {
+                "id": "3kJBngFAK39QxQTBYegVe2",
+                "content": "Name the provider.",
+                "source": "input",
+                "role": "user"
+              }
+            }
+          ]
+        },
+        {
+          "uuid": "5bhm6vvtWJ6xC5rodvUweq",
+          "span_id": "2KhxhpNRzCunpBz9b7GqKf",
+          "timestamp": "2026-09-15T01:07:55.783513+00:00",
+          "working_start": 0.0026115410000784323,
+          "event": "span_end",
+          "id": "2KhxhpNRzCunpBz9b7GqKf"
+        },
+        {
+          "uuid": "XzCfp3G2RauNc7Ho4njbPJ",
+          "span_id": "8jkh3fjDkdjHSeuKWHQtWD",
+          "timestamp": "2026-09-15T01:07:55.783578+00:00",
+          "working_start": 0.0026760830005514435,
+          "event": "span_begin",
+          "id": "8jkh3fjDkdjHSeuKWHQtWD",
+          "parent_id": "GzDHdaSdAgbqEuNnzAaBxy",
+          "type": "solver",
+          "name": "generate"
+        },
+        {
+          "uuid": "jXGMxRPJUVguRcpmC5czzj",
+          "span_id": "8jkh3fjDkdjHSeuKWHQtWD",
+          "timestamp": "2026-09-15T01:07:55.783685+00:00",
+          "working_start": 0.0027835000000777654,
+          "event": "model",
+          "model": "mockllm/model",
+          "input": [],
+          "input_refs": [
+            [
+              0,
+              2
+            ]
+          ],
+          "tools": [],
+          "tool_choice": "none",
+          "config": {},
+          "output": {
+            "model": "mockllm",
+            "choices": [
+              {
+                "message": {
+                  "id": "8wJbQ9ifDKFxo256MSPhVo",
+                  "content": "Default output from mockllm/model",
+                  "source": "generate",
+                  "role": "assistant",
+                  "model": "mockllm"
+                },
+                "stop_reason": "stop"
+              }
+            ],
+            "completion": "Default output from mockllm/model",
+            "usage": {
+              "input_tokens": 12,
+              "output_tokens": 33,
+              "total_tokens": 45
+            },
+            "time": 0.000054207994253374636
+          },
+          "call": {
+            "request": {
+              "model": "model"
+            },
+            "response": {
+              "content": "Default output from mockllm/model"
+            },
+            "call_refs": [
+              [
+                0,
+                2
+              ]
+            ],
+            "call_key": "messages"
+          },
+          "completed": "2026-09-15T01:08:06.955506+00:00",
+          "working_time": 0.000054207994253374636
+        },
+        {
+          "uuid": "h3UCmvoqCve7VZWjREedbt",
+          "span_id": "8jkh3fjDkdjHSeuKWHQtWD",
+          "timestamp": "2026-09-15T01:08:06.959391+00:00",
+          "working_start": 0.0067715409968513995,
+          "event": "state",
+          "changes": [
+            {
+              "op": "add",
+              "path": "/messages/2",
+              "value": {
+                "id": "8wJbQ9ifDKFxo256MSPhVo",
+                "content": "Default output from mockllm/model",
+                "source": "generate",
+                "role": "assistant",
+                "model": "mockllm"
+              }
+            },
+            {
+              "op": "add",
+              "path": "/output/time",
+              "value": 0.000054207994253374636
+            },
+            {
+              "op": "add",
+              "path": "/output/usage",
+              "value": {
+                "input_tokens": 12,
+                "output_tokens": 33,
+                "total_tokens": 45
+              }
+            },
+            {
+              "op": "add",
+              "path": "/output/choices/0",
+              "value": {
+                "message": {
+                  "id": "8wJbQ9ifDKFxo256MSPhVo",
+                  "content": "Default output from mockllm/model",
+                  "source": "generate",
+                  "role": "assistant",
+                  "model": "mockllm"
+                },
+                "stop_reason": "stop"
+              }
+            },
+            {
+              "op": "replace",
+              "path": "/output/model",
+              "value": "mockllm",
+              "replaced": "mockllm/model"
+            },
+            {
+              "op": "replace",
+              "path": "/output/completion",
+              "value": "Default output from mockllm/model",
+              "replaced": ""
+            }
+          ]
+        },
+        {
+          "uuid": "cWTLCuQXu89HDwvzipbNEF",
+          "span_id": "8jkh3fjDkdjHSeuKWHQtWD",
+          "timestamp": "2026-09-15T01:08:06.959544+00:00",
+          "working_start": 0.006923624001501594,
+          "event": "span_end",
+          "id": "8jkh3fjDkdjHSeuKWHQtWD"
+        },
+        {
+          "uuid": "VB9MVNJehK7PKTRo9S3aeo",
+          "span_id": "GzDHdaSdAgbqEuNnzAaBxy",
+          "timestamp": "2026-09-15T01:08:06.959650+00:00",
+          "working_start": 0.00702958300098544,
+          "event": "span_end",
+          "id": "GzDHdaSdAgbqEuNnzAaBxy"
+        },
+        {
+          "uuid": "QB3vMLDmY2oVg9bf42gjJh",
+          "span_id": "X8Mg4ptgjN5FVNjBpTscov",
+          "timestamp": "2026-09-15T01:08:06.960977+00:00",
+          "working_start": 0.008356708000064828,
+          "event": "span_begin",
+          "id": "X8Mg4ptgjN5FVNjBpTscov",
+          "type": "scorers",
+          "name": "scorers"
+        },
+        {
+          "uuid": "9kGa8Rf4V5FZAPRXi7mRom",
+          "span_id": "HuF9qeHVqDWvJun3QcWgwW",
+          "timestamp": "2026-09-15T01:08:06.961042+00:00",
+          "working_start": 0.00842154099518666,
+          "event": "span_begin",
+          "id": "HuF9qeHVqDWvJun3QcWgwW",
+          "parent_id": "X8Mg4ptgjN5FVNjBpTscov",
+          "type": "scorer",
+          "name": "includes"
+        },
+        {
+          "uuid": "HVCkPX7ruAy3ibqENiEPH6",
+          "span_id": "HuF9qeHVqDWvJun3QcWgwW",
+          "timestamp": "2026-09-15T01:08:06.961099+00:00",
+          "working_start": 0.008478249001200311,
+          "event": "score",
+          "score": {
+            "value": "C",
+            "answer": "default output from mockllm/model",
+            "explanation": "Default output from mockllm/model",
+            "history": []
+          },
+          "target": "mockllm",
+          "intermediate": false,
+          "scorer": "includes",
+          "scorer_args": {},
+          "model_usage": {
+            "mockllm/model": {
+              "input_tokens": 12,
+              "output_tokens": 33,
+              "total_tokens": 45
+            }
+          }
+        },
+        {
+          "uuid": "NPi6LecYfvbiJojHmbtcdC",
+          "span_id": "HuF9qeHVqDWvJun3QcWgwW",
+          "timestamp": "2026-09-15T01:08:06.961173+00:00",
+          "working_start": 0.008553166000638157,
+          "event": "span_end",
+          "id": "HuF9qeHVqDWvJun3QcWgwW"
+        },
+        {
+          "uuid": "KzkxHobo6XQnuy3AdWh7Jm",
+          "span_id": "X8Mg4ptgjN5FVNjBpTscov",
+          "timestamp": "2026-09-15T01:08:06.961234+00:00",
+          "working_start": 0.008614040998509154,
+          "event": "span_end",
+          "id": "X8Mg4ptgjN5FVNjBpTscov"
+        }
+      ],
+      "model_usage": {
+        "mockllm/model": {
+          "input_tokens": 12,
+          "output_tokens": 33,
+          "total_tokens": 45
+        }
+      },
+      "role_usage": {},
+      "started_at": "2026-09-15T01:07:55.780903+00:00",
+      "completed_at": "2026-09-15T01:08:06.962717+00:00",
+      "total_time": 11.182,
+      "working_time": 0.01,
+      "uuid": "a2Q7sQwWMtBySyfgRFRzhJ",
+      "error_retries": [],
+      "attachments": {},
+      "events_data": {
+        "messages": [
+          {
+            "id": "Pzo7SB7tRKmDF6949G229s",
+            "content": "You are a deterministic test model.",
+            "role": "system"
+          },
+          {
+            "id": "3kJBngFAK39QxQTBYegVe2",
+            "content": "Name the provider.",
+            "source": "input",
+            "role": "user"
+          }
+        ],
+        "calls": [
+          {
+            "id": "Pzo7SB7tRKmDF6949G229s",
+            "content": "You are a deterministic test model.",
+            "source": null,
+            "metadata": null,
+            "role": "system"
+          },
+          {
+            "id": "3kJBngFAK39QxQTBYegVe2",
+            "content": "Name the provider.",
+            "source": "input",
+            "metadata": null,
+            "role": "user",
+            "tool_call_id": null
+          }
+        ]
+      },
+      "turn_count": 1
+    }
+  ],
+  "reductions": [
+    {
+      "scorer": "includes",
+      "samples": [
+        {
+          "value": 1.0,
+          "answer": "default output from mockllm/model",
+          "explanation": "Default output from mockllm/model",
+          "history": [],
+          "sample_id": "s1-default"
+        },
+        {
+          "value": 0.0,
+          "answer": "default output from mockllm/model",
+          "explanation": "Default output from mockllm/model",
+          "history": [],
+          "sample_id": "s2-korean"
+        },
+        {
+          "value": 1.0,
+          "answer": "default output from mockllm/model",
+          "explanation": "Default output from mockllm/model",
+          "history": [],
+          "sample_id": "s3-partial"
+        }
+      ]
+    }
+  ]
+}

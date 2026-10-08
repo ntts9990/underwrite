@@ -1,0 +1,106 @@
+{
+  "availability": [
+    {
+      "availability": "error",
+      "case_id": "py-err-1",
+      "epoch": 0,
+      "instrument": "inspect",
+      "metric_id": "score",
+      "reason": "EvalLog status=error",
+      "repeat": 0
+    },
+    {
+      "availability": "error",
+      "case_id": "py-err-2",
+      "epoch": 0,
+      "instrument": "inspect",
+      "metric_id": "score",
+      "reason": "EvalLog status=error",
+      "repeat": 0
+    },
+    {
+      "availability": "error",
+      "case_id": "py-err-1",
+      "epoch": 1,
+      "instrument": "inspect",
+      "metric_id": "score",
+      "reason": "EvalLog status=error",
+      "repeat": 0
+    },
+    {
+      "availability": "error",
+      "case_id": "bfcl/simple_python/case-001",
+      "epoch": null,
+      "instrument": "deepeval",
+      "metric_id": "AnswerRelevancy",
+      "reason": "Declared example availability loss",
+      "repeat": 0
+    },
+    {
+      "availability": "error",
+      "case_id": "bfcl/simple_python/case-002",
+      "epoch": null,
+      "instrument": "deepeval",
+      "metric_id": "AnswerRelevancy",
+      "reason": "Declared example availability loss",
+      "repeat": 0
+    },
+    {
+      "availability": "error",
+      "case_id": "bfcl/simple_python/case-003",
+      "epoch": null,
+      "instrument": "deepeval",
+      "metric_id": "AnswerRelevancy",
+      "reason": "Declared example availability loss",
+      "repeat": 0
+    }
+  ],
+  "manifest": {
+    "captured_at": "",
+    "config_revision": "capture-conformance",
+    "precommit": {
+      "null_id": "micro_pass_rate@p0=0.5",
+      "p0": 0.5,
+      "pass_e": 20.0
+    },
+    "receipt": {},
+    "run_id": "local-example",
+    "run_path": "",
+    "spec_revision": "capture-conformance",
+    "trace": {}
+  },
+  "readings": [
+    {
+      "instrument": "inspect",
+      "metric_id": "score",
+      "rows": []
+    },
+    {
+      "instrument": "deepeval",
+      "metric_id": "AnswerRelevancy",
+      "rows": []
+    }
+  ],
+  "schema_version": "underwrite.evidence-bundle.v1",
+  "sources": [
+    {
+      "digests": {
+        "created": "2026-07-17T11:00:00Z",
+        "eval_id": "eval-error-0002",
+        "task": "bfcl_simple_python",
+        "task_id": "bfcl_simple_python_error"
+      },
+      "instrument": "inspect",
+      "logical_source": "error.json",
+      "origin": "inspect_ai"
+    },
+    {
+      "digests": {
+        "identifier": "deepeval-run-2026-07-17-observed"
+      },
+      "instrument": "deepeval",
+      "logical_source": "observed.json",
+      "origin": "deepeval"
+    }
+  ]
+}

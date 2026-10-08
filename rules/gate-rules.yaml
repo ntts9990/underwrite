@@ -1,0 +1,44 @@
+# Example declarative gate rules, consumed by the strict local YAML loader.
+# No deployment evaluator is implemented. List order has no evaluation meaning.
+# Thresholds are canonical decimal strings; bounds are inclusive.
+schema: gate_rules.v1
+default:
+  decision: Hold
+rules:
+  - id: read_verdict_fail
+    kind: hard_gate
+    priority: 400
+    when:
+      all:
+        - read_verdict: [fail]
+    decision: Reject
+  - id: acceptance_rejected
+    kind: hard_gate
+    priority: 300
+    when:
+      all:
+        - acceptance: [rejected]
+    decision: Reject
+  - id: regression_confirmed
+    kind: hard_gate
+    priority: 200
+    when:
+      all:
+        - bootstrap_ci_upper: {max: "0"}
+        - cohens_d: {max: "-0.2"}
+    decision: Rollback
+  - id: failure_rate_ceiling
+    kind: hard_gate
+    priority: 100
+    when:
+      all:
+        - failure_rate_current: {min: "0.2"}
+    decision: Rollback
+  - id: improvement_confirmed
+    kind: optimization_metric
+    priority: 0
+    when:
+      all:
+        - bootstrap_ci_lower: {min: "0"}
+        - cohens_d: {min: "0.2"}
+    decision: Approve

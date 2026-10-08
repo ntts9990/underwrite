@@ -1,0 +1,25 @@
+{
+  "source_record": "SOURCE.md",
+  "capture_kind": "sanitized_tool_payload_example",
+  "tool": {
+    "name": "deepeval",
+    "version": "4.1.1",
+    "upstream_commit": "58c9ef78a4634ba119c7d2cc145f5cf9aeb24524"
+  },
+  "files": {
+    "test_run_20260914_132634.json": {
+      "source": {
+        "format": "deepeval.test-run",
+        "format_version": "4.1.1"
+      },
+      "ref": "sha256:acf917784efd482e4af90dde180bf1e88dda0017afa8a73747b5ebeec939ae9c",
+      "raw_hash": "sha256:acf917784efd482e4af90dde180bf1e88dda0017afa8a73747b5ebeec939ae9c",
+      "observation_digest": "sha256:c92cc06b0e663e5d788b01316723bb792e2a3bf6ac1e08e8935669859b114b88"
+    }
+  },
+  "recipe": {
+    "sample_eval.py": {
+      "sha256": "b80bb4843d2d74ec8006b58f8c0c09b62efce6d4637446f57ce5012116668011"
+    }
+  }
+}

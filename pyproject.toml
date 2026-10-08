@@ -1,0 +1,101 @@
+[project]
+name = "underwrite"
+version = "0.0.1"
+description = "Local evidence normalization, measurement, and acceptance checks"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+dependencies = [
+    "underwrite-core",
+    "jsonschema>=4.26.0",
+    "pyyaml>=6.0.3",
+]
+
+[project.scripts]
+underwrite = "underwrite.cli.main:main"
+
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "underwrite"
+module-root = "src"
+source-include = [
+    "contracts/read.v1.schema.json",
+    "contracts/measurement_policy.v2.schema.json",
+    "contracts/measurement_error.v1.schema.json",
+    "contracts/statistical_seed.v1.schema.json",
+    "contracts/observation.v1.schema.json",
+    "contracts/artifact_case.v1.schema.json",
+    "contracts/artifact_inspection.v1.schema.json",
+    "contracts/artifact_inspection_error.v1.schema.json",
+    "contracts/release_case.v1.schema.json",
+    "contracts/release_inspection.v1.schema.json",
+    "contracts/release_inspection_error.v1.schema.json",
+    "contracts/declared_claims.v1.schema.json",
+    "contracts/change_candidate.v1.schema.json",
+    "contracts/acceptance_decision.v1.schema.json",
+    "contracts/acceptance_error.v1.schema.json",
+    "contracts/gate_rules.v1.schema.json",
+]
+
+[tool.uv.workspace]
+members = ["packages/underwrite-core"]
+
+[tool.uv.sources]
+underwrite-core = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "hypothesis",
+    "ruff",
+    "pyright",
+    "import-linter",
+    "deptry",
+]
+pure = [
+    "underwrite-core",
+    "pytest",
+    "hypothesis",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "C90", "PLR"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-args = 6
+max-statements = 50
+max-branches = 12
+
+[tool.pyright]
+typeCheckingMode = "strict"
+pythonVersion = "3.12"
+include = [
+    "src",
+    "packages/underwrite-core/src",
+    "packages/underwrite-core/tests",
+    "packages/underwrite-core/build",
+    "tests",
+    "scripts",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "packages/underwrite-core/tests"]
+pythonpath = ["tests", "src"]
+
+[tool.deptry]
+known_first_party = ["underwrite", "underwrite_core"]
+# The workspace distribution imports as underwrite_core.
+package_module_name_map = { "underwrite-core" = ["underwrite_core"] }
+extend_exclude = ["packages/.*/tests", "fixtures/golden"]
+

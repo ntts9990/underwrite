@@ -1,0 +1,290 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:measurement_policy.v2",
+  "title": "measurement_policy.v2",
+  "description": "Complete explicit fixed binary/calibration profile. Relational band ordering, reachable quorum, selected instrument inclusion, Unicode and work bounds are checked by the producer. No inferred parameters or historical preregistration claim.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "required_instruments",
+    "quorum",
+    "min_cell_n",
+    "min_bin_n",
+    "seed",
+    "profile",
+    "inputs",
+    "subject",
+    "eprocess",
+    "fusion",
+    "calibration",
+    "panel",
+    "stratification"
+  ],
+  "properties": {
+    "schema": {
+      "const": "measurement_policy.v2"
+    },
+    "profile": {
+      "const": "binary-calibration-two-stage.v1"
+    },
+    "required_instruments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/identity"
+      },
+      "uniqueItems": true
+    },
+    "quorum": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "min_cell_n": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "min_bin_n": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "seed": {
+      "$ref": "urn:underwrite:contract:statistical_seed.v1"
+    },
+    "subject": {
+      "$ref": "urn:underwrite:contract:read.v1#/$defs/subject"
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eprocess",
+        "calibration"
+      ],
+      "properties": {
+        "eprocess": {
+          "$ref": "#/$defs/selector"
+        },
+        "calibration": {
+          "$ref": "#/$defs/selector"
+        }
+      }
+    },
+    "eprocess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "p0",
+        "prior_a",
+        "prior_b",
+        "pass_e",
+        "max_observations",
+        "max_cost",
+        "null_id"
+      ],
+      "properties": {
+        "p0": {
+          "const": 0.5
+        },
+        "prior_a": {
+          "const": 1
+        },
+        "prior_b": {
+          "const": 1
+        },
+        "pass_e": {
+          "const": 20.0
+        },
+        "max_observations": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "max_cost": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0
+        },
+        "null_id": {
+          "$ref": "#/$defs/identity"
+        }
+      }
+    },
+    "fusion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "combine",
+        "independence"
+      ],
+      "properties": {
+        "combine": {
+          "const": "mean"
+        },
+        "independence": {
+          "type": "null"
+        }
+      }
+    },
+    "calibration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bins",
+        "k",
+        "anchor_min_samples",
+        "pass_ece",
+        "warn_ece",
+        "prediction_event",
+        "prediction_field",
+        "label_field"
+      ],
+      "properties": {
+        "bins": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "k": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "anchor_min_samples": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pass_ece": {
+          "$ref": "#/$defs/unit_interval"
+        },
+        "warn_ece": {
+          "$ref": "#/$defs/unit_interval"
+        },
+        "prediction_event": {
+          "const": "case passes"
+        },
+        "prediction_field": {
+          "const": "score"
+        },
+        "label_field": {
+          "const": "outcome"
+        }
+      }
+    },
+    "panel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pass_at",
+        "warn_at",
+        "escalate_at",
+        "conflict_confidence"
+      ],
+      "properties": {
+        "pass_at": {
+          "$ref": "#/$defs/unit_interval"
+        },
+        "warn_at": {
+          "$ref": "#/$defs/unit_interval"
+        },
+        "escalate_at": {
+          "$ref": "#/$defs/unit_interval"
+        },
+        "conflict_confidence": {
+          "$ref": "#/$defs/unit_interval"
+        }
+      }
+    },
+    "stratification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "axes",
+        "requested"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "none",
+            "split"
+          ]
+        },
+        "axes": {
+          "type": "array"
+        },
+        "requested": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "split"
+            ],
+            "properties": {
+              "split": {
+                "type": "string"
+              }
+            }
+          },
+          "uniqueItems": true
+        }
+      },
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "none"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "axes": {
+            "maxItems": 0
+          },
+          "requested": {
+            "maxItems": 0
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "axes": {
+            "const": [
+              "split"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "identity": {
+      "type": "string",
+      "minLength": 1
+    },
+    "unit_interval": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "selector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "instrument",
+        "metric_id"
+      ],
+      "properties": {
+        "instrument": {
+          "$ref": "#/$defs/identity"
+        },
+        "metric_id": {
+          "$ref": "#/$defs/identity"
+        }
+      }
+    }
+  }
+}

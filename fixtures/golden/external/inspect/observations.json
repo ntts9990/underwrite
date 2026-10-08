@@ -1,0 +1,27 @@
+{
+  "source_record": "SOURCE.md",
+  "capture_kind": "sanitized_tool_payload_example",
+  "tool": {
+    "name": "inspect_ai",
+    "version": "0.3.263",
+    "commit": "7aa7343e4a14fa7be07e5a09c7431df5e88c17ee",
+    "license": "MIT",
+    "model": "mockllm/model"
+  },
+  "files": {
+    "2026-09-15T01-07-55-00-00_underwrite-capture_WaX6koaYGQoZ7VpAhPpEN8.json": {
+      "source": {
+        "format": "inspect.eval-log",
+        "format_version": "0.3.263"
+      },
+      "ref": "sha256:ec86cc7011f50d8e1703136ff19934df80c5f4bd68f8b65cda051cd2ae098ed5",
+      "raw_hash": "sha256:ec86cc7011f50d8e1703136ff19934df80c5f4bd68f8b65cda051cd2ae098ed5",
+      "observation_digest": "sha256:830c01556b8c14a94e6483d928d916da03ced1cf97b66612fad6f77ea7147c65"
+    }
+  },
+  "recipe": {
+    "sample_task.py": {
+      "sha256": "196cc685d286932f3744286e252a4ed702a200938da54a031bbe7229509b8807"
+    }
+  }
+}

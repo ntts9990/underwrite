@@ -1,0 +1,12 @@
+{
+  "one_dot_zero": 1.0,
+  "min_fixed_exponent": 0.000001,
+  "just_below_min_fixed_exponent": 0.0000001,
+  "max_fixed_exponent_boundary": 1e21,
+  "large_integer_valued_float": 123000000000000.0,
+  "hundred_as_float": 100.0,
+  "small_decimal": 2e-3,
+  "negative_zero": -0.0,
+  "safe_int_max": 9007199254740991,
+  "safe_int_negative": -9007199254740991
+}

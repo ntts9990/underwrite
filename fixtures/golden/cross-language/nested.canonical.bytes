@@ -1,0 +1,1 @@
+{"items":[1,"plain",true,null,{"inner_flag":false,"inner_list":[1,2,3]}],"map":{"a":{"b":{"c":["deep",1.5]}},"count":3,"korean":"안녕"},"schema":"cross-language-nested/v1"}

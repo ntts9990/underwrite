@@ -1,0 +1,51 @@
+{
+  "schema": "declared_claims.v1",
+  "candidate_id": "prompt-v2",
+  "required_claims": {
+    "same_batch": [
+      {
+        "claim_id": "quality",
+        "subject_id": "suite.quality",
+        "effect": "disqualifying",
+        "policy_digest": "sha256:117b44bc1e1b00aef884bc7a8dfbcb8280b986491192d642cb69ffe37685ff21"
+      }
+    ],
+    "held_in": [
+      {
+        "claim_id": "quality",
+        "subject_id": "suite.quality",
+        "effect": "disqualifying",
+        "policy_digest": "sha256:117b44bc1e1b00aef884bc7a8dfbcb8280b986491192d642cb69ffe37685ff21"
+      },
+      {
+        "claim_id": "latency",
+        "subject_id": "suite.latency",
+        "effect": "validity",
+        "policy_digest": "sha256:d1b0895359948e78dc51ce509f9a7f198f2abffd67763f50c377bf43a5eb5354"
+      }
+    ],
+    "held_out": [
+      {
+        "claim_id": "quality",
+        "subject_id": "suite.quality",
+        "effect": "disqualifying",
+        "policy_digest": "sha256:117b44bc1e1b00aef884bc7a8dfbcb8280b986491192d642cb69ffe37685ff21"
+      },
+      {
+        "claim_id": "latency",
+        "subject_id": "suite.latency",
+        "effect": "validity",
+        "policy_digest": "sha256:d1b0895359948e78dc51ce509f9a7f198f2abffd67763f50c377bf43a5eb5354"
+      }
+    ]
+  },
+  "selection": {
+    "salt": "accept-golden",
+    "confirm_fraction": 0.2,
+    "case_ids": [
+      "case-001",
+      "case-002",
+      "case-003"
+    ]
+  }
+}

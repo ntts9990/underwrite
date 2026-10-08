@@ -1,0 +1,648 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:cli_result.v1",
+  "title": "cli_result.v1",
+  "description": "JSON output for population, pin and vocabulary-boundary checks. State and exit_code use a closed vocabulary, with command-specific conditions defining details.",
+  "type": "object",
+  "required": [
+    "schema",
+    "command",
+    "state",
+    "exit_code",
+    "details"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "cli_result.v1"
+    },
+    "command": {
+      "type": "string",
+      "description": "The subcommand path as a user would type it.",
+      "oneOf": [
+        {
+          "pattern": "^absence$"
+        },
+        {
+          "pattern": "^drift check$"
+        },
+        {
+          "pattern": "^pins refresh$"
+        },
+        {
+          "pattern": "^boundary scan$"
+        }
+      ]
+    },
+    "state": {
+      "type": "string",
+      "description": "Closed outcome vocabulary for the command.",
+      "enum": [
+        "PASS",
+        "SKIPPED_WITH_REASON",
+        "DRIFT",
+        "EMPTY_POPULATION",
+        "EXEMPTION_EXPIRED",
+        "NOW_REQUIRED",
+        "UNCONFIGURED",
+        "LEAK"
+      ]
+    },
+    "exit_code": {
+      "type": "integer",
+      "description": "PASS/SKIPPED_WITH_REASON -> 0; DRIFT/LEAK/EMPTY_POPULATION/EXEMPTION_EXPIRED/NOW_REQUIRED -> 1; UNCONFIGURED -> 2.",
+      "enum": [
+        0,
+        1,
+        2
+      ]
+    },
+    "details": {
+      "type": "object",
+      "description": "Command- and state-specific evidence, constrained by the conditions below."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "enum": [
+              "PASS",
+              "SKIPPED_WITH_REASON"
+            ]
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "exit_code": {
+            "const": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "enum": [
+              "DRIFT",
+              "LEAK",
+              "EMPTY_POPULATION",
+              "EXEMPTION_EXPIRED",
+              "NOW_REQUIRED"
+            ]
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "exit_code": {
+            "const": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "enum": [
+              "UNCONFIGURED"
+            ]
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "exit_code": {
+            "const": 2
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "pattern": "^absence$"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "state": {
+            "enum": [
+              "PASS",
+              "SKIPPED_WITH_REASON",
+              "EMPTY_POPULATION",
+              "EXEMPTION_EXPIRED",
+              "NOW_REQUIRED",
+              "UNCONFIGURED"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "pattern": "^absence$"
+          },
+          "state": {
+            "enum": [
+              "PASS",
+              "SKIPPED_WITH_REASON",
+              "EMPTY_POPULATION",
+              "EXEMPTION_EXPIRED",
+              "NOW_REQUIRED"
+            ]
+          }
+        },
+        "required": [
+          "command",
+          "state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "details": {
+            "$ref": "#/$defs/absenceDetails"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "pattern": "^absence$"
+          },
+          "state": {
+            "enum": [
+              "UNCONFIGURED"
+            ]
+          }
+        },
+        "required": [
+          "command",
+          "state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "details": {
+            "$ref": "#/$defs/absenceUnconfiguredDetails"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "pattern": "^drift check$"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "state": {
+            "enum": [
+              "PASS",
+              "SKIPPED_WITH_REASON",
+              "DRIFT",
+              "EMPTY_POPULATION",
+              "EXEMPTION_EXPIRED",
+              "NOW_REQUIRED",
+              "UNCONFIGURED"
+            ]
+          },
+          "details": {
+            "$ref": "#/$defs/driftDetails"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "pattern": "^pins refresh$"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "state": {
+            "enum": [
+              "PASS"
+            ]
+          },
+          "details": {
+            "$ref": "#/$defs/pinsRefreshDetails"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "pattern": "^boundary scan$"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "state": {
+            "enum": [
+              "PASS",
+              "LEAK",
+              "EMPTY_POPULATION",
+              "NOW_REQUIRED",
+              "UNCONFIGURED"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "pattern": "^boundary scan$"
+          },
+          "state": {
+            "enum": [
+              "PASS",
+              "LEAK",
+              "EMPTY_POPULATION"
+            ]
+          }
+        },
+        "required": [
+          "command",
+          "state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "details": {
+            "$ref": "#/$defs/boundaryDetails"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "pattern": "^boundary scan$"
+          },
+          "state": {
+            "enum": [
+              "NOW_REQUIRED"
+            ]
+          }
+        },
+        "required": [
+          "command",
+          "state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "details": {
+            "$ref": "#/$defs/boundaryNowRequiredDetails"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "pattern": "^boundary scan$"
+          },
+          "state": {
+            "enum": [
+              "UNCONFIGURED"
+            ]
+          }
+        },
+        "required": [
+          "command",
+          "state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "details": {
+            "$ref": "#/$defs/boundaryUnconfiguredDetails"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "absenceDetails": {
+      "type": "object",
+      "required": [
+        "count",
+        "min"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "min": {
+          "type": "integer"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "expiry": {
+          "type": "string"
+        }
+      }
+    },
+    "absenceUnconfiguredDetails": {
+      "type": "object",
+      "required": [
+        "root"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "root": {
+          "type": "string"
+        }
+      }
+    },
+    "driftDetails": {
+      "type": "object",
+      "required": [
+        "active_population",
+        "retired_population",
+        "drifted",
+        "unconfigured_repos",
+        "repos",
+        "retired"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "active_population": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "retired_population": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "drifted": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "unconfigured_repos": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "repos": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/driftRepo"
+          }
+        },
+        "retired": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "reason": {
+          "type": "string"
+        },
+        "expiry": {
+          "type": "string"
+        },
+        "adr": {
+          "type": "string"
+        }
+      }
+    },
+    "driftRepo": {
+      "type": "object",
+      "required": [
+        "state",
+        "pins",
+        "source_commit",
+        "drifted"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "enum": [
+            "PASS",
+            "DRIFT",
+            "UNCONFIGURED"
+          ]
+        },
+        "pins": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source_commit": {
+          "type": "string"
+        },
+        "drifted": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "pinsRefreshDetails": {
+      "type": "object",
+      "required": [
+        "repo",
+        "source_commit",
+        "captured_at",
+        "files"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "repo": {
+          "type": "string"
+        },
+        "source_commit": {
+          "type": "string"
+        },
+        "captured_at": {
+          "type": "string"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "boundaryDetails": {
+      "type": "object",
+      "required": [
+        "files_scanned",
+        "leaks",
+        "allowlist_entries"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "files_scanned": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "leaks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/boundaryLeak"
+          }
+        },
+        "allowlist_entries": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "boundaryLeak": {
+      "type": "object",
+      "required": [
+        "file",
+        "path",
+        "term",
+        "family",
+        "allowed"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "term": {
+          "type": "string"
+        },
+        "family": {
+          "enum": [
+            "gate_vocab",
+            "authority_vocab"
+          ]
+        },
+        "allowed": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "expiry": {
+          "type": "string"
+        },
+        "adr": {
+          "type": "string"
+        }
+      }
+    },
+    "boundaryNowRequiredDetails": {
+      "type": "object",
+      "required": [
+        "file",
+        "path",
+        "term"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "term": {
+          "type": "string"
+        }
+      }
+    },
+    "boundaryUnconfiguredDetails": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "missing"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "missing": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "invalid",
+            "reason"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "invalid": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            "reason": {
+              "const": "INVALID_JSON_INPUT"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

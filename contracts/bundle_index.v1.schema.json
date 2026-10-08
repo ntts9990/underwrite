@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:bundle_index.v1",
+  "title": "bundle_index.v1",
+  "description": "One descriptor per sealed artifact role, pointing to a content-addressed blob. Required roles are fixed independently by the caller or verifier and never inferred from this index.",
+  "type": "object",
+  "required": [
+    "schema",
+    "descriptors"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "bundle_index.v1"
+    },
+    "descriptors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/descriptor"
+      }
+    }
+  },
+  "$defs": {
+    "descriptor": {
+      "type": "object",
+      "description": "One sealed artifact: the role it fills, its declared media type, its content digest, and its byte size.",
+      "required": [
+        "role",
+        "mediaType",
+        "digest",
+        "size"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "type": "string",
+          "description": "The artifact's role in the bundle (e.g. \"receipt\"). Unique within descriptors.",
+          "minLength": 1
+        },
+        "mediaType": {
+          "type": "string",
+          "description": "IANA media type of the artifact's bytes.",
+          "minLength": 1
+        },
+        "digest": {
+          "type": "string",
+          "description": "sha256 content digest of the artifact's bytes (underwrite_core.canonical.digest_bytes), OCI style.",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "size": {
+          "type": "integer",
+          "description": "Byte length of the artifact's data.",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

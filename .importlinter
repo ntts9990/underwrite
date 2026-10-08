@@ -1,0 +1,35 @@
+[importlinter]
+root_packages=
+    underwrite
+    underwrite_core
+
+[importlinter:contract:core-imports-nothing-internal]
+name = Core imports nothing internal
+type = forbidden
+source_modules=
+    underwrite_core
+forbidden_modules=
+    underwrite
+
+[importlinter:contract:pure-layer-stdlib-and-core-only]
+name = Pure layer does not import the shell layer
+type = forbidden
+source_modules=
+    underwrite.instrument.evidence
+    underwrite.measurement
+    underwrite.acceptance
+    underwrite.adjudication
+forbidden_modules=
+    underwrite.instrument.ingest
+    underwrite.fleet
+    underwrite.service
+    underwrite.cli
+
+[importlinter:contract:layer-hierarchy]
+name = Layer hierarchy: shell above pure above core
+type = layers
+layers=
+    underwrite.cli
+    underwrite.service | underwrite.fleet | underwrite.instrument.ingest
+    underwrite.instrument.evidence | underwrite.measurement | underwrite.acceptance | underwrite.adjudication
+    underwrite_core

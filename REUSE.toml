@@ -1,0 +1,24 @@
+# REUSE Specification 3.3 (https://reuse.software/spec-3.3/).
+# Within one REUSE.toml the last matching [[annotations]] table is the only one
+# used for a file, so every narrower table below replaces the "**" default.
+version = 1
+
+[[annotations]]
+path = "**"
+SPDX-FileCopyrightText = "2026 ntts9990 <https://github.com/ntts9990>"
+SPDX-License-Identifier = "Apache-2.0"
+
+# Adapted from the Contributor Covenant 3.0; ShareAlike keeps the adaptation CC BY-SA 4.0.
+[[annotations]]
+path = "CODE_OF_CONDUCT.md"
+SPDX-FileCopyrightText = "Contributor Covenant contributors, stewarded by the Organization for Ethical Source <https://www.contributor-covenant.org/>"
+SPDX-License-Identifier = "CC-BY-SA-4.0"
+
+# Adapted from the Model Trademark Guidelines 1.0 (CC BY 4.0).
+[[annotations]]
+path = "TRADEMARKS.md"
+SPDX-FileCopyrightText = [
+    "Model Trademark Guidelines contributors <http://www.modeltrademarkguidelines.org>",
+    "2026 ntts9990 <https://github.com/ntts9990>",
+]
+SPDX-License-Identifier = "CC-BY-4.0"

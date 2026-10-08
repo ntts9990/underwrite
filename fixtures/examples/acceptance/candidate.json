@@ -1,0 +1,9 @@
+{
+  "schema": "change_candidate.v1",
+  "candidate_id": "prompt-v2",
+  "kind": "prompt_version",
+  "basis": "held_in",
+  "current_state": "proposed",
+  "claims_digest": "sha256:801f95f53b38846ac3ba168d668c3135c9ef13733bb5ce60e9f8feaaedc1e307",
+  "hard_failures": []
+}

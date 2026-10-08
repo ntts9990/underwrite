@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:acceptance_error.v1",
+  "title": "acceptance_error.v1",
+  "description": "Closed local acceptance refusal: no acceptance_decision.v1 was produced. Every code exits 2 (a produced decision exits 0 whatever its classification). reason is a finer code from a finite internal mapping, never exception or input text; location is a structural JSON pointer into the refused input (/candidate, /claims or /reads/<index>), never an input value. A claims digest mismatch shows the digest computed over the supplied claims so an author can declare it; a lifecycle refusal shows the state, the classification it would have received and that classification's reason codes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "code",
+    "reason",
+    "location",
+    "next_action",
+    "retryable",
+    "exit_code"
+  ],
+  "properties": {
+    "schema": {
+      "const": "acceptance_error.v1"
+    },
+    "code": {
+      "enum": [
+        "AUTHORITY_FIELD_REFUSED",
+        "INVALID_CANDIDATE",
+        "INVALID_CLAIMS",
+        "INVALID_READ",
+        "SELECTION_LEAKS_CONFIRM",
+        "CANDIDATE_MISMATCH",
+        "CLAIMS_DIGEST_MISMATCH",
+        "UNEXPECTED_CLAIM",
+        "DUPLICATE_CLAIM",
+        "READ_POLICY_MISMATCH",
+        "READ_NOT_AGGREGATE",
+        "READ_AVAILABILITY_INCONSISTENT",
+        "INVALID_STATE_FOR_EVALUATION",
+        "READ_COUNT_EXCEEDED",
+        "INPUT_LIMIT_EXCEEDED",
+        "OUTPUT_LIMIT_EXCEEDED",
+        "SOURCE_READ_FAILED",
+        "SCHEMA_CONFIGURATION_ERROR",
+        "USAGE_ERROR",
+        "UNSUPPORTED_PLATFORM",
+        "INTERNAL_ERROR"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]*(?![\\s\\S])",
+      "maxLength": 80
+    },
+    "location": {
+      "type": "string",
+      "pattern": "^(?:|/(?:candidate|claims|reads)(?:/[A-Za-z0-9_]+)*)(?![\\s\\S])"
+    },
+    "next_action": {
+      "enum": [
+        "CORRECT_CANDIDATE",
+        "CORRECT_CLAIMS",
+        "CORRECT_READ",
+        "REDUCE_INPUT_SIZE",
+        "PROVIDE_REGULAR_LOCAL_FILE",
+        "REINSTALL_PACKAGE",
+        "CORRECT_ARGUMENTS",
+        "USE_SUPPORTED_PLATFORM",
+        "REPORT_INTERNAL_ERROR"
+      ]
+    },
+    "retryable": {
+      "const": false
+    },
+    "exit_code": {
+      "const": 2
+    },
+    "claims_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "The seal computed over the supplied declared claims (CLAIMS_DIGEST_MISMATCH only)."
+    },
+    "context": {
+      "type": "object",
+      "description": "INVALID_STATE_FOR_EVALUATION only: the terminal state and what the evaluation would have classified.",
+      "required": [
+        "current_state",
+        "attempted_classification",
+        "reason_codes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "current_state": {
+          "type": "string",
+          "enum": [
+            "proposed",
+            "screened",
+            "confirmed",
+            "rejected"
+          ]
+        },
+        "attempted_classification": {
+          "type": "string",
+          "enum": [
+            "screened",
+            "confirmed",
+            "indeterminate",
+            "rejected"
+          ]
+        },
+        "reason_codes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "hard_failure",
+              "disqualifying_claim_failed",
+              "validity_claim_failed",
+              "missing_required_claim",
+              "claim_warn",
+              "claim_not_measured",
+              "stage_screened",
+              "stage_confirmed"
+            ]
+          },
+          "uniqueItems": true
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "code": {
+            "const": "CLAIMS_DIGEST_MISMATCH"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "claims_digest"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "claims_digest"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "code": {
+            "const": "INVALID_STATE_FOR_EVALUATION"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "context"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "context"
+          ]
+        }
+      }
+    }
+  ]
+}

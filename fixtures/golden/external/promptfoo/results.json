@@ -1,0 +1,595 @@
+{
+  "evalId": "eval-FcQ-2026-09-15T02:06:56",
+  "results": {
+    "version": 3,
+    "timestamp": "2026-09-15T02:06:56.590Z",
+    "prompts": [
+      {
+        "id": "ea9579d4d966ed3189a3271b89df60e4c3992c10a54e09e280bb04db820f333a",
+        "raw": "질문: {{question}}",
+        "label": "질문: {{question}}",
+        "provider": "echo-provider",
+        "metrics": {
+          "score": 2.25,
+          "testPassCount": 2,
+          "testFailCount": 1,
+          "testErrorCount": 0,
+          "assertPassCount": 4,
+          "assertFailCount": 1,
+          "totalLatencyMs": 3,
+          "tokenUsage": {
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "total": 0,
+            "numRequests": 3,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            },
+            "assertions": {
+              "total": 0,
+              "prompt": 0,
+              "completion": 0,
+              "cached": 0,
+              "numRequests": 0,
+              "completionDetails": {
+                "reasoning": 0,
+                "acceptedPrediction": 0,
+                "rejectedPrediction": 0,
+                "cacheReadInputTokens": 0,
+                "cacheCreationInputTokens": 0
+              }
+            }
+          },
+          "namedScores": {},
+          "namedScoresCount": {},
+          "namedScoreWeights": {},
+          "cost": 0
+        }
+      }
+    ],
+    "results": [
+      {
+        "cost": 0,
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "All assertions passed",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "equals",
+                "value": "질문: 대한민국의 수도는 어디입니까?"
+              }
+            },
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "icontains",
+                "value": "수도"
+              }
+            }
+          ]
+        },
+        "id": "72052a30-188c-4087-b6ec-8bfb2d99e207",
+        "latencyMs": 1,
+        "namedScores": {},
+        "prompt": {
+          "raw": "질문: 대한민국의 수도는 어디입니까?",
+          "label": "질문: {{question}}",
+          "config": {}
+        },
+        "promptId": "ea9579d4d966ed3189a3271b89df60e4c3992c10a54e09e280bb04db820f333a",
+        "promptIdx": 0,
+        "provider": {
+          "id": "echo",
+          "label": "echo-provider"
+        },
+        "response": {
+          "output": "질문: 대한민국의 수도는 어디입니까?",
+          "raw": "질문: 대한민국의 수도는 어디입니까?",
+          "cost": 0,
+          "cached": false,
+          "tokenUsage": {
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "total": 0,
+            "numRequests": 1,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            },
+            "assertions": {
+              "total": 0,
+              "prompt": 0,
+              "completion": 0,
+              "cached": 0,
+              "numRequests": 0,
+              "completionDetails": {
+                "reasoning": 0,
+                "acceptedPrediction": 0,
+                "rejectedPrediction": 0,
+                "cacheReadInputTokens": 0,
+                "cacheCreationInputTokens": 0
+              }
+            }
+          },
+          "isRefusal": false,
+          "metadata": {}
+        },
+        "score": 1,
+        "success": true,
+        "testCase": {
+          "description": "korean echo matches",
+          "vars": {
+            "question": "대한민국의 수도는 어디입니까?"
+          },
+          "assert": [
+            {
+              "type": "equals",
+              "value": "질문: 대한민국의 수도는 어디입니까?"
+            },
+            {
+              "type": "icontains",
+              "value": "수도"
+            }
+          ],
+          "options": {},
+          "metadata": {}
+        },
+        "testIdx": 0,
+        "tokenUsage": {
+          "prompt": 0,
+          "completion": 0,
+          "cached": 0,
+          "total": 0,
+          "numRequests": 1,
+          "completionDetails": {
+            "reasoning": 0,
+            "acceptedPrediction": 0,
+            "rejectedPrediction": 0,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0
+          },
+          "assertions": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            }
+          }
+        },
+        "vars": {
+          "question": "대한민국의 수도는 어디입니까?"
+        },
+        "metadata": {
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      },
+      {
+        "cost": 0,
+        "error": "Expected output \"질문: Name the provider.\" to equal \"this will not match\"",
+        "gradingResult": {
+          "pass": false,
+          "score": 0.5,
+          "reason": "Expected output \"질문: Name the provider.\" to equal \"this will not match\"",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "contains",
+                "value": "provider"
+              }
+            },
+            {
+              "pass": false,
+              "score": 0,
+              "reason": "Expected output \"질문: Name the provider.\" to equal \"this will not match\"",
+              "assertion": {
+                "type": "equals",
+                "value": "this will not match"
+              }
+            }
+          ]
+        },
+        "id": "1e51f177-9e68-46ed-b3e1-4e86477bbe09",
+        "latencyMs": 1,
+        "namedScores": {},
+        "prompt": {
+          "raw": "질문: Name the provider.",
+          "label": "질문: {{question}}",
+          "config": {}
+        },
+        "promptId": "ea9579d4d966ed3189a3271b89df60e4c3992c10a54e09e280bb04db820f333a",
+        "promptIdx": 0,
+        "provider": {
+          "id": "echo",
+          "label": "echo-provider"
+        },
+        "response": {
+          "output": "질문: Name the provider.",
+          "raw": "질문: Name the provider.",
+          "cost": 0,
+          "cached": false,
+          "tokenUsage": {
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "total": 0,
+            "numRequests": 1,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            },
+            "assertions": {
+              "total": 0,
+              "prompt": 0,
+              "completion": 0,
+              "cached": 0,
+              "numRequests": 0,
+              "completionDetails": {
+                "reasoning": 0,
+                "acceptedPrediction": 0,
+                "rejectedPrediction": 0,
+                "cacheReadInputTokens": 0,
+                "cacheCreationInputTokens": 0
+              }
+            }
+          },
+          "isRefusal": false,
+          "metadata": {}
+        },
+        "score": 0.5,
+        "success": false,
+        "testCase": {
+          "description": "english echo with a deliberate failure",
+          "vars": {
+            "question": "Name the provider."
+          },
+          "assert": [
+            {
+              "type": "contains",
+              "value": "provider"
+            },
+            {
+              "type": "equals",
+              "value": "this will not match"
+            }
+          ],
+          "options": {},
+          "metadata": {}
+        },
+        "testIdx": 1,
+        "tokenUsage": {
+          "prompt": 0,
+          "completion": 0,
+          "cached": 0,
+          "total": 0,
+          "numRequests": 1,
+          "completionDetails": {
+            "reasoning": 0,
+            "acceptedPrediction": 0,
+            "rejectedPrediction": 0,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0
+          },
+          "assertions": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            }
+          }
+        },
+        "vars": {
+          "question": "Name the provider."
+        },
+        "metadata": {
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 1
+      },
+      {
+        "cost": 0,
+        "gradingResult": {
+          "pass": true,
+          "score": 0.75,
+          "reason": "All assertions passed",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 0.75,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "javascript",
+                "value": "output.includes('Score') ? 0.75 : 0",
+                "threshold": 0.5
+              }
+            }
+          ]
+        },
+        "id": "e38bc6bf-0b1a-4e60-a993-fa2529615d6a",
+        "latencyMs": 1,
+        "namedScores": {},
+        "prompt": {
+          "raw": "질문: Score me.",
+          "label": "질문: {{question}}",
+          "config": {}
+        },
+        "promptId": "ea9579d4d966ed3189a3271b89df60e4c3992c10a54e09e280bb04db820f333a",
+        "promptIdx": 0,
+        "provider": {
+          "id": "echo",
+          "label": "echo-provider"
+        },
+        "response": {
+          "output": "질문: Score me.",
+          "raw": "질문: Score me.",
+          "cost": 0,
+          "cached": false,
+          "tokenUsage": {
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "total": 0,
+            "numRequests": 1,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            },
+            "assertions": {
+              "total": 0,
+              "prompt": 0,
+              "completion": 0,
+              "cached": 0,
+              "numRequests": 0,
+              "completionDetails": {
+                "reasoning": 0,
+                "acceptedPrediction": 0,
+                "rejectedPrediction": 0,
+                "cacheReadInputTokens": 0,
+                "cacheCreationInputTokens": 0
+              }
+            }
+          },
+          "isRefusal": false,
+          "metadata": {}
+        },
+        "score": 0.75,
+        "success": true,
+        "testCase": {
+          "description": "javascript assertion with a partial score",
+          "vars": {
+            "question": "Score me."
+          },
+          "assert": [
+            {
+              "type": "javascript",
+              "value": "output.includes('Score') ? 0.75 : 0",
+              "threshold": 0.5
+            }
+          ],
+          "options": {},
+          "metadata": {}
+        },
+        "testIdx": 2,
+        "tokenUsage": {
+          "prompt": 0,
+          "completion": 0,
+          "cached": 0,
+          "total": 0,
+          "numRequests": 1,
+          "completionDetails": {
+            "reasoning": 0,
+            "acceptedPrediction": 0,
+            "rejectedPrediction": 0,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0
+          },
+          "assertions": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            }
+          }
+        },
+        "vars": {
+          "question": "Score me."
+        },
+        "metadata": {
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      }
+    ],
+    "stats": {
+      "successes": 2,
+      "failures": 1,
+      "errors": 0,
+      "tokenUsage": {
+        "prompt": 0,
+        "completion": 0,
+        "cached": 0,
+        "total": 0,
+        "numRequests": 3,
+        "completionDetails": {
+          "reasoning": 0,
+          "acceptedPrediction": 0,
+          "rejectedPrediction": 0,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0
+        },
+        "assertions": {
+          "total": 0,
+          "prompt": 0,
+          "completion": 0,
+          "cached": 0,
+          "numRequests": 0,
+          "completionDetails": {
+            "reasoning": 0,
+            "acceptedPrediction": 0,
+            "rejectedPrediction": 0,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0
+          }
+        }
+      },
+      "durationMs": 15,
+      "evaluationDurationMs": 15
+    }
+  },
+  "config": {
+    "tags": {},
+    "description": "underwrite example (echo provider)",
+    "prompts": [
+      "질문: {{question}}"
+    ],
+    "providers": [
+      {
+        "id": "echo",
+        "label": "echo-provider"
+      }
+    ],
+    "tests": [
+      {
+        "description": "korean echo matches",
+        "vars": {
+          "question": "대한민국의 수도는 어디입니까?"
+        },
+        "assert": [
+          {
+            "type": "equals",
+            "value": "질문: 대한민국의 수도는 어디입니까?"
+          },
+          {
+            "type": "icontains",
+            "value": "수도"
+          }
+        ]
+      },
+      {
+        "description": "english echo with a deliberate failure",
+        "vars": {
+          "question": "Name the provider."
+        },
+        "assert": [
+          {
+            "type": "contains",
+            "value": "provider"
+          },
+          {
+            "type": "equals",
+            "value": "this will not match"
+          }
+        ]
+      },
+      {
+        "description": "javascript assertion with a partial score",
+        "vars": {
+          "question": "Score me."
+        },
+        "assert": [
+          {
+            "type": "javascript",
+            "value": "output.includes('Score') ? 0.75 : 0",
+            "threshold": 0.5
+          }
+        ]
+      }
+    ],
+    "env": {},
+    "outputPath": [
+      "out/results.json"
+    ],
+    "extensions": [],
+    "metadata": {},
+    "evaluateOptions": {}
+  },
+  "shareableUrl": null,
+  "metadata": {
+    "promptfooVersion": "0.123.0",
+    "nodeVersion": "v26.5.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "exportedAt": "2026-09-15T02:06:56.626Z",
+    "evaluationCreatedAt": "2026-09-15T02:06:56.590Z"
+  },
+  "vars": [
+    "question"
+  ],
+  "runtimeOptions": {
+    "eventSource": "cli",
+    "showProgressBar": false,
+    "repeat": 1,
+    "maxConcurrency": 4,
+    "cache": false
+  }
+}

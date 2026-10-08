@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:declared_claims.v1",
+  "title": "declared_claims.v1",
+  "description": "Digest-bound claims required for each declared basis. Each claim binds an aggregate read subject and measurement-policy digest. Only the selected basis binds reads. Sealing does not prove when claims were written. The author supplies salt and confirmation fraction; selection cases assigned to confirmation are refused.",
+  "type": "object",
+  "required": [
+    "schema",
+    "candidate_id",
+    "required_claims",
+    "selection"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "declared_claims.v1"
+    },
+    "candidate_id": {
+      "$ref": "#/$defs/id"
+    },
+    "required_claims": {
+      "type": "object",
+      "required": [
+        "same_batch",
+        "held_in",
+        "held_out"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "same_batch": {
+          "$ref": "#/$defs/basis_claims"
+        },
+        "held_in": {
+          "$ref": "#/$defs/basis_claims"
+        },
+        "held_out": {
+          "$ref": "#/$defs/basis_claims"
+        }
+      }
+    },
+    "selection": {
+      "type": "object",
+      "required": [
+        "salt",
+        "confirm_fraction",
+        "case_ids"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "salt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confirm_fraction": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "case_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128000,
+          "description": "At most 64 reads x 2000 cases per read (measure's case bound). maxItems and items precede uniqueItems so a malformed list is refused before the uniqueness check.",
+          "items": {
+            "type": "string",
+            "pattern": "\\S"
+          },
+          "uniqueItems": true
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "description": "Copied from read.v1 $defs.subject.subject_id (bound by test)."
+    },
+    "sha256_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "basis_claims": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "description": "claim_id and subject_id are each unique within one basis (checked by the claims parser; not expressible here). maxItems also bounds how many reads one evaluation accepts.",
+      "items": {
+        "$ref": "#/$defs/claim"
+      }
+    },
+    "claim": {
+      "type": "object",
+      "required": [
+        "claim_id",
+        "subject_id",
+        "effect",
+        "policy_digest"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "claim_id": {
+          "$ref": "#/$defs/id"
+        },
+        "subject_id": {
+          "$ref": "#/$defs/id"
+        },
+        "effect": {
+          "type": "string",
+          "enum": [
+            "disqualifying",
+            "validity"
+          ],
+          "description": "What a measured fail means: disqualifying makes the candidate's classification the terminal negative one, validity leaves it indeterminate."
+        },
+        "policy_digest": {
+          "$ref": "#/$defs/sha256_digest"
+        }
+      }
+    }
+  }
+}

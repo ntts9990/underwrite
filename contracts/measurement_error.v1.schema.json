@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:measurement_error.v1",
+  "title": "measurement_error.v1",
+  "description": "Closed local measurement failure. Producer reasons come from finite internal mappings, never arbitrary exception or input text.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "code",
+    "reason",
+    "location",
+    "next_action",
+    "retryable",
+    "exit_code"
+  ],
+  "properties": {
+    "schema": {
+      "const": "measurement_error.v1"
+    },
+    "code": {
+      "enum": [
+        "INVALID_OBSERVATION",
+        "INVALID_POLICY",
+        "UNSUPPORTED_PROFILE",
+        "INPUT_LIMIT_EXCEEDED",
+        "OUTPUT_LIMIT_EXCEEDED",
+        "SOURCE_READ_FAILED",
+        "SCHEMA_CONFIGURATION_ERROR",
+        "USAGE_ERROR",
+        "UNSUPPORTED_PLATFORM",
+        "INTERNAL_ERROR"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]*(?![\\s\\S])",
+      "maxLength": 80
+    },
+    "location": {
+      "type": "string",
+      "pattern": "^(?:|/observation|/policy)(?![\\s\\S])"
+    },
+    "next_action": {
+      "enum": [
+        "CORRECT_OBSERVATION",
+        "PROVIDE_COMPLETE_POLICY",
+        "USE_SUPPORTED_PROFILE",
+        "REDUCE_INPUT_SIZE",
+        "PROVIDE_REGULAR_LOCAL_FILE",
+        "REINSTALL_PACKAGE",
+        "CORRECT_ARGUMENTS",
+        "USE_SUPPORTED_PLATFORM",
+        "REPORT_INTERNAL_ERROR"
+      ]
+    },
+    "retryable": {
+      "const": false
+    },
+    "exit_code": {
+      "const": 2
+    }
+  }
+}

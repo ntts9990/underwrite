@@ -1,0 +1,36 @@
+# Deterministic promptfoo eval for the underwrite golden capture.
+# The built-in `echo` provider returns the rendered prompt as the output, so no
+# credentials or network are involved and every assertion is decided locally.
+description: underwrite example (echo provider)
+
+prompts:
+  - "질문: {{question}}"
+
+providers:
+  - id: echo
+    label: echo-provider
+
+tests:
+  - description: korean echo matches
+    vars:
+      question: 대한민국의 수도는 어디입니까?
+    assert:
+      - type: equals
+        value: "질문: 대한민국의 수도는 어디입니까?"
+      - type: icontains
+        value: 수도
+  - description: english echo with a deliberate failure
+    vars:
+      question: Name the provider.
+    assert:
+      - type: contains
+        value: provider
+      - type: equals
+        value: this will not match
+  - description: javascript assertion with a partial score
+    vars:
+      question: Score me.
+    assert:
+      - type: javascript
+        value: "output.includes('Score') ? 0.75 : 0"
+        threshold: 0.5

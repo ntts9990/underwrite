@@ -1,0 +1,45 @@
+{
+  "source_record": "SOURCE.md",
+  "capture_kind": "sanitized_tool_payload_example",
+  "tool": {
+    "name": "langfuse",
+    "server_version": "4.35.0",
+    "web_image_digest": "sha256:a5d8d2457702ab7e051bc0788d73871970caebd10aae6635e87cfb736e4067cd",
+    "worker_image_digest": "sha256:5e35e625a214dd868bb22adad90fc52e8f83cc856c3750e47f9a922622c207fb",
+    "producer_sdk": "langfuse==4.7.0",
+    "producer_sdk_commit": "f9c765bc0dc3419ad7f0977c45fa4e70bee71252"
+  },
+  "files": {
+    "observations_v2-2026-09-14T06-40-00.json": {
+      "source": {
+        "format": "langfuse.observations-v2",
+        "format_version": "4.35.0"
+      },
+      "ref": "sha256:f3a0b109799dfaa26558bfc72d31c9c1497ff2ef06deef293e0ee303e8a2be23",
+      "raw_hash": "sha256:f3a0b109799dfaa26558bfc72d31c9c1497ff2ef06deef293e0ee303e8a2be23",
+      "observation_digest": "sha256:cba041643513f085d746df4208950acebec15264d3eccb9807a5b26f95926693"
+    },
+    "scores-2026-09-14T06-40-00.json": {
+      "source": {
+        "format": "langfuse.scores",
+        "format_version": "4.35.0"
+      },
+      "ref": "sha256:702a63154a94ec73fa132810323a07f1d1b3a4182e42c80c295e6fb3d36bfdd4",
+      "raw_hash": "sha256:702a63154a94ec73fa132810323a07f1d1b3a4182e42c80c295e6fb3d36bfdd4",
+      "observation_digest": "sha256:aa592c18fc35614a6ef1a3aa7c338676834b51bbda1f7bed9be86f6866ec2de0"
+    }
+  },
+  "run_manifest": {
+    "manifest-2026-09-14T06-40-00.json": {
+      "sha256": "ae0bcdcac43545d92e8ca1b240e0b0edb081026931bc4d64b27c8584c8f03cac"
+    }
+  },
+  "recipe": {
+    "sample_ingest.py": {
+      "sha256": "78815ee5780242700c488c649429c97353af59d8d096213014cdbdd5b1e346e5"
+    },
+    "docker-compose.override.yml": {
+      "sha256": "ed7b232f3662d3eba408c48bb8771fc0d8775b3b65e8ba15d2dc451671c975e9"
+    }
+  }
+}

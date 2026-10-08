@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:boundary_allowlist.v1",
+  "title": "boundary_allowlist.v1",
+  "description": "Caller-supplied dated exceptions for vocabulary-boundary scanning. Matching combines a path glob and exact term. Expired matches do not allow the leak; their row reports allow_expired. The CLI checks the consumed shape before scanning.",
+  "type": "object",
+  "required": [
+    "schema",
+    "entries"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "boundary_allowlist.v1"
+    },
+    "entries": {
+      "type": "array",
+      "description": "Declared source-context exceptions only; actual entries and expiry dates are owned by rules/boundary-allowlist.json. No exception grants measurement or adjudication authority.",
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "description": "One declared exception: a path glob + exact vocabulary term this applies to, plus reason/expiry/ADR (underwrite.cli.boundary.AllowlistEntry).",
+      "required": [
+        "path_glob",
+        "term",
+        "reason",
+        "expiry",
+        "adr"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "path_glob": {
+          "type": "string",
+          "minLength": 1,
+          "description": "fnmatch pattern against the scanned file's path exactly as given on the command line (repo-relative when invoked the documented way, from the repo root)."
+        },
+        "term": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Exact vocabulary term this entry allows (underwrite_core.boundary.Leak.term) -- case-sensitive, no glob."
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expiry": {
+          "type": "string",
+          "description": "ISO-8601 date (YYYY-MM-DD); compared against the caller-supplied --now (no wall-clock fallback).",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "adr": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The ADR that authorizes this exception."
+        }
+      }
+    }
+  }
+}

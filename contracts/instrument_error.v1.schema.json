@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:instrument_error.v1",
+  "title": "instrument_error.v1",
+  "description": "Technical ingest/project diagnostics, not measurement or authorization states. JSON failures emit only this object to stderr; successful stdout is observation.v1. Reasons are bounded adapter-owned tokens, never original payload or exception text.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "command",
+    "code",
+    "reason",
+    "exit_code"
+  ],
+  "properties": {
+    "schema": {
+      "const": "instrument_error.v1"
+    },
+    "command": {
+      "enum": [
+        "ingest",
+        "project"
+      ]
+    },
+    "code": {
+      "enum": [
+        "UNSUPPORTED_FORMAT",
+        "INVALID_INPUT",
+        "INVALID_SOURCE",
+        "CANONICAL_NUMBER_INCOMPATIBLE",
+        "INPUT_LIMIT_EXCEEDED",
+        "INVALID_OBSERVATION",
+        "SOURCE_READ_FAILED",
+        "SCHEMA_CONFIGURATION_ERROR",
+        "USAGE_ERROR"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]*$",
+      "maxLength": 80
+    },
+    "exit_code": {
+      "enum": [
+        1,
+        2
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "code": {
+            "enum": [
+              "SOURCE_READ_FAILED",
+              "SCHEMA_CONFIGURATION_ERROR",
+              "USAGE_ERROR"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit_code": {
+            "const": 2
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "exit_code": {
+            "const": 1
+          }
+        }
+      }
+    }
+  ]
+}

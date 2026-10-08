@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:observation.v1",
+  "title": "observation.v1",
+  "description": "Projection of a supported native or external artifact. raw.ref and raw.hash bind the source reference and bytes; raw.locator is an optional retrieval hint. Kind uses OpenInference span kinds plus eval_run, incident_record and human_correction. The codec refuses unsupported format/version pairs. The projector normalizes strings to NFC and rejects non-finite numbers before serialization. Payload remains format-specific, unverified source content.",
+  "type": "object",
+  "required": [
+    "schema",
+    "source",
+    "kind",
+    "payload",
+    "raw",
+    "normalization"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "observation.v1"
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "kind": {
+      "type": "string",
+      "description": "OpenInference's 10 span kinds + this app's 3 extensions.",
+      "enum": [
+        "LLM",
+        "AGENT",
+        "TOOL",
+        "RETRIEVER",
+        "EMBEDDING",
+        "CHAIN",
+        "GUARDRAIL",
+        "EVALUATOR",
+        "PROMPT",
+        "RERANKER",
+        "eval_run",
+        "incident_record",
+        "human_correction"
+      ]
+    },
+    "payload": {
+      "type": "object",
+      "description": "Format-specific contents; may be empty. Never validated by this contract."
+    },
+    "raw": {
+      "$ref": "#/$defs/raw"
+    },
+    "normalization": {
+      "$ref": "#/$defs/normalization"
+    }
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "description": "Which accepted (format, format_version) pair produced this observation. format_version is intentionally not an enum -- unsupported versions are a reader-boundary fail-closed decision , not a schema-level restriction.",
+      "required": [
+        "format",
+        "format_version"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "format": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_.-]*$"
+        },
+        "format_version": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "raw": {
+      "type": "object",
+      "description": "First-class acceptance of the original artifact by reference + digest -- never byte preservation.",
+      "required": [
+        "ref",
+        "hash"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hash": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "locator": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "normalization": {
+      "type": "object",
+      "description": "Declared transforms the projecting shell already applied.",
+      "required": [
+        "nfc"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "nfc": {
+          "const": true
+        }
+      }
+    }
+  }
+}

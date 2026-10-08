@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:statistical_seed.v1",
+  "title": "Canonical statistical resampling seed",
+  "description": "Canonical reproducibility seed for bootstrap, permutation and Monte Carlo orchestration. Pure kernels require an explicit seed. The constant proves neither statistical adequacy nor execution authority.",
+  "type": "integer",
+  "const": 42
+}

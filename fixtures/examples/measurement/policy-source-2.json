@@ -1,0 +1,60 @@
+{
+  "calibration": {
+    "anchor_min_samples": 1,
+    "bins": 1,
+    "k": 1,
+    "label_field": "outcome",
+    "pass_ece": 1.0,
+    "prediction_event": "case passes",
+    "prediction_field": "score",
+    "warn_ece": 1.0
+  },
+  "eprocess": {
+    "max_cost": null,
+    "max_observations": null,
+    "null_id": "micro_pass_rate@p0=0.5",
+    "p0": 0.5,
+    "pass_e": 20.0,
+    "prior_a": 1,
+    "prior_b": 1
+  },
+  "fusion": {
+    "combine": "mean",
+    "independence": null
+  },
+  "inputs": {
+    "calibration": {
+      "instrument": "deepeval",
+      "metric_id": "AnswerRelevancy"
+    },
+    "eprocess": {
+      "instrument": "deepeval",
+      "metric_id": "AnswerRelevancy"
+    }
+  },
+  "min_bin_n": 1,
+  "min_cell_n": 1,
+  "panel": {
+    "conflict_confidence": 0.5,
+    "escalate_at": 0.5,
+    "pass_at": 0.75,
+    "warn_at": 0.4
+  },
+  "profile": "binary-calibration-two-stage.v1",
+  "quorum": 1,
+  "required_instruments": [
+    "deepeval",
+    "inspect"
+  ],
+  "schema": "measurement_policy.v2",
+  "seed": 42,
+  "stratification": {
+    "axes": [],
+    "mode": "none",
+    "requested": []
+  },
+  "subject": {
+    "conditions": {},
+    "subject_id": "example-subject"
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:change_candidate.v1",
+  "title": "change_candidate.v1",
+  "description": "One candidate submitted for acceptance classification. The author declares basis and current lifecycle state; terminal states refuse further classification. claims_digest binds the declared claims. Any declared hard failure rejects. This document grants no merge or deployment authorization.",
+  "type": "object",
+  "required": [
+    "schema",
+    "candidate_id",
+    "kind",
+    "basis",
+    "current_state",
+    "claims_digest",
+    "hard_failures"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "change_candidate.v1"
+    },
+    "candidate_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "prompt_version",
+        "retrieval_method",
+        "harness_patch",
+        "model_version"
+      ]
+    },
+    "basis": {
+      "type": "string",
+      "enum": [
+        "same_batch",
+        "held_in",
+        "held_out"
+      ]
+    },
+    "current_state": {
+      "type": "string",
+      "enum": [
+        "proposed",
+        "screened",
+        "confirmed",
+        "rejected"
+      ]
+    },
+    "claims_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "hard_failures": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*$",
+        "maxLength": 64
+      }
+    }
+  }
+}

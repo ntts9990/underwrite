@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:release_inspection_error.v1",
+  "title": "release_inspection_error.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "code",
+    "reason",
+    "location",
+    "next_action",
+    "retryable",
+    "exit_code"
+  ],
+  "properties": {
+    "schema": {
+      "const": "release_inspection_error.v1"
+    },
+    "code": {
+      "enum": [
+        "INVALID_MANIFEST",
+        "INVALID_SOURCE",
+        "INPUT_LIMIT_EXCEEDED",
+        "OUTPUT_LIMIT_EXCEEDED",
+        "SOURCE_READ_FAILED",
+        "SCHEMA_CONFIGURATION_ERROR",
+        "USAGE_ERROR",
+        "INVALID_ARTIFACT_PATH",
+        "UNSUPPORTED_PLATFORM",
+        "INTERNAL_ERROR"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]*(?![\\s\\S])",
+      "maxLength": 80
+    },
+    "location": {
+      "type": "string",
+      "pattern": "^(?:|/subject(?:/(?:target|version|environment|evalset|evalset_version|conditions))?|/requirements(?:/(?:0|[1-9][0-9]*))?|/evidence(?:/(?:0|[1-9][0-9]*)(?:/(?:declared(?:/(?:target|version|environment|evalset|evalset_version|conditions))?|case(?:/(?:artifact(?:/(?:path|expected_hash))?|source(?:/(?:format|format_version|ref|locator))?))?))?)?)(?![\\s\\S])"
+    },
+    "next_action": {
+      "enum": [
+        "CORRECT_MANIFEST",
+        "PROVIDE_REGULAR_LOCAL_FILE",
+        "REINSTALL_PACKAGE",
+        "USE_SUPPORTED_PLATFORM",
+        "REPORT_INTERNAL_ERROR",
+        "CORRECT_ARTIFACT",
+        "REDUCE_BATCH_SIZE"
+      ]
+    },
+    "retryable": {
+      "const": false
+    },
+    "exit_code": {
+      "const": 2
+    }
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "source_record": "SOURCE.md",
+  "capture_kind": "sanitized_tool_payload_example",
+  "tool": {
+    "name": "openinference-semantic-conventions",
+    "version": "0.1.38",
+    "commit": "5df9166304f9bf3ba93a146c879c25b7d43d0eba",
+    "spec_last_change_commit": "1049e83c7613ca385a52b86401366b73ee766d22",
+    "repository_main_commit": "812f6877d5e3e353be4ecceaf9b51896347569a0",
+    "license": "Apache-2.0",
+    "envelope_writer": "otelcol-contrib 0.160.0 (pdata@v1.66.0, proto/otlp@v1.11.0), same binary and config as fixtures/golden/external/otlp-json",
+    "envelope_writer_binary_sha256": "ceb5309ba16f2587dbef765d54e15c803354d038b0495b0b691e1eb9876d17c9",
+    "producer_sdk": "opentelemetry-sdk==1.44.0 + opentelemetry-exporter-otlp-proto-http==1.44.0; openinference-semantic-conventions==0.1.38 for attribute names"
+  },
+  "files": {
+    "capture.json": {
+      "source": {
+        "format": "openinference.traces",
+        "format_version": "0.1.38"
+      },
+      "ref": "sha256:a97fd5a771fd678fac58020d37b432d6ce472c1518fdfe4bcf1e1acbe9cf7695",
+      "raw_hash": "sha256:a97fd5a771fd678fac58020d37b432d6ce472c1518fdfe4bcf1e1acbe9cf7695",
+      "observation_digest": "sha256:aa1bfa385ec66a33fa958b7b1259fb8f9d5c35468619cc77d40c8602eab2b9ae"
+    }
+  },
+  "recipe": {
+    "capture-config.yaml": {
+      "sha256": "70dde6454ce47374b8f1de3d571e5b46a12820c73a222f7f64025d82b2665c04"
+    },
+    "sample_trace.py": {
+      "sha256": "4f0a2b8dd4386fcaa58a2dd4d99f8185dcd984b4d692da6c2e67f87be22cb44b"
+    }
+  }
+}

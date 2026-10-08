@@ -1,0 +1,20 @@
+{
+  "base_policy": "policy-source-3.json",
+  "observed_raw_ece": 0.07000000000000006,
+  "observed_panel_score": 0.5,
+  "assumption": "Same unchanged cases; score declared as prediction of case passes, not a validated vendor forecast.",
+  "variants": [
+    {"name": "ece-pass-below", "calibration": {"pass_ece": 0.07000000000000005, "warn_ece": 1.0}},
+    {"name": "ece-pass-equal", "calibration": {"pass_ece": 0.07000000000000006, "warn_ece": 1.0}},
+    {"name": "ece-pass-above", "calibration": {"pass_ece": 0.07000000000000008, "warn_ece": 1.0}},
+    {"name": "ece-warn-below", "calibration": {"pass_ece": 0.0, "warn_ece": 0.07000000000000005}},
+    {"name": "ece-warn-equal", "calibration": {"pass_ece": 0.0, "warn_ece": 0.07000000000000006}},
+    {"name": "ece-warn-above", "calibration": {"pass_ece": 0.0, "warn_ece": 0.07000000000000008}},
+    {"name": "panel-pass-below", "panel": {"pass_at": 0.49999999999999994, "warn_at": 0.4}},
+    {"name": "panel-pass-equal", "panel": {"pass_at": 0.5, "warn_at": 0.4}},
+    {"name": "panel-pass-above", "panel": {"pass_at": 0.5000000000000001, "warn_at": 0.4}},
+    {"name": "panel-warn-below", "panel": {"pass_at": 1.0, "warn_at": 0.49999999999999994}},
+    {"name": "panel-warn-equal", "panel": {"pass_at": 1.0, "warn_at": 0.5}},
+    {"name": "panel-warn-above", "panel": {"pass_at": 1.0, "warn_at": 0.5000000000000001}}
+  ]
+}

@@ -1,0 +1,337 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:acceptance_decision.v1",
+  "title": "acceptance_decision.v1",
+  "description": "One candidate's digest-bound acceptance classification and projected lifecycle. Human review is always required, merge_authorized and basis_verified stay false. Each required claim carries its supplied read summary or null when absent. Limitations disclose unchecked properties. Selection records the author-declared split. Thresholds belong to the measurement policy and reads, not this decision.",
+  "type": "object",
+  "required": [
+    "schema",
+    "candidate_id",
+    "basis",
+    "classification",
+    "from_state",
+    "next_state",
+    "reason_codes",
+    "claims",
+    "inputs",
+    "selection",
+    "limitations",
+    "human_review",
+    "merge_authorized",
+    "basis_verified"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "acceptance_decision.v1"
+    },
+    "candidate_id": {
+      "$ref": "#/$defs/id"
+    },
+    "basis": {
+      "type": "string",
+      "enum": [
+        "same_batch",
+        "held_in",
+        "held_out"
+      ]
+    },
+    "classification": {
+      "type": "string",
+      "enum": [
+        "screened",
+        "confirmed",
+        "indeterminate",
+        "rejected"
+      ]
+    },
+    "from_state": {
+      "$ref": "#/$defs/state"
+    },
+    "next_state": {
+      "$ref": "#/$defs/state"
+    },
+    "reason_codes": {
+      "type": "array",
+      "minItems": 1,
+      "description": "In precedence order (decision-contract.ts ACCEPTANCE_REASON_ORDER).",
+      "items": {
+        "type": "string",
+        "enum": [
+          "hard_failure",
+          "disqualifying_claim_failed",
+          "validity_claim_failed",
+          "missing_required_claim",
+          "claim_warn",
+          "claim_not_measured",
+          "stage_screened",
+          "stage_confirmed",
+          "lifecycle_ineligible"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "claims": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "description": "The basis's required claims, sorted by claim_id.",
+      "items": {
+        "$ref": "#/$defs/claim"
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "required": [
+        "claims_digest",
+        "candidate_digest",
+        "read_digests"
+      ],
+      "additionalProperties": false,
+      "description": "Identity of what was classified. Digests establish identity, not authority, provenance or preregistration.",
+      "properties": {
+        "claims_digest": {
+          "$ref": "#/$defs/sha256_digest"
+        },
+        "candidate_digest": {
+          "$ref": "#/$defs/sha256_digest"
+        },
+        "read_digests": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/sha256_digest"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "selection": {
+      "type": "object",
+      "required": [
+        "confirm_fraction",
+        "case_count"
+      ],
+      "additionalProperties": false,
+      "description": "The declared split the selection cases were checked under (limitation split_parameters_author_chosen). A decision exists only when no selection case fell in confirm; how much that says depends on case_count x confirm_fraction, which a tiny author-chosen fraction makes vacuous.",
+      "properties": {
+        "confirm_fraction": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "case_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 128000
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "basis_self_declared",
+          "claims_sealing_is_digest_binding",
+          "split_parameters_author_chosen",
+          "reads_trusted_as_supplied",
+          "read_not_bound_to_candidate",
+          "hard_failures_declared",
+          "escalate_not_decisive",
+          "measured_fail_under_partial_availability"
+        ]
+      },
+      "uniqueItems": true,
+      "allOf": [
+        {
+          "contains": {
+            "const": "basis_self_declared"
+          }
+        },
+        {
+          "contains": {
+            "const": "claims_sealing_is_digest_binding"
+          }
+        },
+        {
+          "contains": {
+            "const": "split_parameters_author_chosen"
+          }
+        },
+        {
+          "contains": {
+            "const": "reads_trusted_as_supplied"
+          }
+        },
+        {
+          "contains": {
+            "const": "read_not_bound_to_candidate"
+          }
+        },
+        {
+          "contains": {
+            "const": "hard_failures_declared"
+          }
+        },
+        {
+          "contains": {
+            "const": "escalate_not_decisive"
+          }
+        }
+      ]
+    },
+    "human_review": {
+      "const": "required"
+    },
+    "merge_authorized": {
+      "const": false
+    },
+    "basis_verified": {
+      "const": false
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "sha256_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "proposed",
+        "screened",
+        "confirmed",
+        "rejected"
+      ]
+    },
+    "read_reason_codes": {
+      "type": "array",
+      "description": "Copied from read.v1 $defs.reason_codes (bound by test); carried verbatim from the digest-bound read.",
+      "items": {
+        "type": "string",
+        "enum": [
+          "below_quorum",
+          "required_instrument_missing",
+          "required_instrument_error",
+          "cell_below_min_n",
+          "bin_below_min_n",
+          "n_below_k",
+          "wealth_absorbed",
+          "no_observations",
+          "signal_not_measured"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "claim": {
+      "type": "object",
+      "required": [
+        "claim_id",
+        "subject_id",
+        "effect",
+        "policy_digest",
+        "read"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "claim_id": {
+          "$ref": "#/$defs/id"
+        },
+        "subject_id": {
+          "$ref": "#/$defs/id"
+        },
+        "effect": {
+          "type": "string",
+          "enum": [
+            "disqualifying",
+            "validity"
+          ]
+        },
+        "policy_digest": {
+          "$ref": "#/$defs/sha256_digest"
+        },
+        "read": {
+          "description": "The bound read's summary, or null when the claim has no read (missing_required_claim). The three shapes are disjoint (null, verdict not_measured, measured verdict), so if/then/else selects one without oneOf's exhaustive branch evaluation.",
+          "if": {
+            "type": "null"
+          },
+          "else": {
+            "if": {
+              "properties": {
+                "verdict": {
+                  "const": "not_measured"
+                }
+              }
+            },
+            "then": {
+              "$ref": "#/$defs/not_measured_read"
+            },
+            "else": {
+              "$ref": "#/$defs/measured_read"
+            }
+          }
+        }
+      }
+    },
+    "measured_read": {
+      "type": "object",
+      "required": [
+        "digest",
+        "verdict",
+        "escalate",
+        "reason_codes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "$ref": "#/$defs/sha256_digest"
+        },
+        "verdict": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "warn",
+            "fail"
+          ]
+        },
+        "escalate": {
+          "type": "boolean"
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/read_reason_codes"
+        }
+      }
+    },
+    "not_measured_read": {
+      "type": "object",
+      "required": [
+        "digest",
+        "verdict",
+        "escalate",
+        "reason_codes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "$ref": "#/$defs/sha256_digest"
+        },
+        "verdict": {
+          "const": "not_measured"
+        },
+        "escalate": {
+          "type": "boolean"
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/read_reason_codes",
+          "minItems": 1
+        }
+      }
+    }
+  }
+}

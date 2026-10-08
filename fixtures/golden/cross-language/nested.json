@@ -1,0 +1,5 @@
+{
+  "schema": "cross-language-nested/v1",
+  "items": [1, "plain", true, null, {"inner_list": [1, 2, 3], "inner_flag": false}],
+  "map": {"a": {"b": {"c": ["deep", 1.5]}}, "korean": "안녕", "count": 3}
+}

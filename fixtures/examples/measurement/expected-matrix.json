@@ -1,0 +1,667 @@
+{
+  "runs": [
+    {
+      "read": {
+        "verdict": "pass",
+        "score": 1.0,
+        "escalate": true,
+        "reason_codes": [],
+        "signals": [
+          {
+            "method": "beta_mixture_eprocess",
+            "instrument": "deepeval",
+            "availability": "measured",
+            "verdict": "warn",
+            "score": 0.0,
+            "confidence": 1,
+            "e_value": 0.6666666666666667,
+            "null_id": "micro_pass_rate@p0=0.5",
+            "reason_codes": []
+          },
+          {
+            "method": "calibration",
+            "instrument": "deepeval",
+            "availability": "measured",
+            "verdict": "pass",
+            "score": 0.93,
+            "confidence": 1,
+            "e_value": null,
+            "null_id": null,
+            "reason_codes": []
+          }
+        ],
+        "eprocess": {
+          "method": "beta_mixture_eprocess",
+          "availability": "measured",
+          "e_value": 0.6666666666666667,
+          "e_upper": 0.9166666666666667,
+          "e_lower": 0.4166666666666667,
+          "pass_e": 20.0,
+          "stop_reason": "complete",
+          "stopped_sequence": 3,
+          "observations_used": 3,
+          "observations_total": 3,
+          "trials_used": 3,
+          "cost_used": 0.0,
+          "max_observations": null,
+          "max_cost": null,
+          "null_id": "micro_pass_rate@p0=0.5",
+          "reason_codes": []
+        },
+        "jury": {
+          "combine": "mean",
+          "availability": "measured",
+          "e_value": 0.6666666666666667,
+          "disagreement": 0.6309297535714574,
+          "members": 1,
+          "independence": null,
+          "reason_codes": []
+        },
+        "calibration": {
+          "brier": {
+            "availability": "measured",
+            "value": 0.06296666666666666,
+            "n": 3,
+            "reason_codes": []
+          },
+          "ece": {
+            "availability": "measured",
+            "value": 0.07000000000000006,
+            "n": 3,
+            "reason_codes": [],
+            "bins": 1,
+            "min_bin_n": 1
+          },
+          "pass_k": {
+            "availability": "measured",
+            "value": 0.6666666666666666,
+            "n": 3,
+            "reason_codes": [],
+            "k": 1
+          }
+        },
+        "availability": {
+          "required_instruments": [
+            "deepeval"
+          ],
+          "quorum": 1,
+          "available": [
+            "deepeval"
+          ],
+          "missing": [],
+          "state": "full",
+          "triggered": false
+        },
+        "schema": "read.v1",
+        "subject": {
+          "conditions": {},
+          "subject_id": "example-subject"
+        },
+        "seed": 42,
+        "sources": {
+          "observations": [
+            "sha256:2385c69ec550e9d9d8a1f46bffdca87983c76e7e895aba907255f6957a47a90a"
+          ],
+          "policy": "sha256:a4a864103d80cf4b330b768f8655b14b1aa2a638e42c837bbcd3f013ff9c846f"
+        },
+        "strata": []
+      },
+      "raw_e_value": 0.6666666666666667
+    },
+    {
+      "read": {
+        "verdict": "warn",
+        "score": 1.0,
+        "escalate": true,
+        "reason_codes": [
+          "required_instrument_error"
+        ],
+        "signals": [
+          {
+            "method": "beta_mixture_eprocess",
+            "instrument": "deepeval",
+            "availability": "measured",
+            "verdict": "warn",
+            "score": 0.0,
+            "confidence": 1,
+            "e_value": 0.6666666666666667,
+            "null_id": "micro_pass_rate@p0=0.5",
+            "reason_codes": []
+          },
+          {
+            "method": "calibration",
+            "instrument": "deepeval",
+            "availability": "measured",
+            "verdict": "pass",
+            "score": 0.93,
+            "confidence": 1,
+            "e_value": null,
+            "null_id": null,
+            "reason_codes": []
+          }
+        ],
+        "eprocess": {
+          "method": "beta_mixture_eprocess",
+          "availability": "measured",
+          "e_value": 0.6666666666666667,
+          "e_upper": 0.9166666666666667,
+          "e_lower": 0.4166666666666667,
+          "pass_e": 20.0,
+          "stop_reason": "complete",
+          "stopped_sequence": 3,
+          "observations_used": 3,
+          "observations_total": 3,
+          "trials_used": 3,
+          "cost_used": 0.0,
+          "max_observations": null,
+          "max_cost": null,
+          "null_id": "micro_pass_rate@p0=0.5",
+          "reason_codes": []
+        },
+        "jury": {
+          "combine": "mean",
+          "availability": "measured",
+          "e_value": 0.6666666666666667,
+          "disagreement": 0.6309297535714574,
+          "members": 1,
+          "independence": null,
+          "reason_codes": []
+        },
+        "calibration": {
+          "brier": {
+            "availability": "measured",
+            "value": 0.06296666666666666,
+            "n": 3,
+            "reason_codes": []
+          },
+          "ece": {
+            "availability": "measured",
+            "value": 0.07000000000000006,
+            "n": 3,
+            "reason_codes": [],
+            "bins": 1,
+            "min_bin_n": 1
+          },
+          "pass_k": {
+            "availability": "measured",
+            "value": 0.6666666666666666,
+            "n": 3,
+            "reason_codes": [],
+            "k": 1
+          }
+        },
+        "availability": {
+          "required_instruments": [
+            "deepeval",
+            "inspect"
+          ],
+          "quorum": 1,
+          "available": [
+            "deepeval"
+          ],
+          "missing": [
+            "inspect"
+          ],
+          "state": "partial",
+          "triggered": true
+        },
+        "schema": "read.v1",
+        "subject": {
+          "conditions": {},
+          "subject_id": "example-subject"
+        },
+        "seed": 42,
+        "sources": {
+          "observations": [
+            "sha256:2385c69ec550e9d9d8a1f46bffdca87983c76e7e895aba907255f6957a47a90a"
+          ],
+          "policy": "sha256:4c75c222211fca9131fa0f701e780b50a4cf5dace53bfc2c08508a869f7d2d8d"
+        },
+        "strata": []
+      },
+      "raw_e_value": 0.6666666666666667
+    },
+    {
+      "read": {
+        "verdict": "warn",
+        "score": 0.5,
+        "escalate": true,
+        "reason_codes": [],
+        "signals": [
+          {
+            "method": "beta_mixture_eprocess",
+            "instrument": "deepeval",
+            "availability": "measured",
+            "verdict": "warn",
+            "score": 0.0,
+            "confidence": 1,
+            "e_value": 0.6666666666666667,
+            "null_id": "micro_pass_rate@p0=0.5",
+            "reason_codes": []
+          },
+          {
+            "method": "calibration",
+            "instrument": "deepeval",
+            "availability": "measured",
+            "verdict": "warn",
+            "score": 0.93,
+            "confidence": 1,
+            "e_value": null,
+            "null_id": null,
+            "reason_codes": []
+          }
+        ],
+        "eprocess": {
+          "method": "beta_mixture_eprocess",
+          "availability": "measured",
+          "e_value": 0.6666666666666667,
+          "e_upper": 0.9166666666666667,
+          "e_lower": 0.4166666666666667,
+          "pass_e": 20.0,
+          "stop_reason": "complete",
+          "stopped_sequence": 3,
+          "observations_used": 3,
+          "observations_total": 3,
+          "trials_used": 3,
+          "cost_used": 0.0,
+          "max_observations": null,
+          "max_cost": null,
+          "null_id": "micro_pass_rate@p0=0.5",
+          "reason_codes": []
+        },
+        "jury": {
+          "combine": "mean",
+          "availability": "measured",
+          "e_value": 0.6666666666666667,
+          "disagreement": 0.0,
+          "members": 1,
+          "independence": null,
+          "reason_codes": []
+        },
+        "calibration": {
+          "brier": {
+            "availability": "measured",
+            "value": 0.06296666666666666,
+            "n": 3,
+            "reason_codes": []
+          },
+          "ece": {
+            "availability": "measured",
+            "value": 0.07000000000000006,
+            "n": 3,
+            "reason_codes": [],
+            "bins": 1,
+            "min_bin_n": 1
+          },
+          "pass_k": {
+            "availability": "measured",
+            "value": 0.6666666666666666,
+            "n": 3,
+            "reason_codes": [],
+            "k": 1
+          }
+        },
+        "availability": {
+          "required_instruments": [
+            "deepeval"
+          ],
+          "quorum": 1,
+          "available": [
+            "deepeval"
+          ],
+          "missing": [],
+          "state": "full",
+          "triggered": false
+        },
+        "schema": "read.v1",
+        "subject": {
+          "conditions": {},
+          "subject_id": "example-subject"
+        },
+        "seed": 42,
+        "sources": {
+          "observations": [
+            "sha256:2385c69ec550e9d9d8a1f46bffdca87983c76e7e895aba907255f6957a47a90a"
+          ],
+          "policy": "sha256:dfb4efa7ab2721875efdaa9557c2cf743aa93295e22b48549309955cb45b3f3e"
+        },
+        "strata": []
+      },
+      "raw_e_value": 0.6666666666666667
+    },
+    {
+      "read": {
+        "verdict": "warn",
+        "score": 0.5,
+        "escalate": true,
+        "reason_codes": [
+          "required_instrument_error"
+        ],
+        "signals": [
+          {
+            "method": "beta_mixture_eprocess",
+            "instrument": "deepeval",
+            "availability": "measured",
+            "verdict": "warn",
+            "score": 0.0,
+            "confidence": 1,
+            "e_value": 0.6666666666666667,
+            "null_id": "micro_pass_rate@p0=0.5",
+            "reason_codes": []
+          },
+          {
+            "method": "calibration",
+            "instrument": "deepeval",
+            "availability": "measured",
+            "verdict": "warn",
+            "score": 0.93,
+            "confidence": 1,
+            "e_value": null,
+            "null_id": null,
+            "reason_codes": []
+          }
+        ],
+        "eprocess": {
+          "method": "beta_mixture_eprocess",
+          "availability": "measured",
+          "e_value": 0.6666666666666667,
+          "e_upper": 0.9166666666666667,
+          "e_lower": 0.4166666666666667,
+          "pass_e": 20.0,
+          "stop_reason": "complete",
+          "stopped_sequence": 3,
+          "observations_used": 3,
+          "observations_total": 3,
+          "trials_used": 3,
+          "cost_used": 0.0,
+          "max_observations": null,
+          "max_cost": null,
+          "null_id": "micro_pass_rate@p0=0.5",
+          "reason_codes": []
+        },
+        "jury": {
+          "combine": "mean",
+          "availability": "measured",
+          "e_value": 0.6666666666666667,
+          "disagreement": 0.0,
+          "members": 1,
+          "independence": null,
+          "reason_codes": []
+        },
+        "calibration": {
+          "brier": {
+            "availability": "measured",
+            "value": 0.06296666666666666,
+            "n": 3,
+            "reason_codes": []
+          },
+          "ece": {
+            "availability": "measured",
+            "value": 0.07000000000000006,
+            "n": 3,
+            "reason_codes": [],
+            "bins": 1,
+            "min_bin_n": 1
+          },
+          "pass_k": {
+            "availability": "measured",
+            "value": 0.6666666666666666,
+            "n": 3,
+            "reason_codes": [],
+            "k": 1
+          }
+        },
+        "availability": {
+          "required_instruments": [
+            "deepeval",
+            "inspect"
+          ],
+          "quorum": 1,
+          "available": [
+            "deepeval"
+          ],
+          "missing": [
+            "inspect"
+          ],
+          "state": "partial",
+          "triggered": true
+        },
+        "schema": "read.v1",
+        "subject": {
+          "conditions": {},
+          "subject_id": "example-subject"
+        },
+        "seed": 42,
+        "sources": {
+          "observations": [
+            "sha256:2385c69ec550e9d9d8a1f46bffdca87983c76e7e895aba907255f6957a47a90a"
+          ],
+          "policy": "sha256:2ba57f37d47a26dab80795e388490568f386e4203687962d878e43c3f9333e5b"
+        },
+        "strata": []
+      },
+      "raw_e_value": 0.6666666666666667
+    },
+    {
+      "read": {
+        "verdict": "fail",
+        "score": 0.0,
+        "escalate": true,
+        "reason_codes": [],
+        "signals": [
+          {
+            "method": "beta_mixture_eprocess",
+            "instrument": "deepeval",
+            "availability": "measured",
+            "verdict": "warn",
+            "score": 0.0,
+            "confidence": 1,
+            "e_value": 0.6666666666666667,
+            "null_id": "micro_pass_rate@p0=0.5",
+            "reason_codes": []
+          },
+          {
+            "method": "calibration",
+            "instrument": "deepeval",
+            "availability": "measured",
+            "verdict": "fail",
+            "score": 0.93,
+            "confidence": 1,
+            "e_value": null,
+            "null_id": null,
+            "reason_codes": []
+          }
+        ],
+        "eprocess": {
+          "method": "beta_mixture_eprocess",
+          "availability": "measured",
+          "e_value": 0.6666666666666667,
+          "e_upper": 0.9166666666666667,
+          "e_lower": 0.4166666666666667,
+          "pass_e": 20.0,
+          "stop_reason": "complete",
+          "stopped_sequence": 3,
+          "observations_used": 3,
+          "observations_total": 3,
+          "trials_used": 3,
+          "cost_used": 0.0,
+          "max_observations": null,
+          "max_cost": null,
+          "null_id": "micro_pass_rate@p0=0.5",
+          "reason_codes": []
+        },
+        "jury": {
+          "combine": "mean",
+          "availability": "measured",
+          "e_value": 0.6666666666666667,
+          "disagreement": 0.6309297535714574,
+          "members": 1,
+          "independence": null,
+          "reason_codes": []
+        },
+        "calibration": {
+          "brier": {
+            "availability": "measured",
+            "value": 0.06296666666666666,
+            "n": 3,
+            "reason_codes": []
+          },
+          "ece": {
+            "availability": "measured",
+            "value": 0.07000000000000006,
+            "n": 3,
+            "reason_codes": [],
+            "bins": 1,
+            "min_bin_n": 1
+          },
+          "pass_k": {
+            "availability": "measured",
+            "value": 0.6666666666666666,
+            "n": 3,
+            "reason_codes": [],
+            "k": 1
+          }
+        },
+        "availability": {
+          "required_instruments": [
+            "deepeval"
+          ],
+          "quorum": 1,
+          "available": [
+            "deepeval"
+          ],
+          "missing": [],
+          "state": "full",
+          "triggered": false
+        },
+        "schema": "read.v1",
+        "subject": {
+          "conditions": {},
+          "subject_id": "example-subject"
+        },
+        "seed": 42,
+        "sources": {
+          "observations": [
+            "sha256:2385c69ec550e9d9d8a1f46bffdca87983c76e7e895aba907255f6957a47a90a"
+          ],
+          "policy": "sha256:c7ceafd70cf9b6c71300b2436b592b79f7c4bdeed92f3657ed1a8464b0206e5d"
+        },
+        "strata": []
+      },
+      "raw_e_value": 0.6666666666666667
+    },
+    {
+      "read": {
+        "verdict": "fail",
+        "score": 0.0,
+        "escalate": true,
+        "reason_codes": [
+          "required_instrument_error"
+        ],
+        "signals": [
+          {
+            "method": "beta_mixture_eprocess",
+            "instrument": "deepeval",
+            "availability": "measured",
+            "verdict": "warn",
+            "score": 0.0,
+            "confidence": 1,
+            "e_value": 0.6666666666666667,
+            "null_id": "micro_pass_rate@p0=0.5",
+            "reason_codes": []
+          },
+          {
+            "method": "calibration",
+            "instrument": "deepeval",
+            "availability": "measured",
+            "verdict": "fail",
+            "score": 0.93,
+            "confidence": 1,
+            "e_value": null,
+            "null_id": null,
+            "reason_codes": []
+          }
+        ],
+        "eprocess": {
+          "method": "beta_mixture_eprocess",
+          "availability": "measured",
+          "e_value": 0.6666666666666667,
+          "e_upper": 0.9166666666666667,
+          "e_lower": 0.4166666666666667,
+          "pass_e": 20.0,
+          "stop_reason": "complete",
+          "stopped_sequence": 3,
+          "observations_used": 3,
+          "observations_total": 3,
+          "trials_used": 3,
+          "cost_used": 0.0,
+          "max_observations": null,
+          "max_cost": null,
+          "null_id": "micro_pass_rate@p0=0.5",
+          "reason_codes": []
+        },
+        "jury": {
+          "combine": "mean",
+          "availability": "measured",
+          "e_value": 0.6666666666666667,
+          "disagreement": 0.6309297535714574,
+          "members": 1,
+          "independence": null,
+          "reason_codes": []
+        },
+        "calibration": {
+          "brier": {
+            "availability": "measured",
+            "value": 0.06296666666666666,
+            "n": 3,
+            "reason_codes": []
+          },
+          "ece": {
+            "availability": "measured",
+            "value": 0.07000000000000006,
+            "n": 3,
+            "reason_codes": [],
+            "bins": 1,
+            "min_bin_n": 1
+          },
+          "pass_k": {
+            "availability": "measured",
+            "value": 0.6666666666666666,
+            "n": 3,
+            "reason_codes": [],
+            "k": 1
+          }
+        },
+        "availability": {
+          "required_instruments": [
+            "deepeval",
+            "inspect"
+          ],
+          "quorum": 1,
+          "available": [
+            "deepeval"
+          ],
+          "missing": [
+            "inspect"
+          ],
+          "state": "partial",
+          "triggered": true
+        },
+        "schema": "read.v1",
+        "subject": {
+          "conditions": {},
+          "subject_id": "example-subject"
+        },
+        "seed": 42,
+        "sources": {
+          "observations": [
+            "sha256:2385c69ec550e9d9d8a1f46bffdca87983c76e7e895aba907255f6957a47a90a"
+          ],
+          "policy": "sha256:5eddfb051927e75bd7865cc725eea341fa36622535c196dd0880929bb3601602"
+        },
+        "strata": []
+      },
+      "raw_e_value": 0.6666666666666667
+    }
+  ]
+}

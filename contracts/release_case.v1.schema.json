@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:release_case.v1",
+  "title": "release_case.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "subject",
+    "requirements",
+    "evidence"
+  ],
+  "properties": {
+    "schema": {
+      "const": "release_case.v1"
+    },
+    "subject": {
+      "$ref": "#/$defs/subject"
+    },
+    "requirements": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "format",
+          "format_version"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "format": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "format_version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "requirement",
+          "case"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "requirement": {
+            "$ref": "#/$defs/id"
+          },
+          "case": {
+            "type": "object",
+            "$comment": "schema-alone validation is incomplete: validate each case with the existing packaged artifact_case.v1 schema and Source/path semantics, then release identities, unique IDs and reference syntax before any artifact read."
+          },
+          "declared": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [],
+            "properties": {
+              "target": {
+                "$ref": "#/$defs/identity"
+              },
+              "version": {
+                "$ref": "#/$defs/identity"
+              },
+              "environment": {
+                "$ref": "#/$defs/identity"
+              },
+              "evalset": {
+                "$ref": "#/$defs/identity"
+              },
+              "evalset_version": {
+                "$ref": "#/$defs/identity"
+              },
+              "conditions": {
+                "$ref": "#/$defs/identity"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "identity": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^(?=[\\s\\S]*[^\\s])[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]+(?![\\s\\S])",
+      "$comment": "NFC is enforced by the application semantic validator."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,64}(?![\\s\\S])"
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "version",
+        "environment",
+        "evalset",
+        "evalset_version",
+        "conditions"
+      ],
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/identity"
+        },
+        "version": {
+          "$ref": "#/$defs/identity"
+        },
+        "environment": {
+          "$ref": "#/$defs/identity"
+        },
+        "evalset": {
+          "$ref": "#/$defs/identity"
+        },
+        "evalset_version": {
+          "$ref": "#/$defs/identity"
+        },
+        "conditions": {
+          "$ref": "#/$defs/identity"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:gate_rules.v1",
+  "title": "gate_rules.v1",
+  "description": "Declarative gate-rule conditions and permitted decisions. The loader enforces types, ranges, unique rule ids and canonical decimal bounds. Rule order carries no evaluation meaning. No evaluator is implemented here. Unmatched input is declared Hold; not_measured and indeterminate cannot be matched into authorization.",
+  "type": "object",
+  "required": [
+    "schema",
+    "default",
+    "rules"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "gate_rules.v1"
+    },
+    "default": {
+      "type": "object",
+      "description": "What an unmatched situation decides. Fixed to Hold by design.",
+      "required": [
+        "decision"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "const": "Hold"
+        }
+      }
+    },
+    "rules": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/rule"
+      }
+    }
+  },
+  "$defs": {
+    "rule": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "priority",
+        "when",
+        "decision"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}(?![\\s\\S])"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "hard_gate",
+            "optimization_metric"
+          ],
+          "description": "membership: a hard gate or an optimization metric; their order is the evaluator's."
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000,
+          "description": "Explicit, never taken from list order. Its direction and tie handling are the evaluator's."
+        },
+        "when": {
+          "$ref": "#/$defs/condition"
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "Approve",
+            "Conditional",
+            "Shadow",
+            "HITL-only",
+            "Hold",
+            "Reject",
+            "Rollback"
+          ],
+          "description": "The decision this condition cell permits."
+        }
+      }
+    },
+    "condition": {
+      "type": "object",
+      "description": "Exactly one of all (every predicate holds) or any (at least one holds).",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "all": {
+          "$ref": "#/$defs/predicates"
+        },
+        "any": {
+          "$ref": "#/$defs/predicates"
+        }
+      }
+    },
+    "predicates": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/predicate"
+      }
+    },
+    "predicate": {
+      "type": "object",
+      "description": "Exactly one closed single-key predicate. The four metric names are decision_rule's.",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "read_verdict": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "pass",
+              "warn",
+              "fail"
+            ]
+          },
+          "maxItems": 3,
+          "uniqueItems": true
+        },
+        "acceptance": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "screened",
+              "confirmed",
+              "rejected"
+            ]
+          },
+          "maxItems": 3,
+          "uniqueItems": true
+        },
+        "bootstrap_ci_lower": {
+          "$ref": "#/$defs/bounds"
+        },
+        "bootstrap_ci_upper": {
+          "$ref": "#/$defs/bounds"
+        },
+        "cohens_d": {
+          "$ref": "#/$defs/bounds"
+        },
+        "failure_rate_current": {
+          "$ref": "#/$defs/bounds"
+        }
+      }
+    },
+    "bounds": {
+      "type": "object",
+      "description": "Inclusive bounds, as decision.py. Whether min <= max is checked by the loader.",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "min": {
+          "$ref": "#/$defs/decimal"
+        },
+        "max": {
+          "$ref": "#/$defs/decimal"
+        }
+      }
+    },
+    "decimal": {
+      "type": "string",
+      "description": "A threshold as its one canonical decimal spelling: no -0, no leading or trailing zeros, no exponent, sign only for negatives. Compared exactly, never as a float.",
+      "pattern": "^(?!-0(?![\\s\\S]))-?(0|[1-9][0-9]{0,15})(\\.[0-9]{0,14}[1-9])?(?![\\s\\S])"
+    }
+  }
+}

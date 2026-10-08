@@ -1,0 +1,21 @@
+{
+  "procedure": "Each *.json fixture was canonicalized by the npm `canonicalize` package's own CLI (bin/canonicalize.js, RFC 8785 JCS reference implementation co-authored by RFC 8785 author Anders Rundgren): `node canonicalize/bin/canonicalize.js < <fixture>.json > <fixture>.canonical.bytes`, installed with `npm i --no-save canonicalize` into a scratch directory outside this repository (never committed). The resulting bytes are compared byte-for-byte against underwrite_core.canonical.canonical_bytes(json.load(fixture)) in packages/underwrite-core/tests/test_canonical.py.",
+  "npm_package": "canonicalize",
+  "npm_package_version": "4.0.0",
+  "npm_package_homepage": "https://github.com/erdtman/canonicalize",
+  "node_version": "v26.5.0",
+  "files": {
+    "unicode-keys.json": {
+      "canonical_bytes_file": "unicode-keys.canonical.bytes",
+      "sha256": "b0235f8c42a42e38bfcfd5427cd538881b0841daa9041eb0a924fee792094176"
+    },
+    "numbers.json": {
+      "canonical_bytes_file": "numbers.canonical.bytes",
+      "sha256": "78fe388537f8725f45e84b9f277288424d783090c1bfef956302940f9ec8a066"
+    },
+    "nested.json": {
+      "canonical_bytes_file": "nested.canonical.bytes",
+      "sha256": "6106ee15d7c7717c0cd8052059b48c6f3fff9424c1993eb921bfe5e8326cfb3a"
+    }
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "projectId": "underwrite-capture-project",
+  "exportSource": "EVENTS",
+  "window": {
+    "minTimestamp": "2026-09-14T06:30:36.000Z",
+    "maxTimestamp": "2026-09-14T06:40:00.077Z"
+  },
+  "maxTimestamp": "2026-09-14T06:40:00.077Z",
+  "createdAt": "2026-09-14T07:00:00.117Z",
+  "tables": [
+    "scores",
+    "observations_v2"
+  ],
+  "files": [
+    {
+      "key": "underwrite-export/underwrite-capture-project/scores/2026-09-14T06-40-00.json",
+      "table": "scores",
+      "fileType": "JSON",
+      "format": "json-raw",
+      "compressed": false,
+      "contentType": "application/json; charset=utf-8",
+      "sizeBytes": 2220,
+      "rowCount": 5
+    },
+    {
+      "key": "underwrite-export/underwrite-capture-project/observations_v2/2026-09-14T06-40-00.json",
+      "table": "observations_v2",
+      "fileType": "JSON",
+      "format": "json-raw",
+      "compressed": false,
+      "contentType": "application/json; charset=utf-8",
+      "sizeBytes": 5090,
+      "rowCount": 3
+    }
+  ]
+}

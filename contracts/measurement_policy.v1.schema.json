@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:measurement_policy.v1",
+  "title": "measurement_policy.v1",
+  "description": "Complete, explicit measurement policy with no inferred defaults. Required instruments and quorum bound availability. Sparse stratified cells and calibration views stay not_measured. Brier remains available for valid pairs; pass-to-the-k requires enough samples. The seed references its canonical contract.",
+  "type": "object",
+  "required": [
+    "schema",
+    "required_instruments",
+    "quorum",
+    "min_cell_n",
+    "min_bin_n",
+    "seed"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "measurement_policy.v1"
+    },
+    "required_instruments": {
+      "type": "array",
+      "description": "Instrument names whose measured signal the read requires. Set semantics: unique, order-free. The schema does not tie its length to quorum; the availability module does.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "quorum": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Minimum number of required instruments that must report a measured signal before any read is scored; fewer is not_measured."
+    },
+    "min_cell_n": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Minimum case count per stratum or cell; a cell below it is not_measured."
+    },
+    "min_bin_n": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Minimum points per calibration bin before ECE is reported; below it the ECE view is not_measured and Brier remains."
+    },
+    "seed": {
+      "$ref": "urn:underwrite:contract:statistical_seed.v1"
+    }
+  }
+}
