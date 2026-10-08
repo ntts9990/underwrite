@@ -1,0 +1,150 @@
+name: Publish PyPI
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pypi-publish
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Require the main branch
+        env:
+          RELEASE_REF: ${{ github.ref }}
+        run: test "$RELEASE_REF" = refs/heads/main
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - run: uv python install 3.12
+      - run: uv sync --frozen --all-groups
+      - run: uv run --frozen --no-sync python -m pytest
+      - run: uv run --frozen --no-sync ruff check
+      - run: uv run --frozen --no-sync pyright
+      - run: uv run --frozen --no-sync lint-imports
+      - run: uv run --frozen --no-sync deptry .
+      - name: Use the source commit timestamp for reproducible archives
+        run: echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)" >> "$GITHUB_ENV"
+      - name: Build registry distributions without workspace sources
+        run: uv build --all-packages --no-sources
+      - name: Validate the exact distributions to publish
+        run: |
+          uv run --frozen --no-sync python - <<'PY'
+          from email.parser import BytesParser
+          from pathlib import Path
+          import sys
+          import tarfile
+          import tomllib
+          import zipfile
+
+          sys.path[:0] = ["tests", "tests/gates"]
+          from test_packaged_contracts import check_source, check_sdist, check_wheel, population
+
+          projects = {
+              "underwrite": tomllib.loads(Path("pyproject.toml").read_text())["project"],
+              "underwrite-core": tomllib.loads(Path("packages/underwrite-core/pyproject.toml").read_text())["project"],
+          }
+          expected = {
+              f"{name.replace('-', '_')}-{project['version']}{suffix}"
+              for name, project in projects.items()
+              for suffix in ("-py3-none-any.whl", ".tar.gz")
+          }
+          artifacts = [path for path in Path("dist").iterdir() if path.name != ".gitignore"]
+          assert {path.name for path in artifacts} == expected
+          for path in artifacts:
+              if path.suffix == ".whl":
+                  with zipfile.ZipFile(path) as archive:
+                      members = [name for name in archive.namelist() if name.endswith(".dist-info/METADATA")]
+                      assert len(members) == 1
+                      metadata = BytesParser().parsebytes(archive.read(members[0]))
+              else:
+                  with tarfile.open(path) as archive:
+                      members = [member for member in archive.getmembers() if member.name.count("/") == 1 and member.name.endswith("/PKG-INFO")]
+                      assert len(members) == 1
+                      stream = archive.extractfile(members[0])
+                      assert stream is not None
+                      metadata = BytesParser().parsebytes(stream.read())
+              package = "underwrite-core" if path.name.startswith("underwrite_core-") else "underwrite"
+              assert metadata["Name"] == package
+              assert metadata["Version"] == projects[package]["version"]
+              assert metadata["Requires-Python"] == projects[package]["requires-python"]
+              if package == "underwrite-core":
+                  assert not metadata.get_all("Requires-Dist")
+          version = projects["underwrite"]["version"]
+          for name in population(Path.cwd()):
+              expected_bytes = check_source(Path.cwd(), name)
+              check_wheel(Path(f"dist/underwrite-{version}-py3-none-any.whl"), name, expected_bytes)
+              check_sdist(Path(f"dist/underwrite-{version}.tar.gz"), name, expected_bytes)
+          PY
+      - name: Install both wheels in a clean environment outside the checkout
+        run: |
+          uv venv --python 3.12 "$RUNNER_TEMP/release-smoke"
+          uv pip install --python "$RUNNER_TEMP/release-smoke/bin/python" dist/underwrite_core-*.whl
+          uv pip install --python "$RUNNER_TEMP/release-smoke/bin/python" --find-links dist dist/underwrite-*.whl
+          uv pip check --python "$RUNNER_TEMP/release-smoke/bin/python"
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/release-smoke/bin/underwrite" --help
+          uv run --frozen --no-sync --project "$GITHUB_WORKSPACE" python - "$RUNNER_TEMP/release-smoke/bin/python" <<'PY'
+          import os
+          from pathlib import Path
+          import subprocess
+          import sys
+          import tomllib
+
+          subprocess.run([sys.argv[1], "-I", "-c", """
+          from importlib.metadata import version
+          from importlib.resources import files
+          import json
+          import sys
+          import underwrite_core
+          from jsonschema import Draft202012Validator
+          from underwrite.instrument.ingest.schema import packaged_validator
+
+          assert version('underwrite') == sys.argv[1]
+          assert version('underwrite-core') == sys.argv[2]
+          resources = list(files('underwrite').joinpath('_contracts').iterdir())
+          assert resources
+          for resource in resources:
+              if resource.name.endswith('.schema.json'):
+                  schema = json.loads(resource.read_text())
+                  assert schema['$id'].startswith('urn:underwrite:contract:')
+                  Draft202012Validator.check_schema(schema)
+          packaged_validator('observation.v1')
+          """, *[
+              tomllib.loads((Path(os.environ["GITHUB_WORKSPACE"]) / path).read_text())["project"]["version"]
+              for path in ("pyproject.toml", "packages/underwrite-core/pyproject.toml")
+          ]], check=True)
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pypi-distributions
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: pypi-distributions
+          path: dist
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - name: Publish core first
+        run: uv publish --no-config --trusted-publishing always --check-url https://pypi.org/simple/ dist/underwrite_core-*.whl dist/underwrite_core-*.tar.gz
+      - name: Publish application after core succeeds
+        run: uv publish --no-config --trusted-publishing always --check-url https://pypi.org/simple/ dist/underwrite-*.whl dist/underwrite-*.tar.gz

@@ -8,6 +8,10 @@ license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 dependencies = []
 
+[project.urls]
+Repository = "https://github.com/ntts9990/underwrite"
+Issues = "https://github.com/ntts9990/underwrite/issues"
+
 [build-system]
 requires = ["uv_build>=0.11,<0.12"]
 build-backend = "uv_build"
