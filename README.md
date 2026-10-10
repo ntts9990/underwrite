@@ -4,7 +4,8 @@
 
 **Turn evaluation artifacts into evidence you can inspect.**
 
-Normalize local artifacts, measure under explicit policies, and classify change candidates.
+Inspect supported local artifacts, measure native evidence bundles under explicit
+policies, and classify change candidates from declared reads.
 
 [![CI](https://github.com/ntts9990/underwrite/actions/workflows/ci.yml/badge.svg)](https://github.com/ntts9990/underwrite/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/underwrite)](https://pypi.org/project/underwrite/)
@@ -28,10 +29,15 @@ acceptance policies, while keeping missing evidence visible.
 - **Visible uncertainty.** Keep `not_measured`, `indeterminate`, and `abstained` distinct; inspect the result before acting.
 
 ```text
-Local artifact → ingest → observation → measure + policy → read
-                                                          ↓
-                          candidate + claims + reads → accept → classification
+Native evidence bundle → ingest → observation → measure + policy → read
+Candidate + claims + supplied reads → accept → classification
+
+Supported external export → ingest → observation (source claims and byte identity only)
 ```
+
+A supported external observation does not enter the current measurement path.
+With a valid policy, `measure` returns `UNSUPPORTED_PROFILE` and produces no read. See
+[Agent use](AGENT_USAGE.md) for an explicit example.
 
 A content hash identifies bytes; it does not establish independent provenance.
 Exit `0` means a command produced its result, not that a change is approved.
@@ -52,8 +58,8 @@ standard library; application adapters handle local I/O and schema validation.
 
 ## Quickstart
 
-Run the included synthetic examples from a source checkout. No adjacent repository
-checkout is needed.
+Run the complete native path with the included synthetic example from a source
+checkout. No adjacent repository checkout is needed.
 
 ```sh
 git clone https://github.com/ntts9990/underwrite.git
@@ -171,6 +177,15 @@ source registry is included. Allowlist and exemption evaluation requires explici
 errors rather than passes.
 
 [JSON contracts](contracts/) define each command family's output and errors.
+
+## Development-checkout evidence pilots
+
+This checkout adds `audit-counts`, `compare-declarations`, and `pair-binary` for
+bounded count auditing, declaration comparison, and paired binary evidence.
+They run locally with JSON output and no service. See the reproducible examples
+and limitations in [Agent use](AGENT_USAGE.md#source-checkout-pilot-audit-promptfoo-counts).
+These are unreleased changes; published PyPI `0.0.1` artifacts are unchanged.
+The reports do not grant approval or enter the existing `accept` flow.
 
 ## Contributing
 

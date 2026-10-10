@@ -11,17 +11,23 @@ from pathlib import Path
 
 from underwrite.cli import (
     accept,
+    audit_counts,
     boundary,
     commands,
+    compare_declarations,
     inspection,
     instrument,
     measure,
+    pair_binary,
     release,
     render,
 )
 
 # Commands with their own parser and error envelope; build_parser registers them for help.
 COMMANDS = {
+    "compare-declarations": compare_declarations.main,
+    "pair-binary": pair_binary.main,
+    "audit-counts": audit_counts.main,
     "measure": measure.main,
     "check": release.main,
     "inspect": inspection.main,
@@ -36,6 +42,19 @@ def build_parser() -> argparse.ArgumentParser:
         "ingest", aliases=["project"], help="Project an artifact (project is an explicit alias)."
     )
     instrument.configure(ingest)
+    audit_counts.configure(
+        subparsers.add_parser(
+            "audit-counts", help="Audit declared counts in one supported artifact."
+        )
+    )
+    compare_declarations.configure(
+        subparsers.add_parser(
+            "compare-declarations", help="Compare supplied condition and metric declarations."
+        )
+    )
+    pair_binary.configure(
+        subparsers.add_parser("pair-binary", help="Compute bounded paired binary evidence.")
+    )
     inspection.configure(subparsers.add_parser("inspect", help="Inspect one local artifact case."))
     release.configure(subparsers.add_parser("check", help="Check declared release linkage."))
     measure.configure(subparsers.add_parser("measure", help="Compute one local measurement read."))

@@ -1,0 +1,127 @@
+{
+  "evalId": "synthetic-candidate",
+  "results": {
+    "version": 3,
+    "timestamp": "2026-10-11T00:00:00.000Z",
+    "prompts": [],
+    "results": [
+      {
+        "promptIdx": 0,
+        "testIdx": 0,
+        "testCase": {
+          "vars": {
+            "case": "case-0"
+          }
+        },
+        "promptId": "synthetic-prompt",
+        "provider": {
+          "id": "synthetic-provider",
+          "label": "Synthetic provider"
+        },
+        "prompt": {
+          "raw": "Synthetic prompt",
+          "label": "Synthetic prompt",
+          "id": "synthetic-prompt"
+        },
+        "vars": {
+          "case": "case-0"
+        },
+        "success": true,
+        "failureReason": 0,
+        "score": 1,
+        "latencyMs": 1,
+        "namedScores": {},
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "Synthetic assertion passed",
+          "namedScores": {},
+          "componentResults": []
+        }
+      },
+      {
+        "promptIdx": 0,
+        "testIdx": 1,
+        "testCase": {
+          "vars": {
+            "case": "case-1"
+          }
+        },
+        "promptId": "synthetic-prompt",
+        "provider": {
+          "id": "synthetic-provider",
+          "label": "Synthetic provider"
+        },
+        "prompt": {
+          "raw": "Synthetic prompt",
+          "label": "Synthetic prompt",
+          "id": "synthetic-prompt"
+        },
+        "vars": {
+          "case": "case-1"
+        },
+        "success": true,
+        "failureReason": 0,
+        "score": 1,
+        "latencyMs": 1,
+        "namedScores": {},
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "Synthetic assertion passed",
+          "namedScores": {},
+          "componentResults": []
+        }
+      },
+      {
+        "promptIdx": 0,
+        "testIdx": 2,
+        "testCase": {
+          "vars": {
+            "case": "case-2"
+          }
+        },
+        "promptId": "synthetic-prompt",
+        "provider": {
+          "id": "synthetic-provider",
+          "label": "Synthetic provider"
+        },
+        "prompt": {
+          "raw": "Synthetic prompt",
+          "label": "Synthetic prompt",
+          "id": "synthetic-prompt"
+        },
+        "vars": {
+          "case": "case-2"
+        },
+        "success": false,
+        "failureReason": 2,
+        "score": 0,
+        "latencyMs": 1,
+        "namedScores": {},
+        "error": "Synthetic provider error"
+      }
+    ],
+    "stats": {
+      "successes": 2,
+      "failures": 0,
+      "errors": 1,
+      "tokenUsage": {
+        "prompt": 0,
+        "completion": 0,
+        "cached": 0,
+        "total": 0,
+        "numRequests": 0
+      }
+    }
+  },
+  "config": {},
+  "shareableUrl": null,
+  "metadata": {
+    "promptfooVersion": "0.123.0",
+    "nodeVersion": "synthetic",
+    "platform": "synthetic",
+    "arch": "synthetic",
+    "exportedAt": "2026-10-11T00:00:00.000Z"
+  }
+}

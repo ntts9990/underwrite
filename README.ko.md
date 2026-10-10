@@ -4,7 +4,8 @@
 
 **평가 아티팩트를 검토 가능한 근거로 연결합니다.**
 
-로컬 아티팩트를 정규화하고, 명시적 정책으로 측정하고, 변경 후보를 분류합니다.
+지원되는 로컬 아티팩트를 검사하고, 네이티브 근거 번들을 명시적 정책으로 측정하며,
+선언된 측정 결과를 바탕으로 변경 후보를 분류합니다.
 
 [![CI](https://github.com/ntts9990/underwrite/actions/workflows/ci.yml/badge.svg)](https://github.com/ntts9990/underwrite/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/underwrite)](https://pypi.org/project/underwrite/)
@@ -28,10 +29,15 @@
 - **드러나는 불확실성.** `not_measured`, `indeterminate`, `abstained`를 구분합니다. 행동에 옮기기 전에 결과를 확인하세요.
 
 ```text
-로컬 아티팩트 → ingest → observation → measure + 정책 → read
-                                                       ↓
-                            후보 + 주장 + reads → accept → 분류 결과
+네이티브 근거 번들 → ingest → observation → measure + 정책 → read
+후보 + 주장 + 제공된 reads → accept → 분류 결과
+
+지원되는 외부 export → ingest → observation (원천 주장과 바이트 동일성만 기록)
 ```
+
+지원되는 외부 관측은 현재 측정 경로로 이어지지 않습니다. 유효한 정책을 제공해도
+`measure`는 `UNSUPPORTED_PROFILE`을 반환하며 read를 만들지 않습니다. 구체적인 예시는
+[에이전트 사용 안내](AGENT_USAGE.md)를 참고하세요.
 
 콘텐츠 해시는 바이트의 동일성을 식별하며, 독립적인 출처 증명은 아닙니다.
 종료 코드 `0`은 명령이 결과를 생성했다는 뜻이지, 변경이 승인되었다는 뜻이 아닙니다.
@@ -52,8 +58,8 @@ underwrite --help
 
 ## 빠른 시작
 
-소스 체크아웃에서 포함된 합성 예제를 실행합니다. 인접한 다른 저장소를 체크아웃할
-필요는 없습니다.
+소스 체크아웃에서 포함된 합성 예제로 네이티브 전체 경로를 실행합니다. 인접한
+다른 저장소를 체크아웃할 필요는 없습니다.
 
 ```sh
 git clone https://github.com/ntts9990/underwrite.git
@@ -166,6 +172,15 @@ cat output/malformed.stderr
 통과로 처리하지 않고 구성 오류로 남깁니다.
 
 각 명령 계열의 출력과 오류는 [JSON 계약](contracts/)에 정의되어 있습니다.
+
+## 개발 체크아웃의 근거 검사 파일럿
+
+이 체크아웃에는 집계 검사용 `audit-counts`, 선언 비교용
+`compare-declarations`, 쌍대 이진 근거 계산용 `pair-binary`가 추가되어 있습니다.
+서버 없이 로컬에서 JSON으로 실행합니다. 재현 명령과 한계는
+[에이전트 사용 안내](AGENT_USAGE.md#source-checkout-pilot-audit-promptfoo-counts)에 있습니다.
+아직 릴리스하지 않은 변경이며, 기존 PyPI `0.0.1` 배포물은 그대로입니다.
+이 보고서는 승인을 부여하지 않으며 기존 `accept` 흐름의 입력이 아닙니다.
 
 ## 기여
 

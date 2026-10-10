@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:declared_comparison.v1",
+  "title": "declared_comparison.v1",
+  "description": "Differences and unknowns in supplied declarations, without runtime or semantic verification.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "input_digests", "manifest_digest", "audit_relations", "declared_relation", "actual_conditions_verified", "semantic_equivalence_verified", "differences", "unknowns", "limitations"],
+  "properties": {
+    "schema": {"const": "declared_comparison.v1"},
+    "input_digests": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseline", "candidate"],
+      "properties": {
+        "baseline": {"$ref": "#/$defs/hash"},
+        "candidate": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "manifest_digest": {"$ref": "#/$defs/hash"},
+    "audit_relations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseline", "candidate"],
+      "properties": {
+        "baseline": {"enum": ["consistent", "inconsistent"]},
+        "candidate": {"enum": ["consistent", "inconsistent"]}
+      }
+    },
+    "declared_relation": {"enum": ["same", "different", "unknown"]},
+    "actual_conditions_verified": {"const": false},
+    "semantic_equivalence_verified": {"const": false},
+    "differences": {"type": "array", "maxItems": 20, "items": {"$ref": "#/$defs/difference"}},
+    "unknowns": {"type": "array", "maxItems": 40, "items": {"$ref": "#/$defs/unknown"}},
+    "limitations": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "prefixItems": [
+        {"const": "DECLARATIONS_NOT_EXECUTION_EVIDENCE"},
+        {"const": "DIGEST_BINDING_NOT_PROVENANCE"},
+        {"const": "SAME_NOT_SEMANTIC_EQUIVALENCE"},
+        {"const": "NO_MEASUREMENT_OR_APPROVAL"}
+      ],
+      "items": false
+    }
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "scalar": {"type": ["string", "number", "boolean"], "maxLength": 128, "minimum": -9007199254740991, "maximum": 9007199254740991},
+    "field": {
+      "enum": [
+        "conditions.suite", "conditions.prompt_version", "conditions.model",
+        "conditions.gen_params", "conditions.gen_params.temperature", "conditions.gen_params.top_p",
+        "conditions.gen_params.max_tokens", "conditions.gen_params.think", "conditions.gen_params.seed",
+        "conditions.gen_params.num_ctx", "conditions.gen_params.timeout_s",
+        "metric.name", "metric.unit", "metric.higher_is_better", "metric.scope",
+        "metric.denominator", "metric.aggregation", "metric.evaluator",
+        "metric.evaluator_version", "metric.policy", "metric.threshold"
+      ]
+    },
+    "difference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "baseline", "candidate"],
+      "properties": {
+        "field": {"$ref": "#/$defs/field"},
+        "baseline": {"$ref": "#/$defs/scalar"},
+        "candidate": {"$ref": "#/$defs/scalar"}
+      }
+    },
+    "unknown": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["side", "field", "reason"],
+      "properties": {
+        "side": {"enum": ["baseline", "candidate"]},
+        "field": {"$ref": "#/$defs/field"},
+        "reason": {"enum": ["missing", "unknown"]}
+      }
+    }
+  }
+}

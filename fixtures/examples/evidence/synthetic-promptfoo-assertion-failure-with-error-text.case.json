@@ -1,0 +1,10 @@
+{
+  "schema": "artifact_case.v1",
+  "artifact": {
+    "path": "synthetic-promptfoo-assertion-failure-with-error-text.json"
+  },
+  "source": {
+    "format": "promptfoo.eval-output",
+    "format_version": "0.123.0"
+  }
+}

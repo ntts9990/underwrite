@@ -1,0 +1,228 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:paired_binary_input.v1",
+  "title": "paired_binary_input.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "source",
+    "outcome_definition",
+    "slot_records",
+    "metadata"
+  ],
+  "properties": {
+    "schema": {
+      "const": "paired_binary_input.v1"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "producer",
+        "version",
+        "run_id"
+      ],
+      "properties": {
+        "producer": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "\\S"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "\\S"
+        },
+        "run_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "\\S"
+        }
+      }
+    },
+    "outcome_definition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "positive_means"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "\\S"
+        },
+        "positive_means": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "\\S"
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "pattern": "\\S"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256,
+        "pattern": "\\S"
+      },
+      "required": [
+        "baseline_context_id",
+        "candidate_context_id",
+        "evaluator_id"
+      ]
+    },
+    "primary_case_ids": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "maxItems": 128,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "\\S"
+      },
+      "uniqueItems": true
+    },
+    "planned_slots": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "case_id",
+              "arm",
+              "repeat"
+            ],
+            "properties": {
+              "case_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "\\S"
+              },
+              "arm": {
+                "enum": [
+                  "baseline",
+                  "candidate"
+                ]
+              },
+              "repeat": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1024
+              }
+            }
+          }
+        }
+      ]
+    },
+    "slot_records": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "case_id",
+          "arm",
+          "repeat"
+        ],
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "\\S"
+          },
+          "arm": {
+            "enum": [
+              "baseline",
+              "candidate"
+            ]
+          },
+          "repeat": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1024
+          },
+          "outcome": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "missing_reason": {
+            "enum": [
+              "infra",
+              "verifier",
+              "not_started",
+              "unknown"
+            ]
+          },
+          "source_reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "\\S"
+          }
+        },
+        "oneOf": [
+          {
+            "required": [
+              "outcome"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "missing_reason"
+                  ]
+                },
+                {
+                  "required": [
+                    "source_reason"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "required": [
+              "missing_reason"
+            ],
+            "not": {
+              "required": [
+                "outcome"
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

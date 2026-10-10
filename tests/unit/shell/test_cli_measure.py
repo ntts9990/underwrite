@@ -27,6 +27,25 @@ class Validator(Protocol):
     def validate(self, instance: object) -> None: ...
 
 
+def test_measure_help_states_native_boundary(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as caught:
+        main(["measure", "--help"])
+    assert caught.value.code == 0
+    output = capsys.readouterr()
+    assert output.err == ""
+    help_text = " ".join(output.out.split())
+    for phrase in (
+        "underwrite.evidence-bundle v1",
+        "binary-calibration-two-stage.v1",
+        "rows and availability records require epoch=null and repeat=0",
+        "External observation profiles are unsupported",
+        "UNSUPPORTED_PROFILE with a valid policy",
+        "no read is produced",
+        "Exit 0 means a read was produced, not approval",
+    ):
+        assert phrase in help_text
+
+
 def _load(name: str) -> dict[str, Any]:
     return json.loads((FIXTURES / name).read_bytes())
 

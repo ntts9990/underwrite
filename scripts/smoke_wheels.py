@@ -13,6 +13,7 @@ from typing import cast
 
 ROOT = Path(__file__).resolve().parents[1]
 COMMAND_TIMEOUT = 120
+EVIDENCE_ERROR_EXIT = 2
 
 
 class SmokeFailure(Exception):
@@ -129,6 +130,55 @@ def _check_wheel_origins(venv: Path, wheels: tuple[Path, Path]) -> None:
         )
 
 
+def _evidence_pilots(cli: Path, fixtures: Path, work: Path) -> None:
+    evidence = fixtures / "evidence"
+    audit = _cli_json(
+        cli,
+        ["audit-counts", str(evidence / "synthetic-promptfoo-category-mismatch.case.json")],
+        work / "audit.json",
+        work,
+    )
+    _require(audit.get("declared_relation") == "inconsistent", "count mismatch was hidden")
+    comparison = _cli_json(
+        cli,
+        [
+            "compare-declarations",
+            "--baseline",
+            str(evidence / "baseline-accounting.json"),
+            "--candidate",
+            str(evidence / "candidate-accounting.json"),
+            "--manifest",
+            str(evidence / "comparison-declarations.json"),
+        ],
+        work / "comparison.json",
+        work,
+    )
+    _require(comparison.get("declared_relation") == "different", "declaration mismatch hidden")
+    _require(comparison.get("actual_conditions_verified") is False, "unverified conditions")
+    for fixture, expected in (("complete", "measured"), ("incomplete", "not_measured")):
+        paired = _cli_json(
+            cli,
+            [
+                "pair-binary",
+                "--input",
+                str(evidence / f"synthetic-paired-{fixture}.json"),
+                "--policy",
+                str(evidence / "paired-binary-policy.json"),
+            ],
+            work / f"paired-{fixture}.json",
+            work,
+        )
+        _require(paired.get("schema") == "paired_binary_evidence.v1", "paired schema mismatch")
+        _require(paired.get("status") == expected, "paired missingness was hidden")
+    error = _command([str(cli), "pair-binary", "--json"], work)
+    _require(
+        error.returncode == EVIDENCE_ERROR_EXIT and error.stdout == "",
+        "pilot error channel mismatch",
+    )
+    diagnostic = json.loads(error.stderr)
+    _require(diagnostic.get("schema") == "evidence_error.v1", "pilot error schema mismatch")
+
+
 def _smoke(dist: Path) -> None:
     core_wheel, app_wheel = _wheels(dist)
     fixtures = ROOT / "fixtures/examples"
@@ -140,6 +190,7 @@ def _smoke(dist: Path) -> None:
         wheels = (core_wheel, app_wheel)
         _install_wheels(work, venv, wheels)
         _check_wheel_origins(venv, wheels)
+        _evidence_pilots(cli, fixtures, work)
 
         observation = work / "observation.json"
         observed = _cli_json(
@@ -255,7 +306,7 @@ def main(argv: list[str] | None = None) -> int:
     except (SmokeFailure, OSError, json.JSONDecodeError) as exc:
         print(f"wheel smoke failed: {exc}", file=sys.stderr)
         return 1
-    print("installed wheel quickstart and malformed-input smoke passed")
+    print("installed wheel native/evidence flows and malformed-input smoke passed")
     return 0
 
 

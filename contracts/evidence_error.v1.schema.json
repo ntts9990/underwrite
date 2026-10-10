@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:evidence_error.v1",
+  "title": "evidence_error.v1",
+  "description": "Invocation or input failure of an evidence pilot command. No successful report was emitted. This is not a measurement verdict.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "code", "reason", "location", "next_action", "retryable", "exit_code"],
+  "properties": {
+    "schema": {"const": "evidence_error.v1"},
+    "code": {"enum": ["USAGE_ERROR", "INVALID_INPUT", "SOURCE_READ_FAILED", "INPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED", "UNSUPPORTED_PROFILE", "UNSUPPORTED_FORMAT", "EXPECTED_HASH_MISMATCH", "INVALID_MANIFEST", "INVALID_ARTIFACT_PATH", "SCHEMA_CONFIGURATION_ERROR", "COMPUTATION_LIMIT_EXCEEDED", "INTERNAL_ERROR", "UNSUPPORTED_PLATFORM", "INPUT_BINDING_MISMATCH"]},
+    "reason": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Z][A-Z0-9_]*(?![\\s\\S])"},
+    "location": {"type": "string", "maxLength": 512},
+    "next_action": {"enum": ["CORRECT_ARGUMENTS", "CORRECT_INPUT", "PROVIDE_REGULAR_LOCAL_FILE", "REDUCE_INPUT_SIZE", "USE_SUPPORTED_PROFILE", "CHECK_EXPECTED_HASH", "CORRECT_MANIFEST", "CORRECT_ARTIFACT", "REINSTALL_PACKAGE", "REDUCE_COMPUTATION", "REPORT_INTERNAL_ERROR", "USE_SUPPORTED_PLATFORM", "CORRECT_INPUT_BINDING"]},
+    "retryable": {"const": false},
+    "exit_code": {"const": 2}
+  }
+}

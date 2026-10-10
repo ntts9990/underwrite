@@ -65,13 +65,24 @@ class _Parser(argparse.ArgumentParser):
 
 
 def configure(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--observation", required=True, type=Path, help="Local observation.v1.")
     parser.add_argument(
-        "--policy", required=True, type=Path, help="Complete measurement_policy.v2."
+        "--observation",
+        required=True,
+        type=Path,
+        help="Local observation.v1 from underwrite.evidence-bundle v1.",
+    )
+    parser.add_argument(
+        "--policy",
+        required=True,
+        type=Path,
+        help="Profile binary-calibration-two-stage.v1 in complete measurement_policy.v2.",
     )
     parser.add_argument("--json", action="store_true", help="Canonical read on stdout.")
     parser.description = (
-        "Compute one local measurement; exit 0 means completion, not approval. "
+        "Measure only native underwrite.evidence-bundle v1 eval_run observations. "
+        "Selected rows and availability records require epoch=null and repeat=0. "
+        "External observation profiles are unsupported (UNSUPPORTED_PROFILE with a valid "
+        "policy); no read is produced. Exit 0 means a read was produced, not approval. "
         f"Observation limits: {OBSERVATION_MAX_BYTES} bytes / depth {OBSERVATION_MAX_DEPTH}; "
         f"policy: {POLICY_MAX_BYTES} bytes / depth {POLICY_MAX_DEPTH}; "
         f"output: {OUTPUT_MAX_BYTES} bytes including newline."

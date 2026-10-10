@@ -1,0 +1,102 @@
+{
+  "purpose": "Engineering task cards for UW-01 through UW-05, not a user-adoption study.",
+  "evidence_kind": "synthetic_contract_fixtures",
+  "provenance": "Constructed Promptfoo-shaped fixtures from pinned public source semantics; not actual producer exports or reported upstream bugs. No model calls or private goppi artifacts.",
+  "producer_profile": "promptfoo.eval-output / 0.123.0",
+  "producer_source": "https://github.com/promptfoo/promptfoo/blob/3ec974043eb9941af5b605f6f21f71f24bf46c3c/src/evaluator.ts#L3446-L3454",
+  "product_validation": {
+    "real_user_observations": "not_measured",
+    "market_demand": "not_measured",
+    "review_time_savings": "not_measured",
+    "counterfactual_insight": "not_measured"
+  },
+  "baseline_commands": {
+    "total_counts": "jq '{reported:(.results.stats.successes + .results.stats.failures + .results.stats.errors), rows:(.results.results | length)}' INPUT.json",
+    "category_counts": "jq '.results as $s | ($s.stats | {successes,failures,errors}) as $reported | (reduce $s.results[] as $r ({successes:0,failures:0,errors:0}; if $r.success then .successes+=1 elif $r.failureReason==2 then .errors+=1 else .failures+=1 end)) as $rows | {reported:$reported,rows:$rows,deltas:{successes:($rows.successes-$reported.successes),failures:($rows.failures-$reported.failures),errors:($rows.errors-$reported.errors)}}' INPUT.json"
+  },
+  "tasks": [
+    {
+      "id": "UW01-NATIVE",
+      "question": "What does the existing native positive control establish?",
+      "inputs": [
+        "fixtures/examples/measurement/bundle.json",
+        "fixtures/examples/acceptance/policy-quality.json",
+        "fixtures/examples/acceptance/policy-latency.json"
+      ],
+      "expected": "Existing native reads and screened classification, human review required, merge_authorized false.",
+      "forbidden": "Claim independent provenance or candidate/read authentication from a successful command."
+    },
+    {
+      "id": "UW01-TOTAL",
+      "question": "Do producer totals agree with rows in this supplied file?",
+      "input": "synthetic-promptfoo-count-mismatch.case.json",
+      "expected": {
+        "reported_total": 3,
+        "row_total": 2
+      },
+      "forbidden": "Infer a verified planned population, identify a missing case or determine infrastructure cause."
+    },
+    {
+      "id": "UW01-CATEGORY",
+      "question": "Can matching totals conceal disagreement in success/failure/error categories?",
+      "input": "synthetic-promptfoo-category-mismatch.case.json",
+      "expected": {
+        "reported_total": 3,
+        "row_total": 3,
+        "reported": {
+          "successes": 2,
+          "failures": 1,
+          "errors": 0
+        },
+        "rows": {
+          "successes": 1,
+          "failures": 1,
+          "errors": 1
+        }
+      },
+      "forbidden": "Claim the category check is unavailable from jq or proves a real upstream defect."
+    },
+    {
+      "id": "UW01-ZERO",
+      "question": "Is an observed zero different from an error or absent score?",
+      "inputs": [
+        "synthetic-promptfoo-observed-zero.case.json",
+        "synthetic-promptfoo-provider-error-without-grading.case.json"
+      ],
+      "expected": "Source-specific flags distinguish a failed assertion from an ERROR row; score zero alone does not categorize either."
+    },
+    {
+      "id": "UW01-EMPTY",
+      "question": "Does zero reported and observed rows mean successful evaluation?",
+      "input": "synthetic-promptfoo-empty.case.json",
+      "expected": "Counts can agree at zero; population/quality/approval remains unestablished."
+    },
+    {
+      "id": "UW01-T2",
+      "question": "Which supplied conditions or metric declarations differ, and which remain unknown?",
+      "expected": "Only digest-bound supplied declarations are compared. Matching declarations do not verify runtime conditions or semantic equivalence.",
+      "inputs": [
+        "baseline-accounting.json",
+        "candidate-accounting.json",
+        "comparison-declarations.json"
+      ]
+    },
+    {
+      "id": "UW01-T3",
+      "question": "What paired evidence can be calculated from an explicitly declared complete primary cohort?",
+      "expected": "Use repeat 0 primary pairs only, account extra repeats separately, require at least two complete cases and declared assumptions, and preserve unmeasured states.",
+      "inputs": [
+        "synthetic-paired-complete.json",
+        "synthetic-paired-incomplete.json",
+        "synthetic-paired-extra-missing.json",
+        "paired-binary-policy.json"
+      ]
+    }
+  ],
+  "stop_rules": [
+    "No user-adoption claim from synthetic tasks, parsing success, or expected refusal.",
+    "No comparison or causal authority from a matching digest.",
+    "No measured estimate from an incomplete or one-case primary cohort.",
+    "Related regressions and packaging/review findings remain in scope."
+  ]
+}
