@@ -178,6 +178,11 @@ errors rather than passes.
 
 [JSON contracts](contracts/) define each command family's output and errors.
 
+The optional [underwrite-review skill](skills/underwrite-review/SKILL.md) helps a
+coding agent select the existing CLI route for your artifact and explain its
+limits. See [manual setup](AGENT_USAGE.md#optional-artifact-review-skill); it does
+not install a CLI, hook, or background service.
+
 ## Development-checkout evidence pilots
 
 This checkout adds `audit-counts`, `compare-declarations`, and `pair-binary` for

@@ -173,6 +173,11 @@ cat output/malformed.stderr
 
 각 명령 계열의 출력과 오류는 [JSON 계약](contracts/)에 정의되어 있습니다.
 
+선택 설치형 [underwrite-review 스킬](skills/underwrite-review/SKILL.md)은 에이전트가
+제공된 자료에 맞는 CLI 경로를 선택하고 결과와 한계를 설명하도록 돕습니다.
+[수동 설정 안내](AGENT_USAGE.md#optional-artifact-review-skill)를 참고하세요.
+CLI·hook·백그라운드 서비스는 자동으로 설치하지 않습니다.
+
 ## 개발 체크아웃의 근거 검사 파일럿
 
 이 체크아웃에는 집계 검사용 `audit-counts`, 선언 비교용
