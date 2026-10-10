@@ -94,6 +94,49 @@ A public sanitized derivative and its production recipe are documented in
 [the agent guide](AGENT_USAGE.md#local-promptfoo-export-ingest-then-stop-at-the-measurement-boundary);
 that derivative is not the unchanged archived input used in this round.
 
+## Prioritized live-tool checks
+
+After the local study, testing-tool installation was authorized in the order
+goppi, Langfuse, DeepEval, Promptfoo. Each was exercised in an isolated local test
+environment. During Langfuse's mandatory export lag, DeepEval and Promptfoo ran
+while the Langfuse export remained pending; the original event timestamps and
+clock were left unchanged. These checks use freshly executed **synthetic tasks**,
+not customer workloads or a head-to-head ranking of tools with different roles.
+
+| Tool | Actual exercise and outcome | Consumer boundary |
+| --- | --- | --- |
+| goppi `0.1.0-alpha.1`, Node 24.20.0 | Built a tarball from a recorded local committed snapshot, installed it separately, and ran native `try`. `report` exited 0; `gate` exited 2 for `indeterminate`, with 36 aggregate pairs and 0 missing. This is not 36 unique cases. | The gate envelope's completion `exit_code` is 0 while process/quality exit codes are 2. Human review remains required and merge authority is false. No underwrite ingest profile was invented. |
+| Langfuse server `4.35.0`, SDK `4.7.0` | A fresh SDK trace was ingested by a separate server. The worker's completed blob manifest listed 3 observations and 5 scores spanning NUMERIC, BOOLEAN, CATEGORICAL, and TEXT. | Both exact export selectors produced `observation.v1`; raw hashes and canonical payload arrays matched the server files. Null/text score fields were retained. Native `measure` refused the external profile. |
+| DeepEval `4.1.1`, Python 3.12.13 | Three deterministic custom-metric cases produced a real TestRun JSON: 1 passed, 2 failed; producer exit 1 was expected. A scored zero remained distinct from an error metric with no score. | Ingest preserved the raw hash and canonical payload. A valid native policy still produced `UNSUPPORTED_PROFILE`, exit 2, and no read. |
+| Promptfoo `0.123.0`, Node 26.7.0 | A fresh built-in echo evaluation wrote 3 rows with source counts 2 successes, 1 failure, 0 errors; producer exit 100 reflected the intentional failed assertion. | Ingest preserved the raw hash/payload; count audit and jq agreed with zero deltas. Native `measure` correctly refused the external observation. |
+
+The unchanged producer outputs, manifests, command exits, package/image version
+records and file hashes are retained locally. A recorded source commit or matching
+hash is local provenance information, not an independent attestation. Static test
+recipes use no model provider calls; network traffic was not independently
+monitored, so this is not a blanket no-network claim. Installations and Langfuse
+SDK/server interactions did use network and local services.
+
+The existing Langfuse 3.221.0 stack was not relabeled as 4.35.0 or changed. A
+separate, memory-constrained test deployment hit its Node heap limit, so testing
+moved to a dedicated 16 GiB VM. In that server run, exports intentionally excluded
+events newer than 20 minutes. SDK success and S3 validation therefore preceded the
+completed export manifest. The worker ran through the actual authenticated UI
+operation; no fabricated export, direct database mutation, clock change, or
+backdated event was used to force a result. This is test infrastructure, not a
+server/Docker requirement for underwrite.
+
+Public reproduction starting points are the existing
+[DeepEval recipe](fixtures/golden/external/deepeval/sample_eval.py),
+[Langfuse SDK recipe](fixtures/golden/external/langfuse/sample_ingest.py) and
+[pinned image override](fixtures/golden/external/langfuse/docker-compose.override.yml),
+and [Promptfoo recipe](fixtures/golden/external/promptfoo/promptfooconfig.yaml).
+The Langfuse source profile is the server's complete-field-group, uncompressed
+JSON blob export, not an SDK object or REST response; see the
+[official export documentation](https://langfuse.com/docs/api-and-data-platform/features/export-to-blob-storage).
+These narrow successful checks do not establish all-version compatibility,
+independent execution truth, calibrated scores, additional user value, or approval.
+
 ## Consumer requirements for a future producer export
 
 These are requirements of the current underwrite consumer, not a claim that

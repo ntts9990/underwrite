@@ -64,6 +64,24 @@ The skill is guidance for an agent, not an additional validator or authority.
 The examples below exercise constructed or sanitized inputs; they do not prove
 real-user demand or measured review-time savings.
 
+## Get the right producer artifact
+
+Underwrite needs the local export file, not the producer's running service or
+credentials. A successful SDK call is not evidence that an asynchronous export
+is ready; obtain the completed producer artifact and its version context first.
+
+| Producer | Input boundary |
+| --- | --- |
+| goppi | No registered ingest profile yet. Its CLI report is a producer summary, not a native evidence bundle or an inventory of case/arm/repeat outcomes. Do not manufacture those rows from counts. |
+| Langfuse | The supported `4.35.0` denotes the **server export profile**, not the SDK version. Supply the worker's `observations_v2` or `scores` blob-export file as an uncompressed JSON array with the complete field groups. A REST response, Parquet file, or partially selected export is a different shape. Wait for a completed export manifest; SDK flush alone is insufficient. |
+| DeepEval | Supply the `4.1.1` TestRun JSON written by the tool, with the producer version recorded separately. A deliberately failed test run can still write a valid artifact. An observed score of zero is distinct from an errored metric without a score. |
+| Promptfoo | Supply the `0.123.0` eval output JSON (summary version 3). An assertion-failure exit can accompany a valid export. Count auditing additionally uses a supplied `artifact_case.v1` manifest. |
+
+The [producer checks](EVIDENCE_REVIEW.md) distinguish fresh tool-generated
+synthetic evaluations, archived captures, and constructed examples. They test
+these narrow boundaries, not every export or real-user value. No SDK score is
+implicitly a calibrated probability or a permission to merge.
+
 ## Complete native workflow
 
 The [README quickstart](README.md#quickstart) runs `ingest` → `measure` → `accept`
