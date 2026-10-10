@@ -7,6 +7,10 @@ Python API, typed JSON results, and explicit next actions. Do not expand the pro
 into Docker, a server, or a web interface. See [AGENT_USAGE.md](AGENT_USAGE.md)
 for the agent-facing workflow.
 
+Keep package versions unchanged during development. Only bump versions after the
+user explicitly requests a version increase; completing work, passing checks, or
+opening or merging a PR does not authorize a version bump.
+
 - `packages/underwrite-core/src/underwrite_core`: dependency-free integrity primitives.
 - `src/underwrite/instrument/evidence`, `measurement`, `acceptance`, and `adjudication`:
   pure logic importing only the standard library and `underwrite_core`.

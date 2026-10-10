@@ -34,10 +34,14 @@ def _wheels(dist: Path) -> tuple[Path, Path]:
     return pairs[0], pairs[1]
 
 
-def _command(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+def _command(
+    args: list[str], cwd: Path, *, project_environment: Path | None = None
+) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     for name in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV"):
         env.pop(name, None)
+    if project_environment is not None:
+        env["UV_PROJECT_ENVIRONMENT"] = str(project_environment)
     try:
         return subprocess.run(
             args,
@@ -52,8 +56,10 @@ def _command(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
         raise SmokeFailure(f"command timed out after {COMMAND_TIMEOUT}s: {args[0]}") from exc
 
 
-def _success(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-    result = _command(args, cwd)
+def _success(
+    args: list[str], cwd: Path, *, project_environment: Path | None = None
+) -> subprocess.CompletedProcess[str]:
+    result = _command(args, cwd, project_environment=project_environment)
     _require(
         result.returncode == 0,
         f"command failed ({result.returncode}): {args[0]}: {result.stderr[:500]}",
@@ -73,6 +79,56 @@ def _cli_json(cli: Path, args: list[str], output: Path, cwd: Path) -> dict[str, 
     return cast(dict[str, object], document)
 
 
+def _install_wheels(work: Path, venv: Path, wheels: tuple[Path, Path]) -> None:
+    python = venv / "bin/python"
+    _success(
+        [
+            "uv",
+            "sync",
+            "--frozen",
+            "--no-default-groups",
+            "--no-install-workspace",
+            "--project",
+            str(ROOT),
+            "--python",
+            sys.executable,
+        ],
+        work,
+        project_environment=venv,
+    )
+    _success(
+        [
+            "uv",
+            "pip",
+            "install",
+            "--offline",
+            "--no-deps",
+            "--python",
+            str(python),
+            *(str(wheel) for wheel in wheels),
+        ],
+        work,
+        project_environment=venv,
+    )
+    _success(["uv", "pip", "check", "--python", str(python)], work, project_environment=venv)
+
+
+def _check_wheel_origins(venv: Path, wheels: tuple[Path, Path]) -> None:
+    site = (
+        venv / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
+    )
+    for distribution, wheel in zip(("underwrite_core", "underwrite"), wheels, strict=True):
+        records = list(site.glob(f"{distribution}-*.dist-info/direct_url.json"))
+        _require(len(records) == 1, f"expected one installed {distribution} origin record")
+        origin: object = json.loads(records[0].read_text(encoding="utf-8"))
+        _require(isinstance(origin, dict), f"invalid {distribution} origin record")
+        record = cast(dict[str, object], origin)
+        _require(
+            record.get("url") == wheel.as_uri() and "dir_info" not in record,
+            f"{distribution} was not installed from its built wheel",
+        )
+
+
 def _smoke(dist: Path) -> None:
     core_wheel, app_wheel = _wheels(dist)
     fixtures = ROOT / "fixtures/examples"
@@ -80,23 +136,10 @@ def _smoke(dist: Path) -> None:
         work = Path(directory).resolve()
         _require(not work.is_relative_to(ROOT), "temporary directory must be outside checkout")
         venv = work / "venv"
-        python = venv / "bin/python"
         cli = venv / "bin/underwrite"
-        _success(["uv", "venv", "--python", sys.executable, str(venv)], work)
-        _success(
-            [
-                "uv",
-                "pip",
-                "install",
-                "--offline",
-                "--python",
-                str(python),
-                str(core_wheel),
-                str(app_wheel),
-            ],
-            work,
-        )
-        _success(["uv", "pip", "check", "--python", str(python)], work)
+        wheels = (core_wheel, app_wheel)
+        _install_wheels(work, venv, wheels)
+        _check_wheel_origins(venv, wheels)
 
         observation = work / "observation.json"
         observed = _cli_json(
@@ -209,7 +252,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         _smoke(args.dist.resolve())
-    except (SmokeFailure, OSError) as exc:
+    except (SmokeFailure, OSError, json.JSONDecodeError) as exc:
         print(f"wheel smoke failed: {exc}", file=sys.stderr)
         return 1
     print("installed wheel quickstart and malformed-input smoke passed")
