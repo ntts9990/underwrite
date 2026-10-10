@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   checks:
     runs-on: ubuntu-latest
@@ -17,18 +21,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          # PR merge + parents normally includes the base; uncertainty runs full checks.
+          fetch-depth: 2
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - run: uv python install 3.12
-      - run: uv sync --frozen --all-groups
-      - name: Test application, core, and installed package resources
-        run: uv run --frozen --no-sync python -m pytest
-      - run: uv run --frozen --no-sync ruff check
-      - run: uv run --frozen --no-sync pyright
-      - run: uv run --frozen --no-sync lint-imports
-      - run: uv run --frozen --no-sync deptry .
-      - name: Build both distributions
-        run: uv build --all-packages
-      - name: Test pure modules without application dependencies
+      - name: Run the shared local preflight
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          UV_PROJECT_ENVIRONMENT=.venv-pure uv sync --frozen --only-group pure
-          UV_PROJECT_ENVIRONMENT=.venv-pure uv run --frozen --no-sync python -I -m pytest tests/unit/pure packages/underwrite-core/tests
+          if [ "$EVENT_NAME" = pull_request ]; then
+            uv run --frozen --no-sync python scripts/preflight.py --base "$BASE_SHA"
+          else
+            uv run --frozen --no-sync python scripts/preflight.py --mode full
+          fi

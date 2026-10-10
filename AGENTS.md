@@ -7,6 +7,10 @@ Python API, typed JSON results, and explicit next actions. Do not expand the pro
 into Docker, a server, or a web interface. See [AGENT_USAGE.md](AGENT_USAGE.md)
 for the agent-facing workflow.
 
+Keep package versions unchanged during development. Only bump versions after the
+user explicitly requests a version increase; completing work, passing checks, or
+opening or merging a PR does not authorize a version bump.
+
 - `packages/underwrite-core/src/underwrite_core`: dependency-free integrity primitives.
 - `src/underwrite/instrument/evidence`, `measurement`, `acceptance`, and `adjudication`:
   pure logic importing only the standard library and `underwrite_core`.
@@ -19,7 +23,10 @@ states. `not_measured`, `indeterminate`, and `abstained` have different meanings
 never turn missing evidence into a successful verdict. Treat source verdicts as
 source claims and content hashes as byte identity, not independent provenance.
 
-Use `uv sync --frozen --all-groups`, then run `uv run --frozen --no-sync` with
-`python -m pytest`, `ruff check`, `pyright`, `lint-imports`, and `deptry .`.
-Build both distributions with `uv build --all-packages`. Add dependencies only
-when necessary. Do not add scheduled CI workflows.
+Before reporting a change complete, committing, or pushing, use the
+[underwrite-preflight skill](.codex/skills/underwrite-preflight/SKILL.md).
+Run `uv run --frozen --no-sync python scripts/preflight.py` after the final edit;
+the runner owns local and CI check selection. Use `--mode full` for releases.
+Do not treat a plan, stale report, skipped check, or failed run as validation.
+A passing run covers subsequent commit/push of the unchanged files.
+Add dependencies only when necessary. Do not add scheduled CI workflows.
