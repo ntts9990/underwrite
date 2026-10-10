@@ -24,12 +24,8 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - run: uv python install 3.12
-      - run: uv sync --frozen --all-groups
-      - run: uv run --frozen --no-sync python -m pytest
-      - run: uv run --frozen --no-sync ruff check
-      - run: uv run --frozen --no-sync pyright
-      - run: uv run --frozen --no-sync lint-imports
-      - run: uv run --frozen --no-sync deptry .
+      - name: Run the full shared preflight before release builds
+        run: uv run --frozen --no-sync python scripts/preflight.py --mode full
       - name: Use the source commit timestamp for reproducible archives
         run: echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)" >> "$GITHUB_ENV"
       - name: Build registry distributions without workspace sources
