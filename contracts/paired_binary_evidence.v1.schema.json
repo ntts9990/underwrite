@@ -1,0 +1,815 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:paired_binary_evidence.v1",
+  "title": "paired_binary_evidence.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "status",
+    "reason",
+    "input_digest",
+    "policy_digest",
+    "source_claims",
+    "assumptions",
+    "settings",
+    "accounting",
+    "estimate",
+    "limitations"
+  ],
+  "properties": {
+    "schema": {
+      "const": "paired_binary_evidence.v1"
+    },
+    "status": {
+      "enum": [
+        "measured",
+        "not_measured"
+      ]
+    },
+    "reason": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "enum": [
+            "PRIMARY_CASE_INVENTORY_MISSING",
+            "PLANNED_SLOT_INVENTORY_MISSING",
+            "PRIMARY_COHORT_INCOMPLETE",
+            "INSUFFICIENT_PRIMARY_CASES",
+            "ASSUMPTIONS_NOT_DECLARED"
+          ]
+        }
+      ]
+    },
+    "input_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "policy_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "source_claims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "outcome_definition",
+        "metadata",
+        "verified"
+      ],
+      "properties": {
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "producer",
+            "version",
+            "run_id"
+          ],
+          "properties": {
+            "producer": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "\\S"
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "\\S"
+            },
+            "run_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "\\S"
+            }
+          }
+        },
+        "outcome_definition": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "positive_means"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "\\S"
+            },
+            "positive_means": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "\\S"
+            }
+          }
+        },
+        "metadata": {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "\\S"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "\\S"
+          },
+          "required": [
+            "baseline_context_id",
+            "candidate_context_id",
+            "evaluator_id"
+          ]
+        },
+        "verified": {
+          "const": false
+        }
+      }
+    },
+    "assumptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "declared",
+        "verified"
+      ],
+      "properties": {
+        "declared": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "independent_units",
+            "sign_flip_invariance",
+            "fixed_sample"
+          ],
+          "properties": {
+            "independent_units": {
+              "type": "boolean"
+            },
+            "sign_flip_invariance": {
+              "type": "boolean"
+            },
+            "fixed_sample": {
+              "type": "boolean"
+            }
+          }
+        },
+        "verified": {
+          "const": false
+        }
+      }
+    },
+    "settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "seed",
+        "permutation_iterations",
+        "bootstrap_iterations",
+        "confidence",
+        "max_work"
+      ],
+      "properties": {
+        "seed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "permutation_iterations": {
+          "type": "integer",
+          "minimum": 10000,
+          "maximum": 20000
+        },
+        "bootstrap_iterations": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 10000
+        },
+        "confidence": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "max_work": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2000000
+        }
+      }
+    },
+    "accounting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "primary_case_count",
+        "planned_slot_count",
+        "slot_record_count",
+        "primary_repeat_zero",
+        "additional_repeats",
+        "unscoped_repeat_zero",
+        "incomplete_primary_case_ids",
+        "missing_examples",
+        "missing_examples_omitted"
+      ],
+      "properties": {
+        "primary_case_count": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "planned_slot_count": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "slot_record_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4096
+        },
+        "primary_repeat_zero": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "planned",
+            "reported",
+            "observed_one",
+            "observed_zero",
+            "missing_by_reason",
+            "unreported_planned"
+          ],
+          "properties": {
+            "planned": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              ]
+            },
+            "reported": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "observed_one": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "observed_zero": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "missing_by_reason": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "infra",
+                "verifier",
+                "not_started",
+                "unknown"
+              ],
+              "properties": {
+                "infra": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "verifier": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "not_started": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "unknown": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "unreported_planned": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              ]
+            }
+          }
+        },
+        "additional_repeats": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "planned",
+            "reported",
+            "observed_one",
+            "observed_zero",
+            "missing_by_reason",
+            "unreported_planned"
+          ],
+          "properties": {
+            "planned": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              ]
+            },
+            "reported": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "observed_one": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "observed_zero": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "missing_by_reason": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "infra",
+                "verifier",
+                "not_started",
+                "unknown"
+              ],
+              "properties": {
+                "infra": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "verifier": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "not_started": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "unknown": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "unreported_planned": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              ]
+            }
+          }
+        },
+        "unscoped_repeat_zero": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "planned",
+            "reported",
+            "observed_one",
+            "observed_zero",
+            "missing_by_reason",
+            "unreported_planned"
+          ],
+          "properties": {
+            "planned": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              ]
+            },
+            "reported": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "observed_one": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "observed_zero": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "missing_by_reason": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "infra",
+                "verifier",
+                "not_started",
+                "unknown"
+              ],
+              "properties": {
+                "infra": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "verifier": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "not_started": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "unknown": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "unreported_planned": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              ]
+            }
+          }
+        },
+        "incomplete_primary_case_ids": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "\\S"
+          },
+          "uniqueItems": true
+        },
+        "missing_examples": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "case_id",
+              "arm",
+              "repeat",
+              "missing_reason",
+              "source_reason",
+              "source_claim_unverified"
+            ],
+            "properties": {
+              "case_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "\\S"
+              },
+              "arm": {
+                "enum": [
+                  "baseline",
+                  "candidate"
+                ]
+              },
+              "repeat": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1024
+              },
+              "missing_reason": {
+                "enum": [
+                  "infra",
+                  "verifier",
+                  "not_started",
+                  "unknown"
+                ]
+              },
+              "source_reason": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "\\S"
+                  }
+                ]
+              },
+              "source_claim_unverified": {
+                "const": true
+              }
+            }
+          }
+        },
+        "missing_examples_omitted": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "estimate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "n",
+        "effect",
+        "direction",
+        "interval",
+        "p_value",
+        "permutation_method",
+        "permutation_completed",
+        "bootstrap_completed",
+        "reserved_work",
+        "scope",
+        "effect_method",
+        "bootstrap_method"
+      ],
+      "properties": {
+        "n": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "effect": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "number"
+            }
+          ]
+        },
+        "direction": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "negative",
+                "zero",
+                "positive"
+              ]
+            }
+          ]
+        },
+        "interval": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "number"
+              }
+            }
+          ]
+        },
+        "p_value": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "number"
+            }
+          ]
+        },
+        "permutation_method": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "mean-signflip-exact-v1",
+                "mean-signflip-monte-carlo-v1"
+              ]
+            }
+          ]
+        },
+        "permutation_completed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bootstrap_completed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reserved_work": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "scope": {
+          "const": "primary_repeat_zero"
+        },
+        "effect_method": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "const": "mean-paired-difference-v1"
+            }
+          ]
+        },
+        "bootstrap_method": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "const": "percentile-linear-v1"
+            }
+          ]
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 24,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 96,
+        "pattern": "\\S"
+      },
+      "uniqueItems": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "measured"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "reason": {
+            "type": "null"
+          },
+          "estimate": {
+            "properties": {
+              "n": {
+                "type": "integer",
+                "minimum": 2
+              },
+              "effect": {
+                "type": "number"
+              },
+              "direction": {
+                "enum": [
+                  "negative",
+                  "zero",
+                  "positive"
+                ]
+              },
+              "interval": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "type": "number"
+                }
+              },
+              "p_value": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "permutation_method": {
+                "enum": [
+                  "mean-signflip-exact-v1",
+                  "mean-signflip-monte-carlo-v1"
+                ]
+              },
+              "reserved_work": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "effect_method": {
+                "const": "mean-paired-difference-v1"
+              },
+              "bootstrap_method": {
+                "const": "percentile-linear-v1"
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "estimate": {
+            "properties": {
+              "n": {
+                "type": "null"
+              },
+              "effect": {
+                "type": "null"
+              },
+              "direction": {
+                "type": "null"
+              },
+              "interval": {
+                "type": "null"
+              },
+              "p_value": {
+                "type": "null"
+              },
+              "permutation_method": {
+                "type": "null"
+              },
+              "permutation_completed": {
+                "const": 0
+              },
+              "bootstrap_completed": {
+                "const": 0
+              },
+              "reserved_work": {
+                "type": "null"
+              },
+              "effect_method": {
+                "type": "null"
+              },
+              "bootstrap_method": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

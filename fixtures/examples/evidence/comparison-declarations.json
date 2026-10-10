@@ -1,0 +1,63 @@
+{
+  "schema": "declared_comparison_case.v1",
+  "baseline": {
+    "audit_digest": "sha256:6b7e6956302009b283d8fd8080e1e04ea22279f7478d073ab70250843bb7fbdf",
+    "run_ref": "synthetic-baseline",
+    "conditions": {
+      "suite": "synthetic-suite",
+      "prompt_version": "synthetic-v1",
+      "model": "synthetic-no-model",
+      "gen_params": {
+        "temperature": 0,
+        "top_p": 1,
+        "max_tokens": 64,
+        "think": "none",
+        "seed": 42,
+        "num_ctx": 512,
+        "timeout_s": 10
+      }
+    },
+    "metric": {
+      "name": "binary assertion",
+      "unit": "fraction",
+      "higher_is_better": true,
+      "scope": "observed rows",
+      "denominator": "observed rows",
+      "aggregation": "mean",
+      "evaluator": "synthetic-evaluator",
+      "evaluator_version": "v1",
+      "policy": "synthetic-only",
+      "threshold": 0.5
+    }
+  },
+  "candidate": {
+    "audit_digest": "sha256:6d431e020c09b10345ecd036b0763cdf8e1776f533621aa5171bf16af832f271",
+    "run_ref": "synthetic-candidate",
+    "conditions": {
+      "suite": "synthetic-suite",
+      "prompt_version": "synthetic-v2",
+      "model": "synthetic-no-model",
+      "gen_params": {
+        "temperature": 0,
+        "top_p": 1,
+        "max_tokens": 64,
+        "think": "none",
+        "seed": 42,
+        "num_ctx": 512,
+        "timeout_s": 10
+      }
+    },
+    "metric": {
+      "name": "binary assertion",
+      "unit": "fraction",
+      "higher_is_better": true,
+      "scope": "observed rows",
+      "denominator": "observed rows",
+      "aggregation": "mean",
+      "evaluator": "synthetic-evaluator",
+      "evaluator_version": "v1",
+      "policy": "synthetic-only",
+      "threshold": 0.5
+    }
+  }
+}

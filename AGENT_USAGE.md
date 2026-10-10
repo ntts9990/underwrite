@@ -6,6 +6,15 @@ From a source checkout, run `uv sync --frozen --all-groups` once, then use
 `uv run --frozen --no-sync underwrite` in the commands below. An installed CLI can
 use `underwrite` directly.
 
+Choose the input path first. An `underwrite.evidence-bundle` v1 observation can
+enter the native `ingest` → `measure` → `accept` workflow with an explicit policy
+and declared claims. A supported external export can be ingested as source claims
+and byte identity; it does not produce a measurable read under the current profile.
+External observations do not enter `measure`. The separate source-checkout
+`audit-counts` pilot can audit a Promptfoo 0.123.0 artifact; it does not create a
+measurement read. The promptfoo example below deliberately calls `measure` to
+show that command's typed refusal.
+
 ## Complete native workflow
 
 The [README quickstart](README.md#quickstart) runs `ingest` → `measure` → `accept`
@@ -74,6 +83,86 @@ measurement profile accepts `underwrite.evidence-bundle` v1 observations. A
 promptfoo grading score is not a calibrated probability; do not copy it into a
 native bundle's prediction field or report a measured pass. Ask for a suitable
 native evidence bundle and an explicit policy when measurement is needed.
+
+## Source-checkout pilot: audit Promptfoo counts
+
+The pilot commands documented here are available in this development checkout and
+wheels built from it. The previously published PyPI `0.0.1` artifacts have not
+been replaced or released again.
+
+`audit-counts` reads an `artifact_case.v1` manifest. Its artifact path is relative
+to the manifest, with the same bounded, no-follow reads as `inspect`. This example
+uses a **constructed synthetic fixture**, not an unchanged Promptfoo export or an
+observed upstream bug. No model or producer executable is called.
+
+```sh
+uv run --frozen --no-sync underwrite audit-counts \
+  fixtures/examples/evidence/synthetic-promptfoo-category-mismatch.case.json --json
+```
+
+The fixture deliberately keeps the total row count equal while changing reported
+success/error counts. `promptfoo_accounting.v1` separates `producer_stats` from
+`row_tallies`, reports signed `row_tallies - producer_stats` deltas, and preserves
+source-internal contradictions as findings. `declared_relation` is `inconsistent`
+for this example, but exit `0` still means a report was produced. Missing or
+malformed input emits `evidence_error.v1` on stderr, empty stdout, and exit `2`.
+
+Neither a consistent total nor an empty consistent population establishes a
+planned denominator, actual execution, evaluation quality, or approval. Error
+text and score zero do not identify a Promptfoo error: this exact profile uses
+its `success` and `failureReason` fields. The construction details, stronger jq
+category comparator, and unmeasured user-value claims are in
+[task-cards.json](fixtures/examples/evidence/task-cards.json).
+
+## Source-checkout pilot: compare declarations
+
+The two audit reports and declarations below are synthetic local examples. The
+manifest binds each supplied report by its canonical JSON digest. It declares
+conditions and metric meaning; it does not discover them from the artifact.
+
+```sh
+uv run --frozen --no-sync underwrite compare-declarations \
+  --baseline fixtures/examples/evidence/baseline-accounting.json \
+  --candidate fixtures/examples/evidence/candidate-accounting.json \
+  --manifest fixtures/examples/evidence/comparison-declarations.json --json
+```
+
+This produces `declared_comparison.v1` with `declared_relation: different`
+because the declared prompt versions differ. Absent or null fields remain
+unknown; known differences remain visible alongside unknowns. `same` means only
+that the supplied declarations match. Both `actual_conditions_verified` and
+`semantic_equivalence_verified` remain false. Digest binding is not provenance.
+
+## Source-checkout pilot: paired binary evidence
+
+This separate profile consumes an explicit primary case inventory, planned
+case/arm/repeat slots, binary outcomes or missing reasons, declared contexts,
+and a bounded resampling policy. It does not infer these from aggregate exports.
+
+```sh
+uv run --frozen --no-sync underwrite pair-binary \
+  --input fixtures/examples/evidence/synthetic-paired-complete.json \
+  --policy fixtures/examples/evidence/paired-binary-policy.json --json
+```
+
+`paired_binary_evidence.v1` reports the primary repeat-zero paired estimate,
+interval and sign-flip p-value only when the primary cohort is complete, at least
+two cases exist, and the required assumptions are explicitly declared. Those
+assumptions and source identities are not independently verified. Additional
+repeats have separate accounting and do not increase the primary sample size.
+An observed zero remains an outcome; infrastructure or verifier absence remains
+missing. The sibling `synthetic-paired-incomplete.json` yields `not_measured`
+with null estimates. `synthetic-paired-extra-missing.json` keeps the same primary
+sample while exposing the missing additional repeat.
+
+A nonsignificant p-value does not establish equivalence. None of these three
+pilot reports is a `read.v1`, an acceptance decision, or merge authorization; do
+not supply them to `accept`. Report computation returns exit `0` even for
+`inconsistent`, `different`, `unknown`, or `not_measured`. Invalid inputs and
+resource-limit failures return exit `2` with only `evidence_error.v1` on stderr.
+All examples are constructed contract fixtures, with no paid model calls or
+observed user-value claim. There is no goppi exporter dependency or compatibility
+claim; a future producer must explicitly satisfy the versioned input contract.
 
 ## Read the envelopes
 

@@ -235,8 +235,10 @@ def inspect_bytes(
     )
 
 
-def _report(manifest: bytes, raw: bytes, source: Source, expected: object) -> dict[str, object]:
-    artifact, diagnostics, _ = inspect_bytes(raw, source, expected)
+def _report_with_projection(
+    manifest: bytes, raw: bytes, source: Source, expected: object
+) -> tuple[dict[str, object], Projection | None]:
+    artifact, diagnostics, projection = inspect_bytes(raw, source, expected)
     return {
         "schema": "artifact_inspection.v1",
         "manifest_hash": digest_bytes(manifest),
@@ -244,11 +246,17 @@ def _report(manifest: bytes, raw: bytes, source: Source, expected: object) -> di
         **artifact,
         "diagnostics": diagnostics,
         "limitations": list(LIMITATIONS),
-    }
+    }, projection
 
 
-def inspect_artifact(path: Path) -> dict[str, object]:
-    """Read one case and artifact using a single caller-trusted directory anchor."""
+def _report(manifest: bytes, raw: bytes, source: Source, expected: object) -> dict[str, object]:
+    return _report_with_projection(manifest, raw, source, expected)[0]
+
+
+def _read_case(
+    path: Path, *, required_source: tuple[str, str] | None = None
+) -> tuple[bytes, bytes, Source, object]:
+    """Read the manifest and artifact once under one caller-trusted directory anchor."""
     flags = constrained_flags()
     if "\x00" in str(path):
         raise InspectionError(
@@ -265,11 +273,16 @@ def inspect_artifact(path: Path) -> dict[str, object]:
             source = case_source(case)
             if (source.format, source.format_version) not in trusted_codecs():
                 raise UnsupportedFormat("UNSUPPORTED_FORMAT")
+            if (
+                required_source is not None
+                and (source.format, source.format_version) != required_source
+            ):
+                raise UnsupportedFormat("UNSUPPORTED_FORMAT")
             artifact = cast(dict[str, object], case["artifact"])
             location = "/artifact/path"
             parts = cast(str, artifact["path"]).split("/")
             raw = read_at(parent, parts, DEFAULT_MAX_BYTES, flags)
-            return _report(manifest_bytes, raw, source, artifact.get("expected_hash"))
+            return manifest_bytes, raw, source, artifact.get("expected_hash")
         finally:
             os.close(parent)
     except InspectionError:
@@ -283,3 +296,15 @@ def inspect_artifact(path: Path) -> dict[str, object]:
             location,
             NEXT_ACTIONS["SOURCE_READ_FAILED"],
         ) from exc
+
+
+def inspect_artifact_with_projection(
+    path: Path, *, required_source: tuple[str, str] | None = None
+) -> tuple[dict[str, object], Projection | None]:
+    """Expose the validated projection from the same bounded artifact buffer."""
+    return _report_with_projection(*_read_case(path, required_source=required_source))
+
+
+def inspect_artifact(path: Path) -> dict[str, object]:
+    """Keep the established report contract and its single buffered artifact read."""
+    return _report(*_read_case(path))

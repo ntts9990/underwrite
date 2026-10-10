@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:promptfoo_accounting.v1",
+  "title": "promptfoo_accounting.v1",
+  "description": "Descriptive internal count agreement for one pinned Promptfoo output. A consistent result does not verify execution, planned inventory, cause, or approval.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "source",
+    "raw_hash",
+    "observation_digest",
+    "producer_stats",
+    "row_tallies",
+    "deltas",
+    "declared_relation",
+    "findings",
+    "limitations"
+  ],
+  "properties": {
+    "schema": {"const": "promptfoo_accounting.v1"},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "format_version"],
+      "properties": {
+        "format": {"const": "promptfoo.eval-output"},
+        "format_version": {"const": "0.123.0"}
+      }
+    },
+    "raw_hash": {"$ref": "#/$defs/hash"},
+    "observation_digest": {"$ref": "#/$defs/hash"},
+    "producer_stats": {"$ref": "#/$defs/counts"},
+    "row_tallies": {"$ref": "#/$defs/counts"},
+    "deltas": {"$ref": "#/$defs/deltas"},
+    "declared_relation": {"enum": ["consistent", "inconsistent"]},
+    "findings": {
+      "type": "array",
+      "maxItems": 2003,
+      "items": {"$ref": "#/$defs/finding"}
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "prefixItems": [
+        {"const": "PLANNED_DENOMINATOR_UNKNOWN"},
+        {"const": "CAUSE_UNKNOWN"},
+        {"const": "SOURCE_CLAIMS_UNVERIFIED"},
+        {"const": "NO_APPROVAL_AUTHORITY"}
+      ],
+      "items": false
+    }
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["successes", "failures", "errors", "total"],
+      "properties": {
+        "successes": {"$ref": "#/$defs/nonnegative"},
+        "failures": {"$ref": "#/$defs/nonnegative"},
+        "errors": {"$ref": "#/$defs/nonnegative"},
+        "total": {"$ref": "#/$defs/nonnegative"}
+      }
+    },
+    "deltas": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["successes", "failures", "errors", "total"],
+      "properties": {
+        "successes": {"$ref": "#/$defs/signed"},
+        "failures": {"$ref": "#/$defs/signed"},
+        "errors": {"$ref": "#/$defs/signed"},
+        "total": {"$ref": "#/$defs/signed"}
+      }
+    },
+    "nonnegative": {"type": "integer", "minimum": 0, "maximum": 9007199254740992},
+    "signed": {"type": "integer", "minimum": -9007199254740992, "maximum": 9007199254740992},
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "row_index", "location"],
+      "properties": {
+        "code": {"enum": ["CATEGORY_COUNT_MISMATCH", "SOURCE_FLAGS_DISAGREE"]},
+        "row_index": {"type": ["integer", "null"], "minimum": 0, "maximum": 1999},
+        "location": {
+          "type": "string",
+          "pattern": "^/results/(?:stats/(?:successes|failures|errors)|results/(?:0|[1-9][0-9]{0,3})/(?:failureReason|gradingResult/pass))$"
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"code": {"const": "CATEGORY_COUNT_MISMATCH"}}},
+          "then": {
+            "properties": {
+              "row_index": {"type": "null"},
+              "location": {"pattern": "^/results/stats/(?:successes|failures|errors)$"}
+            }
+          },
+          "else": {
+            "properties": {
+              "row_index": {"type": "integer"},
+              "location": {"pattern": "^/results/results/(?:0|[1-9][0-9]{0,3})/(?:failureReason|gradingResult/pass)$"}
+            }
+          }
+        }
+      ]
+    }
+  }
+}

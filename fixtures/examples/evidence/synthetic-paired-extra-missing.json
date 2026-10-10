@@ -1,0 +1,200 @@
+{
+  "schema": "paired_binary_input.v1",
+  "source": {
+    "producer": "synthetic.reference",
+    "version": "v1",
+    "run_id": "synthetic-paired-example"
+  },
+  "outcome_definition": {
+    "name": "synthetic task completion",
+    "positive_means": "source declares that its synthetic acceptance condition was met"
+  },
+  "primary_case_ids": [
+    "case-a",
+    "case-b",
+    "case-c",
+    "case-d"
+  ],
+  "planned_slots": [
+    {
+      "case_id": "case-a",
+      "arm": "baseline",
+      "repeat": 0
+    },
+    {
+      "case_id": "case-a",
+      "arm": "candidate",
+      "repeat": 0
+    },
+    {
+      "case_id": "case-a",
+      "arm": "baseline",
+      "repeat": 1
+    },
+    {
+      "case_id": "case-a",
+      "arm": "candidate",
+      "repeat": 1
+    },
+    {
+      "case_id": "case-b",
+      "arm": "baseline",
+      "repeat": 0
+    },
+    {
+      "case_id": "case-b",
+      "arm": "candidate",
+      "repeat": 0
+    },
+    {
+      "case_id": "case-b",
+      "arm": "baseline",
+      "repeat": 1
+    },
+    {
+      "case_id": "case-b",
+      "arm": "candidate",
+      "repeat": 1
+    },
+    {
+      "case_id": "case-c",
+      "arm": "baseline",
+      "repeat": 0
+    },
+    {
+      "case_id": "case-c",
+      "arm": "candidate",
+      "repeat": 0
+    },
+    {
+      "case_id": "case-c",
+      "arm": "baseline",
+      "repeat": 1
+    },
+    {
+      "case_id": "case-c",
+      "arm": "candidate",
+      "repeat": 1
+    },
+    {
+      "case_id": "case-d",
+      "arm": "baseline",
+      "repeat": 0
+    },
+    {
+      "case_id": "case-d",
+      "arm": "candidate",
+      "repeat": 0
+    },
+    {
+      "case_id": "case-d",
+      "arm": "baseline",
+      "repeat": 1
+    },
+    {
+      "case_id": "case-d",
+      "arm": "candidate",
+      "repeat": 1
+    }
+  ],
+  "slot_records": [
+    {
+      "case_id": "case-a",
+      "arm": "baseline",
+      "repeat": 0,
+      "outcome": 0
+    },
+    {
+      "case_id": "case-a",
+      "arm": "candidate",
+      "repeat": 0,
+      "outcome": 1
+    },
+    {
+      "case_id": "case-a",
+      "arm": "baseline",
+      "repeat": 1,
+      "outcome": 0
+    },
+    {
+      "case_id": "case-a",
+      "arm": "candidate",
+      "repeat": 1,
+      "outcome": 1
+    },
+    {
+      "case_id": "case-b",
+      "arm": "baseline",
+      "repeat": 0,
+      "outcome": 1
+    },
+    {
+      "case_id": "case-b",
+      "arm": "candidate",
+      "repeat": 0,
+      "outcome": 1
+    },
+    {
+      "case_id": "case-b",
+      "arm": "baseline",
+      "repeat": 1,
+      "outcome": 1
+    },
+    {
+      "case_id": "case-b",
+      "arm": "candidate",
+      "repeat": 1,
+      "outcome": 1
+    },
+    {
+      "case_id": "case-c",
+      "arm": "baseline",
+      "repeat": 0,
+      "outcome": 0
+    },
+    {
+      "case_id": "case-c",
+      "arm": "candidate",
+      "repeat": 0,
+      "outcome": 1
+    },
+    {
+      "case_id": "case-c",
+      "arm": "baseline",
+      "repeat": 1,
+      "outcome": 0
+    },
+    {
+      "case_id": "case-c",
+      "arm": "candidate",
+      "repeat": 1,
+      "outcome": 1
+    },
+    {
+      "case_id": "case-d",
+      "arm": "baseline",
+      "repeat": 0,
+      "outcome": 1
+    },
+    {
+      "case_id": "case-d",
+      "arm": "candidate",
+      "repeat": 0,
+      "outcome": 0
+    },
+    {
+      "case_id": "case-d",
+      "arm": "baseline",
+      "repeat": 1,
+      "outcome": 1
+    }
+  ],
+  "metadata": {
+    "evidence_kind": "synthetic_contract_fixture",
+    "model_calls": "none",
+    "independent_provenance": "not verified",
+    "baseline_context_id": "synthetic-baseline",
+    "candidate_context_id": "synthetic-candidate",
+    "evaluator_id": "synthetic-binary-evaluator"
+  }
+}

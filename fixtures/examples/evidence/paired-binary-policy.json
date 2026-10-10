@@ -1,0 +1,13 @@
+{
+  "schema": "paired_binary_policy.v1",
+  "seed": 42,
+  "permutation_iterations": 10000,
+  "bootstrap_iterations": 1000,
+  "confidence": 0.95,
+  "max_work": 2000000,
+  "assumptions": {
+    "independent_units": true,
+    "sign_flip_invariance": true,
+    "fixed_sample": true
+  }
+}
