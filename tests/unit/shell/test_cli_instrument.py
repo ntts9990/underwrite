@@ -12,7 +12,12 @@ from _repo_paths import repo_root
 from jsonschema import Draft202012Validator
 from underwrite_core.canonical import SAFE_INT_MAX, canonical_bytes, content_digest, digest_bytes
 
-from underwrite.instrument.ingest.formats import native_codecs, trusted_codecs
+from underwrite.cli import instrument as instrument_cli
+from underwrite.instrument.ingest.formats import (
+    CodecConfigurationError,
+    native_codecs,
+    trusted_codecs,
+)
 
 ROOT = repo_root(Path(__file__).resolve())
 CLI = ROOT / ".venv/bin/underwrite"
@@ -300,6 +305,31 @@ def test_json_help_is_still_ordinary_successful_help(command: str) -> None:
     assert result.returncode == 0 and result.stderr == ""
     assert "usage:" in result.stdout and "alias" in result.stdout
     assert "--schema" not in result.stdout
+    assert "Supported format/version pairs (exact matches):" in result.stdout
+    for format_name, version in sorted(trusted_codecs()):
+        assert f"  {format_name} / {version}\n" in result.stdout
+    assert "source claims are preserved, not verified" in result.stdout
+
+
+def test_help_registry_failure_keeps_typed_diagnostic(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def broken_registry() -> None:
+        raise CodecConfigurationError("DUPLICATE_CODEC_SELECTOR")
+
+    monkeypatch.setattr(instrument_cli, "trusted_codecs", broken_registry)
+    exit_code = instrument_cli.main("ingest", ["--json", "--help"])
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    diagnostic = json.loads(captured.err)
+    assert exit_code == diagnostic["exit_code"]
+    assert diagnostic == {
+        "schema": "instrument_error.v1",
+        "command": "ingest",
+        "code": "SCHEMA_CONFIGURATION_ERROR",
+        "reason": "DUPLICATE_CODEC_SELECTOR",
+        "exit_code": 2,
+    }
 
 
 def test_human_error_omits_untrusted_input_and_provides_help() -> None:

@@ -13,7 +13,7 @@ Normalize local artifacts, measure under explicit policies, and classify change 
 
 **English** · [한국어](README.ko.md)
 
-[Install](#install) · [Quickstart](#quickstart) · [Supported formats](#supported-formats) · [CLI](#cli) · [Contributing](CONTRIBUTING.md)
+[Install](#install) · [Quickstart](#quickstart) · [Agent use](AGENT_USAGE.md) · [Supported formats](#supported-formats) · [CLI](#cli) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
@@ -87,6 +87,11 @@ The reads are computed from the supplied bundle and policies. The final result i
 `screened`, requires human review, and keeps `merge_authorized` false. Repeat
 `--read` for each required claim. A successful classification does not authorize a
 merge or deployment.
+
+For a coding agent working with local exports, see [Agent use](AGENT_USAGE.md) for
+commands, result handling, and a reusable task prompt. The external formats below
+can be ingested, but `measure` currently accepts only native evidence-bundle
+observations; ingestion alone does not make an external source claim measurable.
 
 ## Supported formats
 

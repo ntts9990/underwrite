@@ -2,6 +2,10 @@
 
 underwrite is a local evidence CLI and Python library. Keep changes focused on
 observable behavior and verify claims against tests and the implemented contracts.
+Build for coding agents working with local artifacts: a documented CLI and importable
+Python API, typed JSON results, and explicit next actions. Do not expand the product
+into Docker, a server, or a web interface. See [AGENT_USAGE.md](AGENT_USAGE.md)
+for the agent-facing workflow.
 
 - `packages/underwrite-core/src/underwrite_core`: dependency-free integrity primitives.
 - `src/underwrite/instrument/evidence`, `measurement`, `acceptance`, and `adjudication`:

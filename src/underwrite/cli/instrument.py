@@ -18,6 +18,7 @@ from underwrite.instrument.ingest.application import (
     instrument_diagnostic,
     packaged_ingestor,
 )
+from underwrite.instrument.ingest.formats import trusted_codecs
 from underwrite.instrument.ingest.project import Source
 
 COMMANDS = ("ingest", "project")
@@ -114,10 +115,22 @@ def _human(observation: dict[str, object]) -> str:
 
 def main(command: str, argv: list[str]) -> int:
     """Parse the instrument family separately; legacy argparse is unchanged."""
-    parser = _Parser(prog=f"underwrite {command}", allow_abbrev=False)
+    parser = _Parser(
+        prog=f"underwrite {command}",
+        allow_abbrev=False,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.description = "Artifact projection only. project is an explicit alias of ingest."
-    configure(parser)
     try:
+        profiles = "\n".join(
+            f"  {format_name} / {version}" for format_name, version in sorted(trusted_codecs())
+        )
+        parser.epilog = (
+            f"Supported format/version pairs (exact matches):\n{profiles}\n\n"
+            "Local input only; source claims are preserved, not verified. "
+            "With --json, observations go to stdout and typed errors to stderr."
+        )
+        configure(parser)
         args = parser.parse_args(argv)
         observation = _observation(args)
         output = canonical_bytes(observation).decode("utf-8") if args.json else _human(observation)
