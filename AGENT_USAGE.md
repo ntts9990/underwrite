@@ -204,6 +204,21 @@ missing. The sibling `synthetic-paired-incomplete.json` yields `not_measured`
 with null estimates. `synthetic-paired-extra-missing.json` keeps the same primary
 sample while exposing the missing additional repeat.
 
+A slot can attach an optional `source_reason` to either an observed outcome or a
+missing reason. It is a bounded, unverified source annotation: error-like text
+never changes an observed zero into missing. The report shows up to 16 sorted
+observed reason examples and a count of omitted examples when any are supplied;
+existing missing examples remain separate. Those examples reproduce source text,
+so provide only text you intend to include in the local report. Inputs without
+observed annotations retain the previous report shape.
+
+The [observed-and-missing fixture](fixtures/examples/evidence/synthetic-observed-and-missing.json)
+has one observed zero with an endpoint reason and a separate missing
+infrastructure slot. It remains `not_measured` because a primary pair is missing.
+The source annotation does not repair that gap. The pilot input/output schemas
+are unreleased: older strict validators may reject reason-bearing outputs, so
+use the matching contracts from the same checkout or built wheel.
+
 A nonsignificant p-value does not establish equivalence. None of these three
 pilot reports is a `read.v1`, an acceptance decision, or merge authorization; do
 not supply them to `accept`. Report computation returns exit `0` even for
@@ -212,6 +227,9 @@ resource-limit failures return exit `2` with only `evidence_error.v1` on stderr.
 All examples are constructed contract fixtures, with no paid model calls or
 observed user-value claim. There is no goppi exporter dependency or compatibility
 claim; a future producer must explicitly satisfy the versioned input contract.
+
+See the [local comparison study](EVIDENCE_REVIEW.md) for the jq baseline,
+aggregate-count counterexample, measured command cost, and unmeasured user value.
 
 ## Read the envelopes
 

@@ -18,6 +18,7 @@ from underwrite_core.canonical import canonical_bytes, content_digest, digest_by
 from underwrite.cli import audit_counts
 from underwrite.cli.evidence import run_cli
 from underwrite.instrument.evidence.accounting import ROW_LIMIT
+from underwrite.instrument.ingest import accounting as accounting_adapter
 from underwrite.instrument.ingest import inspection
 from underwrite.instrument.ingest.accounting import audit_case
 from underwrite.instrument.ingest.application import (
@@ -161,6 +162,84 @@ def test_failed_audit_is_typed_and_never_emits_a_report(
     assert error["schema"] == "evidence_error.v1"
     assert error["code"] == expected_code and error["exit_code"] == ERROR_EXIT
     assert "artifact.json" not in stderr
+
+
+@pytest.mark.parametrize(
+    ("fault", "reason"),
+    [
+        ("malformed", "INVALID_JSON_INPUT"),
+        ("duplicate-keys", "DUPLICATE_JSON_KEY"),
+        ("nonfinite", "NON_FINITE_JSON_NUMBER"),
+        ("missing-stats", "MALFORMED_PROMPTFOO_PAYLOAD"),
+    ],
+)
+def test_audit_preserves_one_trusted_inspection_reason(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    fault: str,
+    reason: str,
+) -> None:
+    path = _case(tmp_path)
+    artifact = tmp_path / "artifact.json"
+    if fault == "malformed":
+        artifact.write_bytes(b"{")
+    elif fault == "duplicate-keys":
+        artifact.write_bytes(b'{"x":1,"x":2}')
+    elif fault == "nonfinite":
+        artifact.write_bytes(b'{"x":NaN}')
+    else:
+        payload = json.loads(GOLDEN.read_bytes())
+        del payload["results"]["stats"]
+        artifact.write_text(json.dumps(payload))
+    code, error, stdout, stderr = _invoke(path, capsys)
+    assert code == ERROR_EXIT and stdout == "" and stderr
+    assert error["code"] == "INVALID_INPUT"
+    assert error["reason"] == reason and error["location"] == "/artifact"
+    assert "artifact.json" not in stderr
+
+
+def test_expected_hash_mismatch_keeps_its_existing_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = _case(tmp_path)
+    update(path, "artifact", {"expected_hash": "sha256:" + "0" * 64})
+    code, error, stdout, _ = _invoke(path, capsys)
+    assert code == ERROR_EXIT and stdout == ""
+    assert error["code"] == error["reason"] == "EXPECTED_HASH_MISMATCH"
+    assert error["location"] == "/artifact/expected_hash"
+
+
+@pytest.mark.parametrize(
+    "diagnostics",
+    [
+        [],
+        [
+            {"code": "INVALID_INPUT", "reason": "DUPLICATE_JSON_KEY", "location": "/artifact"},
+            {"code": "INVALID_INPUT", "reason": "INVALID_JSON_INPUT", "location": "/artifact"},
+        ],
+        [{"code": "INVALID_INPUT", "reason": "RAW_PRIVATE_CONTENT", "location": "/artifact"}],
+        [{"code": "INVALID_INPUT", "reason": "DUPLICATE_JSON_KEY", "location": "/source"}],
+        [{"code": "UNTRUSTED_CODE", "reason": "DUPLICATE_JSON_KEY", "location": "/artifact"}],
+    ],
+)
+def test_untrusted_or_ambiguous_inspection_diagnostic_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    diagnostics: list[dict[str, str]],
+) -> None:
+    def inspected(
+        path: Path, *, required_source: tuple[str, str] | None = None
+    ) -> tuple[dict[str, object], None]:
+        return {"expected_hash_check": "not_supplied", "diagnostics": diagnostics}, None
+
+    monkeypatch.setattr(accounting_adapter, "inspect_artifact_with_projection", inspected)
+    code, error, stdout, stderr = _invoke(tmp_path / "case.json", capsys)
+    assert code == ERROR_EXIT and stdout == ""
+    assert error["code"] == "INVALID_INPUT"
+    assert error["reason"] == "INVALID_ARTIFACT"
+    assert error["location"] == "/artifact"
+    assert "RAW_PRIVATE_CONTENT" not in stderr
 
 
 @pytest.mark.parametrize(

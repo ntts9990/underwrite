@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from typing import Any, cast
 
@@ -17,6 +18,8 @@ def _evaluate(value: object, settings: object) -> dict[str, Any]:
 PAIRED_COUNT = 2
 EXPECTED_EFFECT = 0.5
 THREE_OBSERVED_ZEROES = 3
+ANNOTATED_REPEAT_COUNT = 17
+EXAMPLE_LIMIT = 16
 
 
 def source_input(cases: tuple[str, ...] = ("a", "b")) -> dict[str, Any]:
@@ -75,6 +78,93 @@ def test_complete_primary_cohort_measures_only_declared_binary_pairs() -> None:
     assert accounting["primary_repeat_zero"]["observed_zero"] == THREE_OBSERVED_ZEROES
     assert result["source_claims"]["verified"] is False
     assert result["assumptions"]["verified"] is False
+    assert "observed_reason_examples" not in accounting
+    assert "observed_reason_examples_omitted" not in accounting
+
+
+def test_observed_reasons_preserve_zero_and_one_without_changing_estimate() -> None:
+    original = source_input()
+    annotated = deepcopy(original)
+    annotated["slot_records"][0]["source_reason"] = "ERROR-like text is still observed zero"
+    annotated["slot_records"][1]["source_reason"] = "source says completed"
+    before = _evaluate(original, policy())
+    after = _evaluate(annotated, policy())
+    assert before["estimate"] == after["estimate"]
+    assert before["accounting"]["primary_repeat_zero"] == after["accounting"]["primary_repeat_zero"]
+    assert after["accounting"]["observed_reason_examples"] == [
+        {
+            "case_id": "a",
+            "arm": "baseline",
+            "repeat": 0,
+            "outcome": 0,
+            "source_reason": "ERROR-like text is still observed zero",
+            "source_claim_unverified": True,
+        },
+        {
+            "case_id": "a",
+            "arm": "candidate",
+            "repeat": 0,
+            "outcome": 1,
+            "source_reason": "source says completed",
+            "source_claim_unverified": True,
+        },
+    ]
+    assert after["accounting"]["observed_reason_examples_omitted"] == 0
+
+
+def test_observed_repeat_reasons_are_bounded_sorted_and_not_pooled() -> None:
+    value = source_input()
+    for repeat in reversed(range(1, 18)):
+        slot = {"case_id": "a", "arm": "candidate", "repeat": repeat}
+        value["planned_slots"].append(slot)
+        value["slot_records"].append({**slot, "outcome": 1, "source_reason": f"repeat {repeat}"})
+    result = _evaluate(value, policy())
+    examples = result["accounting"]["observed_reason_examples"]
+    assert result["estimate"]["n"] == PAIRED_COUNT
+    assert result["accounting"]["additional_repeats"]["observed_one"] == ANNOTATED_REPEAT_COUNT
+    assert len(examples) == EXAMPLE_LIMIT
+    assert examples[0]["repeat"] == 1 and examples[-1]["repeat"] == EXAMPLE_LIMIT
+    assert result["accounting"]["observed_reason_examples_omitted"] == 1
+    assert "SOURCE_REASON_EXAMPLES_TRUNCATED" in result["limitations"]
+
+
+@pytest.mark.parametrize("reason", [7, " \t ", "x" * 129, "e\u0301"])
+def test_invalid_observed_source_reason_is_rejected(reason: object) -> None:
+    value = source_input()
+    value["slot_records"][0]["source_reason"] = reason
+    with pytest.raises(PairedBinaryError) as exc:
+        _evaluate(value, policy())
+    assert exc.value.code == "INVALID_INPUT"
+
+
+def test_multiline_missing_and_observed_reasons_remain_escaped_source_data() -> None:
+    value = source_input()
+    value["slot_records"][0] = {
+        "case_id": "a",
+        "arm": "baseline",
+        "repeat": 0,
+        "missing_reason": "infra",
+        "source_reason": "source\ncontrol",
+    }
+    missing = _evaluate(value, policy())
+    assert missing["status"] == "not_measured"
+    assert missing["accounting"]["missing_examples"][0]["source_reason"] == "source\ncontrol"
+    value = source_input()
+    value["slot_records"][0]["source_reason"] = "source\ncontrol"
+    observed = _evaluate(value, policy())
+    assert observed["status"] == "measured"
+    assert (
+        observed["accounting"]["observed_reason_examples"][0]["source_reason"] == "source\ncontrol"
+    )
+    assert "source\\ncontrol" in json.dumps(observed)
+
+
+def test_observed_outcome_and_missing_reason_remain_exclusive() -> None:
+    value = source_input()
+    value["slot_records"][0]["missing_reason"] = "infra"
+    with pytest.raises(PairedBinaryError) as exc:
+        _evaluate(value, policy())
+    assert exc.value.code == "INVALID_INPUT"
 
 
 @pytest.mark.parametrize("cases", [(), ("a",)])

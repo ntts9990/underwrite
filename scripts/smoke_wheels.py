@@ -155,13 +155,17 @@ def _evidence_pilots(cli: Path, fixtures: Path, work: Path) -> None:
     )
     _require(comparison.get("declared_relation") == "different", "declaration mismatch hidden")
     _require(comparison.get("actual_conditions_verified") is False, "unverified conditions")
-    for fixture, expected in (("complete", "measured"), ("incomplete", "not_measured")):
+    for fixture, expected in (
+        ("paired-complete", "measured"),
+        ("paired-incomplete", "not_measured"),
+        ("observed-and-missing", "not_measured"),
+    ):
         paired = _cli_json(
             cli,
             [
                 "pair-binary",
                 "--input",
-                str(evidence / f"synthetic-paired-{fixture}.json"),
+                str(evidence / f"synthetic-{fixture}.json"),
                 "--policy",
                 str(evidence / "paired-binary-policy.json"),
             ],
@@ -170,6 +174,12 @@ def _evidence_pilots(cli: Path, fixtures: Path, work: Path) -> None:
         )
         _require(paired.get("schema") == "paired_binary_evidence.v1", "paired schema mismatch")
         _require(paired.get("status") == expected, "paired missingness was hidden")
+        if fixture == "observed-and-missing":
+            accounting = cast(dict[str, object], paired["accounting"])
+            examples = cast(list[dict[str, object]], accounting["observed_reason_examples"])
+            _require(len(examples) == 1, "observed reason was lost")
+            _require(examples[0]["outcome"] == 0, "observed zero was recoded")
+            _require(examples[0]["source_claim_unverified"] is True, "source reason promoted")
     error = _command([str(cli), "pair-binary", "--json"], work)
     _require(
         error.returncode == EVIDENCE_ERROR_EXIT and error.stdout == "",

@@ -1,0 +1,116 @@
+{
+  "schema": "paired_binary_input.v1",
+  "source": {
+    "producer": "synthetic.summary-counterexample",
+    "version": "v1",
+    "run_id": "constructed-example"
+  },
+  "outcome_definition": {
+    "name": "synthetic binary endpoint",
+    "positive_means": "constructed source endpoint was met"
+  },
+  "metadata": {
+    "baseline_context_id": "constructed-baseline",
+    "candidate_context_id": "constructed-candidate",
+    "evaluator_id": "constructed-binary-rule",
+    "evidence_kind": "synthetic_not_producer_export"
+  },
+  "primary_case_ids": [
+    "case-a",
+    "case-b",
+    "case-c",
+    "case-d"
+  ],
+  "planned_slots": [
+    {
+      "case_id": "case-a",
+      "arm": "baseline",
+      "repeat": 0
+    },
+    {
+      "case_id": "case-a",
+      "arm": "candidate",
+      "repeat": 0
+    },
+    {
+      "case_id": "case-b",
+      "arm": "baseline",
+      "repeat": 0
+    },
+    {
+      "case_id": "case-b",
+      "arm": "candidate",
+      "repeat": 0
+    },
+    {
+      "case_id": "case-c",
+      "arm": "baseline",
+      "repeat": 0
+    },
+    {
+      "case_id": "case-c",
+      "arm": "candidate",
+      "repeat": 0
+    },
+    {
+      "case_id": "case-d",
+      "arm": "baseline",
+      "repeat": 0
+    },
+    {
+      "case_id": "case-d",
+      "arm": "candidate",
+      "repeat": 0
+    }
+  ],
+  "slot_records": [
+    {
+      "case_id": "case-a",
+      "arm": "baseline",
+      "repeat": 0,
+      "outcome": 0
+    },
+    {
+      "case_id": "case-b",
+      "arm": "baseline",
+      "repeat": 0,
+      "outcome": 0
+    },
+    {
+      "case_id": "case-c",
+      "arm": "baseline",
+      "repeat": 0,
+      "outcome": 1
+    },
+    {
+      "case_id": "case-d",
+      "arm": "baseline",
+      "repeat": 0,
+      "outcome": 1
+    },
+    {
+      "case_id": "case-a",
+      "arm": "candidate",
+      "repeat": 0,
+      "outcome": 1
+    },
+    {
+      "case_id": "case-b",
+      "arm": "candidate",
+      "repeat": 0,
+      "outcome": 1
+    },
+    {
+      "case_id": "case-c",
+      "arm": "candidate",
+      "repeat": 0,
+      "outcome": 0
+    },
+    {
+      "case_id": "case-d",
+      "arm": "candidate",
+      "repeat": 0,
+      "outcome": 0
+    }
+  ]
+}

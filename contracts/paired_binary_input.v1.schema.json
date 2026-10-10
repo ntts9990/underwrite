@@ -197,17 +197,8 @@
               "outcome"
             ],
             "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "missing_reason"
-                  ]
-                },
-                {
-                  "required": [
-                    "source_reason"
-                  ]
-                }
+              "required": [
+                "missing_reason"
               ]
             }
           },

@@ -88,6 +88,65 @@ def test_complete_cohort_reports_descriptive_evidence_with_no_approval(
     assert report["policy_digest"].startswith("sha256:")
 
 
+def test_observed_zero_and_one_reasons_remain_source_claims(tmp_path: Path, capsys: Any) -> None:
+    value = input_doc()
+    value["slot_records"][0]["source_reason"] = "ERROR-like text, still observed zero"
+    value["slot_records"][1]["source_reason"] = "source says one"
+    status, report, other = invoke(tmp_path, capsys, value=value)
+    assert status == 0 and other == ""
+    assert report["status"] == "measured"
+    assert report["accounting"]["primary_repeat_zero"]["observed_zero"] == PAIRED_COUNT
+    assert [item["outcome"] for item in report["accounting"]["observed_reason_examples"]] == [
+        0,
+        1,
+    ]
+    assert all(
+        item["source_claim_unverified"] is True
+        for item in report["accounting"]["observed_reason_examples"]
+    )
+
+
+@pytest.mark.parametrize("reason", [7, " \t ", "SENTINEL" * 19, "e\u0301"])
+def test_invalid_observed_reason_fails_without_echoing_input(
+    tmp_path: Path, capsys: Any, reason: object
+) -> None:
+    value = input_doc()
+    value["slot_records"][0]["source_reason"] = reason
+    input_path = tmp_path / "input.json"
+    policy_path = tmp_path / "policy.json"
+    write(input_path, value)
+    write(policy_path, policy_doc())
+    status = main(["--input", str(input_path), "--policy", str(policy_path), "--json"])
+    streams = capsys.readouterr()
+    assert status == ERROR_EXIT and streams.out == ""
+    error = json.loads(streams.err)
+    assert error["schema"] == "evidence_error.v1" and error["code"] == "INVALID_INPUT"
+    assert "SENTINEL" not in streams.err
+
+
+def test_multiline_reason_is_accepted_and_escaped_on_stdout(tmp_path: Path, capsys: Any) -> None:
+    value = input_doc()
+    value["slot_records"][0]["source_reason"] = "source\ncontrol"
+    input_path = tmp_path / "input.json"
+    policy_path = tmp_path / "policy.json"
+    write(input_path, value)
+    write(policy_path, policy_doc())
+    status = main(["--input", str(input_path), "--policy", str(policy_path), "--json"])
+    streams = capsys.readouterr()
+    assert status == 0 and streams.err == ""
+    assert streams.out.count("\n") == 1
+    assert "source\\ncontrol" in streams.out
+    assert json.loads(streams.out)["accounting"]["observed_reason_examples"][0]["outcome"] == 0
+
+
+def test_observed_and_missing_fields_are_exclusive(tmp_path: Path, capsys: Any) -> None:
+    value = input_doc()
+    value["slot_records"][0]["missing_reason"] = "infra"
+    status, error, other = invoke(tmp_path, capsys, value=value)
+    assert status == ERROR_EXIT and other == ""
+    assert error["code"] == "INVALID_INPUT"
+
+
 def test_incomplete_cohort_is_valid_not_measured_with_null_estimates(
     tmp_path: Path, capsys: Any
 ) -> None:
