@@ -6,6 +6,13 @@ From a source checkout, run `uv sync --frozen --all-groups` once, then use
 `uv run --frozen --no-sync underwrite` in the commands below. An installed CLI can
 use `underwrite` directly.
 
+Run `underwrite --help` first. When listed, `underwrite capabilities --json`
+returns command profiles, required inputs, input/output schema names, and exact
+registered ingest codecs from the executable in use. Check this output instead
+of inferring support from the unchanged package version. Older published builds
+may require help-based discovery. Capability availability is not evidence that
+an arbitrary producer export satisfies a profile.
+
 Choose the input path first. An `underwrite.evidence-bundle` v1 observation can
 enter the native `ingest` → `measure` → `accept` workflow with an explicit policy
 and declared claims. A supported external export can be ingested as source claims
@@ -72,7 +79,7 @@ is ready; obtain the completed producer artifact and its version context first.
 
 | Producer | Input boundary |
 | --- | --- |
-| goppi | No registered ingest profile yet. Its CLI report is a producer summary, not a native evidence bundle or an inventory of case/arm/repeat outcomes. Do not manufacture those rows from counts. |
+| goppi | No registered ingest profile. `audit-run` accepts the exact experimental grounded-pilot exchange described below. A generic CLI summary is insufficient; do not manufacture rows from counts. |
 | Langfuse | The supported `4.35.0` denotes the **server export profile**, not the SDK version. Supply the worker's `observations_v2` or `scores` blob-export file as an uncompressed JSON array with the complete field groups. A REST response, Parquet file, or partially selected export is a different shape. Wait for a completed export manifest; SDK flush alone is insufficient. |
 | DeepEval | Supply the `4.1.1` TestRun JSON written by the tool, with the producer version recorded separately. A deliberately failed test run can still write a valid artifact. An observed score of zero is distinct from an errored metric without a score. |
 | Promptfoo | Supply the `0.123.0` eval output JSON (summary version 3). An assertion-failure exit can accompany a valid export. Count auditing additionally uses a supplied `artifact_case.v1` manifest. |
@@ -349,6 +356,44 @@ claim; a future producer must explicitly satisfy the versioned input contract.
 
 See the [local comparison study](EVIDENCE_REVIEW.md) for the jq baseline,
 aggregate-count counterexample, measured command cost, and unmeasured user value.
+
+## Baseline execution inventory
+
+`audit-run` accounts for producer execution units without requiring a candidate
+or an analysis policy. It retains separate group and arm counts, observed zero
+and one, missing reasons, and non-binary classifications. It does not infer
+comparison suitability or produce a measured effect, acceptance, or approval.
+
+```sh
+underwrite audit-run --input fixtures/examples/run-audit/synthetic-inventory.json --json
+underwrite audit-run --goppi-grounded-pilot-exchange /path/to/agent-exchange --json
+```
+
+The first command uses a synthetic `binary_run_inventory.v1`. The second accepts
+only the experimental `goppi.grounded_pilot_exchange_manifest.v1` repository-study
+profile. It verifies the three selected export files against the manifest before
+normalizing rows; the producer's schema file is hash-checked, not trusted as a
+runtime validator. This is not generic goppi compatibility. No producer process,
+model, credential, network request, or original artifact URI is used.
+
+Different evalset/harness identities remain separate. The current goppi export
+does not declare planned units, so planned and unreported counts remain null.
+`endpoint_failure` stays non-binary rather than becoming an observed zero or a
+missing verifier. Source reasons and reference digests remain unverified claims;
+raw answer text is not included in the audit output. `unit_count` counts distinct
+group-scoped execution IDs across planned and reported units, not successes or
+independent cases. There are no pooled outcome counts or rates across groups.
+
+`binary_run_audit.v1` on stdout with exit 0 means accounting completed. Invalid
+inputs produce `evidence_error.v1` on stderr with exit 2. Neither result is a
+`read.v1` or a replacement for `pair-binary` when actual paired evidence exists.
+
+## Keep selected evidence in local records
+
+Use [`records`](STORAGE.md) to copy explicit inputs, policies, results, and actual
+command diagnostics into a private immutable bundle. Capture completion, byte
+verification, declared rerun evidence, and independent provenance are different
+claims. Retain those distinctions when reporting a saved record to the user.
 
 ## Read the envelopes
 

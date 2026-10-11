@@ -52,6 +52,18 @@ source-include = [
     "contracts/paired_binary_evidence.v1.schema.json",
     "contracts/paired_review_context.v1.schema.json",
     "contracts/paired_review.v1.schema.json",
+    "contracts/record_spec.v1.schema.json",
+    "contracts/result_record.v1.schema.json",
+    "contracts/record_view.v1.schema.json",
+    "contracts/record_catalog.v1.schema.json",
+    "contracts/record_verification.v1.schema.json",
+    "contracts/record_error.v1.schema.json",
+    "contracts/binary_run_inventory.v1.schema.json",
+    "contracts/binary_run_audit.v1.schema.json",
+    "contracts/capabilities.v1.schema.json",
+    "contracts/cli_result.v1.schema.json",
+    "contracts/exemptions.v1.schema.json",
+    "contracts/boundary_allowlist.v1.schema.json",
 ]
 
 [tool.uv.workspace]

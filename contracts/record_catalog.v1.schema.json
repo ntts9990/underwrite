@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:record_catalog.v1",
+  "title": "record_catalog.v1",
+  "description": "Deterministic derived listing of complete records and unpublished captures.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "record_count", "records"],
+  "properties": {
+    "schema": {"const": "record_catalog.v1"},
+    "record_count": {"type": "integer", "minimum": 0, "maximum": 1000},
+    "records": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "oneOf": [
+          {"$ref": "#/$defs/complete"},
+          {"$ref": "#/$defs/unpublished"}
+        ]
+      },
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "record_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 96,
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,95}(?![\\s\\S])"
+    },
+    "kind": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}(?![\\s\\S])"
+    },
+    "label": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "\\S"},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}(?![\\s\\S])"},
+    "captured_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,9})?Z(?![\\s\\S])"
+    },
+    "complete": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["record_id", "state", "manifest_digest", "kind", "label", "captured_at"],
+      "properties": {
+        "record_id": {"$ref": "#/$defs/record_id"},
+        "state": {"const": "complete"},
+        "manifest_digest": {"$ref": "#/$defs/digest"},
+        "kind": {"$ref": "#/$defs/kind"},
+        "label": {"$ref": "#/$defs/label"},
+        "captured_at": {"$ref": "#/$defs/captured_at"}
+      }
+    },
+    "unpublished": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["record_id", "state"],
+      "properties": {
+        "record_id": {"$ref": "#/$defs/record_id"},
+        "state": {"const": "unpublished"}
+      }
+    }
+  }
+}

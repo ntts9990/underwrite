@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:record_verification.v1",
+  "title": "record_verification.v1",
+  "description": "Stored-byte and direct-link integrity findings; valid false is result data, not invocation failure.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "record_id", "manifest_digest", "valid", "files_checked", "links_checked", "findings", "verification_scope"],
+  "properties": {
+    "schema": {"const": "record_verification.v1"},
+    "record_id": {"$ref": "#/$defs/record_id"},
+    "manifest_digest": {"$ref": "#/$defs/digest"},
+    "valid": {"type": "boolean"},
+    "files_checked": {"type": "integer", "minimum": 0, "maximum": 64},
+    "links_checked": {"type": "integer", "minimum": 0, "maximum": 16},
+    "findings": {
+      "description": "At most one deterministic P2 runtime-selected finding per file or direct link; runtime precedence owns coordinate uniqueness.",
+      "type": "array",
+      "maxItems": 80,
+      "items": {"$ref": "#/$defs/finding"},
+      "uniqueItems": true
+    },
+    "verification_scope": {"const": "stored_bytes_and_direct_links"}
+  },
+  "if": {"properties": {"valid": {"const": true}}},
+  "then": {"properties": {"findings": {"maxItems": 0}}},
+  "else": {"properties": {"findings": {"minItems": 1}}},
+  "$defs": {
+    "record_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 96,
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,95}(?![\\s\\S])"
+    },
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}(?![\\s\\S])"},
+    "logical_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*(?![\\s\\S])"
+    },
+    "finding": {
+      "oneOf": [
+        {"$ref": "#/$defs/file_finding"},
+        {"$ref": "#/$defs/link_finding"}
+      ]
+    },
+    "file_finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "name", "record_id"],
+      "properties": {
+        "code": {
+          "enum": ["FILE_MISSING", "FILE_NOT_REGULAR", "FILE_NOT_PRIVATE", "FILE_READ_FAILED", "FILE_SIZE_MISMATCH", "FILE_DIGEST_MISMATCH"]
+        },
+        "name": {"$ref": "#/$defs/logical_name"},
+        "record_id": {"type": "null"}
+      }
+    },
+    "link_finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "name", "record_id"],
+      "properties": {
+        "code": {
+          "enum": ["LINK_RECORD_NOT_FOUND", "LINK_RECORD_NOT_PUBLISHED", "LINK_MANIFEST_INVALID", "LINK_DIGEST_MISMATCH"]
+        },
+        "name": {"type": "null"},
+        "record_id": {"$ref": "#/$defs/record_id"}
+      }
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "schema": "record_spec.v1",
+  "record_id": "synthetic.capture-001",
+  "kind": "source.capture",
+  "label": "Synthetic source capture",
+  "metadata": {
+    "fixture": "true",
+    "scope": "contract-only"
+  },
+  "selection": {
+    "scope": "explicit_files",
+    "excluded": null
+  },
+  "rerun_verification": {
+    "status": "not_performed",
+    "reference": null
+  },
+  "provenance": {
+    "verified": false,
+    "attestation_ref": null
+  },
+  "links": [],
+  "files": [
+    {
+      "name": "source/note.txt",
+      "role": "source",
+      "path": "note.txt",
+      "media_type": "text/plain;charset=utf-8",
+      "source_locator": "synthetic://records/note"
+    }
+  ]
+}

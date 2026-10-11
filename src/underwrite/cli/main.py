@@ -1,84 +1,59 @@
-"""Wire the underwrite command-line surface to product handlers.
-
-Ingestion, inspection, measurement and acceptance use distinct output contracts.
-Population, pin and boundary checks return cli_result.v1 with stable exit codes."""
+"""Wire one command registration source to help, dispatch, and capability discovery."""
 
 from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from underwrite.cli import (
     accept,
     audit_counts,
+    audit_run,
     boundary,
+    capabilities,
     commands,
     compare_declarations,
     inspection,
     instrument,
     measure,
     pair_binary,
+    records,
     release,
     render,
     review_pair,
 )
+from underwrite.cli.capabilities import CommandDescriptor, Handler, profile
 
-# Commands with their own parser and error envelope; build_parser registers them for help.
-COMMANDS = {
-    "review-pair": review_pair.main,
-    "compare-declarations": compare_declarations.main,
-    "pair-binary": pair_binary.main,
-    "audit-counts": audit_counts.main,
-    "measure": measure.main,
-    "check": release.main,
-    "inspect": inspection.main,
-    "accept": accept.main,
-}
+Standalone = Callable[[list[str]], int]
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="underwrite")
-    subparsers = parser.add_subparsers(dest="command", required=True)
-    ingest = subparsers.add_parser(
-        "ingest", aliases=["project"], help="Project an artifact (project is an explicit alias)."
-    )
-    instrument.configure(ingest)
-    audit_counts.configure(
-        subparsers.add_parser(
-            "audit-counts", help="Audit declared counts in one supported artifact."
-        )
-    )
-    compare_declarations.configure(
-        subparsers.add_parser(
-            "compare-declarations", help="Compare supplied condition and metric declarations."
-        )
-    )
-    pair_binary.configure(
-        subparsers.add_parser("pair-binary", help="Compute bounded paired binary evidence.")
-    )
-    review_pair.configure(
-        subparsers.add_parser("review-pair", help="Review declared paired comparison context.")
-    )
-    inspection.configure(subparsers.add_parser("inspect", help="Inspect one local artifact case."))
-    release.configure(subparsers.add_parser("check", help="Check declared release linkage."))
-    measure.configure(subparsers.add_parser("measure", help="Compute one local measurement read."))
-    accept.configure(
-        subparsers.add_parser("accept", help="Classify one change candidate's declared evidence.")
-    )
+def _standalone(handler: Standalone) -> Handler:
+    def invoke(command: str, argv: list[str]) -> int:
+        del command
+        return handler(argv)
 
-    absence = subparsers.add_parser("absence", help="Population-absence gate .")
-    absence.add_argument("--root", type=Path, required=True, help="Population directory.")
-    absence.add_argument("--glob", required=True, help="Glob pattern (relative to --root).")
-    absence.add_argument("--min", type=int, required=True, help="Minimum population size.")
-    absence.add_argument("--exemptions", type=Path, default=None, help="exemptions.v1 JSON path.")
-    absence.add_argument("--exemption-key", default=None, help="Key into --exemptions.")
-    absence.add_argument("--now", default=None, help="ISO8601 date vs. exemption expiry.")
-    absence.add_argument("--json", action="store_true", help="Print cli_result.v1 JSON.")
-    absence.set_defaults(handler=commands.cmd_absence)
+    return invoke
 
-    drift = subparsers.add_parser("drift", help="Contract pin drift guard .")
-    drift_sub = drift.add_subparsers(dest="drift_command", required=True)
+
+def _instrument(command: str, argv: list[str]) -> int:
+    return instrument.main(command, argv)
+
+
+def _configure_absence(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--root", type=Path, required=True, help="Population directory.")
+    parser.add_argument("--glob", required=True, help="Glob pattern relative to --root.")
+    parser.add_argument("--min", type=int, required=True, help="Minimum population size.")
+    parser.add_argument("--exemptions", type=Path, default=None, help="exemptions.v1 JSON path.")
+    parser.add_argument("--exemption-key", default=None, help="Key into --exemptions.")
+    parser.add_argument("--now", default=None, help="ISO8601 date vs. exemption expiry.")
+    parser.add_argument("--json", action="store_true", help="Print cli_result.v1 JSON.")
+    parser.set_defaults(handler=commands.cmd_absence)
+
+
+def _configure_drift(parser: argparse.ArgumentParser) -> None:
+    drift_sub = parser.add_subparsers(dest="drift_command", required=True)
     check = drift_sub.add_parser("check", help="Verify pins and fold in the population rule.")
     check.add_argument("--pins-root", type=Path, default=commands.DEFAULT_PINS_ROOT)
     check.add_argument("--siblings-root", type=Path, default=commands.default_siblings_root())
@@ -87,37 +62,279 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("--json", action="store_true", help="Print cli_result.v1 JSON.")
     check.set_defaults(handler=commands.cmd_drift_check)
 
-    pins = subparsers.add_parser("pins", help="Contract pin registry (contracts/pins/).")
-    pins_sub = pins.add_subparsers(dest="pins_command", required=True)
+
+def _configure_pins(parser: argparse.ArgumentParser) -> None:
+    pins_sub = parser.add_subparsers(dest="pins_command", required=True)
     refresh = pins_sub.add_parser("refresh", help="Re-pin a repo from its sibling checkout.")
     refresh.add_argument("--repo", required=True, help="Repo name under --pins-root/active/.")
     refresh.add_argument("--pins-root", type=Path, default=commands.DEFAULT_PINS_ROOT)
     refresh.add_argument("--siblings-root", type=Path, default=commands.default_siblings_root())
     refresh.set_defaults(handler=commands.cmd_pins_refresh)
 
-    boundary_parser = subparsers.add_parser(
-        "boundary", help="Vocabulary-boundary scanner (measurement vs. adjudication)."
-    )
-    boundary_sub = boundary_parser.add_subparsers(dest="boundary_command", required=True)
+
+def _configure_boundary(parser: argparse.ArgumentParser) -> None:
+    boundary_sub = parser.add_subparsers(dest="boundary_command", required=True)
     scan = boundary_sub.add_parser(
         "scan", help="Scan JSON/JSONL files for adjudication-vocabulary leaks."
     )
     scan.add_argument("paths", type=Path, nargs="+", metavar="PATH")
     scan.add_argument("--allowlist", type=Path, default=None, help="boundary_allowlist.v1 JSON.")
-    scan.add_argument("--now", default=None, help="ISO8601 date vs. allowlist entry expiry.")
+    scan.add_argument("--now", default=None, help="ISO8601 date vs. allowlist expiry.")
     scan.add_argument("--json", action="store_true", help="Print cli_result.v1 JSON.")
     scan.set_defaults(handler=boundary.cmd_boundary_scan)
 
+
+COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
+    CommandDescriptor(
+        "ingest",
+        "Project an artifact (project is an explicit alias).",
+        instrument.configure,
+        (
+            profile(
+                "registered-codecs",
+                ("format", "version", "file|http_body_file"),
+                (),
+                ("observation.v1",),
+            ),
+        ),
+        _instrument,
+        ("project",),
+    ),
+    CommandDescriptor(
+        "records",
+        "Store and verify private result bundles.",
+        records.configure,
+        (
+            profile("save", ("root", "spec"), ("record_spec.v1",), ("record_view.v1",)),
+            profile("list", ("root",), (), ("record_catalog.v1",)),
+            profile("show", ("root", "id"), (), ("record_view.v1",)),
+            profile("verify", ("root", "id"), (), ("record_verification.v1",)),
+        ),
+        _standalone(records.main),
+    ),
+    CommandDescriptor(
+        "audit-run",
+        "Audit producer execution units.",
+        audit_run.configure,
+        (
+            profile(
+                "neutral-inventory",
+                ("input",),
+                ("binary_run_inventory.v1",),
+                ("binary_run_audit.v1",),
+            ),
+            profile(
+                "goppi-grounded-pilot-exchange",
+                ("goppi_grounded_pilot_exchange",),
+                (),
+                ("binary_run_audit.v1",),
+            ),
+        ),
+        _standalone(audit_run.main),
+    ),
+    CommandDescriptor(
+        "audit-counts",
+        "Audit declared counts in one supported artifact.",
+        audit_counts.configure,
+        (
+            profile(
+                "promptfoo-0.123.0",
+                ("case",),
+                ("artifact_case.v1",),
+                ("promptfoo_accounting.v1",),
+            ),
+        ),
+        _standalone(audit_counts.main),
+    ),
+    CommandDescriptor(
+        "compare-declarations",
+        "Compare supplied condition and metric declarations.",
+        compare_declarations.configure,
+        (
+            profile(
+                "promptfoo-accounting",
+                ("baseline", "candidate", "manifest"),
+                ("promptfoo_accounting.v1", "declared_comparison_case.v1"),
+                ("declared_comparison.v1",),
+            ),
+        ),
+        _standalone(compare_declarations.main),
+    ),
+    CommandDescriptor(
+        "pair-binary",
+        "Compute bounded paired binary evidence.",
+        pair_binary.configure,
+        (
+            profile(
+                "binary",
+                ("input", "policy"),
+                ("paired_binary_input.v1", "paired_binary_policy.v1"),
+                ("paired_binary_evidence.v1",),
+            ),
+        ),
+        _standalone(pair_binary.main),
+    ),
+    CommandDescriptor(
+        "review-pair",
+        "Review declared paired comparison context.",
+        review_pair.configure,
+        (
+            profile(
+                "binary-review",
+                ("input", "policy", "context"),
+                (
+                    "paired_binary_input.v1",
+                    "paired_binary_policy.v1",
+                    "paired_review_context.v1",
+                ),
+                ("paired_review.v1",),
+            ),
+        ),
+        _standalone(review_pair.main),
+    ),
+    CommandDescriptor(
+        "inspect",
+        "Inspect one local artifact case.",
+        inspection.configure,
+        (
+            profile(
+                "artifact-case",
+                ("case",),
+                ("artifact_case.v1",),
+                ("artifact_inspection.v1",),
+            ),
+        ),
+        _standalone(inspection.main),
+    ),
+    CommandDescriptor(
+        "check",
+        "Check declared release linkage.",
+        release.configure,
+        (
+            profile(
+                "release-case",
+                ("release",),
+                ("release_case.v1",),
+                ("release_inspection.v1",),
+            ),
+        ),
+        _standalone(release.main),
+    ),
+    CommandDescriptor(
+        "measure",
+        "Compute one local measurement read.",
+        measure.configure,
+        (
+            profile(
+                "binary-calibration-two-stage.v1",
+                ("observation", "policy"),
+                ("observation.v1", "measurement_policy.v2"),
+                ("read.v1",),
+            ),
+        ),
+        _standalone(measure.main),
+    ),
+    CommandDescriptor(
+        "accept",
+        "Classify one change candidate's declared evidence.",
+        accept.configure,
+        (
+            profile(
+                "declared-claims",
+                ("candidate", "claims", "read"),
+                ("change_candidate.v1", "declared_claims.v1", "read.v1"),
+                ("acceptance_decision.v1",),
+            ),
+        ),
+        _standalone(accept.main),
+    ),
+    CommandDescriptor(
+        "absence",
+        "Population-absence gate.",
+        _configure_absence,
+        (
+            profile(
+                "population",
+                ("root", "glob", "min"),
+                ("exemptions.v1",),
+                ("cli_result.v1",),
+            ),
+        ),
+    ),
+    CommandDescriptor(
+        "drift",
+        "Contract pin drift guard.",
+        _configure_drift,
+        (
+            profile(
+                "check",
+                (),
+                ("exemptions.v1",),
+                ("cli_result.v1",),
+            ),
+        ),
+    ),
+    CommandDescriptor(
+        "pins",
+        "Contract pin registry.",
+        _configure_pins,
+        (profile("refresh", ("repo",), (), ()),),
+    ),
+    CommandDescriptor(
+        "boundary",
+        "Vocabulary-boundary scanner.",
+        _configure_boundary,
+        (
+            profile(
+                "scan",
+                ("paths",),
+                ("boundary_allowlist.v1",),
+                ("cli_result.v1",),
+            ),
+        ),
+    ),
+    CommandDescriptor(
+        "capabilities",
+        "List installed command and codec capabilities.",
+        capabilities.configure,
+        (profile("default", (), (), ("capabilities.v1",)),),
+        _standalone(capabilities.main),
+    ),
+)
+
+
+def _dispatch() -> dict[str, CommandDescriptor]:
+    result: dict[str, CommandDescriptor] = {}
+    for descriptor in COMMAND_DESCRIPTORS:
+        for name in (descriptor.command, *descriptor.aliases):
+            if name in result:
+                raise ValueError("DUPLICATE_COMMAND_REGISTRATION")
+            result[name] = descriptor
+    return result
+
+
+COMMANDS = _dispatch()
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="underwrite")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    for descriptor in COMMAND_DESCRIPTORS:
+        child = subparsers.add_parser(
+            descriptor.command,
+            aliases=list(descriptor.aliases),
+            help=descriptor.help,
+        )
+        descriptor.configure(child)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    argv = sys.argv[1:] if argv is None else argv
-    if argv and argv[0] in COMMANDS:
-        return COMMANDS[argv[0]](argv[1:])
-    if argv and argv[0] in instrument.COMMANDS:
-        return instrument.main(argv[0], argv[1:])
-    args = build_parser().parse_args(argv)
+    args_list = sys.argv[1:] if argv is None else argv
+    if args_list and (descriptor := COMMANDS.get(args_list[0])) is not None:
+        if descriptor.handler is not None:
+            return descriptor.handler(args_list[0], args_list[1:])
+    args = build_parser().parse_args(args_list)
     exit_code, payload = args.handler(args)
     render.render(payload, as_json=bool(getattr(args, "json", False)))
     return exit_code

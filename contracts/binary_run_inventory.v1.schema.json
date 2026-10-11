@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:binary_run_inventory.v1",
+  "title": "binary_run_inventory.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "source", "outcome_definition", "unit", "groups"],
+  "properties": {
+    "schema": {"const": "binary_run_inventory.v1"},
+    "source": {"$ref": "#/$defs/source"},
+    "outcome_definition": {"$ref": "#/$defs/outcome_definition"},
+    "unit": {"const": "producer_execution_unit"},
+    "groups": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {"$ref": "#/$defs/group"}
+    }
+  },
+  "$defs": {
+    "text128": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S"},
+    "text512": {"type": "string", "minLength": 1, "maxLength": 512, "pattern": "\\S"},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["producer", "format", "format_version", "artifact_digest", "files"],
+      "properties": {
+        "producer": {"$ref": "#/$defs/text128"},
+        "format": {"$ref": "#/$defs/text128"},
+        "format_version": {"$ref": "#/$defs/text128"},
+        "artifact_digest": {"$ref": "#/$defs/digest"},
+        "files": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "sha256", "bytes"],
+            "properties": {
+              "name": {"$ref": "#/$defs/text512"},
+              "sha256": {"$ref": "#/$defs/digest"},
+              "bytes": {"type": "integer", "minimum": 0, "maximum": 9007199254740991}
+            }
+          }
+        }
+      }
+    },
+    "outcome_definition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "positive_means"],
+      "properties": {
+        "name": {"$ref": "#/$defs/text128"},
+        "positive_means": {"$ref": "#/$defs/text512"}
+      }
+    },
+    "source_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "ref", "digest"],
+      "properties": {
+        "kind": {"$ref": "#/$defs/text128"},
+        "ref": {"$ref": "#/$defs/text512"},
+        "digest": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/digest"}]}
+      }
+    },
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unit_id", "case_id", "arm", "repeat_index", "source_reason", "source_refs"],
+      "properties": {
+        "unit_id": {"$ref": "#/$defs/text128"},
+        "case_id": {"$ref": "#/$defs/text128"},
+        "arm": {"$ref": "#/$defs/text128"},
+        "repeat_index": {"type": "integer", "minimum": 0, "maximum": 1024},
+        "outcome": {"type": "integer", "enum": [0, 1]},
+        "missing_reason": {"enum": ["infra", "verifier", "not_started", "unknown"]},
+        "non_binary_classification": {"$ref": "#/$defs/text128"},
+        "source_reason": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "\\S"}
+          ]
+        },
+        "source_refs": {"type": "array", "maxItems": 16, "items": {"$ref": "#/$defs/source_ref"}}
+      },
+      "oneOf": [
+        {"required": ["outcome"]},
+        {"required": ["missing_reason"]},
+        {"required": ["non_binary_classification"]}
+      ]
+    },
+    "planned_unit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unit_id", "arm"],
+      "properties": {
+        "unit_id": {"$ref": "#/$defs/text128"},
+        "arm": {"$ref": "#/$defs/text128"}
+      }
+    },
+    "group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["group_id", "context", "planned_units", "records"],
+      "properties": {
+        "group_id": {"$ref": "#/$defs/text128"},
+        "context": {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": {"$ref": "#/$defs/text128"},
+          "additionalProperties": {
+            "oneOf": [
+              {"type": "string", "minLength": 1, "maxLength": 512, "pattern": "\\S"},
+              {"type": "boolean"},
+              {"type": "null"}
+            ]
+          }
+        },
+        "planned_units": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "array", "maxItems": 4096, "items": {"$ref": "#/$defs/planned_unit"}}
+          ]
+        },
+        "records": {"type": "array", "maxItems": 4096, "items": {"$ref": "#/$defs/record"}}
+      }
+    }
+  }
+}

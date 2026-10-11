@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:binary_run_audit.v1",
+  "title": "binary_run_audit.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "input_digest", "source", "outcome_definition", "unit", "group_count", "unit_count", "groups", "limitations"],
+  "properties": {
+    "schema": {"const": "binary_run_audit.v1"},
+    "input_digest": {"$ref": "#/$defs/digest"},
+    "source": {"$ref": "#/$defs/source"},
+    "outcome_definition": {"$ref": "#/$defs/outcome_definition"},
+    "unit": {"const": "producer_execution_unit"},
+    "group_count": {"type": "integer", "minimum": 0, "maximum": 32},
+    "unit_count": {"type": "integer", "minimum": 0, "maximum": 8192},
+    "groups": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/group_audit"}},
+    "limitations": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 6,
+      "items": {
+        "enum": [
+          "SOURCE_CLAIMS_UNVERIFIED",
+          "GROUPS_NOT_COMPARABLE",
+          "PRODUCER_EXECUTION_UNITS_NOT_ESTABLISHED_AS_INDEPENDENT_SAMPLES",
+          "NO_STATISTICAL_INFERENCE",
+          "NO_DECISION_AUTHORITY",
+          "NON_BINARY_CLASSIFICATIONS_EXCLUDED_FROM_BINARY_OUTCOMES"
+        ]
+      },
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "text128": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S"},
+    "text512": {"type": "string", "minLength": 1, "maxLength": 512, "pattern": "\\S"},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["producer", "format", "format_version", "artifact_digest", "files"],
+      "properties": {
+        "producer": {"$ref": "#/$defs/text128"},
+        "format": {"$ref": "#/$defs/text128"},
+        "format_version": {"$ref": "#/$defs/text128"},
+        "artifact_digest": {"$ref": "#/$defs/digest"},
+        "files": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "sha256", "bytes"],
+            "properties": {
+              "name": {"$ref": "#/$defs/text512"},
+              "sha256": {"$ref": "#/$defs/digest"},
+              "bytes": {"type": "integer", "minimum": 0, "maximum": 9007199254740991}
+            }
+          }
+        }
+      }
+    },
+    "outcome_definition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "positive_means"],
+      "properties": {
+        "name": {"$ref": "#/$defs/text128"},
+        "positive_means": {"$ref": "#/$defs/text512"}
+      }
+    },
+    "context": {
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": {"$ref": "#/$defs/text128"},
+      "additionalProperties": {
+        "oneOf": [
+          {"type": "string", "minLength": 1, "maxLength": 512, "pattern": "\\S"},
+          {"type": "boolean"},
+          {"type": "null"}
+        ]
+      }
+    },
+    "source_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "ref", "digest"],
+      "properties": {
+        "kind": {"$ref": "#/$defs/text128"},
+        "ref": {"$ref": "#/$defs/text512"},
+        "digest": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/digest"}]}
+      }
+    },
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unit_id", "case_id", "arm", "repeat_index", "source_reason", "source_refs"],
+      "properties": {
+        "unit_id": {"$ref": "#/$defs/text128"},
+        "case_id": {"$ref": "#/$defs/text128"},
+        "arm": {"$ref": "#/$defs/text128"},
+        "repeat_index": {"type": "integer", "minimum": 0, "maximum": 1024},
+        "outcome": {"type": "integer", "enum": [0, 1]},
+        "missing_reason": {"enum": ["infra", "verifier", "not_started", "unknown"]},
+        "non_binary_classification": {"$ref": "#/$defs/text128"},
+        "source_reason": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "\\S"}
+          ]
+        },
+        "source_refs": {"type": "array", "maxItems": 16, "items": {"$ref": "#/$defs/source_ref"}}
+      },
+      "oneOf": [
+        {"required": ["outcome"]},
+        {"required": ["missing_reason"]},
+        {"required": ["non_binary_classification"]}
+      ]
+    },
+    "missing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["infra", "verifier", "not_started", "unknown"],
+      "properties": {
+        "infra": {"type": "integer", "minimum": 0, "maximum": 4096},
+        "verifier": {"type": "integer", "minimum": 0, "maximum": 4096},
+        "not_started": {"type": "integer", "minimum": 0, "maximum": 4096},
+        "unknown": {"type": "integer", "minimum": 0, "maximum": 4096}
+      }
+    },
+    "classification_count": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["classification", "count"],
+      "properties": {
+        "classification": {"$ref": "#/$defs/text128"},
+        "count": {"type": "integer", "minimum": 1, "maximum": 4096}
+      }
+    },
+    "accounting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["planned", "reported", "observed_one", "observed_zero", "missing_by_reason", "non_binary_by_classification", "unreported_planned", "unique_cases"],
+      "properties": {
+        "planned": {"oneOf": [{"type": "null"}, {"type": "integer", "minimum": 0, "maximum": 4096}]},
+        "reported": {"type": "integer", "minimum": 0, "maximum": 4096},
+        "observed_one": {"type": "integer", "minimum": 0, "maximum": 4096},
+        "observed_zero": {"type": "integer", "minimum": 0, "maximum": 4096},
+        "missing_by_reason": {"$ref": "#/$defs/missing"},
+        "non_binary_by_classification": {"type": "array", "maxItems": 16, "items": {"$ref": "#/$defs/classification_count"}},
+        "unreported_planned": {"oneOf": [{"type": "null"}, {"type": "integer", "minimum": 0, "maximum": 4096}]},
+        "unique_cases": {"type": "integer", "minimum": 0, "maximum": 4096}
+      }
+    },
+    "arm_accounting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["arm", "planned", "reported", "observed_one", "observed_zero", "missing_by_reason", "non_binary_by_classification", "unreported_planned", "unique_cases"],
+      "properties": {
+        "arm": {"$ref": "#/$defs/text128"},
+        "planned": {"oneOf": [{"type": "null"}, {"type": "integer", "minimum": 0, "maximum": 4096}]},
+        "reported": {"type": "integer", "minimum": 0, "maximum": 4096},
+        "observed_one": {"type": "integer", "minimum": 0, "maximum": 4096},
+        "observed_zero": {"type": "integer", "minimum": 0, "maximum": 4096},
+        "missing_by_reason": {"$ref": "#/$defs/missing"},
+        "non_binary_by_classification": {"type": "array", "maxItems": 16, "items": {"$ref": "#/$defs/classification_count"}},
+        "unreported_planned": {"oneOf": [{"type": "null"}, {"type": "integer", "minimum": 0, "maximum": 4096}]},
+        "unique_cases": {"type": "integer", "minimum": 0, "maximum": 4096}
+      }
+    },
+    "group_audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["group_id", "context", "records", "accounting", "arms"],
+      "properties": {
+        "group_id": {"$ref": "#/$defs/text128"},
+        "context": {"$ref": "#/$defs/context"},
+        "records": {"type": "array", "maxItems": 4096, "items": {"$ref": "#/$defs/record"}},
+        "accounting": {"$ref": "#/$defs/accounting"},
+        "arms": {"type": "array", "maxItems": 4096, "items": {"$ref": "#/$defs/arm_accounting"}}
+      }
+    }
+  }
+}

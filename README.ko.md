@@ -14,7 +14,7 @@
 
 [English](README.md) · **한국어**
 
-[설치](#설치) · [빠른 시작](#빠른-시작) · [에이전트 사용](AGENT_USAGE.md) · [지원 형식](#지원-형식) · [CLI](#cli) · [기여 안내](CONTRIBUTING.md)
+[설치](#설치) · [빠른 시작](#빠른-시작) · [에이전트 사용](AGENT_USAGE.md) · [로컬 기록 저장](STORAGE.md) · [지원 형식](#지원-형식) · [CLI](#cli) · [기여 안내](CONTRIBUTING.md)
 
 </div>
 

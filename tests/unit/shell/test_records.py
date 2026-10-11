@@ -1,0 +1,545 @@
+from __future__ import annotations
+
+import json
+import os
+import stat
+from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
+from pathlib import Path
+from typing import Protocol, cast
+
+import pytest
+from jsonschema import Draft202012Validator
+from underwrite_core.canonical import canonical_bytes, digest_bytes
+
+from underwrite.service import records
+from underwrite.service.records import RecordError
+
+PRIVATE_DIR_MODE = 0o700
+PRIVATE_FILE_MODE = 0o600
+
+
+class Validator(Protocol):
+    def validate(self, instance: object) -> None: ...
+
+
+def _spec(identifier: str = "capture.001") -> dict[str, object]:
+    return {
+        "schema": "record_spec.v1",
+        "record_id": identifier,
+        "kind": "source.capture",
+        "label": "Local capture",
+        "metadata": {"scope": "test"},
+        "selection": {"scope": "explicit_files", "excluded": None},
+        "rerun_verification": {"status": "not_performed", "reference": None},
+        "provenance": {"verified": False, "attestation_ref": None},
+        "links": [],
+        "files": [
+            {
+                "name": "source/result.json",
+                "role": "result",
+                "path": "result.json",
+                "media_type": "application/json",
+            }
+        ],
+    }
+
+
+def _source(tmp_path: Path, data: bytes = b'{"ok":true}\n') -> Path:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "result.json").write_bytes(data)
+    return source
+
+
+def _save(tmp_path: Path, data: bytes = b'{"ok":true}\n') -> tuple[Path, dict[str, object]]:
+    source = _source(tmp_path, data)
+    root = tmp_path / "store"
+    snapshot = records.save_record(root, _spec(), source)
+    return root, snapshot.manifest
+
+
+def _assert_error(code: str, call: object) -> RecordError:
+    assert callable(call)
+    with pytest.raises(RecordError) as caught:
+        call()
+    assert caught.value.code == code
+    return caught.value
+
+
+def test_save_read_list_and_verify_are_consistent_and_private(tmp_path: Path) -> None:
+    raw = b"exact raw bytes\x00\xff"
+    root, manifest = _save(tmp_path, raw)
+    snapshot = records.read_record(root, "capture.001")
+
+    assert snapshot.manifest == manifest
+    assert snapshot.digest == digest_bytes(canonical_bytes(manifest))
+    assert snapshot.manifest["files"] == [
+        {
+            "name": "source/result.json",
+            "role": "result",
+            "sha256": digest_bytes(raw),
+            "bytes": len(raw),
+            "media_type": "application/json",
+            "source_locator": None,
+        }
+    ]
+    assert "path" not in json.dumps(snapshot.manifest)
+    assert (root / "records/capture.001/files/source/result.json").read_bytes() == raw
+    for directory in [
+        root,
+        root / "records",
+        root / ".staging",
+        root / "records/capture.001",
+        root / "records/capture.001/files",
+        root / "records/capture.001/files/source",
+    ]:
+        assert stat.S_IMODE(directory.stat().st_mode) == PRIVATE_DIR_MODE
+    for path in [
+        root / "records/capture.001/files/source/result.json",
+        root / "records/capture.001/manifest.json",
+    ]:
+        assert stat.S_IMODE(path.stat().st_mode) == PRIVATE_FILE_MODE
+
+    catalog = records.list_records(root)
+    entry = cast(list[dict[str, object]], catalog["records"])[0]
+    assert catalog["record_count"] == 1
+    assert entry["state"] == "complete"
+    assert entry["manifest_digest"] == snapshot.digest
+    assert records.verify_record(root, "capture.001") == {
+        "schema": "record_verification.v1",
+        "record_id": "capture.001",
+        "manifest_digest": snapshot.digest,
+        "valid": True,
+        "files_checked": 1,
+        "links_checked": 0,
+        "findings": [],
+        "verification_scope": "stored_bytes_and_direct_links",
+    }
+
+
+@pytest.mark.parametrize(
+    ("name", "other"),
+    [
+        ("../escape", "safe"),
+        ("/absolute", "safe"),
+        ("same", "SAME"),
+        ("nested", "nested/file"),
+        ("bad\\name", "safe"),
+    ],
+)
+def test_invalid_or_conflicting_logical_names_are_rejected_before_store_creation(
+    tmp_path: Path, name: str, other: str
+) -> None:
+    source = _source(tmp_path)
+    spec = _spec()
+    files = cast(list[dict[str, object]], spec["files"])
+    files[0]["name"] = name
+    files.append({**files[0], "name": other})
+    _assert_error("INVALID_SPEC", lambda: records.save_record(tmp_path / "store", spec, source))
+    assert not (tmp_path / "store").exists()
+
+
+def test_source_is_opened_once_and_later_path_replacement_does_not_change_capture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source(tmp_path, b"first")
+    original = records._store_for_save  # pyright: ignore[reportPrivateUsage]
+
+    def replace_after_open(root: Path) -> tuple[Path, Path]:
+        replacement = source / "replacement"
+        replacement.write_bytes(b"second")
+        replacement.replace(source / "result.json")
+        return original(root)
+
+    monkeypatch.setattr(records, "_store_for_save", replace_after_open)
+    snapshot = records.save_record(tmp_path / "store", _spec(), source)
+    stored = cast(list[dict[str, object]], snapshot.manifest["files"])[0]
+    assert stored["sha256"] == digest_bytes(b"first")
+    stored_path = tmp_path / "store/records/capture.001/files/source/result.json"
+    assert stored_path.read_bytes() == b"first"
+
+
+@pytest.mark.parametrize("logical_name", ["manifest.json", "manifest.json/child.json"])
+def test_logical_manifest_names_do_not_collide_with_completion_marker(
+    tmp_path: Path, logical_name: str
+) -> None:
+    source = _source(tmp_path, b"selected bytes")
+    spec = _spec()
+    cast(list[dict[str, object]], spec["files"])[0]["name"] = logical_name
+    root = tmp_path / "store"
+    records.save_record(root, spec, source)
+    assert (root / "records/capture.001/manifest.json").is_file()
+    selected = root / "records/capture.001/files" / logical_name
+    assert selected.read_bytes() == b"selected bytes"
+    assert records.verify_record(root, "capture.001")["valid"] is True
+
+
+@pytest.mark.parametrize("kind", ["symlink", "fifo"])
+def test_nonregular_source_is_rejected_without_creating_store(tmp_path: Path, kind: str) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    target = source / "result.json"
+    if kind == "symlink":
+        (source / "real").write_text("x")
+        target.symlink_to("real")
+    else:
+        os.mkfifo(target)
+    _assert_error(
+        "SOURCE_READ_FAILED", lambda: records.save_record(tmp_path / "store", _spec(), source)
+    )
+    assert not (tmp_path / "store").exists()
+
+
+def test_nfd_source_path_is_captured_without_normalizing_filesystem_identity(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    nfd_name = "e\u0301.json"
+    (source / nfd_name).write_bytes(b"nfd bytes")
+    spec = _spec()
+    cast(list[dict[str, object]], spec["files"])[0]["path"] = nfd_name
+    contract = json.loads(
+        (Path(__file__).resolve().parents[3] / "contracts/record_spec.v1.schema.json").read_bytes()
+    )
+    cast(Validator, Draft202012Validator(contract)).validate(spec)
+    root = tmp_path / "store"
+    snapshot = records.save_record(root, spec, source)
+    stored_path = root / "records/capture.001/files/source/result.json"
+    assert stored_path.read_bytes() == b"nfd bytes"
+    stored = cast(list[dict[str, object]], snapshot.manifest["files"])
+    assert "path" not in stored[0]
+
+
+def test_two_writers_for_one_id_have_one_winner_and_do_not_mix_bytes(tmp_path: Path) -> None:
+    source = _source(tmp_path, b"winner bytes")
+    root = tmp_path / "store"
+
+    def capture() -> str:
+        try:
+            records.save_record(root, _spec(), source)
+        except RecordError as exc:
+            return exc.code
+        return "OK"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(capture) for _ in range(2)]
+        outcomes = sorted(future.result() for future in futures)
+    assert outcomes in (["OK", "RECORD_EXISTS"], ["OK", "RECORD_CAPTURE_INCOMPLETE"])
+    assert records.verify_record(root, "capture.001")["valid"] is True
+    stored_path = root / "records/capture.001/files/source/result.json"
+    assert stored_path.read_bytes() == b"winner bytes"
+
+
+def test_unpublished_capture_is_listed_but_cannot_be_read_or_reused(tmp_path: Path) -> None:
+    root = tmp_path / "store"
+    (root / "records/capture.001").mkdir(parents=True, mode=0o700)
+    os.chmod(root, 0o700)
+    os.chmod(root / "records", 0o700)
+    catalog = records.list_records(root)
+    assert catalog["records"] == [{"record_id": "capture.001", "state": "unpublished"}]
+    _assert_error("RECORD_NOT_PUBLISHED", lambda: records.read_record(root, "capture.001"))
+    source = _source(tmp_path)
+    _assert_error("RECORD_CAPTURE_INCOMPLETE", lambda: records.save_record(root, _spec(), source))
+
+
+def test_corrupt_manifest_is_invocation_error_but_corrupt_data_is_finding(tmp_path: Path) -> None:
+    root, _ = _save(tmp_path)
+    data = root / "records/capture.001/files/source/result.json"
+    data.write_bytes(b"same length??")
+    result = records.verify_record(root, "capture.001")
+    assert result["valid"] is False
+    assert cast(list[dict[str, object]], result["findings"])[0]["code"] in {
+        "FILE_SIZE_MISMATCH",
+        "FILE_DIGEST_MISMATCH",
+    }
+    manifest = root / "records/capture.001/manifest.json"
+    manifest.write_text('{"schema":"result_record.v1","schema":"result_record.v1"}')
+    _assert_error("INVALID_RECORD", lambda: records.read_record(root, "capture.001"))
+
+
+@pytest.mark.parametrize(
+    ("mutation", "code"),
+    [
+        ("missing", "FILE_MISSING"),
+        ("public", "FILE_NOT_PRIVATE"),
+        ("symlink", "FILE_NOT_REGULAR"),
+    ],
+)
+def test_verify_emits_one_precedence_finding_per_file(
+    tmp_path: Path, mutation: str, code: str
+) -> None:
+    root, _ = _save(tmp_path)
+    data = root / "records/capture.001/files/source/result.json"
+    if mutation == "missing":
+        data.unlink()
+    elif mutation == "public":
+        data.chmod(0o644)
+    else:
+        data.unlink()
+        data.symlink_to("missing")
+    findings = cast(list[dict[str, object]], records.verify_record(root, "capture.001")["findings"])
+    assert findings == [{"code": code, "name": "source/result.json", "record_id": None}]
+
+
+@pytest.mark.parametrize(
+    ("mutation", "code"),
+    [("symlink", "FILE_NOT_REGULAR"), ("public", "FILE_NOT_PRIVATE")],
+)
+def test_verify_checks_files_root_before_selected_leaf(
+    tmp_path: Path, mutation: str, code: str
+) -> None:
+    root, _ = _save(tmp_path)
+    files_root = root / "records/capture.001/files"
+    if mutation == "symlink":
+        moved = root / "records/capture.001/moved-files"
+        files_root.rename(moved)
+        files_root.symlink_to("moved-files", target_is_directory=True)
+    else:
+        files_root.chmod(0o755)
+    findings = cast(list[dict[str, object]], records.verify_record(root, "capture.001")["findings"])
+    assert findings == [{"code": code, "name": "source/result.json", "record_id": None}]
+
+
+def test_links_are_bound_before_mutation_and_checked_directly(tmp_path: Path) -> None:
+    source = _source(tmp_path)
+    root = tmp_path / "store"
+    first = records.save_record(root, _spec("input.001"), source)
+    linked_spec = _spec("analysis.001")
+    linked_spec["links"] = [
+        {"relation": "input", "record_id": "input.001", "manifest_digest": first.digest}
+    ]
+    second = records.save_record(root, linked_spec, source)
+    assert second.manifest["links"] == linked_spec["links"]
+    assert records.verify_record(root, "analysis.001")["valid"] is True
+
+    (root / "records/input.001/manifest.json").unlink()
+    verification = records.verify_record(root, "analysis.001")
+    assert verification["valid"] is False
+    assert verification["findings"] == [
+        {"code": "LINK_RECORD_NOT_PUBLISHED", "name": None, "record_id": "input.001"}
+    ]
+
+    bad = _spec("analysis.002")
+    bad["links"] = [
+        {
+            "relation": "input",
+            "record_id": "input.001",
+            "manifest_digest": "sha256:" + "0" * 64,
+        }
+    ]
+    _assert_error("INVALID_SPEC", lambda: records.save_record(root, bad, source))
+    assert not (root / "records/analysis.002").exists()
+
+
+def test_truth_axes_and_artifact_roles_are_validated_independently(tmp_path: Path) -> None:
+    source = _source(tmp_path)
+    spec = _spec()
+    spec["provenance"] = {"verified": True, "attestation_ref": None}
+    _assert_error("INVALID_SPEC", lambda: records.save_record(tmp_path / "store", spec, source))
+
+    rerun = _spec()
+    rerun["rerun_verification"] = {
+        "status": "referenced",
+        "reference": {"scope": "this_record", "name": "source/result.json"},
+    }
+    _assert_error("INVALID_SPEC", lambda: records.save_record(tmp_path / "other", rerun, source))
+
+
+def test_linked_rerun_reference_requires_a_verification_artifact(tmp_path: Path) -> None:
+    source = _source(tmp_path)
+    root = tmp_path / "store"
+    target = records.save_record(root, _spec("input.001"), source)
+    spec = _spec("analysis.001")
+    spec["links"] = [
+        {"relation": "input", "record_id": "input.001", "manifest_digest": target.digest}
+    ]
+    spec["rerun_verification"] = {
+        "status": "referenced",
+        "reference": {
+            "scope": "linked_record",
+            "record_id": "input.001",
+            "manifest_digest": target.digest,
+            "name": "source/result.json",
+        },
+    }
+    _assert_error("INVALID_SPEC", lambda: records.save_record(root, spec, source))
+    assert not (root / "records/analysis.001").exists()
+
+
+@pytest.mark.parametrize("fault", ["missing", "wrong_role"])
+def test_verify_rechecks_linked_artifact_name_and_rerun_role(tmp_path: Path, fault: str) -> None:
+    source = _source(tmp_path)
+    root = tmp_path / "store"
+    parent_spec = _spec("input.001")
+    cast(list[dict[str, object]], parent_spec["files"])[0]["role"] = "verification"
+    parent = records.save_record(root, parent_spec, source)
+    child_spec = _spec("analysis.001")
+    child_spec["links"] = [
+        {"relation": "input", "record_id": "input.001", "manifest_digest": parent.digest}
+    ]
+    child_spec["rerun_verification"] = {
+        "status": "referenced",
+        "reference": {
+            "scope": "linked_record",
+            "record_id": "input.001",
+            "manifest_digest": parent.digest,
+            "name": "source/result.json",
+        },
+    }
+    child = records.save_record(root, child_spec, source)
+    child_manifest = deepcopy(child.manifest)
+    reference = cast(
+        dict[str, object],
+        cast(dict[str, object], child_manifest["rerun_verification"])["reference"],
+    )
+    if fault == "missing":
+        reference["name"] = "missing.json"
+    else:
+        parent_manifest = deepcopy(parent.manifest)
+        cast(list[dict[str, object]], parent_manifest["files"])[0]["role"] = "result"
+        parent_raw = canonical_bytes(parent_manifest)
+        parent_path = root / "records/input.001/manifest.json"
+        parent_path.write_bytes(parent_raw)
+        new_digest = digest_bytes(parent_raw)
+        cast(list[dict[str, object]], child_manifest["links"])[0]["manifest_digest"] = new_digest
+        reference["manifest_digest"] = new_digest
+    child_path = root / "records/analysis.001/manifest.json"
+    child_path.write_bytes(canonical_bytes(child_manifest))
+    result = records.verify_record(root, "analysis.001")
+    assert result["valid"] is False
+    assert result["findings"] == [
+        {"code": "LINK_MANIFEST_INVALID", "name": None, "record_id": "input.001"}
+    ]
+
+
+def test_prepublication_failure_removes_only_owned_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source(tmp_path)
+    root = tmp_path / "store"
+    original = records._copy_one  # pyright: ignore[reportPrivateUsage]
+
+    def fail_after_copy(
+        descriptor: int, expected: int, output: Path, allowance: int
+    ) -> tuple[int, str]:
+        original(descriptor, expected, output, allowance)
+        raise OSError("injected")
+
+    monkeypatch.setattr(records, "_copy_one", fail_after_copy)
+    _assert_error("STORE_IO_ERROR", lambda: records.save_record(root, _spec(), source))
+    assert not (root / "records/capture.001").exists()
+    assert (source / "result.json").exists()
+
+
+def test_postpublication_fsync_failure_preserves_complete_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source(tmp_path)
+    root = tmp_path / "store"
+    original = records._fsync_dir  # pyright: ignore[reportPrivateUsage]
+
+    def fail_record_dir(path: Path) -> None:
+        if path == root / "records/capture.001" and (path / "manifest.json").exists():
+            raise OSError("injected")
+        original(path)
+
+    monkeypatch.setattr(records, "_fsync_dir", fail_record_dir)
+    _assert_error("STORE_IO_ERROR", lambda: records.save_record(root, _spec(), source))
+    assert (root / "records/capture.001/manifest.json").exists()
+    assert records.read_record(root, "capture.001").manifest["record_id"] == "capture.001"
+
+
+def test_new_control_directories_are_fsynced_before_their_parent_entries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source(tmp_path)
+    root = tmp_path / "store"
+    calls: list[Path] = []
+    original = records._fsync_dir  # pyright: ignore[reportPrivateUsage]
+
+    def observe(path: Path) -> None:
+        calls.append(path)
+        original(path)
+
+    monkeypatch.setattr(records, "_fsync_dir", observe)
+    records.save_record(root, _spec(), source)
+    assert calls.index(root) < calls.index(tmp_path)
+    first_root_parent_sync = calls.index(root, calls.index(tmp_path) + 1)
+    assert calls.index(root / "records") < first_root_parent_sync
+    assert calls.index(root / ".staging") < calls.index(root, first_root_parent_sync + 1)
+
+
+def test_cleanup_fsync_failure_is_not_suppressed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source(tmp_path)
+    root = tmp_path / "store"
+    original_copy = records._copy_one  # pyright: ignore[reportPrivateUsage]
+    original_fsync = records._fsync_dir  # pyright: ignore[reportPrivateUsage]
+    capture_failed = False
+
+    def fail_after_copy(
+        descriptor: int, expected: int, output: Path, allowance: int
+    ) -> tuple[int, str]:
+        nonlocal capture_failed
+        original_copy(descriptor, expected, output, allowance)
+        capture_failed = True
+        raise OSError("capture failure")
+
+    def fail_cleanup(path: Path) -> None:
+        if capture_failed and path == root / "records" and not (path / "capture.001").exists():
+            raise OSError("cleanup durability failure")
+        original_fsync(path)
+
+    monkeypatch.setattr(records, "_copy_one", fail_after_copy)
+    monkeypatch.setattr(records, "_fsync_dir", fail_cleanup)
+    _assert_error("STORE_IO_ERROR", lambda: records.save_record(root, _spec(), source))
+    assert (root / "records/capture.001").is_dir()
+    _assert_error("RECORD_CAPTURE_INCOMPLETE", lambda: records.save_record(root, _spec(), source))
+
+
+def test_old_source_bytes_are_unchanged(tmp_path: Path) -> None:
+    source = _source(tmp_path, b"do not mutate")
+    before = (source / "result.json").read_bytes()
+    records.save_record(tmp_path / "store", deepcopy(_spec()), source)
+    assert (source / "result.json").read_bytes() == before
+
+
+def test_size_limits_are_enforced_before_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source(tmp_path, b"too large")
+    monkeypatch.setattr(records, "MAX_FILE_BYTES", 4)
+    _assert_error(
+        "INPUT_LIMIT_EXCEEDED",
+        lambda: records.save_record(tmp_path / "store", _spec(), source),
+    )
+    assert not (tmp_path / "store").exists()
+
+
+def test_record_error_never_retains_an_unowned_code_or_location() -> None:
+    error = RecordError("received secret text", "/received/secret")
+    assert error.code == "INTERNAL_ERROR"
+    assert error.location == ""
+    assert str(error) == "INTERNAL_ERROR"
+
+
+def test_noncanonical_manifest_and_record_id_mismatch_are_rejected(tmp_path: Path) -> None:
+    root, manifest = _save(tmp_path)
+    path = root / "records/capture.001/manifest.json"
+    path.write_bytes(json.dumps(manifest, indent=2).encode())
+    _assert_error("INVALID_RECORD", lambda: records.read_record(root, "capture.001"))
+
+    path.write_bytes(canonical_bytes({**manifest, "record_id": "different.001"}))
+    _assert_error("INVALID_RECORD", lambda: records.read_record(root, "capture.001"))
+
+
+def test_read_only_operations_do_not_create_staging(tmp_path: Path) -> None:
+    root, _ = _save(tmp_path)
+    (root / ".staging").rmdir()
+    records.read_record(root, "capture.001")
+    records.list_records(root)
+    records.verify_record(root, "capture.001")
+    assert not (root / ".staging").exists()
