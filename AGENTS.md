@@ -7,6 +7,12 @@ Python API, typed JSON results, and explicit next actions. Do not expand the pro
 into Docker, a server, or a web interface. See [AGENT_USAGE.md](AGENT_USAGE.md)
 for the agent-facing workflow.
 
+Prioritize structured JSON results for the calling agent: include result states,
+input and policy identities, populations/missingness, and interpretation limits
+where applicable and supported by the available evidence.
+Leave narrative or HTML report writing to that agent unless the user explicitly
+requests a report. Existing JSON result contracts remain product outputs.
+
 Keep package versions unchanged during development. Only bump versions after the
 user explicitly requests a version increase; completing work, passing checks, or
 opening or merging a PR does not authorize a version bump.
