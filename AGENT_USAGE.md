@@ -456,6 +456,13 @@ that command produced no observation, read, or decision, respectively. Use its
 `code` and `reason` to correct the input; measurement and acceptance errors also
 carry `next_action`.
 
+`ingest --json` emits canonical JSON: a number such as `1.0` may appear as `1`
+without changing its numeric meaning. Booleans, `null`, and absent keys remain
+distinct; do not turn a missing score into zero or compare a boolean as a number.
+The normalized observation is not a byte-for-byte round trip of the original
+export. Its `raw.hash` identifies the original bytes but cannot reconstruct them;
+retain the original input file for byte-exact audits or replay.
+
 An `acceptance_decision.v1` carries `classification`, `reason_codes`,
 `limitations`, and the projected lifecycle state. Keep `not_measured` (no
 measurement) distinct from `indeterminate` (acceptance cannot settle the
