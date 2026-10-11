@@ -327,6 +327,57 @@
             }
           }
         },
+        "primary_transitions": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "required": [
+            "scope",
+            "complete_pair_count",
+            "incomplete_pair_count",
+            "zero_to_zero",
+            "zero_to_one",
+            "one_to_zero",
+            "one_to_one"
+          ],
+          "properties": {
+            "scope": {
+              "const": "primary_repeat_zero"
+            },
+            "complete_pair_count": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 128
+            },
+            "incomplete_pair_count": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 128
+            },
+            "zero_to_zero": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 128
+            },
+            "zero_to_one": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 128
+            },
+            "one_to_zero": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 128
+            },
+            "one_to_one": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 128
+            }
+          }
+        },
         "additional_repeats": {
           "type": "object",
           "additionalProperties": false,

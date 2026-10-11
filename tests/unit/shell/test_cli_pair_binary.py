@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
+from jsonschema import Draft202012Validator
 
 from underwrite.cli.accept import main as accept_main
 from underwrite.cli.main import main as root_main
 from underwrite.cli.pair_binary import main
+
+if TYPE_CHECKING:
+    from jsonschema.protocols import Validator
 
 PAIRED_COUNT = 2
 ERROR_EXIT = 2
@@ -86,6 +90,24 @@ def test_complete_cohort_reports_descriptive_evidence_with_no_approval(
     assert "NO_APPROVAL_OR_DEPLOYMENT_AUTHORITY" in report["limitations"]
     assert report["input_digest"].startswith("sha256:")
     assert report["policy_digest"].startswith("sha256:")
+    assert report["accounting"]["primary_transitions"] == {
+        "scope": "primary_repeat_zero",
+        "complete_pair_count": PAIRED_COUNT,
+        "incomplete_pair_count": 0,
+        "zero_to_zero": 0,
+        "zero_to_one": PAIRED_COUNT,
+        "one_to_zero": 0,
+        "one_to_one": 0,
+    }
+    validator = cast(
+        "Validator",
+        Draft202012Validator(
+            json.loads((ROOT / "contracts/paired_binary_evidence.v1.schema.json").read_text())
+        ),
+    )
+    validator.validate(report)
+    del report["accounting"]["primary_transitions"]
+    validator.validate(report)  # Historical reports remain accepted.
 
 
 def test_observed_zero_and_one_reasons_remain_source_claims(tmp_path: Path, capsys: Any) -> None:

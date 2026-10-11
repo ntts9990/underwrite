@@ -222,6 +222,20 @@ missing. The sibling `synthetic-paired-incomplete.json` yields `not_measured`
 with null estimates. `synthetic-paired-extra-missing.json` keeps the same primary
 sample while exposing the missing additional repeat.
 
+`accounting.primary_transitions` counts baseline-to-candidate `zero_to_zero`,
+`zero_to_one`, `one_to_zero`, and `one_to_one` outcomes for declared primary
+repeat-zero pairs. `complete_pair_count` is their sum; `incomplete_pair_count`
+counts declared primary cases without both observed outcomes. Missing values
+are never zero, and extra repeats never enter these counts. The whole field is
+null without an explicit primary case inventory. With that inventory, observed
+transitions remain descriptive even without planned slots or declared statistical
+assumptions; the existing estimate can still be `not_measured`. A transition to
+one is not necessarily an improvement: consult `outcome_definition`.
+
+The field is optional in the updated output schema so historical reports remain
+valid; current outputs include it. Consumers with an older strict schema must
+update that schema before validating these outputs. Package versions are unchanged.
+
 For a producer handoff, obtain an actual, authorized export matching
 [`paired_binary_input.v1`](contracts/paired_binary_input.v1.schema.json) and a
 separately reviewed [`paired_binary_policy.v1`](contracts/paired_binary_policy.v1.schema.json).

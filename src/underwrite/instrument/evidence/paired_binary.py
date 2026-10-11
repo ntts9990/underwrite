@@ -395,6 +395,44 @@ def _incomplete_primary_cases(
     ]
 
 
+def _primary_transitions(
+    primary: set[str] | None, records: dict[SlotKey, _Record]
+) -> dict[str, object] | None:
+    if primary is None:
+        return None
+    transitions = {
+        "zero_to_zero": 0,
+        "zero_to_one": 0,
+        "one_to_zero": 0,
+        "one_to_one": 0,
+    }
+    names = {
+        (0, 0): "zero_to_zero",
+        (0, 1): "zero_to_one",
+        (1, 0): "one_to_zero",
+        (1, 1): "one_to_one",
+    }
+    complete = 0
+    for case_id in primary:
+        baseline = records.get((case_id, "baseline", 0))
+        candidate = records.get((case_id, "candidate", 0))
+        if (
+            baseline is None
+            or candidate is None
+            or baseline.outcome is None
+            or candidate.outcome is None
+        ):
+            continue
+        transitions[names[(baseline.outcome, candidate.outcome)]] += 1
+        complete += 1
+    return {
+        "scope": "primary_repeat_zero",
+        "complete_pair_count": complete,
+        "incomplete_pair_count": len(primary) - complete,
+        **transitions,
+    }
+
+
 def _not_measured_reason(parsed: _Parsed, incomplete_cases: list[str]) -> str | None:
     if parsed.primary is None:
         return "PRIMARY_CASE_INVENTORY_MISSING"
@@ -492,6 +530,7 @@ def _accounting(parsed: _Parsed, incomplete_cases: list[str]) -> dict[str, objec
         "planned_slot_count": None if parsed.planned is None else len(parsed.planned),
         "slot_record_count": len(parsed.records),
         "primary_repeat_zero": _bucket(parsed.planned, parsed.records, primary_keys),
+        "primary_transitions": _primary_transitions(parsed.primary, parsed.records),
         "additional_repeats": _bucket(parsed.planned, parsed.records, repeat_keys),
         "unscoped_repeat_zero": _bucket(parsed.planned, parsed.records, unscoped_keys),
         "incomplete_primary_case_ids": incomplete_cases,
