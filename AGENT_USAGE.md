@@ -411,6 +411,10 @@ Add `--record-root /path/to/private-store --record-id review-001` to save the sa
 captured bytes and generated results. The store parent must exist. No handwritten
 record specification is needed. Without those options, no store is created.
 An existing ID is a conflict; it is never overwritten or treated as a new success.
+Analysis and storage have separate resource limits. A valid analysis can exceed
+the record file budget: requested storage then returns `INPUT_LIMIT_EXCEEDED`
+with exit 3 and the complete analysis, without creating or changing the store.
+No selected source is dropped to make a record fit.
 
 `paired_handoff_review.v1` separates `analysis` from `storage` and includes the
 actual process `exit_code`. A result with no requested storage or saved storage

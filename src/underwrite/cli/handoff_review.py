@@ -17,7 +17,6 @@ from underwrite.cli.evidence import (
     run_cli,
 )
 from underwrite.cli.handoff_limits import (
-    GENERATED_NAMES,
     MAX_FILE_BYTES,
     MAX_OUTPUT_BYTES,
     MAX_SOURCE_FILES,
@@ -43,6 +42,7 @@ from underwrite.instrument.ingest.goppi_p7_handoff import (
 from underwrite.instrument.ingest.local_capture import CaptureError, CapturePolicy
 from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
 from underwrite.service.records import (
+    RECORD_MAX_FILES,
     CapturedRecordFile,
     CapturedRecordSpec,
     RecordError,
@@ -157,9 +157,9 @@ def _next_actions(analysis: dict[str, Any]) -> list[str]:
     return actions
 
 
-def _generated(
+def _generated_documents(
     envelope: dict[str, Any], verified: VerifiedHandoff | None, request: HandoffRequest
-) -> tuple[CapturedRecordFile, ...]:
+) -> dict[str, tuple[str, object]]:
     analysis = envelope["analysis"]
     # This records an analysis phase, not an invented exit from the enclosing save operation.
     documents: dict[str, tuple[str, object]] = {
@@ -192,8 +192,10 @@ def _generated(
         )
     else:
         documents["underwrite/error.json"] = ("log", analysis)
-    if len(documents) > len(GENERATED_NAMES):
-        raise RecordError("INPUT_LIMIT_EXCEEDED")
+    return documents
+
+
+def _generated(documents: dict[str, tuple[str, object]]) -> tuple[CapturedRecordFile, ...]:
     return tuple(
         CapturedRecordFile(name, role, canonical_bytes(document) + b"\n", "application/json")
         for name, (role, document) in documents.items()
@@ -210,6 +212,10 @@ def _store(
         return {"state": "not_requested"}
     published: dict[str, object] | None = None
     try:
+        documents = _generated_documents(envelope, verified, request)
+        source_count = len(capture.artifacts) if capture is not None else 0
+        if source_count + len(documents) > RECORD_MAX_FILES:
+            raise RecordError("INPUT_LIMIT_EXCEEDED")
         files = (
             tuple(
                 CapturedRecordFile(item.logical_name, "source", item.data)
@@ -218,7 +224,7 @@ def _store(
             if capture is not None
             else ()
         )
-        files += _generated(envelope, verified, request)
+        files += _generated(documents)
         spec = CapturedRecordSpec(
             record_id=request.record_id,
             kind="handoff.review",

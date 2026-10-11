@@ -12,12 +12,13 @@ from typing import cast
 
 from underwrite_core.canonical import CanonicalizationError, canonical_bytes, digest_bytes
 
-MAX_CASES = 128
-MAX_SLOTS = 4096
-MAX_OBSERVATIONS = 8192
-MAX_ROWS = 4096
-MAX_RECEIPTS = 4096
-MAX_FILES = 64
+from underwrite.instrument.evidence.paired_binary import ARMS, MAX_PRIMARY_CASES, MAX_SLOTS
+
+MAX_CASES = min(MAX_PRIMARY_CASES, MAX_SLOTS // (2 * len(ARMS)))
+MAX_RECEIPTS = MAX_CASES * len(ARMS)
+MAX_ROWS = MAX_RECEIPTS
+MAX_OBSERVATIONS = MAX_RECEIPTS * 2
+MAX_PUBLIC_CASES = MAX_SLOTS
 MAX_METADATA = 16
 SAFE_INTEGER = 2**53 - 1
 SHA256_DIGEST_LENGTH = 71
@@ -35,6 +36,35 @@ ORIGINAL_RESULT = "original/result.json"
 ORIGINAL_SCOPE = "original/execution-scope.json"
 ORIGINAL_PLAN = "original/plan.json"
 ORIGINAL_PUBLIC = "original/public-summary.json"
+
+REGRADE_SCHEMA = "regrade/private/schema.json"
+REGRADE_CONTROLS = "regrade/private/controls.json"
+REGRADE_PUBLIC = "regrade/public-summary.json"
+MAPPING_MEMBERS = frozenset({MAPPING_HANDOFF, MAPPING_INPUT, MAPPING_POLICY, MAPPING_PROVENANCE})
+COMPLETION_MEMBERS = frozenset(
+    {
+        REGRADE_SOURCE,
+        REGRADE_ROWS,
+        REGRADE_RECEIPTS,
+        REGRADE_SCHEMA,
+        REGRADE_CONTROLS,
+        REGRADE_PUBLIC,
+    }
+)
+ORIGINAL_MEMBERS = frozenset({ORIGINAL_RESULT, ORIGINAL_SCOPE, ORIGINAL_PLAN, ORIGINAL_PUBLIC})
+FIXED_SOURCE_NAMES = (
+    MAPPING_MEMBERS
+    | COMPLETION_MEMBERS
+    | ORIGINAL_MEMBERS
+    | frozenset(
+        {
+            MAPPING_MANIFEST,
+            REGRADE_COMPLETION,
+        }
+    )
+)
+MAX_SOURCE_FILES = len(FIXED_SOURCE_NAMES) + MAX_RECEIPTS
+MAX_FILES = MAX_SOURCE_FILES
 
 
 @dataclass(frozen=True)
@@ -297,13 +327,8 @@ def _verify_mapping_bundle(
         False,
         "/mapping_manifest/original_outcomes_rewritten",
     )
-    expected_files = {
-        "paired-input.json": MAPPING_INPUT,
-        "analysis-policy.json": MAPPING_POLICY,
-        "derivation-provenance.json": MAPPING_PROVENANCE,
-        "consumer-handoff.json": MAPPING_HANDOFF,
-    }
-    claims = _manifest_files(manifest["files"], 4, "/mapping_manifest/files")
+    expected_files = {name.removeprefix("mapping/"): name for name in MAPPING_MEMBERS}
+    claims = _manifest_files(manifest["files"], len(MAPPING_MEMBERS), "/mapping_manifest/files")
     if set(claims) != set(expected_files):
         raise _fail("HANDOFF_MAPPING_FILE_SET_INVALID", "/mapping_manifest/files")
     for relative, logical in expected_files.items():
@@ -402,21 +427,13 @@ def _verify_completion(documents: GoppiP7Documents, used: set[str]) -> tuple[set
         False,
         "/completion/original_outcomes_rewritten",
     )
-    files = _manifest_files(completion["files"], MAX_FILES, "/completion/files")
+    files = _manifest_files(completion["files"], len(COMPLETION_MEMBERS), "/completion/files")
+    if set(files) != {name.removeprefix("regrade/") for name in COMPLETION_MEMBERS}:
+        raise _fail("HANDOFF_COMPLETION_FILE_SET_INVALID", "/completion/files")
     for relative, (sha, size) in files.items():
         logical = f"regrade/{relative}"
         _verify_identity_claim(documents, logical, sha, f"/completion/files/{relative}", size)
         used.add(logical)
-    required = {
-        "private/source.json": REGRADE_SOURCE,
-        "private/rows.jsonl": REGRADE_ROWS,
-        "private/protocol-receipts-manifest.json": REGRADE_RECEIPTS,
-        "private/schema.json": "regrade/private/schema.json",
-        "private/controls.json": "regrade/private/controls.json",
-        "public-summary.json": "regrade/public-summary.json",
-    }
-    if not set(required) <= set(files):
-        raise _fail("HANDOFF_COMPLETION_FILE_SET_INVALID", "/completion/files")
     receipt_claim = _object(
         completion["protocol_receipts"],
         frozenset({"count", "manifest_path", "manifest_sha256"}),
@@ -446,16 +463,16 @@ def _verify_completion(documents: GoppiP7Documents, used: set[str]) -> tuple[set
         "goppi.p7_offline_regrade_receipts_manifest.v1",
         "/receipt_manifest/schema",
     )
+    manifest_count = _integer(receipt_manifest["count"], MAX_RECEIPTS, "/receipt_manifest/count")
+    claimed_count = _integer(
+        receipt_claim["count"], MAX_RECEIPTS, "/completion/protocol_receipts/count"
+    )
     receipt_files = _manifest_files(
         receipt_manifest["files"], MAX_RECEIPTS, "/receipt_manifest/files"
     )
-    if _integer(receipt_manifest["count"], MAX_RECEIPTS, "/receipt_manifest/count") != len(
-        receipt_files
-    ):
+    if manifest_count != len(receipt_files):
         raise _fail("HANDOFF_RECEIPT_COUNT_MISMATCH", "/receipt_manifest/count")
-    if _integer(receipt_claim["count"], MAX_RECEIPTS, "/completion/protocol_receipts/count") != len(
-        receipt_files
-    ):
+    if claimed_count != len(receipt_files):
         raise _fail("HANDOFF_RECEIPT_COUNT_MISMATCH", "/completion/protocol_receipts/count")
     logical_receipts: set[str] = set()
     for relative, (sha, size) in receipt_files.items():
@@ -1049,7 +1066,7 @@ def _verify_source_and_provenance(
 def _explore_cases(public: dict[str, object]) -> set[str]:
     cases: set[str] = set()
     for index, item in enumerate(
-        _list(public["cases"], MAX_CASES, "/original_public_summary/cases")
+        _list(public["cases"], MAX_PUBLIC_CASES, "/original_public_summary/cases")
     ):
         case = _object(
             item,
@@ -1063,6 +1080,12 @@ def _explore_cases(public: dict[str, object]) -> set[str]:
             )
             if identifier in cases:
                 raise _fail("HANDOFF_DUPLICATE_CASE", "/original_public_summary/cases")
+            if len(cases) >= MAX_CASES:
+                raise _fail(
+                    "HANDOFF_LIMIT_EXCEEDED",
+                    "/original_public_summary/cases",
+                    "INPUT_LIMIT_EXCEEDED",
+                )
             cases.add(identifier)
     if not cases:
         raise _fail("HANDOFF_EMPTY_PRIMARY_POPULATION", "/original_public_summary/cases")
@@ -1767,7 +1790,7 @@ def _transition_counts(
 
 
 def _verify_rows(context: _RowContext) -> dict[str, int]:
-    rows = _tuple(context.documents.regrade_rows, MAX_ROWS, "/regrade_rows")
+    rows = context.documents.regrade_rows
     if len(rows) != len(context.expected):
         raise _fail("HANDOFF_ROW_COUNT_MISMATCH", "/regrade_rows")
     seen: set[tuple[str, str, int]] = set()
@@ -1875,6 +1898,12 @@ def verify_goppi_p7_mapping(documents: GoppiP7Documents) -> VerifiedHandoff:
         raise _fail("HANDOFF_DOCUMENTS_REQUIRED", "/")
     if type(documents.byte_identities) is not dict or len(documents.byte_identities) > MAX_FILES:
         raise _fail("HANDOFF_LIMIT_EXCEEDED", "/byte_identities", "INPUT_LIMIT_EXCEEDED")
+    if (
+        type(documents.protocol_receipts) is not dict
+        or len(documents.protocol_receipts) > MAX_RECEIPTS
+    ):
+        raise _fail("HANDOFF_LIMIT_EXCEEDED", "/protocol_receipts", "INPUT_LIMIT_EXCEEDED")
+    _tuple(documents.regrade_rows, MAX_ROWS, "/regrade_rows")
     findings, used = _verify_mapping_bundle(documents)
     logical_receipts, _ = _verify_completion(documents, used)
     input_doc, policy_doc = _input_parts(documents)

@@ -84,7 +84,7 @@
             },
             "files": {
               "type": "array",
-              "maxItems": 58,
+              "maxItems": 272,
               "items": {
                 "type": "object",
                 "additionalProperties": false,
@@ -3001,7 +3001,7 @@
               },
               "files": {
                 "type": "array",
-                "maxItems": 58,
+                "maxItems": 272,
                 "items": {
                   "type": "object",
                   "additionalProperties": false,

@@ -14,6 +14,7 @@ from typing import cast
 ROOT = Path(__file__).resolve().parents[1]
 COMMAND_TIMEOUT = 120
 EVIDENCE_ERROR_EXIT = 2
+STORAGE_ERROR_EXIT = 3
 
 
 class SmokeFailure(Exception):
@@ -271,8 +272,10 @@ def _handoff_pilot(cli: Path, work: Path) -> None:
             "-c",
             "import sys; from pathlib import Path; "
             "from tests.drivers.goppi_p7_fixture import build_goppi_p7_fixture; "
-            "build_goppi_p7_fixture().write(Path(sys.argv[1]))",
+            "build_goppi_p7_fixture().write(Path(sys.argv[1])); "
+            "build_goppi_p7_fixture(((True, True),) * 22).write(Path(sys.argv[2]))",
             str(source),
+            str(work / "larger-handoff-source"),
         ],
         ROOT,
     )
@@ -306,6 +309,44 @@ def _handoff_pilot(cli: Path, work: Path) -> None:
         work,
     )
     _require(verification["valid"] is True, "installed handoff record is damaged")
+
+    larger_source = work / "larger-handoff-source"
+    larger_args = [
+        "review-handoff",
+        "--handoff",
+        str(larger_source / "study/paired-analysis-input"),
+        "--source-root",
+        str(larger_source),
+    ]
+    larger = _cli_json(cli, larger_args, work / "larger-handoff.json", work)
+    _require(
+        cast(dict[str, object], larger["analysis"])["state"] == "result",
+        "installed analysis inherited storage capacity",
+    )
+    refused_store = work / "refused-handoff-store"
+    refused = _command(
+        [
+            str(cli),
+            *larger_args,
+            "--record-root",
+            str(refused_store),
+            "--record-id",
+            "too-large",
+            "--json",
+        ],
+        work,
+    )
+    _require(
+        refused.returncode == STORAGE_ERROR_EXIT and refused.stderr == "",
+        "wrong storage refusal exit",
+    )
+    refusal = json.loads(refused.stdout)
+    _require(refusal["analysis"] == larger["analysis"], "storage refusal lost analysis")
+    _require(
+        refusal["storage"]["error"]["code"] == "INPUT_LIMIT_EXCEEDED",
+        "wrong storage refusal diagnostic",
+    )
+    _require(not refused_store.exists(), "oversized capture mutated store")
 
 
 def _smoke(dist: Path) -> None:

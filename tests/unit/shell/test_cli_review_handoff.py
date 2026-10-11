@@ -12,7 +12,6 @@ from jsonschema.exceptions import ValidationError
 from underwrite_core.canonical import canonical_bytes, content_digest
 
 from underwrite.cli import handoff_review
-from underwrite.cli.handoff_limits import GENERATED_NAMES, MAX_SOURCE_FILES
 from underwrite.cli.local_json import Validator
 from underwrite.cli.main import main
 from underwrite.instrument.evidence.goppi_p7_handoff import HandoffMappingError
@@ -97,7 +96,7 @@ def test_record_captures_the_same_source_and_results(
     assert all(item["source_locator"] is None for item in identities.values())
     assert cast(dict[str, Any], record.manifest["selection"])["excluded"]
     assert cast(dict[str, Any], record.manifest["provenance"])["verified"] is False
-    assert MAX_SOURCE_FILES + len(GENERATED_NAMES) == RECORD_MAX_FILES
+    assert len(identities) <= RECORD_MAX_FILES
     invocation = json.loads((stored / "underwrite/invocation.json").read_text())
     assert invocation["analysis_exit_code"] == 0
     assert invocation["scope"] == "analysis_phase"
@@ -353,3 +352,45 @@ def test_human_output_starts_with_results_and_limits(
     assert "Next:" in text
     assert "same_batch/explore" in text and "2 paired cases" in text
     assert "planned 4; reported 4; missing 0; unreported 0" in text
+
+
+@pytest.mark.parametrize("existing_store", [False, True])
+def test_larger_analysis_survives_storage_capacity_refusal_without_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, existing_store: bool
+) -> None:
+    source = tmp_path / "source"
+    handoff = build_goppi_p7_fixture(((True, True),) * 22).write(source)
+    store = tmp_path / "store"
+    if existing_store:
+        small_handoff = build_goppi_p7_fixture().write(tmp_path / "small-source")
+        saved = handoff_review.run_goppi_p7_handoff(
+            handoff_review.HandoffRequest(
+                small_handoff, tmp_path / "small-source", store, "existing"
+            )
+        )
+        assert saved.exit_code == 0
+    before = {p.relative_to(store): p.read_bytes() for p in store.rglob("*") if p.is_file()}
+    analysis = handoff_review.run_goppi_p7_handoff(
+        handoff_review.HandoffRequest(handoff, source)
+    )
+    assert analysis.exit_code == 0
+    assert analysis.envelope["storage"] == {"state": "not_requested"}
+
+    def unexpected(*args: object, **kwargs: object) -> Any:
+        raise AssertionError("capacity refusal must precede serialization and publication")
+
+    monkeypatch.setattr(handoff_review, "_generated", unexpected)
+    monkeypatch.setattr(handoff_review, "save_captured_record", unexpected)
+    refused = handoff_review.run_goppi_p7_handoff(
+        handoff_review.HandoffRequest(handoff, source, store, "larger")
+    )
+    assert refused.exit_code == STORAGE_ERROR_EXIT
+    assert refused.envelope["analysis"] == analysis.envelope["analysis"]
+    assert refused.envelope["source"] == analysis.envelope["source"]
+    storage = cast(dict[str, Any], refused.envelope["storage"])
+    assert storage["state"] == "error"
+    assert storage["error"]["code"] == "INPUT_LIMIT_EXCEEDED"
+    assert storage["published_record"] is None
+    assert store.exists() is existing_store
+    assert {p.relative_to(store): p.read_bytes() for p in store.rglob("*") if p.is_file()} == before
+    cast(Validator, packaged_validator("paired_handoff_review.v1")).validate(refused.envelope)

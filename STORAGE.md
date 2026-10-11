@@ -13,6 +13,10 @@ It saves actual error diagnostics if analysis fails, and preserves a computed
 analysis in the output if storage fails. Generated invocation records identify
 the analysis phase's exit code; the enclosing storage/process outcome is returned
 by the CLI envelope, avoiding a self-referential saved result.
+The record file budget includes both captured sources and generated documents.
+A larger supported handoff may be analyzed without fitting a single record; in
+that case requested storage fails before serialization or store mutation, while
+the CLI retains the complete analysis. Sources are never silently omitted.
 
 ```sh
 mkdir -p output

@@ -370,3 +370,81 @@ def test_response_verifier_unhashable_value_is_typed(key: str) -> None:
     _refresh_receipt_stream(receipt, documents.regrade_rows[0])
     with pytest.raises(HandoffMappingError):
         _verify(documents)
+
+
+def test_capacity_is_derived_from_case_arms_and_fixed_members() -> None:
+    from underwrite.instrument.evidence import goppi_p7_handoff as profile
+    from underwrite.instrument.evidence.paired_binary import ARMS, MAX_PRIMARY_CASES, MAX_SLOTS
+
+    assert profile.MAX_CASES == min(MAX_PRIMARY_CASES, MAX_SLOTS // (2 * len(ARMS)))
+    assert profile.MAX_RECEIPTS == profile.MAX_ROWS == profile.MAX_CASES * len(ARMS)
+    assert profile.MAX_SOURCE_FILES == len(profile.FIXED_SOURCE_NAMES) + profile.MAX_RECEIPTS
+    assert profile.MAX_FILES == profile.MAX_SOURCE_FILES
+
+
+@pytest.mark.parametrize("population", ["primary_max", "public_max"])
+def test_coherent_graph_at_capacity_with_independent_confirm_population(population: str) -> None:
+    from underwrite.instrument.evidence.goppi_p7_handoff import (
+        MAX_CASES,
+        MAX_PUBLIC_CASES,
+        MAX_SOURCE_FILES,
+    )
+
+    confirms = MAX_CASES + 1 if population == "primary_max" else MAX_PUBLIC_CASES - MAX_CASES
+    fixture = build_goppi_p7_fixture(((False, True),) * MAX_CASES, confirm_cases=confirms)
+    result = _verify(fixture.documents)
+    assert result.scope["cases"] == MAX_CASES
+    assert len(fixture.files) == MAX_SOURCE_FILES
+    assert len(result.used_artifact_names) == MAX_SOURCE_FILES
+
+
+@pytest.mark.parametrize("population", ["public", "receipt", "identities"])
+def test_oversize_population_refuses_before_poison_entries(population: str) -> None:
+    from underwrite.instrument.evidence.goppi_p7_handoff import (
+        MAX_PUBLIC_CASES,
+        MAX_RECEIPTS,
+        MAX_SOURCE_FILES,
+    )
+
+    documents = _documents()
+    if population == "public":
+        documents.original_public_summary["cases"] = [object()] * (MAX_PUBLIC_CASES + 1)
+    elif population == "receipt":
+        documents = replace(
+            documents,
+            protocol_receipts={str(i): cast(Any, object()) for i in range(MAX_RECEIPTS + 1)},
+        )
+    else:
+        documents = replace(
+            documents,
+            byte_identities={str(i): cast(Any, object()) for i in range(MAX_SOURCE_FILES + 1)},
+        )
+    with pytest.raises(HandoffMappingError) as caught:
+        _verify(documents)
+    assert caught.value.code == "INPUT_LIMIT_EXCEEDED"
+
+
+def test_primary_max_plus_one_refuses_before_canonicalization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from underwrite.instrument.evidence import goppi_p7_handoff as profile
+
+    documents = _documents()
+    documents.paired_input["primary_case_ids"] = [object()] * (profile.MAX_CASES + 1)
+
+    def unexpected_serialization(value: object) -> bytes:
+        del value
+        pytest.fail("canonicalized oversized primary")
+
+    monkeypatch.setattr(profile, "canonical_bytes", unexpected_serialization)
+    with pytest.raises(HandoffMappingError) as caught:
+        _verify(documents)
+    assert caught.value.code == "INPUT_LIMIT_EXCEEDED"
+
+
+def test_completion_rejects_extra_identity_even_inside_global_capacity() -> None:
+    documents = _documents()
+    files = cast(list[dict[str, object]], documents.completion_manifest["files"])
+    files.append({"path": "extra.json", "sha256": "sha256:" + "0" * 64, "bytes": 0})
+    with pytest.raises(HandoffMappingError):
+        _verify(documents)

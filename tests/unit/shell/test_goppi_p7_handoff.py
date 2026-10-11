@@ -383,3 +383,56 @@ def test_caller_canceled_symlink_component_is_not_hidden_by_normalization(
     with pytest.raises(HandoffInputError) as caught:
         _capture(handoff, root)
     assert caught.value.reason == "CAPTURE_ROOT_SYMLINK_REJECTED"
+
+
+def test_capture_coherent_profile_maximum(tmp_path: Path) -> None:
+    from tests.drivers.goppi_p7_fixture import build_goppi_p7_fixture
+    from underwrite.instrument.evidence.goppi_p7_handoff import (
+        MAX_CASES,
+        MAX_SOURCE_FILES,
+        verify_goppi_p7_mapping,
+    )
+
+    fixture = build_goppi_p7_fixture(((False, True),) * MAX_CASES, confirm_cases=MAX_CASES + 1)
+    handoff = fixture.write(tmp_path)
+    captured = capture_goppi_p7_handoff(
+        handoff,
+        source_root=tmp_path,
+        policy=CapturePolicy(MAX_SOURCE_FILES, POLICY.max_file_bytes, POLICY.max_total_bytes),
+    )
+    assert len(captured.artifacts) == MAX_SOURCE_FILES
+    assert verify_goppi_p7_mapping(captured.documents).scope["cases"] == MAX_CASES
+
+
+def test_row_capacity_refuses_before_decoding_next_row(tmp_path: Path) -> None:
+    from tests.drivers.goppi_p7_fixture import build_goppi_p7_fixture
+    from underwrite.instrument.evidence.goppi_p7_handoff import MAX_CASES, MAX_SOURCE_FILES
+
+    fixture = build_goppi_p7_fixture(((False, True),) * MAX_CASES)
+    handoff = fixture.write(tmp_path)
+    path = tmp_path / "study/offline-verifier-regrade/private/rows.jsonl"
+    path.write_bytes(path.read_bytes() + b"not json\n")
+    _repair_capture_claims(tmp_path, handoff)
+    with pytest.raises(HandoffInputError, match="HANDOFF_ROW_LIMIT_EXCEEDED"):
+        _capture(
+            handoff,
+            tmp_path,
+            CapturePolicy(MAX_SOURCE_FILES, POLICY.max_file_bytes, POLICY.max_total_bytes),
+        )
+
+
+@pytest.mark.parametrize("axis", ["files", "count"])
+def test_receipt_capacity_rejected_before_entry_inspection(tmp_path: Path, axis: str) -> None:
+    from tests.drivers.goppi_p7_fixture import build_goppi_p7_fixture
+    from underwrite.instrument.evidence.goppi_p7_handoff import MAX_RECEIPTS
+
+    handoff = build_goppi_p7_fixture().write(tmp_path)
+    path = tmp_path / "study/offline-verifier-regrade/private/protocol-receipts-manifest.json"
+    document = json.loads(path.read_bytes())
+    document["files"] = [None] * (MAX_RECEIPTS + 1) if axis == "files" else [None]
+    if axis == "count":
+        document["count"] = MAX_RECEIPTS + 1
+    path.write_text(json.dumps(document))
+    _repair_capture_claims(tmp_path, handoff)
+    with pytest.raises(HandoffInputError, match="HANDOFF_CLAIM_LIMIT_EXCEEDED"):
+        _capture(handoff, tmp_path)

@@ -77,6 +77,8 @@ class SyntheticP7Fixture:
 
 def build_goppi_p7_fixture(  # noqa: PLR0915 - mutually-bound fixture graph
     case_outcomes: tuple[tuple[bool, bool], ...] = ((False, False), (True, True)),
+    *,
+    confirm_cases: int = 0,
 ) -> SyntheticP7Fixture:
     if not case_outcomes:
         raise ValueError("at least one synthetic case is required")
@@ -337,6 +339,9 @@ def build_goppi_p7_fixture(  # noqa: PLR0915 - mutually-bound fixture graph
             for case_id in case_ids
         ],
     }
+    cast(list[object], original_public["cases"]).extend(
+        {"case_id": f"confirm-{index}", "split": "confirm"} for index in range(confirm_cases)
+    )
     source_original: dict[str, object] = {
         "run_id": run_id,
         "run_alias": run_alias,

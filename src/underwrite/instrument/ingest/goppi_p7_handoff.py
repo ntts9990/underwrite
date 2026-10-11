@@ -11,11 +11,15 @@ from types import MappingProxyType
 from typing import cast
 
 from underwrite.instrument.evidence.goppi_p7_handoff import (
+    COMPLETION_MEMBERS,
     MAPPING_HANDOFF,
     MAPPING_INPUT,
     MAPPING_MANIFEST,
+    MAPPING_MEMBERS,
     MAPPING_POLICY,
     MAPPING_PROVENANCE,
+    MAX_RECEIPTS,
+    MAX_ROWS,
     ORIGINAL_PLAN,
     ORIGINAL_PUBLIC,
     ORIGINAL_RESULT,
@@ -35,24 +39,8 @@ from underwrite.instrument.ingest.local_capture import (
     decode_captured_object,
 )
 
-_MAPPING_FILES = frozenset(
-    {
-        "paired-input.json",
-        "analysis-policy.json",
-        "derivation-provenance.json",
-        "consumer-handoff.json",
-    }
-)
-_COMPLETION_FILES = frozenset(
-    {
-        "private/source.json",
-        "private/rows.jsonl",
-        "private/schema.json",
-        "private/controls.json",
-        "private/protocol-receipts-manifest.json",
-        "public-summary.json",
-    }
-)
+_MAPPING_FILES = frozenset(name.removeprefix("mapping/") for name in MAPPING_MEMBERS)
+_COMPLETION_FILES = frozenset(name.removeprefix("regrade/") for name in COMPLETION_MEMBERS)
 _ENTRIES = frozenset(
     {
         "paired_binary_input",
@@ -145,12 +133,10 @@ class _Capture:
     def manifest(
         self, doc: dict[str, object], allowed: frozenset[str] | None, base: Path, prefix: str
     ) -> None:
-        entries = doc.get("files")
-        if not isinstance(entries, list):
-            raise _fail("HANDOFF_MANIFEST_INVALID", "/" + prefix)
+        entries = _manifest_entries(doc, allowed, prefix)
         claims: dict[str, dict[str, object]] = {}
         total = 0
-        for raw in cast(list[object], entries):
+        for raw in entries:
             entry = _obj(raw, "/" + prefix)
             path = _path(entry.get("path"), "/" + prefix)
             if set(entry) != {"path", "sha256", "bytes"} or path in claims:
@@ -305,6 +291,8 @@ def _rows(rows_item: CapturedBytes) -> list[dict[str, object]]:
     for index, line in enumerate(rows_item.data.splitlines()):
         if not line.strip():
             continue
+        if len(rows) >= MAX_ROWS:
+            raise _fail("HANDOFF_ROW_LIMIT_EXCEEDED", "/regrade/rows", "INPUT_LIMIT_EXCEEDED")
         if len(line) > 2 * 1024 * 1024:
             raise _fail("HANDOFF_ROW_LIMIT_EXCEEDED", "/regrade/rows", "INPUT_LIMIT_EXCEEDED")
         rows.append(
@@ -354,3 +342,19 @@ def _completion_path(root: Path, completion_entry: dict[str, object]) -> Path:
     if completion_path.parts[-2:] != ("offline-verifier-regrade", "completion-manifest.json"):
         raise _fail("HANDOFF_COMPLETION_PATH_INVALID", "/handoff/completion")
     return completion_path
+
+
+def _manifest_entries(
+    doc: dict[str, object], allowed: frozenset[str] | None, prefix: str
+) -> list[object]:
+    entries = doc.get("files")
+    if not isinstance(entries, list):
+        raise _fail("HANDOFF_MANIFEST_INVALID", "/" + prefix)
+    if allowed is None and (
+        type(doc.get("count")) is not int or not 0 <= cast(int, doc["count"]) <= MAX_RECEIPTS
+    ):
+        raise _fail("HANDOFF_CLAIM_LIMIT_EXCEEDED", "/" + prefix, "INPUT_LIMIT_EXCEEDED")
+    maximum = MAX_RECEIPTS if allowed is None else len(allowed)
+    if len(cast(list[object], entries)) > maximum:
+        raise _fail("HANDOFF_CLAIM_LIMIT_EXCEEDED", "/" + prefix, "INPUT_LIMIT_EXCEEDED")
+    return cast(list[object], entries)
