@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:record_spec.v1",
+  "title": "record_spec.v1",
+  "description": "Operator-authored control input selecting local files for one immutable record capture.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "record_id", "kind", "label", "selection", "rerun_verification", "provenance", "files"],
+  "properties": {
+    "schema": {"const": "record_spec.v1"},
+    "record_id": {"$ref": "#/$defs/record_id"},
+    "kind": {"$ref": "#/$defs/kind"},
+    "label": {"$ref": "#/$defs/label"},
+    "metadata": {"$ref": "#/$defs/metadata"},
+    "selection": {"$ref": "#/$defs/selection"},
+    "rerun_verification": {"$ref": "#/$defs/rerun_verification"},
+    "provenance": {"$ref": "#/$defs/provenance"},
+    "links": {
+      "description": "Direct links; P2 permits at most one declared relation per record_id.",
+      "type": "array",
+      "maxItems": 16,
+      "items": {"$ref": "#/$defs/link"},
+      "uniqueItems": true
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {"$ref": "#/$defs/file_spec"},
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "record_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 96,
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,95}(?![\\s\\S])"
+    },
+    "kind": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}(?![\\s\\S])"
+    },
+    "label": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "\\S"},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}(?![\\s\\S])"},
+    "metadata": {
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "\\S"},
+      "additionalProperties": {"type": "string", "minLength": 1, "maxLength": 512, "pattern": "\\S"}
+    },
+    "link": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relation", "record_id", "manifest_digest"],
+      "properties": {
+        "relation": {"enum": ["input", "related"]},
+        "record_id": {"$ref": "#/$defs/record_id"},
+        "manifest_digest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "logical_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*(?![\\s\\S])"
+    },
+    "artifact_ref": {
+      "description": "A declared artifact reference only; it does not establish verification or provenance.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["scope", "name"],
+          "properties": {
+            "scope": {"const": "this_record"},
+            "name": {"$ref": "#/$defs/logical_name"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["scope", "record_id", "manifest_digest", "name"],
+          "properties": {
+            "scope": {"const": "linked_record"},
+            "record_id": {"$ref": "#/$defs/record_id"},
+            "manifest_digest": {"$ref": "#/$defs/digest"},
+            "name": {"$ref": "#/$defs/logical_name"}
+          }
+        }
+      ]
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "excluded"],
+      "properties": {
+        "scope": {"const": "explicit_files"},
+        "excluded": {
+          "type": ["array", "null"],
+          "maxItems": 32,
+          "items": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "\\S"},
+          "uniqueItems": true
+        }
+      }
+    },
+    "rerun_verification": {
+      "description": "A stored artifact reference, not a claim that reproduction was independently verified.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "reference"],
+          "properties": {
+            "status": {"const": "not_performed"},
+            "reference": {"type": "null"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "reference"],
+          "properties": {
+            "status": {"const": "referenced"},
+            "reference": {"$ref": "#/$defs/artifact_ref"}
+          }
+        }
+      ]
+    },
+    "provenance": {
+      "description": "An optional attestation reference retained as a declaration; never independent verification.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verified", "attestation_ref"],
+      "properties": {
+        "verified": {"const": false},
+        "attestation_ref": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/artifact_ref"}
+          ]
+        }
+      }
+    },
+    "role": {
+      "enum": ["source", "input", "policy", "result", "verification", "code", "log", "environment"]
+    },
+    "media_type": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[\\u0021-\\u007e]+(?![\\s\\S])",
+      "default": "application/octet-stream"
+    },
+    "file_spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "role", "path"],
+      "properties": {
+        "name": {"$ref": "#/$defs/logical_name"},
+        "role": {"$ref": "#/$defs/role"},
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "pattern": "\\S",
+          "not": {"pattern": "\\u0000"}
+        },
+        "media_type": {"$ref": "#/$defs/media_type"},
+        "source_locator": {"type": "string", "minLength": 1, "maxLength": 512, "pattern": "\\S"}
+      }
+    }
+  }
+}

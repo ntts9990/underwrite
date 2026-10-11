@@ -19,11 +19,6 @@ EXHAUSTIVE = ("oneOf", "anyOf")
 
 RESIDUAL = {
     (
-        "measurement_policy.v2.schema.json",
-        "#/properties/stratification/properties/requested",
-    ): "UNSORTABLE_UNBOUNDED: measure input; worst about 4.2 s (4,171 one-char objects in a "
-    "64 KiB policy); MAX_CELLS is checked after",
-    (
         "release_inspection.v1.schema.json",
         "#/properties/requirements/items/properties/diagnostics",
     ): "UNSORTABLE_UNBOUNDED: output contract over product-built diagnostics",

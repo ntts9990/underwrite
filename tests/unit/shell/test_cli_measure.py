@@ -198,6 +198,32 @@ def test_limits_emit_no_partial_output(
     _error(capsys, "OUTPUT_LIMIT_EXCEEDED" if kind == "output" else "INPUT_LIMIT_EXCEEDED")
 
 
+def test_requested_cell_limit_is_a_schema_refusal_before_computation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    policy = _load("policy.json")
+    policy["stratification"] = {
+        "mode": "split",
+        "axes": ["split"],
+        "requested": [{"split": f"cell-{index}"} for index in range(129)],
+    }
+    path = tmp_path / "policy.json"
+    path.write_text(json.dumps(policy))
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        pytest.fail("measurement computation reached for oversized requested cells")
+
+    monkeypatch.setattr(measure, "assemble_read", forbidden)
+    assert main(_args(policy=path)) == ERROR_EXIT
+    error = _error(capsys, "INVALID_POLICY")
+    assert (error["reason"], error["location"]) == (
+        "SCHEMA_VALIDATION_FAILED",
+        "/policy",
+    )
+
+
 def test_output_limit_includes_newline(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

@@ -217,6 +217,7 @@
         },
         "requested": {
           "type": "array",
+          "maxItems": 128,
           "items": {
             "type": "object",
             "additionalProperties": false,

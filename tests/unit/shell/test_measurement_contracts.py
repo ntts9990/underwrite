@@ -11,6 +11,8 @@ import pytest
 from _repo_paths import repo_root
 from jsonschema import Draft202012Validator, ValidationError
 
+from underwrite.measurement.read_input import MAX_CELLS
+
 ROOT = repo_root(Path(__file__).resolve())
 ASSETS = ("read.v1", "measurement_policy.v2", "statistical_seed.v1", "measurement_error.v1")
 
@@ -111,6 +113,45 @@ def test_split_mode_uses_exact_requested_keys() -> None:
     policy["stratification"]["requested"] = [{"locale": "ko"}]
     with pytest.raises(ValidationError):
         _policy_validator().validate(policy)
+
+
+def test_requested_cell_bound_runs_before_object_uniqueness(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requested_schema = _schema("measurement_policy.v2")["properties"]["stratification"][
+        "properties"
+    ]["requested"]
+    assert requested_schema["maxItems"] == MAX_CELLS
+    seen: list[int] = []
+    original = Draft202012Validator.VALIDATORS["uniqueItems"]
+
+    def spy(validator: object, unique: object, instance: object, schema: object) -> object:
+        if isinstance(instance, list):
+            try:
+                sorted(cast(list[Any], instance))
+            except TypeError:
+                seen.append(len(cast(list[Any], instance)))
+        return original(validator, unique, instance, schema)
+
+    monkeypatch.setitem(Draft202012Validator.VALIDATORS, "uniqueItems", spy)
+    validator = _policy_validator()
+    seen.clear()
+    policy = _policy()
+    requested = [{"split": f"cell-{index}"} for index in range(MAX_CELLS + 1)]
+    policy["stratification"] = {
+        "mode": "split",
+        "axes": ["split"],
+        "requested": requested,
+    }
+    with pytest.raises(ValidationError) as exc:
+        validator.validate(policy)
+    assert exc.value.validator == "maxItems"
+    assert list(exc.value.absolute_path) == ["stratification", "requested"]
+    assert seen == []
+
+    requested.pop()
+    validator.validate(policy)
+    assert seen == [MAX_CELLS]
 
 
 def test_error_contract_is_finite_and_never_echoes_arbitrary_diagnostics() -> None:

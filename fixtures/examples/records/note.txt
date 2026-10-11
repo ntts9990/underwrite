@@ -1,0 +1,1 @@
+Synthetic record fixture. It contains no private source data.
