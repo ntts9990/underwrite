@@ -552,7 +552,70 @@
         "missing_examples_omitted": {
           "type": "integer",
           "minimum": 0
+        },
+        "observed_reason_examples": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "case_id",
+              "arm",
+              "repeat",
+              "outcome",
+              "source_reason",
+              "source_claim_unverified"
+            ],
+            "properties": {
+              "case_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "\\S"
+              },
+              "arm": {
+                "enum": [
+                  "baseline",
+                  "candidate"
+                ]
+              },
+              "repeat": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1024
+              },
+              "outcome": {
+                "type": "integer",
+                "enum": [
+                  0,
+                  1
+                ]
+              },
+              "source_reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "\\S"
+              },
+              "source_claim_unverified": {
+                "const": true
+              }
+            }
+          }
+        },
+        "observed_reason_examples_omitted": {
+          "type": "integer",
+          "minimum": 0
         }
+      },
+      "dependentRequired": {
+        "observed_reason_examples": [
+          "observed_reason_examples_omitted"
+        ],
+        "observed_reason_examples_omitted": [
+          "observed_reason_examples"
+        ]
       }
     },
     "estimate": {

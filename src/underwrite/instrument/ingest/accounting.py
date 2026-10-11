@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import cast
 
 from underwrite.instrument.evidence.accounting import AccountingError, audit_promptfoo
+from underwrite.instrument.ingest.application import DIAGNOSTICS
 from underwrite.instrument.ingest.inspection import (
     InspectionError,
     inspect_artifact_with_projection,
@@ -53,6 +54,43 @@ def _inspection_error(error: InspectionError) -> AccountingCaseError:
     return AccountingCaseError("INVALID_INPUT", "INVALID_INPUT", location)
 
 
+def _trusted_artifact_diagnostic(report: dict[str, object]) -> tuple[str, str] | None:
+    """Retain only one fixed registry reason from an artifact inspection finding."""
+    diagnostics = report.get("diagnostics")
+    if not isinstance(diagnostics, list):
+        return None
+    items = cast(list[object], diagnostics)
+    if len(items) != 1:
+        return None
+    diagnostic = items[0]
+    if not isinstance(diagnostic, dict):
+        return None
+    entry = cast(dict[str, object], diagnostic)
+    code, reason, location = (
+        entry.get("code"),
+        entry.get("reason"),
+        entry.get("location"),
+    )
+    if (
+        type(code) is not str
+        or type(reason) is not str
+        or type(location) is not str
+        or location != "/artifact"
+    ):
+        return None
+    known_codes = {
+        registered for registered, exit_code, _ in DIAGNOSTICS.values() if exit_code == 1
+    }
+    known_codes.add("INPUT_LIMIT_EXCEEDED")  # The registry maps bounded-input reasons to this code.
+    known_reasons = {
+        item
+        for _, exit_code, reasons in DIAGNOSTICS.values()
+        if exit_code == 1
+        for item in (reasons.values() if isinstance(reasons, dict) else (reasons,))
+    }
+    return (reason, location) if code in known_codes and reason in known_reasons else None
+
+
 def audit_case(path: Path) -> dict[str, object]:
     """Audit only what one pinned artifact declares, retaining its original identity."""
     try:
@@ -64,6 +102,10 @@ def audit_case(path: Path) -> dict[str, object]:
             raise AccountingCaseError(
                 "EXPECTED_HASH_MISMATCH", "EXPECTED_HASH_MISMATCH", "/artifact/expected_hash"
             )
+        trusted = _trusted_artifact_diagnostic(report)
+        if trusted is not None:
+            reason, location = trusted
+            raise AccountingCaseError("INVALID_INPUT", reason, location)
         raise AccountingCaseError("INVALID_INPUT", "INVALID_ARTIFACT", "/artifact")
     summary = projection.payload.get("results")
     if not isinstance(summary, dict):

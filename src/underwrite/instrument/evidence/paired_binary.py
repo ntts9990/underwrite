@@ -197,18 +197,14 @@ def _records(value: object) -> dict[SlotKey, _Record]:
         has_missing = "missing_reason" in row
         if has_outcome == has_missing:
             raise _invalid()
+        source_reason = _text(row["source_reason"], maximum=128) if "source_reason" in row else None
         if has_outcome:
-            if "source_reason" in row:
-                raise _invalid()
             outcome = _integer(row["outcome"], 0, 1)
-            records[key] = _Record(key, outcome, None, None)
+            records[key] = _Record(key, outcome, None, source_reason)
         else:
             reason = row["missing_reason"]
             if type(reason) is not str or reason not in MISSING_REASONS:
                 raise _invalid()
-            source_reason = (
-                _text(row["source_reason"], maximum=128) if "source_reason" in row else None
-            )
             records[key] = _Record(key, None, reason, source_reason)
     return records
 
@@ -303,6 +299,31 @@ def _missing_examples(records: dict[SlotKey, _Record]) -> tuple[list[dict[str, o
         for record in missing[:MAX_MISSING_EXAMPLES]
     ]
     return examples, max(0, len(missing) - len(examples))
+
+
+def _observed_reason_examples(
+    records: dict[SlotKey, _Record],
+) -> tuple[list[dict[str, object]], int]:
+    observed = sorted(
+        (
+            record
+            for record in records.values()
+            if record.outcome is not None and record.source_reason is not None
+        ),
+        key=lambda record: record.key,
+    )
+    examples: list[dict[str, object]] = [
+        {
+            "case_id": record.key[0],
+            "arm": record.key[1],
+            "repeat": record.key[2],
+            "outcome": record.outcome,
+            "source_reason": record.source_reason,
+            "source_claim_unverified": True,
+        }
+        for record in observed[:MAX_MISSING_EXAMPLES]
+    ]
+    return examples, len(observed) - len(examples)
 
 
 def _parse(input_doc: object, policy_doc: object) -> _Parsed:
@@ -465,7 +486,8 @@ def _accounting(parsed: _Parsed, incomplete_cases: list[str]) -> dict[str, objec
     repeat_keys = {key for key in all_keys if key[2] > 0}
     unscoped_keys = all_keys - primary_keys - repeat_keys
     examples, omitted_examples = _missing_examples(parsed.records)
-    return {
+    observed_examples, omitted_observed = _observed_reason_examples(parsed.records)
+    accounting: dict[str, object] = {
         "primary_case_count": None if parsed.primary is None else len(parsed.primary),
         "planned_slot_count": None if parsed.planned is None else len(parsed.planned),
         "slot_record_count": len(parsed.records),
@@ -476,6 +498,10 @@ def _accounting(parsed: _Parsed, incomplete_cases: list[str]) -> dict[str, objec
         "missing_examples": examples,
         "missing_examples_omitted": omitted_examples,
     }
+    if observed_examples:
+        accounting["observed_reason_examples"] = observed_examples
+        accounting["observed_reason_examples_omitted"] = omitted_observed
+    return accounting
 
 
 def evaluate_paired_binary(input_doc: object, policy_doc: object) -> dict[str, object]:
@@ -493,7 +519,7 @@ def evaluate_paired_binary(input_doc: object, policy_doc: object) -> dict[str, o
     additional = cast(dict[str, object], accounting["additional_repeats"])
     if additional["planned"] or additional["reported"]:
         limitations.add("ADDITIONAL_REPEATS_NOT_INCLUDED_IN_ESTIMATE")
-    if accounting["missing_examples_omitted"]:
+    if accounting["missing_examples_omitted"] or accounting.get("observed_reason_examples_omitted"):
         limitations.add("SOURCE_REASON_EXAMPLES_TRUNCATED")
     return {
         "schema": "paired_binary_evidence.v1",
