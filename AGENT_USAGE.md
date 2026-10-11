@@ -298,6 +298,31 @@ statuses never replace the paired measurement's `measured`/`not_measured` status
 Identity comparisons retain differences and unknowns and do not certify that the
 history is complete or that an evaluator was correct.
 
+An optional `case_partition` adds descriptive case-level grouping. Try
+`synthetic-review-partition.json` as `--context`; it includes conditions, history,
+two populated categories, one empty category and an unclassified case. The producer
+declares a `taxonomy_id`, `unit: "case"`, category inventory and exactly one category
+or null assignment for every explicit primary case. Unknown/missing/duplicate
+assignments are rejected; null deliberately means unclassified. Category names and
+membership remain unverified source claims and are never inferred from source text.
+
+The result preserves sorted empty categories and always ends with a null category
+bucket. Each group reports its declared `case_count`, separate baseline/candidate
+slot accounting, and neutral transition counts for primary repeat zero. Group sums
+match the full primary accounting; additional repeats are excluded. Unknown planned
+counts remain null. `case_count` is a case population, not a field-opportunity or
+observed-outcome denominator, and does not establish independent sampling units.
+There are no group rates, confidence intervals, significance tests or gates. For
+overlapping error types or field-level metrics, obtain a separate explicit outcome
+definition and appropriate units; do not relabel them as this exclusive case partition.
+
+Python callers can use `evaluate_paired_review(input_doc, policy_doc, context_doc)`
+from `underwrite.instrument.evidence.paired_review`; it returns the unchanged paired
+evidence and its review together, computing paired inference once. The lower-level
+`review_paired_evidence(evidence, context_doc)` requires an independently validated
+paired report and supports conditions/history only: it cannot reconstruct groups
+without original slots. Neither API authenticates the source declarations.
+
 A slot can attach an optional `source_reason` to either an observed outcome or a
 missing reason. It is a bounded, unverified source annotation: error-like text
 never changes an observed zero into missing. The report shows up to 16 sorted

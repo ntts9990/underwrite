@@ -10,7 +10,11 @@ from underwrite_core.canonical import content_digest
 
 from underwrite.instrument.evidence import paired_review
 from underwrite.instrument.evidence.paired_binary import evaluate_paired_binary
-from underwrite.instrument.evidence.paired_review import PairedReviewError, review_paired_evidence
+from underwrite.instrument.evidence.paired_review import (
+    PairedReviewError,
+    evaluate_paired_review,
+    review_paired_evidence,
+)
 
 
 def _input() -> dict[str, Any]:
@@ -115,8 +119,27 @@ def _history() -> dict[str, Any]:
     }
 
 
+def _partition() -> dict[str, Any]:
+    return {
+        "taxonomy_id": "synthetic-types-v1",
+        "unit": "case",
+        "categories": ["z-empty", "alpha"],
+        "assignments": [
+            {"case_id": "a", "category": "alpha"},
+            {"case_id": "b", "category": None},
+        ],
+    }
+
+
 def _review(evidence: object, context: object) -> dict[str, Any]:
     return cast(dict[str, Any], review_paired_evidence(evidence, context))
+
+
+def _evaluate(
+    input_doc: object, policy_doc: object, context_doc: object
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    evidence, review = evaluate_paired_review(input_doc, policy_doc, context_doc)
+    return cast(dict[str, Any], evidence), cast(dict[str, Any], review)
 
 
 def test_condition_truth_table_preserves_mixed_findings_and_sorts_names() -> None:
@@ -501,20 +524,238 @@ def test_history_count_is_rejected_before_context_canonicalization(
     history["records"] = [deepcopy(history["records"][0]) for _ in range(33)]
     context["evaluation_history"] = history
     original = paired_review.canonical_bytes
-    calls = 0
+    context_canonicalized = False
 
-    def evidence_only(value: object) -> bytes:
-        nonlocal calls
-        calls += 1
-        if calls > 1:
+    def reject_context(value: object) -> bytes:
+        nonlocal context_canonicalized
+        if value is context:
+            context_canonicalized = True
             raise AssertionError("context canonicalized before bounded history validation")
         return original(value)
 
-    monkeypatch.setattr(paired_review, "canonical_bytes", evidence_only)
+    monkeypatch.setattr(paired_review, "canonical_bytes", reject_context)
     with pytest.raises(PairedReviewError) as exc:
         _review(evidence, context)
-    assert calls == 1
+    assert context_canonicalized is False
     assert (exc.value.code, exc.value.reason) == (
         "INPUT_LIMIT_EXCEEDED",
         "EVALUATION_HISTORY_LIMIT_EXCEEDED",
     )
+
+
+def test_partition_orchestrator_preserves_empty_and_unknown_groups() -> None:
+    input_doc = _input()
+    policy_doc = _policy()
+    original = evaluate_paired_binary(input_doc, policy_doc)
+    context = _context(original)
+    context["case_partition"] = _partition()
+
+    evidence, review = _evaluate(input_doc, policy_doc, context)
+
+    assert evidence == original
+    partition = review["case_partition"]
+    assert partition["taxonomy_id"] == "synthetic-types-v1"
+    assert partition["unit"] == "case"
+    assert partition["scope"] == "primary_repeat_zero"
+    groups = partition["groups"]
+    assert [group["category"] for group in groups] == ["alpha", "z-empty", None]
+    assert [group["case_count"] for group in groups] == [1, 0, 1]
+    assert groups[0]["baseline"]["observed_zero"] == 1
+    assert groups[0]["candidate"]["observed_zero"] == 1
+    assert groups[0]["transitions"]["zero_to_zero"] == 1
+    assert groups[1]["baseline"]["reported"] == 0
+    assert groups[1]["transitions"]["complete_pair_count"] == 0
+    assert groups[2]["transitions"]["zero_to_zero"] == 1
+    assert review["limitations"][-1] == "CASE_PARTITION_DECLARED_NOT_VERIFIED"
+
+
+def test_partition_keeps_missing_distinct_from_observed_zero() -> None:
+    input_doc = _input()
+    input_doc["slot_records"][1] = {
+        "case_id": "a",
+        "arm": "candidate",
+        "repeat": 0,
+        "missing_reason": "infra",
+    }
+    policy_doc = _policy()
+    original = evaluate_paired_binary(input_doc, policy_doc)
+    context = _context(original)
+    context["case_partition"] = _partition()
+    evidence, review = _evaluate(input_doc, policy_doc, context)
+    alpha = review["case_partition"]["groups"][0]
+    assert evidence["status"] == "not_measured"
+    assert alpha["candidate"]["observed_zero"] == 0
+    assert alpha["candidate"]["missing_by_reason"]["infra"] == 1
+    assert alpha["transitions"]["complete_pair_count"] == 0
+    assert alpha["transitions"]["incomplete_pair_count"] == 1
+
+
+def test_empty_primary_partition_has_one_unknown_group() -> None:
+    input_doc = _input()
+    input_doc["primary_case_ids"] = []
+    input_doc["planned_slots"] = []
+    input_doc["slot_records"] = []
+    policy_doc = _policy()
+    original = evaluate_paired_binary(input_doc, policy_doc)
+    context = _context(original)
+    context["case_partition"] = {
+        "taxonomy_id": "empty",
+        "unit": "case",
+        "categories": [],
+        "assignments": [],
+    }
+    evidence, review = _evaluate(input_doc, policy_doc, context)
+    assert evidence == original
+    assert review["case_partition"]["groups"] == [
+        {
+            "category": None,
+            "case_count": 0,
+            "baseline": {
+                "planned": 0,
+                "reported": 0,
+                "observed_one": 0,
+                "observed_zero": 0,
+                "missing_by_reason": {
+                    "infra": 0,
+                    "verifier": 0,
+                    "not_started": 0,
+                    "unknown": 0,
+                },
+                "unreported_planned": 0,
+            },
+            "candidate": {
+                "planned": 0,
+                "reported": 0,
+                "observed_one": 0,
+                "observed_zero": 0,
+                "missing_by_reason": {
+                    "infra": 0,
+                    "verifier": 0,
+                    "not_started": 0,
+                    "unknown": 0,
+                },
+                "unreported_planned": 0,
+            },
+            "transitions": {
+                "scope": "primary_repeat_zero",
+                "complete_pair_count": 0,
+                "incomplete_pair_count": 0,
+                "zero_to_zero": 0,
+                "zero_to_one": 0,
+                "one_to_zero": 0,
+                "one_to_one": 0,
+            },
+        }
+    ]
+
+
+def test_existing_wrapper_refuses_partition_without_original_slots() -> None:
+    evidence = _evidence()
+    context = _context(evidence)
+    context["case_partition"] = _partition()
+    with pytest.raises(PairedReviewError) as exc:
+        _review(evidence, context)
+    assert (exc.value.code, exc.value.reason) == (
+        "INVALID_INPUT",
+        "PAIRED_INPUT_REQUIRED_FOR_PARTITION",
+    )
+    with pytest.raises(PairedReviewError) as exc:
+        _review({}, context)
+    assert (exc.value.code, exc.value.reason) == (
+        "INVALID_INPUT",
+        "PAIRED_INPUT_REQUIRED_FOR_PARTITION",
+    )
+
+
+def test_orchestrator_without_partition_matches_existing_evidence_and_review() -> None:
+    input_doc = _input()
+    policy_doc = _policy()
+    evidence = evaluate_paired_binary(input_doc, policy_doc)
+    context = _context(evidence)
+    orchestrated_evidence, orchestrated_review = _evaluate(input_doc, policy_doc, context)
+    assert orchestrated_evidence == evidence
+    assert orchestrated_review == _review(evidence, context)
+
+
+@pytest.mark.parametrize(
+    ("fault", "code", "reason"),
+    [
+        ("duplicate_category", "INPUT_BINDING_MISMATCH", "DUPLICATE_PARTITION_CATEGORY"),
+        ("duplicate_assignment", "INPUT_BINDING_MISMATCH", "DUPLICATE_PARTITION_ASSIGNMENT"),
+        ("unknown_category", "INPUT_BINDING_MISMATCH", "UNKNOWN_PARTITION_CATEGORY"),
+        ("missing_assignment", "INPUT_BINDING_MISMATCH", "CASE_PARTITION_BINDING_MISMATCH"),
+        ("extra_assignment", "INPUT_BINDING_MISMATCH", "CASE_PARTITION_BINDING_MISMATCH"),
+        ("absent_primary", "INPUT_BINDING_MISMATCH", "CASE_PARTITION_BINDING_MISMATCH"),
+    ],
+)
+def test_partition_semantic_errors_are_typed(fault: str, code: str, reason: str) -> None:
+    input_doc = _input()
+    policy_doc = _policy()
+    evidence = evaluate_paired_binary(input_doc, policy_doc)
+    context = _context(evidence)
+    partition = _partition()
+    if fault == "duplicate_category":
+        partition["categories"].append("alpha")
+    elif fault == "duplicate_assignment":
+        partition["assignments"].append({"case_id": "a", "category": None})
+    elif fault == "unknown_category":
+        partition["assignments"][0]["category"] = "undeclared"
+    elif fault == "missing_assignment":
+        partition["assignments"].pop()
+    elif fault == "extra_assignment":
+        partition["assignments"].append({"case_id": "extra", "category": None})
+    else:
+        del input_doc["primary_case_ids"]
+        evidence = evaluate_paired_binary(input_doc, policy_doc)
+        context = _context(evidence)
+    context["case_partition"] = partition
+    with pytest.raises(PairedReviewError) as exc:
+        _evaluate(input_doc, policy_doc, context)
+    assert (exc.value.code, exc.value.reason) == (code, reason)
+
+
+def test_partition_edit_changes_context_digest_without_changing_evidence() -> None:
+    input_doc = _input()
+    policy_doc = _policy()
+    evidence = evaluate_paired_binary(input_doc, policy_doc)
+    first_context = _context(evidence)
+    first_context["case_partition"] = _partition()
+    first_evidence, first_review = _evaluate(input_doc, policy_doc, first_context)
+    changed_context = deepcopy(first_context)
+    changed_context["case_partition"]["taxonomy_id"] = "synthetic-types-v2"
+    second_evidence, second_review = _evaluate(input_doc, policy_doc, changed_context)
+    assert first_evidence == second_evidence
+    assert first_review["context_digest"] != second_review["context_digest"]
+
+
+@pytest.mark.parametrize(
+    ("fault", "reason"),
+    [
+        ("categories", "CASE_PARTITION_CATEGORY_LIMIT_EXCEEDED"),
+        ("assignments", "CASE_PARTITION_ASSIGNMENT_LIMIT_EXCEEDED"),
+    ],
+)
+def test_partition_bounds_are_rejected_before_context_canonicalization(
+    monkeypatch: pytest.MonkeyPatch, fault: str, reason: str
+) -> None:
+    evidence = _evidence()
+    context = _context(evidence)
+    partition = _partition()
+    if fault == "categories":
+        partition["categories"] = [f"category-{index}" for index in range(33)]
+    else:
+        partition["assignments"] = [
+            {"case_id": f"case-{index}", "category": None} for index in range(129)
+        ]
+    context["case_partition"] = partition
+    original = paired_review.canonical_bytes
+
+    def reject_context(value: object) -> bytes:
+        if value is context:
+            raise AssertionError("context canonicalized before bounded partition validation")
+        return original(value)
+
+    monkeypatch.setattr(paired_review, "canonical_bytes", reject_context)
+    with pytest.raises(PairedReviewError) as exc:
+        _review(evidence, context)
+    assert (exc.value.code, exc.value.reason) == ("INPUT_LIMIT_EXCEEDED", reason)

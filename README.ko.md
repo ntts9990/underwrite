@@ -182,6 +182,8 @@ CLI·hook·백그라운드 서비스는 자동으로 설치하지 않습니다.
 
 이 체크아웃에는 집계 검사용 `audit-counts`, 선언 비교용
 `compare-declarations`, 쌍대 이진 근거 계산용 `pair-binary`가 추가되어 있습니다.
+`review-pair`는 입력·정책 digest에 결속된 의도한 변경, 선언된 평가 이력,
+배타적인 사례 유형별 집계를 제공하며 기존 쌍대 근거를 유지합니다.
 서버 없이 로컬에서 JSON으로 실행합니다. 재현 명령과 한계는
 [에이전트 사용 안내](AGENT_USAGE.md#source-checkout-pilot-audit-promptfoo-counts)에 있습니다.
 아직 릴리스하지 않은 변경이며, 기존 PyPI `0.0.1` 배포물은 그대로입니다.

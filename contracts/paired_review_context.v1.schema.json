@@ -22,7 +22,8 @@
       "maxItems": 32,
       "items": {"$ref": "#/$defs/condition"}
     },
-    "evaluation_history": {"$ref": "#/$defs/evaluationHistory"}
+    "evaluation_history": {"$ref": "#/$defs/evaluationHistory"},
+    "case_partition": {"$ref": "#/$defs/casePartition"}
   },
   "$defs": {
     "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
@@ -120,6 +121,35 @@
           "type": "array",
           "maxItems": 32,
           "items": {"$ref": "#/$defs/historyRecord"}
+        }
+      }
+    },
+    "casePartition": {
+      "description": "An exclusive producer-declared partition of explicit primary case units.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["taxonomy_id", "unit", "categories", "assignments"],
+      "properties": {
+        "taxonomy_id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S"},
+        "unit": {"const": "case"},
+        "categories": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S"},
+          "uniqueItems": true
+        },
+        "assignments": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["case_id", "category"],
+            "properties": {
+              "case_id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S"},
+              "category": {"$ref": "#/$defs/nullableId"}
+            }
+          }
         }
       }
     }

@@ -8,11 +8,26 @@ from typing import Any, cast
 
 import pytest
 
-from underwrite.instrument.evidence.paired_binary import PairedBinaryError, evaluate_paired_binary
+from underwrite.instrument.evidence.paired_binary import (
+    PairedBinaryError,
+    evaluate_paired_binary,
+    evaluate_paired_binary_with_groups,
+)
 
 
 def _evaluate(value: object, settings: object) -> dict[str, Any]:
     return cast(dict[str, Any], evaluate_paired_binary(value, settings))
+
+
+def _evaluate_groups(
+    value: object, settings: object, groups: object
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    report, group_reports = evaluate_paired_binary_with_groups(value, settings, groups)
+    return cast(dict[str, Any], report), cast(list[dict[str, Any]], group_reports)
+
+
+def group(category: str | None, *case_ids: str) -> dict[str, object]:
+    return {"category": category, "case_ids": list(case_ids)}
 
 
 PAIRED_COUNT = 2
@@ -405,3 +420,159 @@ def test_small_transition_cohorts_remain_descriptive(cases: tuple[str, ...]) -> 
         transitions[key] for key in ("zero_to_zero", "zero_to_one", "one_to_zero", "one_to_one")
     ) == len(cases)
     assert result["status"] == "not_measured"
+
+
+@pytest.mark.parametrize(
+    "variant", ["complete", "incomplete", "no_plan", "false_assumption", "empty"]
+)
+def test_group_evaluation_preserves_existing_report_exactly(variant: str) -> None:
+    cases = () if variant == "empty" else ("a", "b")
+    value = source_input(cases)
+    settings = policy()
+    if variant == "incomplete":
+        value["slot_records"].pop()
+    elif variant == "no_plan":
+        del value["planned_slots"]
+    elif variant == "false_assumption":
+        settings["assumptions"]["fixed_sample"] = False
+    groups = [group("known", *cases), group(None)]
+    expected = _evaluate(value, settings)
+    actual, _ = _evaluate_groups(value, settings, groups)
+    assert actual == expected
+    assert canonical_json(actual) == canonical_json(expected)
+
+
+def canonical_json(value: object) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def test_group_counts_partition_primary_accounting_without_pooling_repeats() -> None:
+    value = source_input(("a", "b", "c", "d"))
+    pairs = {"a": (0, 0), "b": (0, 1), "c": (1, 0), "d": (1, 1)}
+    for record in value["slot_records"]:
+        record["outcome"] = pairs[record["case_id"]][record["arm"] == "candidate"]
+    value["slot_records"][3] = {
+        "case_id": "b",
+        "arm": "candidate",
+        "repeat": 0,
+        "missing_reason": "verifier",
+    }
+    repeat = {"case_id": "a", "arm": "candidate", "repeat": 1}
+    value["planned_slots"].append(repeat)
+    value["slot_records"].append({**repeat, "outcome": 1})
+    report, groups = _evaluate_groups(
+        value,
+        policy(),
+        [group(None, "d"), group("zeta", "c"), group("alpha", "a", "b")],
+    )
+    assert [group["category"] for group in groups] == ["alpha", "zeta", None]
+    assert [group["case_count"] for group in groups] == [2, 1, 1]
+    overall = report["accounting"]["primary_repeat_zero"]
+    for field in ("planned", "reported", "observed_one", "observed_zero", "unreported_planned"):
+        assert (
+            sum(group[arm][field] for group in groups for arm in ("baseline", "candidate"))
+            == overall[field]
+        )
+    for reason in ("infra", "verifier", "not_started", "unknown"):
+        assert (
+            sum(
+                group[arm]["missing_by_reason"][reason]
+                for group in groups
+                for arm in ("baseline", "candidate")
+            )
+            == overall["missing_by_reason"][reason]
+        )
+    transition_fields = (
+        "complete_pair_count",
+        "incomplete_pair_count",
+        "zero_to_zero",
+        "zero_to_one",
+        "one_to_zero",
+        "one_to_one",
+    )
+    overall_transitions = report["accounting"]["primary_transitions"]
+    for field in transition_fields:
+        assert sum(group["transitions"][field] for group in groups) == overall_transitions[field]
+    assert groups[0]["candidate"]["missing_by_reason"]["verifier"] == 1
+    assert groups[0]["candidate"]["observed_zero"] == 1
+    assert report["accounting"]["additional_repeats"]["observed_one"] == 1
+    assert sum(group["candidate"]["reported"] for group in groups) == len(pairs)
+
+
+def test_groups_keep_unknown_plan_and_empty_declared_categories() -> None:
+    value = source_input(("a",))
+    del value["planned_slots"]
+    _, groups = _evaluate_groups(
+        value,
+        policy(),
+        [group("empty"), group(None, "a")],
+    )
+    assert groups[0]["case_count"] == 0
+    assert groups[0]["baseline"]["planned"] is None
+    assert groups[0]["baseline"]["unreported_planned"] is None
+    assert groups[0]["transitions"]["complete_pair_count"] == 0
+    assert groups[1]["baseline"]["planned"] is None
+
+
+@pytest.mark.parametrize(
+    "groups",
+    [
+        [],
+        [group("only", "a", "b")],
+        [group(None, "a"), group(None, "b")],
+        [group(None)],
+        [group(None, "a", "b", "other")],
+        [
+            group("duplicate member", "a"),
+            group(None, "a", "b"),
+        ],
+        [
+            group("duplicate", "a"),
+            group("duplicate", "b"),
+            group(None),
+        ],
+        [group("e\u0301", "a", "b"), group(None)],
+        [
+            {**group("blank", "a", "b"), "extra": 1},
+            group(None),
+        ],
+    ],
+)
+def test_group_binding_rejects_missing_unknown_duplicate_or_malformed_membership(
+    groups: object,
+) -> None:
+    with pytest.raises(PairedBinaryError) as exc:
+        _evaluate_groups(source_input(), policy(), groups)
+    assert exc.value.code == "INPUT_BINDING_MISMATCH"
+
+
+def test_group_bounds_and_missing_primary_are_binding_mismatches() -> None:
+    too_many: list[dict[str, object]] = [group(f"group-{index}") for index in range(33)]
+    too_many.append(group(None, "a", "b"))
+    with pytest.raises(PairedBinaryError) as exc:
+        _evaluate_groups(source_input(), policy(), too_many)
+    assert exc.value.code == "INPUT_BINDING_MISMATCH"
+    value = source_input()
+    del value["primary_case_ids"]
+    with pytest.raises(PairedBinaryError) as exc:
+        _evaluate_groups(value, policy(), [group(None)])
+    assert exc.value.code == "INPUT_BINDING_MISMATCH"
+
+
+def test_invalid_group_binding_is_rejected_before_measurement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_if_called(_parsed: object) -> object:
+        raise AssertionError("measurement must not run before group binding validation")
+
+    monkeypatch.setattr(
+        "underwrite.instrument.evidence.paired_binary._measure",
+        fail_if_called,
+    )
+    with pytest.raises(PairedBinaryError) as exc:
+        _evaluate_groups(
+            source_input(),
+            policy(),
+            [group("partial", "a"), group(None)],
+        )
+    assert exc.value.code == "INPUT_BINDING_MISMATCH"

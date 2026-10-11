@@ -12,10 +12,11 @@ from typing import cast
 from underwrite.cli import pair_binary
 from underwrite.cli.evidence import EvidenceError, read_validated, run_cli
 from underwrite.cli.local_json import validate
+from underwrite.instrument.evidence.paired_binary import PairedBinaryError
 from underwrite.instrument.evidence.paired_review import (
     MAX_CONTEXT_BYTES,
     PairedReviewError,
-    review_paired_evidence,
+    evaluate_paired_review,
 )
 from underwrite.instrument.ingest.schema import packaged_validator
 
@@ -31,20 +32,25 @@ def configure(parser: argparse.ArgumentParser) -> None:
 
 
 def produce(args: argparse.Namespace) -> dict[str, object]:
-    evidence = pair_binary.produce(args)
+    input_doc, policy_doc, input_digest, policy_digest = pair_binary.read_inputs(args)
+    context, _ = read_validated(
+        Path(cast(str, args.context)), "paired_review_context.v1", "/context", MAX_CONTEXT_BYTES, 16
+    )
+    try:
+        evidence, review = evaluate_paired_review(input_doc, policy_doc, context)
+    except PairedReviewError as exc:
+        raise EvidenceError(exc.code, exc.reason, "/context") from exc
+    except PairedBinaryError as exc:
+        raise pair_binary.computation_error(exc) from exc
+    if evidence["input_digest"] != input_digest or evidence["policy_digest"] != policy_digest:
+        raise EvidenceError("INTERNAL_ERROR", "DIGEST_DISAGREEMENT")
     validate(
         packaged_validator("paired_binary_evidence.v1"),
         evidence,
         EvidenceError,
         "INTERNAL_ERROR",
     )
-    context, _ = read_validated(
-        Path(cast(str, args.context)), "paired_review_context.v1", "/context", MAX_CONTEXT_BYTES, 16
-    )
-    try:
-        return review_paired_evidence(evidence, context)
-    except PairedReviewError as exc:
-        raise EvidenceError(exc.code, exc.reason, "/context") from exc
+    return review
 
 
 def main(argv: list[str]) -> int:

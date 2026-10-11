@@ -30,10 +30,18 @@ def documents() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
 
 
 def invoke(
-    tmp_path: Path, capsys: Any, *, context: dict[str, Any] | None = None, incomplete: bool = False
+    tmp_path: Path,
+    capsys: Any,
+    *,
+    context: dict[str, Any] | None = None,
+    incomplete: bool = False,
+    no_primary: bool = False,
 ) -> tuple[int, dict[str, Any], str]:
     data, policy, default_context = documents()
     context = default_context if context is None else context
+    if no_primary:
+        del data["primary_case_ids"]
+        context["binding"]["input_digest"] = content_digest(data)
     if incomplete:
         data["slot_records"] = [
             row
@@ -230,3 +238,75 @@ def test_output_contract_rejects_status_reason_contradictions(
     record.update(declared_status=status, invalidation_reason=reason)
     with pytest.raises(ValidationError):
         cast(Validator, packaged_validator("paired_review.v1")).validate(report)
+
+
+def test_partition_preserves_population_missingness_and_original_evidence(
+    tmp_path: Path, capsys: Any
+) -> None:
+    context = json.loads((EXAMPLES / "synthetic-review-partition.json").read_text())
+    code, review, other = invoke(tmp_path, capsys, context=context)
+    assert code == 0 and other == ""
+    data, policy, _ = documents()
+    evidence: Any = evaluate_paired_binary(data, policy)
+    assert review["paired_evidence_ref"]["digest"] == content_digest(evidence)
+    partition = review["case_partition"]
+    groups = partition["groups"]
+    assert [group["category"] for group in groups] == [
+        *sorted(context["case_partition"]["categories"]),
+        None,
+    ]
+    assert sum(group["case_count"] for group in groups) == len(data["primary_case_ids"])
+    assert groups[0]["case_count"] == 0  # Declared synthetic-empty category remains visible.
+    assert groups[-1]["transitions"]["one_to_zero"] == 1
+    primary = evidence["accounting"]["primary_repeat_zero"]
+    for field in ("planned", "reported", "observed_one", "observed_zero", "unreported_planned"):
+        assert (
+            sum(group[arm][field] for group in groups for arm in ("baseline", "candidate"))
+            == primary[field]
+        )
+    for reason, count in primary["missing_by_reason"].items():
+        assert (
+            sum(
+                group[arm]["missing_by_reason"][reason]
+                for group in groups
+                for arm in ("baseline", "candidate")
+            )
+            == count
+        )
+    for field, count in evidence["accounting"]["primary_transitions"].items():
+        if field != "scope":
+            assert sum(group["transitions"][field] for group in groups) == count
+    assert "CASE_PARTITION_DECLARED_NOT_VERIFIED" in review["limitations"]
+
+
+@pytest.mark.parametrize(
+    "mutation", ["duplicate", "missing", "extra", "unknown_category", "no_primary"]
+)
+def test_partition_requires_exact_explicit_case_membership(
+    tmp_path: Path, capsys: Any, mutation: str
+) -> None:
+    context = json.loads((EXAMPLES / "synthetic-review-partition.json").read_text())
+    assignments = context["case_partition"]["assignments"]
+    if mutation == "duplicate":
+        assignments.append(assignments[0].copy())
+    elif mutation == "missing":
+        assignments.pop()
+    elif mutation == "extra":
+        assignments.append({"case_id": "not-primary", "category": None})
+    elif mutation == "unknown_category":
+        assignments[0]["category"] = "not-declared"
+    code, error, other = invoke(
+        tmp_path, capsys, context=context, no_primary=mutation == "no_primary"
+    )
+    assert code == ERROR_EXIT and other == ""
+    assert error["code"] == "INPUT_BINDING_MISMATCH"
+
+
+def test_partition_incomplete_pairs_stay_not_measured(tmp_path: Path, capsys: Any) -> None:
+    context = json.loads((EXAMPLES / "synthetic-review-partition.json").read_text())
+    code, review, other = invoke(tmp_path, capsys, context=context, incomplete=True)
+    assert code == 0 and other == ""
+    assert review["paired_evidence_ref"]["status"] == "not_measured"
+    groups = review["case_partition"]["groups"]
+    assert sum(group["transitions"]["incomplete_pair_count"] for group in groups) == 1
+    assert sum(group["candidate"]["unreported_planned"] for group in groups) == 1

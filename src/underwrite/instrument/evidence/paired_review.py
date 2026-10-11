@@ -11,10 +11,20 @@ from typing import Literal, cast
 
 from underwrite_core.canonical import CanonicalizationError, canonical_bytes, digest_bytes
 
+from underwrite.instrument.evidence.paired_binary import (
+    MAX_GROUP_CATEGORIES,
+    MAX_PRIMARY_CASES,
+    PairedBinaryError,
+    evaluate_paired_binary,
+    evaluate_paired_binary_with_groups,
+)
+
 MAX_CONTEXT_BYTES = 64 * 1024
 MAX_EVIDENCE_BYTES = 1024 * 1024
 MAX_CONDITIONS = 32
 MAX_HISTORY_RECORDS = 32
+MAX_PARTITION_CATEGORIES = MAX_GROUP_CATEGORIES
+MAX_PARTITION_ASSIGNMENTS = MAX_PRIMARY_CASES
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _IDENTITY_AXES = (
     "data_digest",
@@ -46,6 +56,7 @@ _HISTORY_LIMITATIONS = (
     "NO_RESCORING_PERFORMED",
     "HISTORY_COMPLETENESS_UNVERIFIED",
 )
+_PARTITION_LIMITATION = "CASE_PARTITION_DECLARED_NOT_VERIFIED"
 
 ConditionRole = Literal["treatment", "invariant"]
 Classification = Literal[
@@ -54,6 +65,13 @@ Classification = Literal[
     "invariant_changed",
     "invariant_unchanged",
     "unknown",
+]
+ParsedContext = tuple[
+    dict[str, object],
+    list[dict[str, object]],
+    dict[str, object] | None,
+    dict[str, object] | None,
+    bytes,
 ]
 
 
@@ -287,13 +305,73 @@ def _nullable_history_id(value: object) -> str | None:
     return None if value is None else _text(value, 128)
 
 
+def _case_partition(value: object) -> dict[str, object]:
+    keys = frozenset({"taxonomy_id", "unit", "categories", "assignments"})
+    partition = _object(value, required=keys, allowed=keys)
+    if partition["unit"] != "case":
+        raise _fail("INVALID_INPUT", "INVALID_CASE_PARTITION")
+    raw_categories = partition["categories"]
+    if type(raw_categories) is not list:
+        raise _fail("INVALID_INPUT", "INVALID_CASE_PARTITION")
+    category_values = cast(list[object], raw_categories)
+    if len(category_values) > MAX_PARTITION_CATEGORIES:
+        raise _fail("INPUT_LIMIT_EXCEEDED", "CASE_PARTITION_CATEGORY_LIMIT_EXCEEDED")
+    categories = [_text(category, 128) for category in category_values]
+    if len(set(categories)) != len(categories):
+        raise _fail("INPUT_BINDING_MISMATCH", "DUPLICATE_PARTITION_CATEGORY")
+    raw_assignments = partition["assignments"]
+    if type(raw_assignments) is not list:
+        raise _fail("INVALID_INPUT", "INVALID_CASE_PARTITION")
+    assignment_values = cast(list[object], raw_assignments)
+    if len(assignment_values) > MAX_PARTITION_ASSIGNMENTS:
+        raise _fail("INPUT_LIMIT_EXCEEDED", "CASE_PARTITION_ASSIGNMENT_LIMIT_EXCEEDED")
+    assignments: dict[str, str | None] = {}
+    for raw in assignment_values:
+        assignment = _object(
+            raw,
+            required=frozenset({"case_id", "category"}),
+            allowed=frozenset({"case_id", "category"}),
+        )
+        case_id = _text(assignment["case_id"], 128)
+        if case_id in assignments:
+            raise _fail("INPUT_BINDING_MISMATCH", "DUPLICATE_PARTITION_ASSIGNMENT")
+        category = None if assignment["category"] is None else _text(assignment["category"], 128)
+        if category is not None and category not in categories:
+            raise _fail("INPUT_BINDING_MISMATCH", "UNKNOWN_PARTITION_CATEGORY")
+        assignments[case_id] = category
+    return {
+        "taxonomy_id": _text(partition["taxonomy_id"], 128),
+        "unit": "case",
+        "categories": sorted(categories),
+        "assignments": assignments,
+    }
+
+
+def _partition_groups(partition: dict[str, object]) -> list[dict[str, object]]:
+    categories = cast(list[str], partition["categories"])
+    assignments = cast(dict[str, str | None], partition["assignments"])
+    return [
+        {
+            "category": category,
+            "case_ids": sorted(
+                case_id
+                for case_id, assigned_category in assignments.items()
+                if assigned_category == category
+            ),
+        }
+        for category in (*categories, None)
+    ]
+
+
 def _context(
     context_doc: object,
-) -> tuple[dict[str, object], list[dict[str, object]], dict[str, object] | None, bytes]:
+) -> ParsedContext:
     context = _object(
         context_doc,
         required=frozenset({"schema", "binding", "conditions"}),
-        allowed=frozenset({"schema", "binding", "conditions", "evaluation_history"}),
+        allowed=frozenset(
+            {"schema", "binding", "conditions", "evaluation_history", "case_partition"}
+        ),
     )
     if context["schema"] != "paired_review_context.v1":
         raise _fail("UNSUPPORTED_PROFILE", "UNSUPPORTED_REVIEW_CONTEXT")
@@ -339,13 +417,16 @@ def _context(
         if "evaluation_history" in context
         else None
     )
+    partition = (
+        _case_partition(context["case_partition"]) if "case_partition" in context else None
+    )
     try:
         encoded = canonical_bytes(context_doc)
     except (CanonicalizationError, RecursionError) as exc:
         raise _fail("INVALID_INPUT", "INVALID_REVIEW_CONTEXT") from exc
     if len(encoded) > MAX_CONTEXT_BYTES:
         raise _fail("INPUT_LIMIT_EXCEEDED", "REVIEW_CONTEXT_LIMIT_EXCEEDED")
-    return parsed_binding, conditions, history, encoded
+    return parsed_binding, conditions, history, partition, encoded
 
 
 def _classify(condition: dict[str, object]) -> dict[str, object]:
@@ -424,14 +505,13 @@ def _history_review(history: dict[str, object]) -> dict[str, object]:
     }
 
 
-def review_paired_evidence(evidence: object, context_doc: object) -> dict[str, object]:
-    """Classify declarations bound to an independently schema-validated paired report.
-
-    This pure boundary validates only the report fields needed for its digest reference;
-    callers remain responsible for validating the complete paired evidence contract.
-    """
+def _assemble_review(
+    evidence: object,
+    parsed_context: ParsedContext,
+    partition_groups: list[dict[str, object]] | None,
+) -> dict[str, object]:
+    binding, conditions, history, partition, context_bytes = parsed_context
     evidence_ref = _evidence_reference(evidence)
-    binding, conditions, history, context_bytes = _context(context_doc)
     if any(binding[key] != evidence_ref[key] for key in ("input_digest", "policy_digest")):
         raise _fail("INPUT_BINDING_MISMATCH", "PAIRED_EVIDENCE_BINDING_MISMATCH")
     declared = bool(conditions)
@@ -440,6 +520,8 @@ def review_paired_evidence(evidence: object, context_doc: object) -> dict[str, o
         limitations.append("NO_CONDITIONS_DECLARED")
     if history is not None:
         limitations.extend(_HISTORY_LIMITATIONS)
+    if partition is not None:
+        limitations.append(_PARTITION_LIMITATION)
     result: dict[str, object] = {
         "schema": "paired_review.v1",
         "paired_evidence_ref": evidence_ref,
@@ -458,4 +540,58 @@ def review_paired_evidence(evidence: object, context_doc: object) -> dict[str, o
     }
     if history is not None:
         result["evaluation_history"] = _history_review(history)
+    if partition is not None:
+        if partition_groups is None:
+            raise _fail("INVALID_INPUT", "PAIRED_INPUT_REQUIRED_FOR_PARTITION")
+        result["case_partition"] = {
+            "taxonomy_id": partition["taxonomy_id"],
+            "unit": "case",
+            "scope": "primary_repeat_zero",
+            "groups": partition_groups,
+        }
     return result
+
+
+def review_paired_evidence(evidence: object, context_doc: object) -> dict[str, object]:
+    """Classify declarations bound to an independently schema-validated paired report.
+
+    This pure boundary validates only the report fields needed for its digest reference;
+    callers remain responsible for validating the complete paired evidence contract.
+    A case partition additionally requires ``evaluate_paired_review`` and its original
+    paired input because an evidence summary cannot reconstruct per-case slot accounting.
+    """
+    parsed_context = _context(context_doc)
+    if parsed_context[3] is not None:
+        raise _fail("INVALID_INPUT", "PAIRED_INPUT_REQUIRED_FOR_PARTITION")
+    return _assemble_review(evidence, parsed_context, None)
+
+
+def evaluate_paired_review(
+    input_doc: object, policy_doc: object, context_doc: object
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Evaluate paired evidence once and review its bounded declared context.
+
+    The paired engine validates input, policy, and exact primary-case partition binding.
+    Partition labels remain unverified producer declarations, and group results are
+    descriptive primary repeat-zero accounting without inference or approval authority.
+    """
+    parsed_context = _context(context_doc)
+    partition = parsed_context[3]
+    partition_groups: list[dict[str, object]] | None = None
+    if partition is None:
+        evidence = evaluate_paired_binary(input_doc, policy_doc)
+    else:
+        try:
+            evidence, partition_groups = evaluate_paired_binary_with_groups(
+                input_doc, policy_doc, _partition_groups(partition)
+            )
+        except PairedBinaryError as exc:
+            if exc.code == "INPUT_BINDING_MISMATCH":
+                raise _fail("INPUT_BINDING_MISMATCH", "CASE_PARTITION_BINDING_MISMATCH") from exc
+            raise
+    review = _assemble_review(
+        evidence,
+        parsed_context,
+        partition_groups,
+    )
+    return evidence, review

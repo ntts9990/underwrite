@@ -189,7 +189,7 @@ def _evidence_pilots(cli: Path, fixtures: Path, work: Path) -> None:
             "--policy",
             str(evidence / "paired-binary-policy.json"),
             "--context",
-            str(evidence / "synthetic-review-history.json"),
+            str(evidence / "synthetic-review-partition.json"),
         ],
         work / "paired-review.json",
         work,
@@ -201,6 +201,10 @@ def _evidence_pilots(cli: Path, fixtures: Path, work: Path) -> None:
     history = cast(dict[str, object], review["evaluation_history"])
     statuses = cast(dict[str, object], history["selected_statuses"])
     _require(statuses.get("baseline") == "invalidated", "history invalidation was lost")
+    partition = cast(dict[str, object], review["case_partition"])
+    groups = cast(list[dict[str, object]], partition["groups"])
+    _require(groups[-1]["category"] is None, "unknown category was lost")
+    _require(groups[0]["case_count"] == 0, "empty category was lost")
     error = _command([str(cli), "pair-binary", "--json"], work)
     _require(
         error.returncode == EVIDENCE_ERROR_EXIT and error.stdout == "",
