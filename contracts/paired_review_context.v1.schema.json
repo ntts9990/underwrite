@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:paired_review_context.v1",
+  "title": "paired_review_context.v1",
+  "description": "Declared treatment and invariant conditions bound to paired binary evidence inputs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "binding", "conditions"],
+  "properties": {
+    "schema": {"const": "paired_review_context.v1"},
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input_digest", "policy_digest"],
+      "properties": {
+        "input_digest": {"$ref": "#/$defs/digest"},
+        "policy_digest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "conditions": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {"$ref": "#/$defs/condition"}
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "nullableValue": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "\\S"}
+      ]
+    },
+    "condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "role", "baseline", "candidate"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S"},
+        "role": {"enum": ["treatment", "invariant"]},
+        "baseline": {"$ref": "#/$defs/nullableValue"},
+        "candidate": {"$ref": "#/$defs/nullableValue"}
+      }
+    }
+  }
+}

@@ -27,7 +27,8 @@ def configure(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--json", action="store_true", help="Emit one typed JSON report on stdout.")
 
 
-def _produce(args: argparse.Namespace) -> dict[str, object]:
+def produce(args: argparse.Namespace) -> dict[str, object]:
+    """Read and compute the paired report shared by the two paired CLI flows."""
     input_doc, input_digest = read_validated(
         Path(cast(str, args.input)), "paired_binary_input.v1", "/input", INPUT_MAX_BYTES, 32
     )
@@ -56,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
         "pair-binary",
         argv if argv is not None else [],
         configure,
-        _produce,
+        produce,
         "paired_binary_evidence.v1",
         output_max_bytes=OUTPUT_MAX_BYTES,
     )

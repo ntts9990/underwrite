@@ -254,6 +254,31 @@ are not defaults for real evaluations. Compare the producer's conclusion and the
 consumer report only after checking scope, denominator, policy, and missingness;
 a descriptive result here does not override the producer's gate.
 
+For declared comparison context, use the same input and policy with `review-pair`:
+
+```sh
+uv run --frozen --no-sync underwrite review-pair \
+  --input fixtures/examples/evidence/synthetic-paired-complete.json \
+  --policy fixtures/examples/evidence/paired-binary-policy.json \
+  --context fixtures/examples/evidence/synthetic-review-context.json --json
+```
+
+The [`paired_review_context.v1`](contracts/paired_review_context.v1.schema.json)
+context binds both canonical input and policy digests. Each named condition declares
+its role (`treatment` or `invariant`) and baseline/candidate values. The JSON result
+distinguishes intended changes, changed invariants, unchanged treatments/invariants,
+and unknown values. Null on either side remains unknown; an empty condition list
+does not establish controlled conditions. The producer's declarations are unverified,
+including whether this list contains every relevant condition.
+
+[`paired_review.v1`](contracts/paired_review.v1.schema.json) references the complete,
+independently schema-validated paired report by canonical digest and copies its
+status/reason. Run `pair-binary` with the same input/policy to retrieve that report.
+Neither unchanged declarations nor intended changes establish causal effects,
+semantic equivalence, or approval. The context has its own digest, so an edited
+declaration creates a distinct review identity. These examples are synthetic;
+they do not demonstrate an actual goppi export or an Autofill experiment.
+
 A slot can attach an optional `source_reason` to either an observed outcome or a
 missing reason. It is a bounded, unverified source annotation: error-like text
 never changes an observed zero into missing. The report shows up to 16 sorted

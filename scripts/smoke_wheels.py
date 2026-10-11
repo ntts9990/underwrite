@@ -180,6 +180,24 @@ def _evidence_pilots(cli: Path, fixtures: Path, work: Path) -> None:
             _require(len(examples) == 1, "observed reason was lost")
             _require(examples[0]["outcome"] == 0, "observed zero was recoded")
             _require(examples[0]["source_claim_unverified"] is True, "source reason promoted")
+    review = _cli_json(
+        cli,
+        [
+            "review-pair",
+            "--input",
+            str(evidence / "synthetic-paired-complete.json"),
+            "--policy",
+            str(evidence / "paired-binary-policy.json"),
+            "--context",
+            str(evidence / "synthetic-review-context.json"),
+        ],
+        work / "paired-review.json",
+        work,
+    )
+    _require(review.get("schema") == "paired_review.v1", "review schema mismatch")
+    _require(review.get("actual_conditions_verified") is False, "review verified source claims")
+    reference = cast(dict[str, object], review["paired_evidence_ref"])
+    _require(reference.get("status") == "measured", "review lost measured status")
     error = _command([str(cli), "pair-binary", "--json"], work)
     _require(
         error.returncode == EVIDENCE_ERROR_EXIT and error.stdout == "",

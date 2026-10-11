@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:paired_review.v1",
+  "title": "paired_review.v1",
+  "description": "A bounded review of declared conditions referencing an immutable paired evidence result.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "paired_evidence_ref", "context_digest", "conditions", "declarations_verified", "actual_conditions_verified", "semantic_equivalence_verified", "limitations"],
+  "properties": {
+    "schema": {"const": "paired_review.v1"},
+    "paired_evidence_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "digest", "input_digest", "policy_digest", "status", "reason"],
+      "properties": {
+        "schema": {"const": "paired_binary_evidence.v1"},
+        "digest": {"$ref": "#/$defs/digest"},
+        "input_digest": {"$ref": "#/$defs/digest"},
+        "policy_digest": {"$ref": "#/$defs/digest"},
+        "status": {"enum": ["measured", "not_measured"]},
+        "reason": {
+          "oneOf": [
+            {"type": "null"},
+            {"enum": ["PRIMARY_CASE_INVENTORY_MISSING", "PLANNED_SLOT_INVENTORY_MISSING", "PRIMARY_COHORT_INCOMPLETE", "INSUFFICIENT_PRIMARY_CASES", "ASSUMPTIONS_NOT_DECLARED"]}
+          ]
+        }
+      }
+    },
+    "context_digest": {"$ref": "#/$defs/digest"},
+    "conditions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coverage", "entries"],
+      "properties": {
+        "coverage": {"enum": ["declared", "unknown"]},
+        "entries": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/entry"}}
+      }
+    },
+    "declarations_verified": {"const": false},
+    "actual_conditions_verified": {"const": false},
+    "semantic_equivalence_verified": {"const": false},
+    "limitations": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 7,
+      "prefixItems": [
+        {"const": "DECLARED_CONDITIONS_NOT_VERIFIED"},
+        {"const": "CONDITION_SCOPE_NOT_VERIFIED"},
+        {"const": "DIGEST_BINDING_NOT_PROVENANCE"},
+        {"const": "SOURCE_METADATA_AVAILABLE_IN_PAIRED_EVIDENCE"},
+        {"const": "NO_CAUSAL_CONCLUSION"},
+        {"const": "NO_APPROVAL_OR_DEPLOYMENT_AUTHORITY"},
+        {"const": "NO_CONDITIONS_DECLARED"}
+      ],
+      "items": false
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "nullableValue": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "\\S"}
+      ]
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "role", "baseline", "candidate", "classification", "unknown_sides"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S"},
+        "role": {"enum": ["treatment", "invariant"]},
+        "baseline": {"$ref": "#/$defs/nullableValue"},
+        "candidate": {"$ref": "#/$defs/nullableValue"},
+        "classification": {"enum": ["intended_change", "unchanged_treatment", "invariant_changed", "invariant_unchanged", "unknown"]},
+        "unknown_sides": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {"enum": ["baseline", "candidate"]},
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

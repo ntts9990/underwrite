@@ -50,6 +50,8 @@ source-include = [
     "contracts/paired_binary_input.v1.schema.json",
     "contracts/paired_binary_policy.v1.schema.json",
     "contracts/paired_binary_evidence.v1.schema.json",
+    "contracts/paired_review_context.v1.schema.json",
+    "contracts/paired_review.v1.schema.json",
 ]
 
 [tool.uv.workspace]
@@ -109,4 +111,3 @@ known_first_party = ["underwrite", "underwrite_core"]
 # The workspace distribution imports as underwrite_core.
 package_module_name_map = { "underwrite-core" = ["underwrite_core"] }
 extend_exclude = ["packages/.*/tests", "fixtures/golden"]
-
