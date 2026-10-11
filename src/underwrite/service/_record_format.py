@@ -11,6 +11,8 @@ from typing import Final, cast
 from underwrite_core.canonical import CanonicalizationError, canonical_bytes
 
 MAX_FILES: Final = 64
+MAX_LINKS: Final = 16
+MAX_SELECTION_EXCLUDED: Final = 32
 MAX_FILE_BYTES: Final = 128 * 1024 * 1024
 MAX_TOTAL_BYTES: Final = 512 * 1024 * 1024
 MAX_MANIFEST_BYTES: Final = 256 * 1024
@@ -158,7 +160,7 @@ def _selection(value: object) -> dict[str, object]:
     if excluded_value is None:
         excluded: list[str] | None = None
     else:
-        excluded = [_text(item, 256) for item in _array(excluded_value, 32)]
+        excluded = [_text(item, 256) for item in _array(excluded_value, MAX_SELECTION_EXCLUDED)]
         if len(set(excluded)) != len(excluded):
             raise FormatError("SELECTION_INVALID")
     return {"scope": "explicit_files", "excluded": excluded}
@@ -210,31 +212,34 @@ def _check_names(files: list[dict[str, object]]) -> None:
             raise FormatError("LOGICAL_NAME_PREFIX_CONFLICT")
 
 
-def _file_spec(value: object) -> dict[str, object]:
+def _file_spec(value: object, *, path_required: bool) -> dict[str, object]:
+    keys = frozenset({"name", "role", "path", "media_type", "source_locator"})
+    required = frozenset({"name", "role", "path"} if path_required else {"name", "role"})
     obj = _object(
         value,
-        frozenset({"name", "role", "path", "media_type", "source_locator"}),
-        frozenset({"name", "role", "path"}),
+        keys if path_required else keys - {"path"},
+        required,
     )
     role = obj["role"]
     if type(role) is not str or role not in _ROLES:
         raise FormatError("ROLE_INVALID")
-    source_path = _source_path(obj["path"])
     media_type = obj.get("media_type", "application/octet-stream")
     if type(media_type) is not str or _MEDIA_TYPE.fullmatch(media_type) is None:
         raise FormatError("MEDIA_TYPE_INVALID")
     locator_value = obj.get("source_locator")
     locator = None if locator_value is None else _text(locator_value, 512)
-    return {
+    result: dict[str, object] = {
         "name": logical_name(obj["name"]),
         "role": role,
-        "path": source_path,
         "media_type": media_type,
         "source_locator": locator,
     }
+    if path_required:
+        result["path"] = _source_path(obj["path"])
+    return result
 
 
-def validate_spec(value: object) -> dict[str, object]:
+def _validate_spec(value: object, *, captured: bool) -> dict[str, object]:
     keys = frozenset(
         {
             "schema",
@@ -256,11 +261,13 @@ def validate_spec(value: object) -> dict[str, object]:
     kind = _text(obj["kind"], 64)
     if _KIND.fullmatch(kind) is None:
         raise FormatError("KIND_INVALID")
-    links = [_link(item) for item in _array(obj.get("links", []), 16)]
+    links = [_link(item) for item in _array(obj.get("links", []), MAX_LINKS)]
     link_ids = [cast(str, link["record_id"]) for link in links]
     if len(link_ids) != len(set(link_ids)):
         raise FormatError("DUPLICATE_LINK_RECORD")
-    files = [_file_spec(item) for item in _array(obj["files"], MAX_FILES, 1)]
+    files = [
+        _file_spec(item, path_required=not captured) for item in _array(obj["files"], MAX_FILES, 1)
+    ]
     _check_names(files)
     result: dict[str, object] = {
         "schema": "record_spec.v1",
@@ -281,6 +288,16 @@ def validate_spec(value: object) -> dict[str, object]:
         }
     )
     return result
+
+
+def validate_spec(value: object) -> dict[str, object]:
+    """Validate a path-backed record specification."""
+    return _validate_spec(value, captured=False)
+
+
+def validate_captured_spec(value: object) -> dict[str, object]:
+    """Validate a bytes-backed record specification with no source paths."""
+    return _validate_spec(value, captured=True)
 
 
 def _stored_file(value: object) -> dict[str, object]:
@@ -339,7 +356,7 @@ def validate_manifest(value: object) -> dict[str, object]:
         datetime.fromisoformat(captured_at.removesuffix("Z") + "+00:00")
     except ValueError as exc:
         raise FormatError("MANIFEST_VALUE_INVALID") from exc
-    links = [_link(item) for item in _array(obj["links"], 16)]
+    links = [_link(item) for item in _array(obj["links"], MAX_LINKS)]
     if len({cast(str, item["record_id"]) for item in links}) != len(links):
         raise FormatError("DUPLICATE_LINK_RECORD")
     files = [_stored_file(item) for item in _array(obj["files"], MAX_FILES, 1)]

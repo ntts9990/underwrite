@@ -388,6 +388,53 @@ independent cases. There are no pooled outcome counts or rates across groups.
 inputs produce `evidence_error.v1` on stderr with exit 2. Neither result is a
 `read.v1` or a replacement for `pair-binary` when actual paired evidence exists.
 
+## Review a completed paired handoff in one call
+
+For the exact experimental `goppi.p7_regrade_consumer_handoff.v1` profile, use
+`review-handoff` to validate the declared files and receipt-to-slot mapping,
+compute paired evidence once, and return the evidence and review together:
+
+```sh
+underwrite review-handoff \
+  --handoff /path/to/goppi/qa-evidence/STUDY/paired-analysis-input \
+  --source-root /path/to/goppi --json
+```
+
+The handoff directory contains `consumer-handoff.json` and `manifest.json`.
+The explicit source root must contain that directory and every referenced file.
+Without `--source-root`, only files inside the handoff directory are allowed;
+parents are never inferred. Caller paths may be relative, but producer pointers
+cannot escape the root or traverse symlinks. This profile reads completed local
+artifacts; it never runs goppi, a model, the supplied verifier, or a producer schema.
+
+Add `--record-root /path/to/private-store --record-id review-001` to save the same
+captured bytes and generated results. The store parent must exist. No handwritten
+record specification is needed. Without those options, no store is created.
+An existing ID is a conflict; it is never overwritten or treated as a new success.
+
+`paired_handoff_review.v1` separates `analysis` from `storage` and includes the
+actual process `exit_code`. A result with no requested storage or saved storage
+exits 0, including `not_measured`. An analysis error exits 2; any storage error
+exits 3 while retaining the analysis result or error. Component error envelopes
+retain their own exit-code fields, which are distinct from the enclosing process.
+Parsing errors use the existing stderr error envelope and exit 2. Ordinary input
+and output-limit refusals use the aggregate on stdout. An unusable installed
+response schema is an exceptional configuration failure on stderr; an output
+budget smaller than its truthful diagnostic cannot admit storage side effects.
+
+The included policy is used unchanged. Missing comparison context produces a
+consumer-authored empty condition list with canonical input/policy bindings;
+condition coverage remains unknown. Observed outcome counts are descriptive,
+not causal improvement, statistical equivalence, or approval. Original missing
+outcomes and offline regrade outcomes retain their distinct identities.
+Contradictory producer flags remain findings when the required bytes and bindings
+are valid; integrity failures are errors. Raw answers, keys, private material
+bodies, and the consumer executable/environment are not captured in the record.
+
+The existing `review-pair --input --policy --context` output is unchanged. Python
+callers can use `run_goppi_p7_handoff(HandoffRequest(...))` from
+`underwrite.cli.handoff_review` for the same local orchestration and typed envelope.
+
 ## Keep selected evidence in local records
 
 Use [`records`](STORAGE.md) to copy explicit inputs, policies, results, and actual

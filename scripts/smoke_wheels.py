@@ -263,6 +263,51 @@ def _record_pilots(cli: Path, fixtures: Path, work: Path) -> None:
     _require(listing.get("record_count") == 1, "installed record catalog mismatch")
 
 
+def _handoff_pilot(cli: Path, work: Path) -> None:
+    source = work / "handoff-source"
+    _success(
+        [
+            sys.executable,
+            "-c",
+            "import sys; from pathlib import Path; "
+            "from tests.drivers.goppi_p7_fixture import build_goppi_p7_fixture; "
+            "build_goppi_p7_fixture().write(Path(sys.argv[1]))",
+            str(source),
+        ],
+        ROOT,
+    )
+    store = work / "handoff-store"
+    report = _cli_json(
+        cli,
+        [
+            "review-handoff",
+            "--handoff",
+            str(source / "study/paired-analysis-input"),
+            "--source-root",
+            str(source),
+            "--record-root",
+            str(store),
+            "--record-id",
+            "synthetic.handoff",
+        ],
+        work / "handoff-result.json",
+        work,
+    )
+    analysis = cast(dict[str, object], report["analysis"])
+    summary = cast(dict[str, object], analysis["summary"])
+    _require(summary["measurement_status"] == "not_measured", "handoff fabricated measurement")
+    _require(summary["conditions_coverage"] == "unknown", "handoff fabricated conditions")
+    saved = cast(dict[str, object], report["storage"])
+    _require(saved["state"] == "saved", "installed handoff capture failed")
+    verification = _cli_json(
+        cli,
+        ["records", "verify", "--root", str(store), "--id", "synthetic.handoff"],
+        work / "handoff-verified.json",
+        work,
+    )
+    _require(verification["valid"] is True, "installed handoff record is damaged")
+
+
 def _smoke(dist: Path) -> None:
     core_wheel, app_wheel = _wheels(dist)
     fixtures = ROOT / "fixtures/examples"
@@ -276,6 +321,7 @@ def _smoke(dist: Path) -> None:
         _check_wheel_origins(venv, wheels)
         _evidence_pilots(cli, fixtures, work)
         _record_pilots(cli, fixtures, work)
+        _handoff_pilot(cli, work)
 
         observation = work / "observation.json"
         observed = _cli_json(

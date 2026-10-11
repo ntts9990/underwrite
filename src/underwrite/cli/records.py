@@ -114,6 +114,11 @@ def _service_error(error: RecordError) -> _CliError:
     return _CliError(code, location)
 
 
+def record_error_payload(error: RecordError) -> dict[str, object]:
+    """Reuse the record command's finite diagnostic mapping in composed workflows."""
+    return _service_error(error).payload
+
+
 def _spec(path: Path) -> dict[str, object]:
     document, _ = read_document(
         path,

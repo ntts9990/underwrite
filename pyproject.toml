@@ -52,6 +52,7 @@ source-include = [
     "contracts/paired_binary_evidence.v1.schema.json",
     "contracts/paired_review_context.v1.schema.json",
     "contracts/paired_review.v1.schema.json",
+    "contracts/paired_handoff_review.v1.schema.json",
     "contracts/record_spec.v1.schema.json",
     "contracts/result_record.v1.schema.json",
     "contracts/record_view.v1.schema.json",

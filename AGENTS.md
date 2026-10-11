@@ -7,10 +7,12 @@ Python API, typed JSON results, and explicit next actions. Do not expand the pro
 into Docker, a server, or a web interface. See [AGENT_USAGE.md](AGENT_USAGE.md)
 for the agent-facing workflow.
 
-Optimize for the person's intended result: make the supported path easy, fast,
-and specific to that purpose. Agents execute that path; they are not the end
-goal. Prefer connecting existing commands over adding steps or abstractions.
-Return the relevant result, its limits, and the next useful action directly.
+## Shared workspace policy
+
+If `../AGENTS.md` exists and its exact Git-root scope includes this repository,
+read it for the shared development loop and quality criteria. This repository
+owns its product contracts and verification commands below. If absent, follow
+this file and CONTRIBUTING.md; standalone public clones require no sibling file.
 
 Prioritize structured JSON results for the calling agent: include result states,
 input and policy identities, populations/missingness, and interpretation limits

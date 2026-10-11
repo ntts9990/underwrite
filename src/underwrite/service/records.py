@@ -7,6 +7,8 @@ import hashlib
 import os
 import secrets
 import stat
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final, NamedTuple, cast
@@ -15,12 +17,16 @@ from underwrite_core.canonical import canonical_bytes, digest_bytes
 
 from underwrite.service._record_format import (
     MAX_FILE_BYTES,
+    MAX_FILES,
+    MAX_LINKS,
     MAX_MANIFEST_BYTES,
     MAX_RECORDS,
+    MAX_SELECTION_EXCLUDED,
     MAX_TOTAL_BYTES,
     FormatError,
     record_id,
     strict_manifest,
+    validate_captured_spec,
     validate_manifest,
     validate_spec,
 )
@@ -28,6 +34,7 @@ from underwrite.service._record_format import (
 _DIR_MODE: Final = 0o700
 _FILE_MODE: Final = 0o600
 _READ_SIZE: Final = 1024 * 1024
+RECORD_MAX_FILES: Final = MAX_FILES
 ERROR_CODES: Final = frozenset(
     {
         "INVALID_SPEC",
@@ -57,6 +64,32 @@ class RecordSnapshot(NamedTuple):
 
     manifest: dict[str, object]
     digest: str
+
+
+@dataclass(frozen=True)
+class CapturedRecordFile:
+    """One already-captured file; its bytes are the sole storage source."""
+
+    name: str
+    role: str
+    data: bytes
+    media_type: str = "application/octet-stream"
+    source_locator: str | None = None
+
+
+@dataclass(frozen=True)
+class CapturedRecordSpec:
+    """A path-free immutable record request over captured bytes."""
+
+    record_id: str
+    kind: str
+    label: str
+    metadata: dict[str, str]
+    links: tuple[dict[str, str], ...]
+    selection_excluded: tuple[str, ...] | None
+    rerun_verification: dict[str, object]
+    provenance: dict[str, object]
+    files: tuple[CapturedRecordFile, ...]
 
 
 class RecordError(ValueError):
@@ -311,6 +344,21 @@ def _files_root(record_dir: Path, owned_dirs: list[Path]) -> Path:
 def _copy_one(
     descriptor: int, expected: int, output: Path, total_allowance: int
 ) -> tuple[int, str]:
+    def chunks() -> Iterable[bytes]:
+        while chunk := os.read(descriptor, _READ_SIZE):
+            yield chunk
+
+    return _write_one(chunks(), expected, output, total_allowance, source_backed=True)
+
+
+def _write_one(
+    chunks: Iterable[bytes],
+    expected: int,
+    output: Path,
+    total_allowance: int,
+    *,
+    source_backed: bool,
+) -> tuple[int, str]:
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
@@ -319,10 +367,7 @@ def _copy_one(
     hasher = hashlib.sha256()
     try:
         os.fchmod(target, _FILE_MODE)
-        while True:
-            chunk = os.read(descriptor, _READ_SIZE)
-            if not chunk:
-                break
+        for chunk in chunks:
             size += len(chunk)
             if size > MAX_FILE_BYTES or size > total_allowance:
                 raise RecordError("INPUT_LIMIT_EXCEEDED", "/spec/files")
@@ -334,11 +379,16 @@ def _copy_one(
                     raise OSError(errno.EIO, "write failed")
                 view = view[written:]
         if size != expected:
-            raise RecordError("SOURCE_READ_FAILED", "/spec/files")
+            code = "SOURCE_READ_FAILED" if source_backed else "INTERNAL_ERROR"
+            raise RecordError(code, "/spec/files" if source_backed else "")
         os.fsync(target)
     finally:
         os.close(target)
     return size, "sha256:" + hasher.hexdigest()
+
+
+def _write_bytes(data: bytes, output: Path, total_allowance: int) -> tuple[int, str]:
+    return _write_one((data,), len(data), output, total_allowance, source_backed=False)
 
 
 def _cleanup(paths: list[Path], directories: list[Path], records: Path) -> None:
@@ -391,11 +441,7 @@ def _manifest(spec: dict[str, object], stored: list[dict[str, object]]) -> dict[
     }
 
 
-def _checked_spec(spec: object, root: Path) -> dict[str, object]:
-    try:
-        checked = validate_spec(spec)
-    except FormatError:
-        raise RecordError("INVALID_SPEC", "/spec") from None
+def _validate_checked_spec(checked: dict[str, object], root: Path) -> dict[str, object]:
     _validate_references(root, checked) if cast(list[object], checked["links"]) else None
     try:
         preview_files = [
@@ -416,6 +462,78 @@ def _checked_spec(spec: object, root: Path) -> dict[str, object]:
     return checked
 
 
+def _checked_spec(spec: object, root: Path) -> dict[str, object]:
+    try:
+        checked = validate_spec(spec)
+    except FormatError:
+        raise RecordError("INVALID_SPEC", "/spec") from None
+    return _validate_checked_spec(checked, root)
+
+
+def _checked_captured_spec(
+    spec: CapturedRecordSpec, root: Path
+) -> tuple[dict[str, object], tuple[tuple[dict[str, object], bytes], ...]]:
+    if (
+        type(spec) is not CapturedRecordSpec
+        or type(spec.files) is not tuple
+        or not 1 <= len(spec.files) <= RECORD_MAX_FILES
+        or type(spec.links) is not tuple
+        or len(spec.links) > MAX_LINKS
+        or (
+            spec.selection_excluded is not None
+            and (
+                type(spec.selection_excluded) is not tuple
+                or len(spec.selection_excluded) > MAX_SELECTION_EXCLUDED
+            )
+        )
+    ):
+        raise RecordError("INVALID_SPEC", "/spec")
+    file_documents: list[dict[str, object]] = []
+    data: list[bytes] = []
+    total = 0
+    for item in spec.files:
+        if type(item) is not CapturedRecordFile or type(item.data) is not bytes:
+            raise RecordError("INVALID_SPEC", "/spec/files")
+        if len(item.data) > MAX_FILE_BYTES:
+            raise RecordError("INPUT_LIMIT_EXCEEDED", "/spec/files")
+        total += len(item.data)
+        if total > MAX_TOTAL_BYTES:
+            raise RecordError("INPUT_LIMIT_EXCEEDED", "/spec/files")
+        file_documents.append(
+            {
+                "name": item.name,
+                "role": item.role,
+                "media_type": item.media_type,
+                "source_locator": item.source_locator,
+            }
+        )
+        data.append(item.data)
+    document = {
+        "schema": "record_spec.v1",
+        "record_id": spec.record_id,
+        "kind": spec.kind,
+        "label": spec.label,
+        "metadata": spec.metadata,
+        "selection": {
+            "scope": "explicit_files",
+            "excluded": (
+                None if spec.selection_excluded is None else list(spec.selection_excluded)
+            ),
+        },
+        "rerun_verification": spec.rerun_verification,
+        "provenance": spec.provenance,
+        "links": list(spec.links),
+        "files": file_documents,
+    }
+    try:
+        checked = validate_captured_spec(document)
+    except FormatError:
+        raise RecordError("INVALID_SPEC", "/spec") from None
+    checked = _validate_checked_spec(checked, root)
+    checked_files = cast(list[dict[str, object]], checked["files"])
+    return checked, tuple(zip(checked_files, data, strict=True))
+
+
 def _capture_files(
     record_dir: Path,
     sources: list[tuple[dict[str, object], int, int]],
@@ -432,6 +550,35 @@ def _capture_files(
         total += size
         if total > MAX_TOTAL_BYTES:
             raise RecordError("INPUT_LIMIT_EXCEEDED", "/spec/files")
+        stored.append(
+            {
+                "name": item["name"],
+                "role": item["role"],
+                "sha256": checksum,
+                "bytes": size,
+                "media_type": item["media_type"],
+                "source_locator": item["source_locator"],
+            }
+        )
+    for directory in sorted(owned_dirs, key=lambda item: len(item.parts), reverse=True):
+        _fsync_dir(directory)
+    return stored
+
+
+def _capture_bytes(
+    record_dir: Path,
+    files: tuple[tuple[dict[str, object], bytes], ...],
+    owned_files: list[Path],
+    owned_dirs: list[Path],
+) -> list[dict[str, object]]:
+    stored: list[dict[str, object]] = []
+    total = 0
+    files_root = _files_root(record_dir, owned_dirs)
+    for item, data in files:
+        output = _ensure_output_parent(files_root, cast(str, item["name"]), owned_dirs)
+        owned_files.append(output)
+        size, checksum = _write_bytes(data, output, MAX_TOTAL_BYTES - total)
+        total += size
         stored.append(
             {
                 "name": item["name"],
@@ -492,10 +639,11 @@ def _publish(record_dir: Path, staging: Path, raw: bytes) -> Path:
     return staging_file
 
 
-def save_record(root: Path, spec: object, source_base: Path) -> RecordSnapshot:
-    """Capture selected files once and publish an immutable manifest create-only."""
-    checked = _checked_spec(spec, root)
-    sources = _open_sources(checked, source_base)
+def _save_checked(
+    root: Path,
+    checked: dict[str, object],
+    capture: Callable[[Path, list[Path], list[Path]], list[dict[str, object]]],
+) -> RecordSnapshot:
     records: Path | None = None
     record_dir: Path | None = None
     owned_files: list[Path] = []
@@ -506,7 +654,7 @@ def save_record(root: Path, spec: object, source_base: Path) -> RecordSnapshot:
         records, staging = _store_for_save(root)
         record_dir = _reserve(records, cast(str, checked["record_id"]))
         owned_dirs.append(record_dir)
-        stored = _capture_files(record_dir, sources, owned_files, owned_dirs)
+        stored = capture(record_dir, owned_files, owned_dirs)
         manifest = _manifest(checked, stored)
         validate_manifest(manifest)
         raw = canonical_bytes(manifest)
@@ -526,8 +674,6 @@ def save_record(root: Path, spec: object, source_base: Path) -> RecordSnapshot:
     except OSError:
         raise RecordError("STORE_IO_ERROR") from None
     finally:
-        for _, descriptor, _ in sources:
-            os.close(descriptor)
         if staging_file is not None and not manifest_published:
             try:
                 staging_file.unlink()
@@ -535,6 +681,35 @@ def save_record(root: Path, spec: object, source_base: Path) -> RecordSnapshot:
                 pass
         if not manifest_published and records is not None and record_dir is not None:
             _cleanup_before_publication(owned_files, owned_dirs, records)
+
+
+def save_record(root: Path, spec: object, source_base: Path) -> RecordSnapshot:
+    """Capture selected files once and publish an immutable manifest create-only."""
+    checked = _checked_spec(spec, root)
+    sources = _open_sources(checked, source_base)
+
+    def capture(
+        record_dir: Path, owned_files: list[Path], owned_dirs: list[Path]
+    ) -> list[dict[str, object]]:
+        return _capture_files(record_dir, sources, owned_files, owned_dirs)
+
+    try:
+        return _save_checked(root, checked, capture)
+    finally:
+        for _, descriptor, _ in sources:
+            os.close(descriptor)
+
+
+def save_captured_record(root: Path, spec: CapturedRecordSpec) -> RecordSnapshot:
+    """Publish already-captured bytes without reopening any source path."""
+    checked, files = _checked_captured_spec(spec, root)
+
+    def capture(
+        record_dir: Path, owned_files: list[Path], owned_dirs: list[Path]
+    ) -> list[dict[str, object]]:
+        return _capture_bytes(record_dir, files, owned_files, owned_dirs)
+
+    return _save_checked(root, checked, capture)
 
 
 def list_records(root: Path) -> dict[str, object]:
@@ -599,9 +774,7 @@ def _file_finding(record_dir: Path, item: dict[str, object]) -> str | None:
     return _file_content_finding(path, info, item)
 
 
-def _file_content_finding(
-    path: Path, info: os.stat_result, item: dict[str, object]
-) -> str | None:
+def _file_content_finding(path: Path, info: os.stat_result, item: dict[str, object]) -> str | None:
     if info.st_size != item["bytes"]:
         return "FILE_SIZE_MISMATCH"
     try:

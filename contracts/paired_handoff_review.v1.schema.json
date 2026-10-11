@@ -1,0 +1,3046 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "exit_code",
+    "profile",
+    "scope",
+    "source",
+    "context_provenance",
+    "findings",
+    "analysis",
+    "storage",
+    "next_actions"
+  ],
+  "properties": {
+    "schema": {
+      "const": "paired_handoff_review.v1"
+    },
+    "exit_code": {
+      "enum": [
+        0,
+        2,
+        3
+      ]
+    },
+    "profile": {
+      "const": "goppi.p7_regrade_consumer_handoff.v1"
+    },
+    "scope": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "stage",
+            "split",
+            "repeat",
+            "cases",
+            "planned_slots"
+          ],
+          "properties": {
+            "stage": {
+              "const": "same_batch"
+            },
+            "split": {
+              "const": "explore"
+            },
+            "repeat": {
+              "const": 0
+            },
+            "cases": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "planned_slots": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      ]
+    },
+    "source": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "handoff_digest",
+            "files",
+            "authentication_independently_verified"
+          ],
+          "properties": {
+            "handoff_digest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "files": {
+              "type": "array",
+              "maxItems": 58,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "sha256",
+                  "bytes"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  "bytes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 8388608
+                  }
+                }
+              }
+            },
+            "authentication_independently_verified": {
+              "const": false
+            }
+          }
+        }
+      ]
+    },
+    "context_provenance": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "source",
+            "conditions_supplied_by_producer",
+            "semantic_completeness_verified",
+            "source_authentication_independently_verified"
+          ],
+          "properties": {
+            "source": {
+              "const": "consumer_derived_empty"
+            },
+            "conditions_supplied_by_producer": {
+              "const": false
+            },
+            "semantic_completeness_verified": {
+              "const": false
+            },
+            "source_authentication_independently_verified": {
+              "const": false
+            }
+          }
+        }
+      ]
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "source"
+        ],
+        "properties": {
+          "code": {
+            "enum": [
+              "PRODUCER_POLICY_INCLUDED_FLAG_CONTRADICTION",
+              "CONDITIONS_NOT_SUPPLIED",
+              "SOURCE_AUTHENTICATION_NOT_INDEPENDENTLY_VERIFIED"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        }
+      }
+    },
+    "analysis": {
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "result",
+            "error"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "result"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state",
+              "paired_evidence",
+              "paired_review",
+              "summary"
+            ],
+            "properties": {
+              "state": {
+                "const": "result"
+              },
+              "paired_evidence": {
+                "$ref": "#/$defs/paired_binary_evidence"
+              },
+              "paired_review": {
+                "$ref": "#/$defs/paired_review"
+              },
+              "summary": {
+                "$ref": "#/$defs/summary"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "error"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state",
+              "phase",
+              "error"
+            ],
+            "properties": {
+              "state": {
+                "const": "error"
+              },
+              "phase": {
+                "enum": [
+                  "acquisition",
+                  "analysis"
+                ]
+              },
+              "error": {
+                "$ref": "#/$defs/evidence_error"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "storage": {
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "not_requested",
+            "saved",
+            "error"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "not_requested"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "const": "not_requested"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "saved"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state",
+              "record_id",
+              "manifest_digest",
+              "verification"
+            ],
+            "properties": {
+              "state": {
+                "const": "saved"
+              },
+              "record_id": {
+                "$ref": "#/$defs/record_verification__record_id"
+              },
+              "manifest_digest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "verification": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/record_verification"
+                  },
+                  {
+                    "properties": {
+                      "valid": {
+                        "const": true
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "error"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state",
+              "error",
+              "published_record"
+            ],
+            "properties": {
+              "state": {
+                "const": "error"
+              },
+              "error": {
+                "$ref": "#/$defs/record_error"
+              },
+              "published_record": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "record_id",
+                      "manifest_digest"
+                    ],
+                    "properties": {
+                      "record_id": {
+                        "$ref": "#/$defs/record_verification__record_id"
+                      },
+                      "manifest_digest": {
+                        "type": "string",
+                        "pattern": "^sha256:[0-9a-f]{64}$"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "next_actions": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "string",
+        "maxLength": 128,
+        "pattern": "^[A-Z][A-Z0-9_]*$"
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:paired_handoff_review.v1",
+  "title": "paired_handoff_review.v1",
+  "$defs": {
+    "paired_binary_evidence": {
+      "title": "paired_binary_evidence.v1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "status",
+        "reason",
+        "input_digest",
+        "policy_digest",
+        "source_claims",
+        "assumptions",
+        "settings",
+        "accounting",
+        "estimate",
+        "limitations"
+      ],
+      "properties": {
+        "schema": {
+          "const": "paired_binary_evidence.v1"
+        },
+        "status": {
+          "enum": [
+            "measured",
+            "not_measured"
+          ]
+        },
+        "reason": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "PRIMARY_CASE_INVENTORY_MISSING",
+                "PLANNED_SLOT_INVENTORY_MISSING",
+                "PRIMARY_COHORT_INCOMPLETE",
+                "INSUFFICIENT_PRIMARY_CASES",
+                "ASSUMPTIONS_NOT_DECLARED"
+              ]
+            }
+          ]
+        },
+        "input_digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "policy_digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "source_claims": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "source",
+            "outcome_definition",
+            "metadata",
+            "verified"
+          ],
+          "properties": {
+            "source": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "producer",
+                "version",
+                "run_id"
+              ],
+              "properties": {
+                "producer": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "\\S"
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "\\S"
+                },
+                "run_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "\\S"
+                }
+              }
+            },
+            "outcome_definition": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "positive_means"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "\\S"
+                },
+                "positive_means": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "\\S"
+                }
+              }
+            },
+            "metadata": {
+              "type": "object",
+              "maxProperties": 16,
+              "propertyNames": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "\\S"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "\\S"
+              },
+              "required": [
+                "baseline_context_id",
+                "candidate_context_id",
+                "evaluator_id"
+              ]
+            },
+            "verified": {
+              "const": false
+            }
+          }
+        },
+        "assumptions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "declared",
+            "verified"
+          ],
+          "properties": {
+            "declared": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "independent_units",
+                "sign_flip_invariance",
+                "fixed_sample"
+              ],
+              "properties": {
+                "independent_units": {
+                  "type": "boolean"
+                },
+                "sign_flip_invariance": {
+                  "type": "boolean"
+                },
+                "fixed_sample": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "verified": {
+              "const": false
+            }
+          }
+        },
+        "settings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "seed",
+            "permutation_iterations",
+            "bootstrap_iterations",
+            "confidence",
+            "max_work"
+          ],
+          "properties": {
+            "seed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "permutation_iterations": {
+              "type": "integer",
+              "minimum": 10000,
+              "maximum": 20000
+            },
+            "bootstrap_iterations": {
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 10000
+            },
+            "confidence": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 1
+            },
+            "max_work": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2000000
+            }
+          }
+        },
+        "accounting": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "primary_case_count",
+            "planned_slot_count",
+            "slot_record_count",
+            "primary_repeat_zero",
+            "additional_repeats",
+            "unscoped_repeat_zero",
+            "incomplete_primary_case_ids",
+            "missing_examples",
+            "missing_examples_omitted"
+          ],
+          "properties": {
+            "primary_case_count": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              ]
+            },
+            "planned_slot_count": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              ]
+            },
+            "slot_record_count": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4096
+            },
+            "primary_repeat_zero": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "planned",
+                "reported",
+                "observed_one",
+                "observed_zero",
+                "missing_by_reason",
+                "unreported_planned"
+              ],
+              "properties": {
+                "planned": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  ]
+                },
+                "reported": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "observed_one": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "observed_zero": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "missing_by_reason": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "infra",
+                    "verifier",
+                    "not_started",
+                    "unknown"
+                  ],
+                  "properties": {
+                    "infra": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "verifier": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "not_started": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "unknown": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                },
+                "unreported_planned": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  ]
+                }
+              }
+            },
+            "primary_transitions": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": false,
+              "required": [
+                "scope",
+                "complete_pair_count",
+                "incomplete_pair_count",
+                "zero_to_zero",
+                "zero_to_one",
+                "one_to_zero",
+                "one_to_one"
+              ],
+              "properties": {
+                "scope": {
+                  "const": "primary_repeat_zero"
+                },
+                "complete_pair_count": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 128
+                },
+                "incomplete_pair_count": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 128
+                },
+                "zero_to_zero": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 128
+                },
+                "zero_to_one": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 128
+                },
+                "one_to_zero": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 128
+                },
+                "one_to_one": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 128
+                }
+              }
+            },
+            "additional_repeats": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "planned",
+                "reported",
+                "observed_one",
+                "observed_zero",
+                "missing_by_reason",
+                "unreported_planned"
+              ],
+              "properties": {
+                "planned": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  ]
+                },
+                "reported": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "observed_one": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "observed_zero": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "missing_by_reason": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "infra",
+                    "verifier",
+                    "not_started",
+                    "unknown"
+                  ],
+                  "properties": {
+                    "infra": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "verifier": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "not_started": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "unknown": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                },
+                "unreported_planned": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  ]
+                }
+              }
+            },
+            "unscoped_repeat_zero": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "planned",
+                "reported",
+                "observed_one",
+                "observed_zero",
+                "missing_by_reason",
+                "unreported_planned"
+              ],
+              "properties": {
+                "planned": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  ]
+                },
+                "reported": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "observed_one": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "observed_zero": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "missing_by_reason": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "infra",
+                    "verifier",
+                    "not_started",
+                    "unknown"
+                  ],
+                  "properties": {
+                    "infra": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "verifier": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "not_started": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "unknown": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                },
+                "unreported_planned": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  ]
+                }
+              }
+            },
+            "incomplete_primary_case_ids": {
+              "type": "array",
+              "maxItems": 128,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "\\S"
+              },
+              "uniqueItems": true
+            },
+            "missing_examples": {
+              "type": "array",
+              "maxItems": 16,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "case_id",
+                  "arm",
+                  "repeat",
+                  "missing_reason",
+                  "source_reason",
+                  "source_claim_unverified"
+                ],
+                "properties": {
+                  "case_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "\\S"
+                  },
+                  "arm": {
+                    "enum": [
+                      "baseline",
+                      "candidate"
+                    ]
+                  },
+                  "repeat": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1024
+                  },
+                  "missing_reason": {
+                    "enum": [
+                      "infra",
+                      "verifier",
+                      "not_started",
+                      "unknown"
+                    ]
+                  },
+                  "source_reason": {
+                    "oneOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "\\S"
+                      }
+                    ]
+                  },
+                  "source_claim_unverified": {
+                    "const": true
+                  }
+                }
+              }
+            },
+            "missing_examples_omitted": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "observed_reason_examples": {
+              "type": "array",
+              "maxItems": 16,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "case_id",
+                  "arm",
+                  "repeat",
+                  "outcome",
+                  "source_reason",
+                  "source_claim_unverified"
+                ],
+                "properties": {
+                  "case_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "\\S"
+                  },
+                  "arm": {
+                    "enum": [
+                      "baseline",
+                      "candidate"
+                    ]
+                  },
+                  "repeat": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1024
+                  },
+                  "outcome": {
+                    "type": "integer",
+                    "enum": [
+                      0,
+                      1
+                    ]
+                  },
+                  "source_reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "\\S"
+                  },
+                  "source_claim_unverified": {
+                    "const": true
+                  }
+                }
+              }
+            },
+            "observed_reason_examples_omitted": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "dependentRequired": {
+            "observed_reason_examples": [
+              "observed_reason_examples_omitted"
+            ],
+            "observed_reason_examples_omitted": [
+              "observed_reason_examples"
+            ]
+          }
+        },
+        "estimate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "n",
+            "effect",
+            "direction",
+            "interval",
+            "p_value",
+            "permutation_method",
+            "permutation_completed",
+            "bootstrap_completed",
+            "reserved_work",
+            "scope",
+            "effect_method",
+            "bootstrap_method"
+          ],
+          "properties": {
+            "n": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              ]
+            },
+            "effect": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "direction": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "enum": [
+                    "negative",
+                    "zero",
+                    "positive"
+                  ]
+                }
+              ]
+            },
+            "interval": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "type": "number"
+                  }
+                }
+              ]
+            },
+            "p_value": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "permutation_method": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "enum": [
+                    "mean-signflip-exact-v1",
+                    "mean-signflip-monte-carlo-v1"
+                  ]
+                }
+              ]
+            },
+            "permutation_completed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "bootstrap_completed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "reserved_work": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              ]
+            },
+            "scope": {
+              "const": "primary_repeat_zero"
+            },
+            "effect_method": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "const": "mean-paired-difference-v1"
+                }
+              ]
+            },
+            "bootstrap_method": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "const": "percentile-linear-v1"
+                }
+              ]
+            }
+          }
+        },
+        "limitations": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 24,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96,
+            "pattern": "\\S"
+          },
+          "uniqueItems": true
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "measured"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reason": {
+                "type": "null"
+              },
+              "estimate": {
+                "properties": {
+                  "n": {
+                    "type": "integer",
+                    "minimum": 2
+                  },
+                  "effect": {
+                    "type": "number"
+                  },
+                  "direction": {
+                    "enum": [
+                      "negative",
+                      "zero",
+                      "positive"
+                    ]
+                  },
+                  "interval": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": {
+                      "type": "number"
+                    }
+                  },
+                  "p_value": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "permutation_method": {
+                    "enum": [
+                      "mean-signflip-exact-v1",
+                      "mean-signflip-monte-carlo-v1"
+                    ]
+                  },
+                  "reserved_work": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "effect_method": {
+                    "const": "mean-paired-difference-v1"
+                  },
+                  "bootstrap_method": {
+                    "const": "percentile-linear-v1"
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "reason": {
+                "type": "string"
+              },
+              "estimate": {
+                "properties": {
+                  "n": {
+                    "type": "null"
+                  },
+                  "effect": {
+                    "type": "null"
+                  },
+                  "direction": {
+                    "type": "null"
+                  },
+                  "interval": {
+                    "type": "null"
+                  },
+                  "p_value": {
+                    "type": "null"
+                  },
+                  "permutation_method": {
+                    "type": "null"
+                  },
+                  "permutation_completed": {
+                    "const": 0
+                  },
+                  "bootstrap_completed": {
+                    "const": 0
+                  },
+                  "reserved_work": {
+                    "type": "null"
+                  },
+                  "effect_method": {
+                    "type": "null"
+                  },
+                  "bootstrap_method": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "paired_review": {
+      "title": "paired_review.v1",
+      "description": "A bounded review of declared conditions referencing an immutable paired evidence result.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "paired_evidence_ref",
+        "context_digest",
+        "conditions",
+        "declarations_verified",
+        "actual_conditions_verified",
+        "semantic_equivalence_verified",
+        "limitations"
+      ],
+      "properties": {
+        "schema": {
+          "const": "paired_review.v1"
+        },
+        "paired_evidence_ref": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema",
+            "digest",
+            "input_digest",
+            "policy_digest",
+            "status",
+            "reason"
+          ],
+          "properties": {
+            "schema": {
+              "const": "paired_binary_evidence.v1"
+            },
+            "digest": {
+              "$ref": "#/$defs/paired_review__digest"
+            },
+            "input_digest": {
+              "$ref": "#/$defs/paired_review__digest"
+            },
+            "policy_digest": {
+              "$ref": "#/$defs/paired_review__digest"
+            },
+            "status": {
+              "enum": [
+                "measured",
+                "not_measured"
+              ]
+            },
+            "reason": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "enum": [
+                    "PRIMARY_CASE_INVENTORY_MISSING",
+                    "PLANNED_SLOT_INVENTORY_MISSING",
+                    "PRIMARY_COHORT_INCOMPLETE",
+                    "INSUFFICIENT_PRIMARY_CASES",
+                    "ASSUMPTIONS_NOT_DECLARED"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "context_digest": {
+          "$ref": "#/$defs/paired_review__digest"
+        },
+        "conditions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "coverage",
+            "entries"
+          ],
+          "properties": {
+            "coverage": {
+              "enum": [
+                "declared",
+                "unknown"
+              ]
+            },
+            "entries": {
+              "type": "array",
+              "maxItems": 32,
+              "items": {
+                "$ref": "#/$defs/paired_review__entry"
+              }
+            }
+          }
+        },
+        "declarations_verified": {
+          "const": false
+        },
+        "actual_conditions_verified": {
+          "const": false
+        },
+        "semantic_equivalence_verified": {
+          "const": false
+        },
+        "evaluation_history": {
+          "$ref": "#/$defs/paired_review__evaluationHistory"
+        },
+        "case_partition": {
+          "$ref": "#/$defs/paired_review__casePartition"
+        },
+        "limitations": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 11,
+          "items": {
+            "enum": [
+              "DECLARED_CONDITIONS_NOT_VERIFIED",
+              "CONDITION_SCOPE_NOT_VERIFIED",
+              "DIGEST_BINDING_NOT_PROVENANCE",
+              "SOURCE_METADATA_AVAILABLE_IN_PAIRED_EVIDENCE",
+              "NO_CAUSAL_CONCLUSION",
+              "NO_APPROVAL_OR_DEPLOYMENT_AUTHORITY",
+              "NO_CONDITIONS_DECLARED",
+              "HISTORY_RESULT_REFERENCES_NOT_VERIFIED",
+              "NO_RESCORING_PERFORMED",
+              "HISTORY_COMPLETENESS_UNVERIFIED",
+              "CASE_PARTITION_DECLARED_NOT_VERIFIED"
+            ]
+          },
+          "uniqueItems": true
+        }
+      },
+      "allOf": [
+        {
+          "properties": {
+            "limitations": {
+              "contains": {
+                "const": "DECLARED_CONDITIONS_NOT_VERIFIED"
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "limitations": {
+              "contains": {
+                "const": "CONDITION_SCOPE_NOT_VERIFIED"
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "limitations": {
+              "contains": {
+                "const": "DIGEST_BINDING_NOT_PROVENANCE"
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "limitations": {
+              "contains": {
+                "const": "SOURCE_METADATA_AVAILABLE_IN_PAIRED_EVIDENCE"
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "limitations": {
+              "contains": {
+                "const": "NO_CAUSAL_CONCLUSION"
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "limitations": {
+              "contains": {
+                "const": "NO_APPROVAL_OR_DEPLOYMENT_AUTHORITY"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "evaluation_history"
+            ]
+          },
+          "then": {
+            "properties": {
+              "limitations": {
+                "allOf": [
+                  {
+                    "contains": {
+                      "const": "HISTORY_RESULT_REFERENCES_NOT_VERIFIED"
+                    }
+                  },
+                  {
+                    "contains": {
+                      "const": "NO_RESCORING_PERFORMED"
+                    }
+                  },
+                  {
+                    "contains": {
+                      "const": "HISTORY_COMPLETENESS_UNVERIFIED"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "limitations": {
+                "not": {
+                  "contains": {
+                    "enum": [
+                      "HISTORY_RESULT_REFERENCES_NOT_VERIFIED",
+                      "NO_RESCORING_PERFORMED",
+                      "HISTORY_COMPLETENESS_UNVERIFIED"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "conditions": {
+                "properties": {
+                  "coverage": {
+                    "const": "unknown"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "limitations": {
+                "contains": {
+                  "const": "NO_CONDITIONS_DECLARED"
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "limitations": {
+                "not": {
+                  "contains": {
+                    "const": "NO_CONDITIONS_DECLARED"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "case_partition"
+            ]
+          },
+          "then": {
+            "properties": {
+              "limitations": {
+                "contains": {
+                  "const": "CASE_PARTITION_DECLARED_NOT_VERIFIED"
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "limitations": {
+                "not": {
+                  "contains": {
+                    "const": "CASE_PARTITION_DECLARED_NOT_VERIFIED"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "paired_review__digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "paired_review__nullableValue": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "\\S"
+        }
+      ]
+    },
+    "paired_review__entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "role",
+        "baseline",
+        "candidate",
+        "classification",
+        "unknown_sides"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "\\S"
+        },
+        "role": {
+          "enum": [
+            "treatment",
+            "invariant"
+          ]
+        },
+        "baseline": {
+          "$ref": "#/$defs/paired_review__nullableValue"
+        },
+        "candidate": {
+          "$ref": "#/$defs/paired_review__nullableValue"
+        },
+        "classification": {
+          "enum": [
+            "intended_change",
+            "unchanged_treatment",
+            "invariant_changed",
+            "invariant_unchanged",
+            "unknown"
+          ]
+        },
+        "unknown_sides": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "enum": [
+              "baseline",
+              "candidate"
+            ]
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "paired_review__nullableId": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "\\S"
+        }
+      ]
+    },
+    "paired_review__predecessor": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "relation"
+          ],
+          "properties": {
+            "relation": {
+              "enum": [
+                "root",
+                "unknown"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "relation",
+            "evaluation_id"
+          ],
+          "properties": {
+            "relation": {
+              "const": "supersedes"
+            },
+            "evaluation_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "\\S"
+            }
+          }
+        }
+      ]
+    },
+    "paired_review__identities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "data_digest",
+        "golden_digest",
+        "rubric_digest",
+        "judge_id",
+        "evaluator_id",
+        "outcome_definition_id"
+      ],
+      "properties": {
+        "data_digest": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/paired_review__digest"
+            }
+          ]
+        },
+        "golden_digest": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/paired_review__digest"
+            }
+          ]
+        },
+        "rubric_digest": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/paired_review__digest"
+            }
+          ]
+        },
+        "judge_id": {
+          "$ref": "#/$defs/paired_review__nullableId"
+        },
+        "evaluator_id": {
+          "$ref": "#/$defs/paired_review__nullableId"
+        },
+        "outcome_definition_id": {
+          "$ref": "#/$defs/paired_review__nullableId"
+        }
+      }
+    },
+    "paired_review__historyRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evaluation_id",
+        "result_digest",
+        "declared_status",
+        "invalidation_reason",
+        "predecessor",
+        "identities"
+      ],
+      "properties": {
+        "evaluation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "\\S"
+        },
+        "result_digest": {
+          "description": "Retained producer-declared evaluation-result artifact identity; not a paired report digest or proof of artifact availability.",
+          "$ref": "#/$defs/paired_review__digest"
+        },
+        "declared_status": {
+          "enum": [
+            "active",
+            "invalidated",
+            "unknown"
+          ]
+        },
+        "invalidation_reason": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "\\S"
+            }
+          ]
+        },
+        "predecessor": {
+          "$ref": "#/$defs/paired_review__predecessor"
+        },
+        "identities": {
+          "$ref": "#/$defs/paired_review__identities"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "declared_status": {
+                "const": "invalidated"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "invalidation_reason": {
+                "type": "string"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "invalidation_reason": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "paired_review__identityComparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relation",
+        "baseline",
+        "candidate"
+      ],
+      "properties": {
+        "relation": {
+          "enum": [
+            "same",
+            "different",
+            "unknown"
+          ]
+        },
+        "baseline": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "\\S"
+            }
+          ]
+        },
+        "candidate": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "\\S"
+            }
+          ]
+        }
+      }
+    },
+    "paired_review__evaluationHistory": {
+      "description": "Declared revision history and selected identity comparisons; no artifacts are fetched and no rescoring is performed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selector_coverage",
+        "selectors",
+        "selected_statuses",
+        "identity_comparisons",
+        "records"
+      ],
+      "properties": {
+        "selector_coverage": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown"
+          ]
+        },
+        "selectors": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "baseline_evaluation_id",
+            "candidate_evaluation_id"
+          ],
+          "properties": {
+            "baseline_evaluation_id": {
+              "$ref": "#/$defs/paired_review__nullableId"
+            },
+            "candidate_evaluation_id": {
+              "$ref": "#/$defs/paired_review__nullableId"
+            }
+          }
+        },
+        "selected_statuses": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "baseline",
+            "candidate"
+          ],
+          "properties": {
+            "baseline": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "enum": [
+                    "active",
+                    "invalidated",
+                    "unknown"
+                  ]
+                }
+              ]
+            },
+            "candidate": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "enum": [
+                    "active",
+                    "invalidated",
+                    "unknown"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "identity_comparisons": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "data_digest",
+            "golden_digest",
+            "rubric_digest",
+            "judge_id",
+            "evaluator_id",
+            "outcome_definition_id"
+          ],
+          "properties": {
+            "data_digest": {
+              "$ref": "#/$defs/paired_review__identityComparison"
+            },
+            "golden_digest": {
+              "$ref": "#/$defs/paired_review__identityComparison"
+            },
+            "rubric_digest": {
+              "$ref": "#/$defs/paired_review__identityComparison"
+            },
+            "judge_id": {
+              "$ref": "#/$defs/paired_review__identityComparison"
+            },
+            "evaluator_id": {
+              "$ref": "#/$defs/paired_review__identityComparison"
+            },
+            "outcome_definition_id": {
+              "$ref": "#/$defs/paired_review__identityComparison"
+            }
+          }
+        },
+        "records": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/paired_review__historyRecord"
+          }
+        }
+      }
+    },
+    "paired_review__slotBucket": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "planned",
+        "reported",
+        "observed_one",
+        "observed_zero",
+        "missing_by_reason",
+        "unreported_planned"
+      ],
+      "properties": {
+        "planned": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "reported": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "observed_one": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "observed_zero": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "missing_by_reason": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "infra",
+            "verifier",
+            "not_started",
+            "unknown"
+          ],
+          "properties": {
+            "infra": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "verifier": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "not_started": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "unknown": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "unreported_planned": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        }
+      }
+    },
+    "paired_review__transitions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "complete_pair_count",
+        "incomplete_pair_count",
+        "zero_to_zero",
+        "zero_to_one",
+        "one_to_zero",
+        "one_to_one"
+      ],
+      "properties": {
+        "scope": {
+          "const": "primary_repeat_zero"
+        },
+        "complete_pair_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "incomplete_pair_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "zero_to_zero": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "zero_to_one": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "one_to_zero": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "one_to_one": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "paired_review__partitionGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "category",
+        "case_count",
+        "baseline",
+        "candidate",
+        "transitions"
+      ],
+      "properties": {
+        "category": {
+          "$ref": "#/$defs/paired_review__nullableId"
+        },
+        "case_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 128
+        },
+        "baseline": {
+          "$ref": "#/$defs/paired_review__slotBucket"
+        },
+        "candidate": {
+          "$ref": "#/$defs/paired_review__slotBucket"
+        },
+        "transitions": {
+          "$ref": "#/$defs/paired_review__transitions"
+        }
+      }
+    },
+    "paired_review__casePartition": {
+      "description": "Declared case-unit groups with descriptive primary repeat-zero accounting only.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taxonomy_id",
+        "unit",
+        "scope",
+        "groups"
+      ],
+      "properties": {
+        "taxonomy_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "\\S"
+        },
+        "unit": {
+          "const": "case"
+        },
+        "scope": {
+          "const": "primary_repeat_zero"
+        },
+        "groups": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 33,
+          "items": {
+            "$ref": "#/$defs/paired_review__partitionGroup"
+          }
+        }
+      }
+    },
+    "evidence_error": {
+      "title": "evidence_error.v1",
+      "description": "Invocation or input failure of an evidence pilot command. No successful report was emitted. This is not a measurement verdict.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "code",
+        "reason",
+        "location",
+        "next_action",
+        "retryable",
+        "exit_code"
+      ],
+      "properties": {
+        "schema": {
+          "const": "evidence_error.v1"
+        },
+        "code": {
+          "enum": [
+            "USAGE_ERROR",
+            "INVALID_INPUT",
+            "SOURCE_READ_FAILED",
+            "INPUT_LIMIT_EXCEEDED",
+            "OUTPUT_LIMIT_EXCEEDED",
+            "UNSUPPORTED_PROFILE",
+            "UNSUPPORTED_FORMAT",
+            "EXPECTED_HASH_MISMATCH",
+            "INVALID_MANIFEST",
+            "INVALID_ARTIFACT_PATH",
+            "SCHEMA_CONFIGURATION_ERROR",
+            "COMPUTATION_LIMIT_EXCEEDED",
+            "INTERNAL_ERROR",
+            "UNSUPPORTED_PLATFORM",
+            "INPUT_BINDING_MISMATCH"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Z][A-Z0-9_]*(?![\\s\\S])"
+        },
+        "location": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "next_action": {
+          "enum": [
+            "CORRECT_ARGUMENTS",
+            "CORRECT_INPUT",
+            "PROVIDE_REGULAR_LOCAL_FILE",
+            "REDUCE_INPUT_SIZE",
+            "USE_SUPPORTED_PROFILE",
+            "CHECK_EXPECTED_HASH",
+            "CORRECT_MANIFEST",
+            "CORRECT_ARTIFACT",
+            "REINSTALL_PACKAGE",
+            "REDUCE_COMPUTATION",
+            "REPORT_INTERNAL_ERROR",
+            "USE_SUPPORTED_PLATFORM",
+            "CORRECT_INPUT_BINDING"
+          ]
+        },
+        "retryable": {
+          "const": false
+        },
+        "exit_code": {
+          "const": 2
+        }
+      }
+    },
+    "record_verification": {
+      "title": "record_verification.v1",
+      "description": "Stored-byte and direct-link integrity findings; valid false is result data, not invocation failure.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "record_id",
+        "manifest_digest",
+        "valid",
+        "files_checked",
+        "links_checked",
+        "findings",
+        "verification_scope"
+      ],
+      "properties": {
+        "schema": {
+          "const": "record_verification.v1"
+        },
+        "record_id": {
+          "$ref": "#/$defs/record_verification__record_id"
+        },
+        "manifest_digest": {
+          "$ref": "#/$defs/record_verification__digest"
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "files_checked": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        },
+        "links_checked": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16
+        },
+        "findings": {
+          "description": "At most one deterministic P2 runtime-selected finding per file or direct link; runtime precedence owns coordinate uniqueness.",
+          "type": "array",
+          "maxItems": 80,
+          "items": {
+            "$ref": "#/$defs/record_verification__finding"
+          },
+          "uniqueItems": true
+        },
+        "verification_scope": {
+          "const": "stored_bytes_and_direct_links"
+        }
+      },
+      "if": {
+        "properties": {
+          "valid": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "findings": {
+            "maxItems": 0
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "findings": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    "record_verification__record_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 96,
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,95}(?![\\s\\S])"
+    },
+    "record_verification__digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}(?![\\s\\S])"
+    },
+    "record_verification__logical_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*(?![\\s\\S])"
+    },
+    "record_verification__finding": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/record_verification__file_finding"
+        },
+        {
+          "$ref": "#/$defs/record_verification__link_finding"
+        }
+      ]
+    },
+    "record_verification__file_finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "name",
+        "record_id"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "FILE_MISSING",
+            "FILE_NOT_REGULAR",
+            "FILE_NOT_PRIVATE",
+            "FILE_READ_FAILED",
+            "FILE_SIZE_MISMATCH",
+            "FILE_DIGEST_MISMATCH"
+          ]
+        },
+        "name": {
+          "$ref": "#/$defs/record_verification__logical_name"
+        },
+        "record_id": {
+          "type": "null"
+        }
+      }
+    },
+    "record_verification__link_finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "name",
+        "record_id"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "LINK_RECORD_NOT_FOUND",
+            "LINK_RECORD_NOT_PUBLISHED",
+            "LINK_MANIFEST_INVALID",
+            "LINK_DIGEST_MISMATCH"
+          ]
+        },
+        "name": {
+          "type": "null"
+        },
+        "record_id": {
+          "$ref": "#/$defs/record_verification__record_id"
+        }
+      }
+    },
+    "record_error": {
+      "title": "record_error.v1",
+      "description": "Finite records command failure without caller-supplied diagnostics.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "code",
+        "reason",
+        "location",
+        "next_action",
+        "retryable",
+        "exit_code"
+      ],
+      "properties": {
+        "schema": {
+          "const": "record_error.v1"
+        },
+        "code": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^(?:|/(?:root|store|record_id|spec(?:/(?:files|links)(?:/[0-9]+(?:/[a-z_]+)?)?)?|source_base|record|catalog|verification|output))(?![\\s\\S])"
+        },
+        "next_action": {
+          "type": "string"
+        },
+        "retryable": {
+          "const": false
+        },
+        "exit_code": {
+          "const": 2
+        }
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/record_error__INVALID_SPEC"
+        },
+        {
+          "$ref": "#/$defs/record_error__INVALID_RECORD"
+        },
+        {
+          "$ref": "#/$defs/record_error__INVALID_STORE_LAYOUT"
+        },
+        {
+          "$ref": "#/$defs/record_error__INSECURE_STORE"
+        },
+        {
+          "$ref": "#/$defs/record_error__STORE_NOT_FOUND"
+        },
+        {
+          "$ref": "#/$defs/record_error__RECORD_NOT_FOUND"
+        },
+        {
+          "$ref": "#/$defs/record_error__RECORD_EXISTS"
+        },
+        {
+          "$ref": "#/$defs/record_error__RECORD_CAPTURE_INCOMPLETE"
+        },
+        {
+          "$ref": "#/$defs/record_error__RECORD_NOT_PUBLISHED"
+        },
+        {
+          "$ref": "#/$defs/record_error__SOURCE_READ_FAILED"
+        },
+        {
+          "$ref": "#/$defs/record_error__INPUT_LIMIT_EXCEEDED"
+        },
+        {
+          "$ref": "#/$defs/record_error__RECORD_LIMIT_EXCEEDED"
+        },
+        {
+          "$ref": "#/$defs/record_error__STORE_IO_ERROR"
+        },
+        {
+          "$ref": "#/$defs/record_error__UNSUPPORTED_PLATFORM"
+        },
+        {
+          "$ref": "#/$defs/record_error__USAGE_ERROR"
+        },
+        {
+          "$ref": "#/$defs/record_error__SCHEMA_CONFIGURATION_ERROR"
+        },
+        {
+          "$ref": "#/$defs/record_error__OUTPUT_LIMIT_EXCEEDED"
+        },
+        {
+          "$ref": "#/$defs/record_error__INTERNAL_ERROR"
+        }
+      ]
+    },
+    "record_error__INVALID_SPEC": {
+      "properties": {
+        "code": {
+          "const": "INVALID_SPEC"
+        },
+        "reason": {
+          "const": "INVALID_RECORD_SPEC"
+        },
+        "next_action": {
+          "const": "CORRECT_RECORD_SPEC"
+        }
+      }
+    },
+    "record_error__INVALID_RECORD": {
+      "properties": {
+        "code": {
+          "const": "INVALID_RECORD"
+        },
+        "reason": {
+          "const": "INVALID_RECORD_MANIFEST"
+        },
+        "next_action": {
+          "const": "SELECT_VALID_RECORD"
+        }
+      }
+    },
+    "record_error__INVALID_STORE_LAYOUT": {
+      "properties": {
+        "code": {
+          "const": "INVALID_STORE_LAYOUT"
+        },
+        "reason": {
+          "const": "INVALID_STORE_LAYOUT"
+        },
+        "next_action": {
+          "const": "SELECT_VALID_STORE"
+        }
+      }
+    },
+    "record_error__INSECURE_STORE": {
+      "properties": {
+        "code": {
+          "const": "INSECURE_STORE"
+        },
+        "reason": {
+          "const": "INSECURE_STORE_PERMISSIONS"
+        },
+        "next_action": {
+          "const": "SECURE_STORE"
+        }
+      }
+    },
+    "record_error__STORE_NOT_FOUND": {
+      "properties": {
+        "code": {
+          "const": "STORE_NOT_FOUND"
+        },
+        "reason": {
+          "const": "STORE_NOT_FOUND"
+        },
+        "next_action": {
+          "const": "CREATE_OR_SELECT_STORE"
+        }
+      }
+    },
+    "record_error__RECORD_NOT_FOUND": {
+      "properties": {
+        "code": {
+          "const": "RECORD_NOT_FOUND"
+        },
+        "reason": {
+          "const": "RECORD_NOT_FOUND"
+        },
+        "next_action": {
+          "const": "SELECT_EXISTING_RECORD"
+        }
+      }
+    },
+    "record_error__RECORD_EXISTS": {
+      "properties": {
+        "code": {
+          "const": "RECORD_EXISTS"
+        },
+        "reason": {
+          "const": "RECORD_ALREADY_EXISTS"
+        },
+        "next_action": {
+          "const": "USE_NEW_RECORD_ID"
+        }
+      }
+    },
+    "record_error__RECORD_CAPTURE_INCOMPLETE": {
+      "properties": {
+        "code": {
+          "const": "RECORD_CAPTURE_INCOMPLETE"
+        },
+        "reason": {
+          "const": "RECORD_CAPTURE_INCOMPLETE"
+        },
+        "next_action": {
+          "const": "USE_NEW_RECORD_ID"
+        }
+      }
+    },
+    "record_error__RECORD_NOT_PUBLISHED": {
+      "properties": {
+        "code": {
+          "const": "RECORD_NOT_PUBLISHED"
+        },
+        "reason": {
+          "const": "RECORD_NOT_PUBLISHED"
+        },
+        "next_action": {
+          "const": "SELECT_PUBLISHED_RECORD"
+        }
+      }
+    },
+    "record_error__SOURCE_READ_FAILED": {
+      "properties": {
+        "code": {
+          "const": "SOURCE_READ_FAILED"
+        },
+        "reason": {
+          "const": "SOURCE_READ_FAILED"
+        },
+        "next_action": {
+          "const": "CHECK_SOURCE_FILE"
+        }
+      }
+    },
+    "record_error__INPUT_LIMIT_EXCEEDED": {
+      "properties": {
+        "code": {
+          "const": "INPUT_LIMIT_EXCEEDED"
+        },
+        "reason": {
+          "const": "INPUT_LIMIT_EXCEEDED"
+        },
+        "next_action": {
+          "const": "REDUCE_INPUT_SIZE"
+        }
+      }
+    },
+    "record_error__RECORD_LIMIT_EXCEEDED": {
+      "properties": {
+        "code": {
+          "const": "RECORD_LIMIT_EXCEEDED"
+        },
+        "reason": {
+          "const": "RECORD_LIMIT_EXCEEDED"
+        },
+        "next_action": {
+          "const": "REDUCE_RECORD_COUNT"
+        }
+      }
+    },
+    "record_error__STORE_IO_ERROR": {
+      "properties": {
+        "code": {
+          "const": "STORE_IO_ERROR"
+        },
+        "reason": {
+          "const": "STORE_IO_ERROR"
+        },
+        "next_action": {
+          "const": "CHECK_STORE_IO"
+        }
+      }
+    },
+    "record_error__UNSUPPORTED_PLATFORM": {
+      "properties": {
+        "code": {
+          "const": "UNSUPPORTED_PLATFORM"
+        },
+        "reason": {
+          "const": "UNSUPPORTED_PLATFORM"
+        },
+        "next_action": {
+          "const": "USE_SUPPORTED_PLATFORM"
+        }
+      }
+    },
+    "record_error__USAGE_ERROR": {
+      "properties": {
+        "code": {
+          "const": "USAGE_ERROR"
+        },
+        "reason": {
+          "const": "INVALID_ARGUMENTS_SEE_HELP"
+        },
+        "next_action": {
+          "const": "CORRECT_ARGUMENTS"
+        }
+      }
+    },
+    "record_error__SCHEMA_CONFIGURATION_ERROR": {
+      "properties": {
+        "code": {
+          "const": "SCHEMA_CONFIGURATION_ERROR"
+        },
+        "reason": {
+          "const": "INVALID_PACKAGED_CONTRACT"
+        },
+        "next_action": {
+          "const": "REINSTALL_PACKAGE"
+        }
+      }
+    },
+    "record_error__OUTPUT_LIMIT_EXCEEDED": {
+      "properties": {
+        "code": {
+          "const": "OUTPUT_LIMIT_EXCEEDED"
+        },
+        "reason": {
+          "const": "OUTPUT_LIMIT_EXCEEDED"
+        },
+        "next_action": {
+          "const": "REDUCE_OUTPUT_SIZE"
+        }
+      }
+    },
+    "record_error__INTERNAL_ERROR": {
+      "properties": {
+        "code": {
+          "const": "INTERNAL_ERROR"
+        },
+        "reason": {
+          "const": "INTERNAL_ERROR"
+        },
+        "next_action": {
+          "const": "REPORT_INTERNAL_ERROR"
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "baseline",
+        "candidate",
+        "transitions",
+        "measurement_status",
+        "measurement_reason",
+        "conditions_coverage"
+      ],
+      "properties": {
+        "baseline": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "observed_one",
+            "observed_zero"
+          ],
+          "properties": {
+            "observed_one": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "observed_zero": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "candidate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "observed_one",
+            "observed_zero"
+          ],
+          "properties": {
+            "observed_one": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "observed_zero": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "transitions": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "required": [
+            "scope",
+            "complete_pair_count",
+            "incomplete_pair_count",
+            "zero_to_zero",
+            "zero_to_one",
+            "one_to_zero",
+            "one_to_one"
+          ],
+          "properties": {
+            "scope": {
+              "const": "primary_repeat_zero"
+            },
+            "complete_pair_count": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 128
+            },
+            "incomplete_pair_count": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 128
+            },
+            "zero_to_zero": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 128
+            },
+            "zero_to_one": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 128
+            },
+            "one_to_zero": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 128
+            },
+            "one_to_one": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 128
+            }
+          }
+        },
+        "measurement_status": {
+          "enum": [
+            "measured",
+            "not_measured"
+          ]
+        },
+        "measurement_reason": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "PRIMARY_CASE_INVENTORY_MISSING",
+                "PLANNED_SLOT_INVENTORY_MISSING",
+                "PRIMARY_COHORT_INCOMPLETE",
+                "INSUFFICIENT_PRIMARY_CASES",
+                "ASSUMPTIONS_NOT_DECLARED"
+              ]
+            }
+          ]
+        },
+        "conditions_coverage": {
+          "enum": [
+            "declared",
+            "unknown"
+          ]
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "storage": {
+            "properties": {
+              "state": {
+                "const": "error"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit_code": {
+            "const": 3
+          }
+        }
+      },
+      "else": {
+        "if": {
+          "properties": {
+            "analysis": {
+              "properties": {
+                "state": {
+                  "const": "error"
+                }
+              }
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "exit_code": {
+              "const": 2
+            }
+          }
+        },
+        "else": {
+          "properties": {
+            "exit_code": {
+              "const": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "analysis": {
+            "properties": {
+              "phase": {
+                "const": "acquisition"
+              }
+            },
+            "required": [
+              "phase"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "source": {
+            "type": "null"
+          },
+          "scope": {
+            "type": "null"
+          },
+          "context_provenance": {
+            "type": "null"
+          },
+          "findings": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "analysis": {
+            "properties": {
+              "state": {
+                "const": "result"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "handoff_digest",
+              "files",
+              "authentication_independently_verified"
+            ],
+            "properties": {
+              "handoff_digest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "files": {
+                "type": "array",
+                "maxItems": 58,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "sha256",
+                    "bytes"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    },
+                    "bytes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 8388608
+                    }
+                  }
+                }
+              },
+              "authentication_independently_verified": {
+                "const": false
+              }
+            }
+          },
+          "scope": {
+            "type": "object"
+          },
+          "context_provenance": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  ]
+}

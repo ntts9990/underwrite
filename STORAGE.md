@@ -5,6 +5,15 @@ It does not discover inputs, execute an evaluation, or certify provenance.
 Commands are available in this checkout and wheels built from it; the package
 version alone does not establish availability.
 
+For an exact supported goppi paired handoff, `review-handoff` can analyze and save
+in one call with `--record-root ROOT --record-id ID`; see
+[the agent workflow](AGENT_USAGE.md#review-a-completed-paired-handoff-in-one-call).
+Its optional capture uses the already-read bytes without reopening source files.
+It saves actual error diagnostics if analysis fails, and preserves a computed
+analysis in the output if storage fails. Generated invocation records identify
+the analysis phase's exit code; the enclosing storage/process outcome is returned
+by the CLI envelope, avoiding a self-referential saved result.
+
 ```sh
 mkdir -p output
 underwrite records save --root output/records-store \

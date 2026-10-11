@@ -15,6 +15,7 @@ from underwrite.cli import (
     capabilities,
     commands,
     compare_declarations,
+    handoff_review,
     inspection,
     instrument,
     measure,
@@ -191,6 +192,20 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
             ),
         ),
         _standalone(review_pair.main),
+    ),
+    CommandDescriptor(
+        "review-handoff",
+        "Review a local producer handoff and optionally save its evidence.",
+        handoff_review.configure,
+        (
+            profile(
+                "goppi.p7_regrade_consumer_handoff.v1",
+                ("handoff",),
+                (),
+                ("paired_handoff_review.v1",),
+            ),
+        ),
+        _standalone(handoff_review.main),
     ),
     CommandDescriptor(
         "inspect",
