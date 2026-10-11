@@ -21,7 +21,8 @@
       "type": "array",
       "maxItems": 32,
       "items": {"$ref": "#/$defs/condition"}
-    }
+    },
+    "evaluation_history": {"$ref": "#/$defs/evaluationHistory"}
   },
   "$defs": {
     "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
@@ -40,6 +41,86 @@
         "role": {"enum": ["treatment", "invariant"]},
         "baseline": {"$ref": "#/$defs/nullableValue"},
         "candidate": {"$ref": "#/$defs/nullableValue"}
+      }
+    },
+    "nullableId": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S"}
+      ]
+    },
+    "predecessor": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["relation"],
+          "properties": {"relation": {"enum": ["root", "unknown"]}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["relation", "evaluation_id"],
+          "properties": {
+            "relation": {"const": "supersedes"},
+            "evaluation_id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S"}
+          }
+        }
+      ]
+    },
+    "identities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["data_digest", "golden_digest", "rubric_digest", "judge_id", "evaluator_id", "outcome_definition_id"],
+      "properties": {
+        "data_digest": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/digest"}]},
+        "golden_digest": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/digest"}]},
+        "rubric_digest": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/digest"}]},
+        "judge_id": {"$ref": "#/$defs/nullableId"},
+        "evaluator_id": {"$ref": "#/$defs/nullableId"},
+        "outcome_definition_id": {"$ref": "#/$defs/nullableId"}
+      }
+    },
+    "historyRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evaluation_id", "result_digest", "declared_status", "invalidation_reason", "predecessor", "identities"],
+      "properties": {
+        "evaluation_id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S"},
+        "result_digest": {
+          "description": "Producer-declared SHA-256 identity of an evaluation-result artifact; the artifact is not loaded or authenticated.",
+          "$ref": "#/$defs/digest"
+        },
+        "declared_status": {"enum": ["active", "invalidated", "unknown"]},
+        "invalidation_reason": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "\\S"}
+          ]
+        },
+        "predecessor": {"$ref": "#/$defs/predecessor"},
+        "identities": {"$ref": "#/$defs/identities"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"declared_status": {"const": "invalidated"}}},
+          "then": {"properties": {"invalidation_reason": {"type": "string"}}},
+          "else": {"properties": {"invalidation_reason": {"type": "null"}}}
+        }
+      ]
+    },
+    "evaluationHistory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseline_evaluation_id", "candidate_evaluation_id", "records"],
+      "properties": {
+        "baseline_evaluation_id": {"$ref": "#/$defs/nullableId"},
+        "candidate_evaluation_id": {"$ref": "#/$defs/nullableId"},
+        "records": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {"$ref": "#/$defs/historyRecord"}
+        }
       }
     }
   }

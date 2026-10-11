@@ -189,7 +189,7 @@ def _evidence_pilots(cli: Path, fixtures: Path, work: Path) -> None:
             "--policy",
             str(evidence / "paired-binary-policy.json"),
             "--context",
-            str(evidence / "synthetic-review-context.json"),
+            str(evidence / "synthetic-review-history.json"),
         ],
         work / "paired-review.json",
         work,
@@ -198,6 +198,9 @@ def _evidence_pilots(cli: Path, fixtures: Path, work: Path) -> None:
     _require(review.get("actual_conditions_verified") is False, "review verified source claims")
     reference = cast(dict[str, object], review["paired_evidence_ref"])
     _require(reference.get("status") == "measured", "review lost measured status")
+    history = cast(dict[str, object], review["evaluation_history"])
+    statuses = cast(dict[str, object], history["selected_statuses"])
+    _require(statuses.get("baseline") == "invalidated", "history invalidation was lost")
     error = _command([str(cli), "pair-binary", "--json"], work)
     _require(
         error.returncode == EVIDENCE_ERROR_EXIT and error.stdout == "",

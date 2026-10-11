@@ -279,6 +279,25 @@ semantic equivalence, or approval. The context has its own digest, so an edited
 declaration creates a distinct review identity. These examples are synthetic;
 they do not demonstrate an actual goppi export or an Autofill experiment.
 
+An optional `evaluation_history` in the context preserves declared evaluation
+revisions. `synthetic-review-history.json` demonstrates an invalidated baseline
+and an active successor with a changed rubric. Use it as `--context` in the same
+command above. Each node carries a producer-declared `result_digest` for its arm
+evaluation artifact, evaluation ID, nullable data/golden/rubric/judge/evaluator/
+outcome-definition identities, declared status and invalidation reason. The
+artifact digest is not the paired report digest; its bytes are not loaded or
+authenticated, and need not be canonical JSON. References are retained, but this
+command does not archive result artifacts or perform rescoring.
+
+Predecessors explicitly distinguish `root`, `unknown`, and `supersedes`; the last
+is only a declared revision relation. Known links and arm selectors must name
+supplied records; cycles and selecting the same evaluation for both arms are
+rejected. Nullable selectors stay unknown rather than choosing a latest record.
+All records remain visible, including invalidated predecessors. Their declared
+statuses never replace the paired measurement's `measured`/`not_measured` status.
+Identity comparisons retain differences and unknowns and do not certify that the
+history is complete or that an evaluator was correct.
+
 A slot can attach an optional `source_reason` to either an observed outcome or a
 missing reason. It is a bounded, unverified source annotation: error-like text
 never changes an observed zero into missing. The report shows up to 16 sorted

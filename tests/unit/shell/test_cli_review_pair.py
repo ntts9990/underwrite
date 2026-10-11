@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from jsonschema.exceptions import ValidationError
 from underwrite_core.canonical import content_digest
 
 from underwrite.cli.accept import main as accept_main
+from underwrite.cli.local_json import Validator
 from underwrite.cli.main import main
 from underwrite.instrument.evidence.paired_binary import evaluate_paired_binary
+from underwrite.instrument.ingest.schema import packaged_validator
 
 ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES = ROOT / "fixtures/examples/evidence"
@@ -173,3 +176,57 @@ def test_review_help_explains_declared_boundary(capsys: Any) -> None:
         main(["review-pair", "--help"])
     assert exc.value.code == 0
     assert "declarations do not verify" in " ".join(capsys.readouterr().out.split())
+
+
+def test_history_keeps_invalidated_result_separate_from_measurement(
+    tmp_path: Path, capsys: Any
+) -> None:
+    _, original, _ = invoke(tmp_path, capsys)
+    context = json.loads((EXAMPLES / "synthetic-review-history.json").read_text())
+    code, report, other = invoke(tmp_path, capsys, context=context)
+    assert code == 0 and other == ""
+    assert report["paired_evidence_ref"] == original["paired_evidence_ref"]
+    assert report["context_digest"] != original["context_digest"]
+    history = report["evaluation_history"]
+    assert history["selected_statuses"] == {"baseline": "invalidated", "candidate": "active"}
+    assert history["identity_comparisons"]["rubric_digest"]["relation"] == "different"
+    assert history["identity_comparisons"]["judge_id"]["relation"] == "unknown"
+    assert {node["result_digest"] for node in history["records"]} == {
+        node["result_digest"] for node in context["evaluation_history"]["records"]
+    }
+    assert "NO_RESCORING_PERFORMED" in report["limitations"]
+
+
+@pytest.mark.parametrize("mutation", ["cycle", "same_selector", "no_invalidation_reason"])
+def test_malformed_history_is_an_atomic_input_error(
+    tmp_path: Path, capsys: Any, mutation: str
+) -> None:
+    context = json.loads((EXAMPLES / "synthetic-review-history.json").read_text())
+    history = context["evaluation_history"]
+    if mutation == "cycle":
+        history["records"][0]["predecessor"] = {
+            "relation": "supersedes",
+            "evaluation_id": "synthetic-eval-new",
+        }
+    elif mutation == "same_selector":
+        history["candidate_evaluation_id"] = history["baseline_evaluation_id"]
+    else:
+        history["records"][0]["invalidation_reason"] = None
+    code, error, other = invoke(tmp_path, capsys, context=context)
+    assert code == ERROR_EXIT and other == ""
+    assert error["code"] == "INVALID_INPUT"
+
+
+@pytest.mark.parametrize(
+    "status,reason", [("invalidated", None), ("active", "reason"), ("unknown", "reason")]
+)
+def test_output_contract_rejects_status_reason_contradictions(
+    tmp_path: Path, capsys: Any, status: str, reason: str | None
+) -> None:
+    context = json.loads((EXAMPLES / "synthetic-review-history.json").read_text())
+    code, report, _ = invoke(tmp_path, capsys, context=context)
+    assert code == 0
+    record = report["evaluation_history"]["records"][0]
+    record.update(declared_status=status, invalidation_reason=reason)
+    with pytest.raises(ValidationError):
+        cast(Validator, packaged_validator("paired_review.v1")).validate(report)

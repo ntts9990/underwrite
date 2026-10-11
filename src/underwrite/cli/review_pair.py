@@ -13,6 +13,7 @@ from underwrite.cli import pair_binary
 from underwrite.cli.evidence import EvidenceError, read_validated, run_cli
 from underwrite.cli.local_json import validate
 from underwrite.instrument.evidence.paired_review import (
+    MAX_CONTEXT_BYTES,
     PairedReviewError,
     review_paired_evidence,
 )
@@ -38,7 +39,7 @@ def produce(args: argparse.Namespace) -> dict[str, object]:
         "INTERNAL_ERROR",
     )
     context, _ = read_validated(
-        Path(cast(str, args.context)), "paired_review_context.v1", "/context", 64 * 1024, 16
+        Path(cast(str, args.context)), "paired_review_context.v1", "/context", MAX_CONTEXT_BYTES, 16
     )
     try:
         return review_paired_evidence(evidence, context)

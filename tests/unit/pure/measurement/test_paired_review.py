@@ -8,6 +8,7 @@ from typing import Any, cast
 import pytest
 from underwrite_core.canonical import content_digest
 
+from underwrite.instrument.evidence import paired_review
 from underwrite.instrument.evidence.paired_binary import evaluate_paired_binary
 from underwrite.instrument.evidence.paired_review import PairedReviewError, review_paired_evidence
 
@@ -61,6 +62,56 @@ def _context(evidence: dict[str, object]) -> dict[str, Any]:
             "policy_digest": evidence["policy_digest"],
         },
         "conditions": [],
+    }
+
+
+def _identities(**changes: object) -> dict[str, object]:
+    values: dict[str, object] = {
+        "data_digest": "sha256:" + "1" * 64,
+        "golden_digest": "sha256:" + "2" * 64,
+        "rubric_digest": "sha256:" + "3" * 64,
+        "judge_id": "judge-v1",
+        "evaluator_id": "evaluator-v1",
+        "outcome_definition_id": "binary-pass-v1",
+    }
+    values.update(changes)
+    return values
+
+
+def _history() -> dict[str, Any]:
+    return {
+        "baseline_evaluation_id": "old",
+        "candidate_evaluation_id": "new",
+        "records": [
+            {
+                "evaluation_id": "branch",
+                "result_digest": "sha256:" + "b" * 64,
+                "declared_status": "unknown",
+                "invalidation_reason": None,
+                "predecessor": {"relation": "supersedes", "evaluation_id": "old"},
+                "identities": _identities(),
+            },
+            {
+                "evaluation_id": "new",
+                "result_digest": "sha256:" + "a" * 64,
+                "declared_status": "active",
+                "invalidation_reason": None,
+                "predecessor": {"relation": "supersedes", "evaluation_id": "old"},
+                "identities": _identities(
+                    golden_digest="sha256:" + "4" * 64,
+                    rubric_digest=None,
+                    evaluator_id="evaluator-v2",
+                ),
+            },
+            {
+                "evaluation_id": "old",
+                "result_digest": "sha256:" + "9" * 64,
+                "declared_status": "invalidated",
+                "invalidation_reason": "rubric corrected",
+                "predecessor": {"relation": "root"},
+                "identities": _identities(),
+            },
+        ],
     }
 
 
@@ -258,3 +309,212 @@ def test_context_digest_is_deterministic_and_changes_with_a_declaration_edit() -
     changed = deepcopy(context)
     changed["conditions"][0]["candidate"] = "v3"
     assert _review(evidence, changed)["context_digest"] != first["context_digest"]
+
+
+def test_history_preserves_invalidated_predecessor_branch_and_selected_comparisons() -> None:
+    evidence = _evidence()
+    context = _context(evidence)
+    context["evaluation_history"] = _history()
+
+    result = _review(evidence, context)
+
+    history = result["evaluation_history"]
+    assert history["selector_coverage"] == "complete"
+    assert history["selectors"] == {
+        "baseline_evaluation_id": "old",
+        "candidate_evaluation_id": "new",
+    }
+    assert history["selected_statuses"] == {"baseline": "invalidated", "candidate": "active"}
+    assert [record["evaluation_id"] for record in history["records"]] == [
+        "branch",
+        "new",
+        "old",
+    ]
+    assert history["records"][2]["invalidation_reason"] == "rubric corrected"
+    comparisons = history["identity_comparisons"]
+    assert comparisons["data_digest"]["relation"] == "same"
+    assert comparisons["golden_digest"]["relation"] == "different"
+    assert comparisons["rubric_digest"] == {
+        "relation": "unknown",
+        "baseline": "sha256:" + "3" * 64,
+        "candidate": None,
+    }
+    assert comparisons["evaluator_id"]["relation"] == "different"
+    assert result["limitations"][-3:] == [
+        "HISTORY_RESULT_REFERENCES_NOT_VERIFIED",
+        "NO_RESCORING_PERFORMED",
+        "HISTORY_COMPLETENESS_UNVERIFIED",
+    ]
+    assert result["paired_evidence_ref"]["status"] == evidence["status"]
+    assert result["paired_evidence_ref"]["reason"] == evidence["reason"]
+
+
+@pytest.mark.parametrize(
+    ("baseline", "candidate", "coverage"),
+    [(None, None, "unknown"), ("old", None, "partial"), (None, "new", "partial")],
+)
+def test_incomplete_selectors_make_all_unavailable_comparisons_unknown(
+    baseline: str | None, candidate: str | None, coverage: str
+) -> None:
+    evidence = _evidence()
+    context = _context(evidence)
+    history = _history()
+    history["baseline_evaluation_id"] = baseline
+    history["candidate_evaluation_id"] = candidate
+    context["evaluation_history"] = history
+    reviewed = _review(evidence, context)["evaluation_history"]
+    assert reviewed["selector_coverage"] == coverage
+    assert all(
+        comparison["relation"] == "unknown"
+        for comparison in reviewed["identity_comparisons"].values()
+    )
+
+
+def test_absent_history_preserves_slice_two_result_shape_and_limitations() -> None:
+    evidence = _evidence()
+    result = _review(evidence, _context(evidence))
+    assert "evaluation_history" not in result
+    assert result["limitations"] == [
+        "DECLARED_CONDITIONS_NOT_VERIFIED",
+        "CONDITION_SCOPE_NOT_VERIFIED",
+        "DIGEST_BINDING_NOT_PROVENANCE",
+        "SOURCE_METADATA_AVAILABLE_IN_PAIRED_EVIDENCE",
+        "NO_CAUSAL_CONCLUSION",
+        "NO_APPROVAL_OR_DEPLOYMENT_AUTHORITY",
+        "NO_CONDITIONS_DECLARED",
+    ]
+
+
+def test_history_edit_changes_only_context_owned_identity() -> None:
+    evidence = _evidence()
+    context = _context(evidence)
+    context["evaluation_history"] = _history()
+    first = _review(evidence, context)
+    changed = deepcopy(context)
+    changed["evaluation_history"]["records"][1]["result_digest"] = "sha256:" + "c" * 64
+    second = _review(evidence, changed)
+    assert first["context_digest"] != second["context_digest"]
+    assert first["paired_evidence_ref"] == second["paired_evidence_ref"]
+
+
+def test_unknown_predecessor_is_retained_without_inventing_a_link() -> None:
+    evidence = _evidence()
+    context = _context(evidence)
+    history = _history()
+    history["records"][0]["predecessor"] = {"relation": "unknown"}
+    context["evaluation_history"] = history
+    records = _review(evidence, context)["evaluation_history"]["records"]
+    branch = next(record for record in records if record["evaluation_id"] == "branch")
+    assert branch["predecessor"] == {"relation": "unknown"}
+
+
+@pytest.mark.parametrize(
+    ("fault", "reason"),
+    [
+        ("duplicate", "DUPLICATE_EVALUATION_ID"),
+        ("dangling", "DANGLING_HISTORY_LINK"),
+        ("self", "SELF_HISTORY_LINK"),
+        ("cycle", "EVALUATION_HISTORY_CYCLE"),
+        ("same_selectors", "DUPLICATE_EVALUATION_SELECTOR"),
+        ("unknown_selector", "UNKNOWN_EVALUATION_SELECTOR"),
+    ],
+)
+def test_invalid_history_graphs_and_selectors_are_rejected(fault: str, reason: str) -> None:
+    evidence = _evidence()
+    context = _context(evidence)
+    history = _history()
+    if fault == "duplicate":
+        history["records"].append(deepcopy(history["records"][0]))
+    elif fault == "dangling":
+        history["records"][0]["predecessor"]["evaluation_id"] = "missing"
+    elif fault == "self":
+        history["records"][0]["predecessor"]["evaluation_id"] = "branch"
+    elif fault == "cycle":
+        history["records"][2]["predecessor"] = {
+            "relation": "supersedes",
+            "evaluation_id": "new",
+        }
+    elif fault == "same_selectors":
+        history["candidate_evaluation_id"] = "old"
+    else:
+        history["candidate_evaluation_id"] = "missing"
+    context["evaluation_history"] = history
+    with pytest.raises(PairedReviewError) as exc:
+        _review(evidence, context)
+    assert (exc.value.code, exc.value.reason) == ("INVALID_INPUT", reason)
+
+
+@pytest.mark.parametrize(
+    ("status", "invalidation_reason"),
+    [("invalidated", None), ("active", "must be null"), ("unknown", "must be null")],
+)
+def test_invalidation_reason_matches_declared_status(
+    status: str, invalidation_reason: str | None
+) -> None:
+    evidence = _evidence()
+    context = _context(evidence)
+    history = _history()
+    history["records"][0]["declared_status"] = status
+    history["records"][0]["invalidation_reason"] = invalidation_reason
+    context["evaluation_history"] = history
+    with pytest.raises(PairedReviewError) as exc:
+        _review(evidence, context)
+    assert (exc.value.code, exc.value.reason) == ("INVALID_INPUT", "INVALID_INVALIDATION_REASON")
+
+
+def test_history_record_and_identity_bounds_are_enforced() -> None:
+    evidence = _evidence()
+    context = _context(evidence)
+    history = _history()
+    template = history["records"][0]
+    history["records"] = [
+        {
+            **deepcopy(template),
+            "evaluation_id": f"node-{index}",
+            "predecessor": {"relation": "root"},
+        }
+        for index in range(33)
+    ]
+    history["baseline_evaluation_id"] = None
+    history["candidate_evaluation_id"] = None
+    context["evaluation_history"] = history
+    with pytest.raises(PairedReviewError) as exc:
+        _review(evidence, context)
+    assert (exc.value.code, exc.value.reason) == (
+        "INPUT_LIMIT_EXCEEDED",
+        "EVALUATION_HISTORY_LIMIT_EXCEEDED",
+    )
+    history["records"] = [deepcopy(template)]
+    history["records"][0]["identities"]["data_digest"] = "not-a-digest"
+    context["evaluation_history"] = history
+    with pytest.raises(PairedReviewError) as exc:
+        _review(evidence, context)
+    assert (exc.value.code, exc.value.reason) == ("INVALID_INPUT", "INVALID_DIGEST")
+
+
+def test_history_count_is_rejected_before_context_canonicalization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    evidence = _evidence()
+    context = _context(evidence)
+    history = _history()
+    history["records"] = [deepcopy(history["records"][0]) for _ in range(33)]
+    context["evaluation_history"] = history
+    original = paired_review.canonical_bytes
+    calls = 0
+
+    def evidence_only(value: object) -> bytes:
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            raise AssertionError("context canonicalized before bounded history validation")
+        return original(value)
+
+    monkeypatch.setattr(paired_review, "canonical_bytes", evidence_only)
+    with pytest.raises(PairedReviewError) as exc:
+        _review(evidence, context)
+    assert calls == 1
+    assert (exc.value.code, exc.value.reason) == (
+        "INPUT_LIMIT_EXCEEDED",
+        "EVALUATION_HISTORY_LIMIT_EXCEEDED",
+    )
