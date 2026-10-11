@@ -1,0 +1,91 @@
+{
+  "schema": "binary_run_inventory.v1",
+  "source": {
+    "producer": "synthetic-fixture",
+    "format": "synthetic.binary-run",
+    "format_version": "1",
+    "artifact_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "files": [
+      {
+        "name": "results.jsonl",
+        "sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "bytes": 512
+      }
+    ]
+  },
+  "outcome_definition": {
+    "name": "task_success",
+    "positive_means": "The producer reports that the task satisfied its fixed evaluator."
+  },
+  "unit": "producer_execution_unit",
+  "groups": [
+    {
+      "group_id": "baseline-v1",
+      "context": {
+        "contract_revision": "v1",
+        "synthetic": true
+      },
+      "planned_units": [
+        {"unit_id": "run-a", "arm": "baseline"},
+        {"unit_id": "run-b", "arm": "baseline"},
+        {"unit_id": "run-c", "arm": "candidate"},
+        {"unit_id": "run-d", "arm": "candidate"},
+        {"unit_id": "run-e", "arm": "candidate"}
+      ],
+      "records": [
+        {
+          "unit_id": "run-a",
+          "case_id": "case-1",
+          "arm": "baseline",
+          "repeat_index": 0,
+          "outcome": 1,
+          "source_reason": null,
+          "source_refs": [{"kind": "row", "ref": "rows.jsonl#1", "digest": null}]
+        },
+        {
+          "unit_id": "run-b",
+          "case_id": "case-1",
+          "arm": "baseline",
+          "repeat_index": 1,
+          "outcome": 0,
+          "source_reason": "fixed evaluator rejected output",
+          "source_refs": [{"kind": "row", "ref": "rows.jsonl#2", "digest": null}]
+        },
+        {
+          "unit_id": "run-c",
+          "case_id": "case-2",
+          "arm": "candidate",
+          "repeat_index": 0,
+          "missing_reason": "infra",
+          "source_reason": "runner stopped",
+          "source_refs": [{"kind": "row", "ref": "rows.jsonl#3", "digest": null}]
+        },
+        {
+          "unit_id": "run-d",
+          "case_id": "case-2",
+          "arm": "candidate",
+          "repeat_index": 1,
+          "non_binary_classification": "endpoint_failure",
+          "source_reason": "endpoint did not yield a binary evaluator result",
+          "source_refs": [{"kind": "row", "ref": "rows.jsonl#4", "digest": null}]
+        }
+      ]
+    },
+    {
+      "group_id": "unplanned-v2",
+      "context": {"contract_revision": "v2", "synthetic": true},
+      "planned_units": null,
+      "records": [
+        {
+          "unit_id": "run-z",
+          "case_id": "case-1",
+          "arm": "baseline",
+          "repeat_index": 0,
+          "outcome": 1,
+          "source_reason": null,
+          "source_refs": [{"kind": "row", "ref": "rows-v2.jsonl#1", "digest": null}]
+        }
+      ]
+    }
+  ]
+}

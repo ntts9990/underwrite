@@ -14,7 +14,7 @@ policies, and classify change candidates from declared reads.
 
 **English** · [한국어](README.ko.md)
 
-[Install](#install) · [Quickstart](#quickstart) · [Agent use](AGENT_USAGE.md) · [Supported formats](#supported-formats) · [CLI](#cli) · [Contributing](CONTRIBUTING.md)
+[Install](#install) · [Quickstart](#quickstart) · [Agent use](AGENT_USAGE.md) · [Local records](STORAGE.md) · [Supported formats](#supported-formats) · [CLI](#cli) · [Contributing](CONTRIBUTING.md)
 
 </div>
 

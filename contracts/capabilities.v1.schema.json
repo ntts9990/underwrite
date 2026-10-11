@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:capabilities.v1",
+  "title": "capabilities.v1",
+  "description": "Installed command and exact codec capabilities derived from runtime registrations.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "commands", "codecs"],
+  "properties": {
+    "schema": {"const": "capabilities.v1"},
+    "commands": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {"$ref": "#/$defs/command"},
+      "uniqueItems": true
+    },
+    "codecs": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {"$ref": "#/$defs/codec"},
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z0-9][a-z0-9._|-]*(?![\\s\\S])"
+    },
+    "schema_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"
+    },
+    "string_set": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {"$ref": "#/$defs/name"},
+      "uniqueItems": true
+    },
+    "schema_set": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {"$ref": "#/$defs/schema_name"},
+      "uniqueItems": true
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "required_inputs", "input_schemas", "output_schemas"],
+      "properties": {
+        "name": {"$ref": "#/$defs/name"},
+        "required_inputs": {"$ref": "#/$defs/string_set"},
+        "input_schemas": {"$ref": "#/$defs/schema_set"},
+        "output_schemas": {"$ref": "#/$defs/schema_set"}
+      }
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "aliases", "profiles"],
+      "properties": {
+        "command": {"$ref": "#/$defs/name"},
+        "aliases": {"$ref": "#/$defs/string_set"},
+        "profiles": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {"$ref": "#/$defs/profile"},
+          "uniqueItems": true
+        }
+      }
+    },
+    "codec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "format_version", "classification", "commands", "output_schema", "required_inputs"],
+      "properties": {
+        "format": {"$ref": "#/$defs/schema_name"},
+        "format_version": {"$ref": "#/$defs/schema_name"},
+        "classification": {"enum": ["native", "external"]},
+        "commands": {"$ref": "#/$defs/string_set"},
+        "output_schema": {"$ref": "#/$defs/schema_name"},
+        "required_inputs": {"$ref": "#/$defs/string_set"}
+      }
+    }
+  }
+}

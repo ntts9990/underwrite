@@ -214,6 +214,55 @@ def _evidence_pilots(cli: Path, fixtures: Path, work: Path) -> None:
     _require(diagnostic.get("schema") == "evidence_error.v1", "pilot error schema mismatch")
 
 
+def _record_pilots(cli: Path, fixtures: Path, work: Path) -> None:
+    installed_capabilities = _cli_json(cli, ["capabilities"], work / "capabilities.json", work)
+    checkout_capabilities = _success(
+        [sys.executable, "-m", "underwrite.cli.main", "capabilities", "--json"], ROOT
+    )
+    _require(
+        installed_capabilities == json.loads(checkout_capabilities.stdout),
+        "checkout and installed capabilities differ",
+    )
+    audit = _cli_json(
+        cli,
+        ["audit-run", "--input", str(fixtures / "run-audit/synthetic-inventory.json")],
+        work / "run-audit.json",
+        work,
+    )
+    _require(audit.get("schema") == "binary_run_audit.v1", "run audit schema mismatch")
+    store = work / "records-store"
+    saved = _cli_json(
+        cli,
+        [
+            "records",
+            "save",
+            "--root",
+            str(store),
+            "--spec",
+            str(fixtures / "records/record-spec.json"),
+        ],
+        work / "saved.json",
+        work,
+    )
+    _require(saved.get("schema") == "record_view.v1", "record view schema mismatch")
+    shown = _cli_json(
+        cli,
+        ["records", "show", "--root", str(store), "--id", "synthetic.capture-001"],
+        work / "shown.json",
+        work,
+    )
+    _require(saved == shown, "installed record save/show changed manifest")
+    checked = _cli_json(
+        cli,
+        ["records", "verify", "--root", str(store), "--id", "synthetic.capture-001"],
+        work / "verified.json",
+        work,
+    )
+    _require(checked.get("valid") is True, "installed record verification failed")
+    listing = _cli_json(cli, ["records", "list", "--root", str(store)], work / "catalog.json", work)
+    _require(listing.get("record_count") == 1, "installed record catalog mismatch")
+
+
 def _smoke(dist: Path) -> None:
     core_wheel, app_wheel = _wheels(dist)
     fixtures = ROOT / "fixtures/examples"
@@ -226,6 +275,7 @@ def _smoke(dist: Path) -> None:
         _install_wheels(work, venv, wheels)
         _check_wheel_origins(venv, wheels)
         _evidence_pilots(cli, fixtures, work)
+        _record_pilots(cli, fixtures, work)
 
         observation = work / "observation.json"
         observed = _cli_json(
