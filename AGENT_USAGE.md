@@ -222,6 +222,24 @@ missing. The sibling `synthetic-paired-incomplete.json` yields `not_measured`
 with null estimates. `synthetic-paired-extra-missing.json` keeps the same primary
 sample while exposing the missing additional repeat.
 
+For a producer handoff, obtain an actual, authorized export matching
+[`paired_binary_input.v1`](contracts/paired_binary_input.v1.schema.json) and a
+separately reviewed [`paired_binary_policy.v1`](contracts/paired_binary_policy.v1.schema.json).
+Use one actual run and one comparison/stage scope per input. Partial runs remain
+useful when the supplied inventory and missing evidence are explicit; a preparation
+report or verifier calibration is not a run result. Record the chosen scope in
+metadata, and keep the producer's report and policy identity alongside the input.
+The CLI validates declared slots; it does not authenticate that scope or prove
+that case selection preceded the results.
+
+Do not pool explore/confirm partitions, repeated uses of a case across stages,
+or additional repeats to reach a sample minimum. Do not derive outcomes from
+aggregate counts or convert arbitrary scores to binary values. The analyst must
+supply the outcome definition and analysis assumptions; synthetic example policies
+are not defaults for real evaluations. Compare the producer's conclusion and the
+consumer report only after checking scope, denominator, policy, and missingness;
+a descriptive result here does not override the producer's gate.
+
 A slot can attach an optional `source_reason` to either an observed outcome or a
 missing reason. It is a bounded, unverified source annotation: error-like text
 never changes an observed zero into missing. The report shows up to 16 sorted
