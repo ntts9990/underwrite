@@ -1,0 +1,27 @@
+{
+  "schema": "paired_review_context.v1",
+  "binding": {
+    "input_digest": "sha256:6f8e300912ab835390892646afca9995bcff1824ef9a9f549c7020d21958194e",
+    "policy_digest": "sha256:79cc04ebbf91de193e724186725ec80c96a793b3d66d65126fac032c3aad3f36"
+  },
+  "conditions": [
+    {
+      "name": "prompt",
+      "role": "treatment",
+      "baseline": "synthetic-prompt-a",
+      "candidate": "synthetic-prompt-b"
+    },
+    {
+      "name": "rubric",
+      "role": "invariant",
+      "baseline": "synthetic-rubric-a",
+      "candidate": "synthetic-rubric-b"
+    },
+    {
+      "name": "ocr",
+      "role": "invariant",
+      "baseline": null,
+      "candidate": null
+    }
+  ]
+}

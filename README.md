@@ -187,6 +187,8 @@ not install a CLI, hook, or background service.
 
 This checkout adds `audit-counts`, `compare-declarations`, and `pair-binary` for
 bounded count auditing, declaration comparison, and paired binary evidence.
+`review-pair` adds digest-bound intended changes, declared evaluation history, and
+exclusive case-group accounting while preserving the original paired evidence.
 They run locally with JSON output and no service. See the reproducible examples
 and limitations in [Agent use](AGENT_USAGE.md#source-checkout-pilot-audit-promptfoo-counts).
 These are unreleased changes; published PyPI `0.0.1` artifacts are unchanged.

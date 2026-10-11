@@ -33,6 +33,8 @@ MAX_BOOTSTRAP_ITERATIONS = 10_000
 MAX_WORK = 2_000_000
 MAX_MISSING_EXAMPLES = 16
 MAX_METADATA_ENTRIES = 16
+MAX_GROUP_CATEGORIES = 32
+MAX_GROUPS = MAX_GROUP_CATEGORIES + 1
 MIN_MEASURED_CASES = 2
 SAFE_INTEGER = 2**53 - 1
 REQUIRED_CONTEXT_KEYS = frozenset({"baseline_context_id", "candidate_context_id", "evaluator_id"})
@@ -395,6 +397,44 @@ def _incomplete_primary_cases(
     ]
 
 
+def _primary_transitions(
+    primary: set[str] | None, records: dict[SlotKey, _Record]
+) -> dict[str, object] | None:
+    if primary is None:
+        return None
+    transitions = {
+        "zero_to_zero": 0,
+        "zero_to_one": 0,
+        "one_to_zero": 0,
+        "one_to_one": 0,
+    }
+    names = {
+        (0, 0): "zero_to_zero",
+        (0, 1): "zero_to_one",
+        (1, 0): "one_to_zero",
+        (1, 1): "one_to_one",
+    }
+    complete = 0
+    for case_id in primary:
+        baseline = records.get((case_id, "baseline", 0))
+        candidate = records.get((case_id, "candidate", 0))
+        if (
+            baseline is None
+            or candidate is None
+            or baseline.outcome is None
+            or candidate.outcome is None
+        ):
+            continue
+        transitions[names[(baseline.outcome, candidate.outcome)]] += 1
+        complete += 1
+    return {
+        "scope": "primary_repeat_zero",
+        "complete_pair_count": complete,
+        "incomplete_pair_count": len(primary) - complete,
+        **transitions,
+    }
+
+
 def _not_measured_reason(parsed: _Parsed, incomplete_cases: list[str]) -> str | None:
     if parsed.primary is None:
         return "PRIMARY_CASE_INVENTORY_MISSING"
@@ -492,6 +532,7 @@ def _accounting(parsed: _Parsed, incomplete_cases: list[str]) -> dict[str, objec
         "planned_slot_count": None if parsed.planned is None else len(parsed.planned),
         "slot_record_count": len(parsed.records),
         "primary_repeat_zero": _bucket(parsed.planned, parsed.records, primary_keys),
+        "primary_transitions": _primary_transitions(parsed.primary, parsed.records),
         "additional_repeats": _bucket(parsed.planned, parsed.records, repeat_keys),
         "unscoped_repeat_zero": _bucket(parsed.planned, parsed.records, unscoped_keys),
         "incomplete_primary_case_ids": incomplete_cases,
@@ -504,9 +545,7 @@ def _accounting(parsed: _Parsed, incomplete_cases: list[str]) -> dict[str, objec
     return accounting
 
 
-def evaluate_paired_binary(input_doc: object, policy_doc: object) -> dict[str, object]:
-    """Return a bounded descriptive report; only complete primary pairs are estimated."""
-    parsed = _parse(input_doc, policy_doc)
+def _evaluate_parsed(parsed: _Parsed) -> dict[str, object]:
     incomplete_cases = _incomplete_primary_cases(parsed.primary, parsed.planned, parsed.records)
     reason = _not_measured_reason(parsed, incomplete_cases)
     estimate, engine_limitations = (
@@ -539,3 +578,92 @@ def evaluate_paired_binary(input_doc: object, policy_doc: object) -> dict[str, o
         "estimate": estimate,
         "limitations": sorted(limitations),
     }
+
+
+def _binding_mismatch() -> PairedBinaryError:
+    return PairedBinaryError("INPUT_BINDING_MISMATCH")
+
+
+def _group_text(value: object) -> str:
+    try:
+        return _text(value)
+    except PairedBinaryError as exc:
+        raise _binding_mismatch() from exc
+
+
+def _group_item(value: object) -> tuple[str | None, list[str]]:
+    if type(value) is not dict:
+        raise _binding_mismatch()
+    group = cast(dict[object, object], value)
+    if set(group) != {"category", "case_ids"} or any(type(key) is not str for key in group):
+        raise _binding_mismatch()
+    category_value = group["category"]
+    category = None if category_value is None else _group_text(category_value)
+    case_ids_value = group["case_ids"]
+    if type(case_ids_value) is not list:
+        raise _binding_mismatch()
+    case_ids = cast(list[object], case_ids_value)
+    if len(case_ids) > MAX_PRIMARY_CASES:
+        raise _binding_mismatch()
+    return category, [_group_text(case_id) for case_id in case_ids]
+
+
+def _parse_groups(groups: object, primary: set[str] | None) -> list[tuple[str | None, list[str]]]:
+    if primary is None or type(groups) is not list:
+        raise _binding_mismatch()
+    group_values = cast(list[object], groups)
+    if len(group_values) > MAX_GROUPS:
+        raise _binding_mismatch()
+    parsed_groups: list[tuple[str | None, list[str]]] = []
+    categories: set[str] = set()
+    members: set[str] = set()
+    null_count = 0
+    for item in group_values:
+        category, case_ids = _group_item(item)
+        null_count += category is None
+        if category is not None:
+            if category in categories:
+                raise _binding_mismatch()
+            categories.add(category)
+        for case_id in case_ids:
+            if case_id in members:
+                raise _binding_mismatch()
+            members.add(case_id)
+        parsed_groups.append((category, case_ids))
+    if null_count != 1 or len(categories) > MAX_GROUP_CATEGORIES or members != primary:
+        raise _binding_mismatch()
+    return sorted(parsed_groups, key=lambda item: (item[0] is None, item[0] or ""))
+
+
+def _evaluate_groups(
+    parsed: _Parsed, groups: list[tuple[str | None, list[str]]]
+) -> list[dict[str, object]]:
+    reports: list[dict[str, object]] = []
+    for category, case_ids in groups:
+        cases = set(case_ids)
+        baseline_keys: set[SlotKey] = {(case_id, "baseline", 0) for case_id in cases}
+        candidate_keys: set[SlotKey] = {(case_id, "candidate", 0) for case_id in cases}
+        reports.append(
+            {
+                "category": category,
+                "case_count": len(case_ids),
+                "baseline": _bucket(parsed.planned, parsed.records, baseline_keys),
+                "candidate": _bucket(parsed.planned, parsed.records, candidate_keys),
+                "transitions": _primary_transitions(cases, parsed.records),
+            }
+        )
+    return reports
+
+
+def evaluate_paired_binary(input_doc: object, policy_doc: object) -> dict[str, object]:
+    """Return a bounded descriptive report; only complete primary pairs are estimated."""
+    return _evaluate_parsed(_parse(input_doc, policy_doc))
+
+
+def evaluate_paired_binary_with_groups(
+    input_doc: object, policy_doc: object, groups: object
+) -> tuple[dict[str, object], list[dict[str, object]]]:
+    """Return the unchanged paired report and bounded primary-repeat-zero group counts."""
+    parsed = _parse(input_doc, policy_doc)
+    parsed_groups = _parse_groups(groups, parsed.primary)
+    return _evaluate_parsed(parsed), _evaluate_groups(parsed, parsed_groups)

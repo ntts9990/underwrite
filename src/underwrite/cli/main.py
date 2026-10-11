@@ -21,10 +21,12 @@ from underwrite.cli import (
     pair_binary,
     release,
     render,
+    review_pair,
 )
 
 # Commands with their own parser and error envelope; build_parser registers them for help.
 COMMANDS = {
+    "review-pair": review_pair.main,
     "compare-declarations": compare_declarations.main,
     "pair-binary": pair_binary.main,
     "audit-counts": audit_counts.main,
@@ -54,6 +56,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     pair_binary.configure(
         subparsers.add_parser("pair-binary", help="Compute bounded paired binary evidence.")
+    )
+    review_pair.configure(
+        subparsers.add_parser("review-pair", help="Review declared paired comparison context.")
     )
     inspection.configure(subparsers.add_parser("inspect", help="Inspect one local artifact case."))
     release.configure(subparsers.add_parser("check", help="Check declared release linkage."))

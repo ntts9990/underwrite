@@ -222,6 +222,20 @@ missing. The sibling `synthetic-paired-incomplete.json` yields `not_measured`
 with null estimates. `synthetic-paired-extra-missing.json` keeps the same primary
 sample while exposing the missing additional repeat.
 
+`accounting.primary_transitions` counts baseline-to-candidate `zero_to_zero`,
+`zero_to_one`, `one_to_zero`, and `one_to_one` outcomes for declared primary
+repeat-zero pairs. `complete_pair_count` is their sum; `incomplete_pair_count`
+counts declared primary cases without both observed outcomes. Missing values
+are never zero, and extra repeats never enter these counts. The whole field is
+null without an explicit primary case inventory. With that inventory, observed
+transitions remain descriptive even without planned slots or declared statistical
+assumptions; the existing estimate can still be `not_measured`. A transition to
+one is not necessarily an improvement: consult `outcome_definition`.
+
+The field is optional in the updated output schema so historical reports remain
+valid; current outputs include it. Consumers with an older strict schema must
+update that schema before validating these outputs. Package versions are unchanged.
+
 For a producer handoff, obtain an actual, authorized export matching
 [`paired_binary_input.v1`](contracts/paired_binary_input.v1.schema.json) and a
 separately reviewed [`paired_binary_policy.v1`](contracts/paired_binary_policy.v1.schema.json).
@@ -239,6 +253,75 @@ supply the outcome definition and analysis assumptions; synthetic example polici
 are not defaults for real evaluations. Compare the producer's conclusion and the
 consumer report only after checking scope, denominator, policy, and missingness;
 a descriptive result here does not override the producer's gate.
+
+For declared comparison context, use the same input and policy with `review-pair`:
+
+```sh
+uv run --frozen --no-sync underwrite review-pair \
+  --input fixtures/examples/evidence/synthetic-paired-complete.json \
+  --policy fixtures/examples/evidence/paired-binary-policy.json \
+  --context fixtures/examples/evidence/synthetic-review-context.json --json
+```
+
+The [`paired_review_context.v1`](contracts/paired_review_context.v1.schema.json)
+context binds both canonical input and policy digests. Each named condition declares
+its role (`treatment` or `invariant`) and baseline/candidate values. The JSON result
+distinguishes intended changes, changed invariants, unchanged treatments/invariants,
+and unknown values. Null on either side remains unknown; an empty condition list
+does not establish controlled conditions. The producer's declarations are unverified,
+including whether this list contains every relevant condition.
+
+[`paired_review.v1`](contracts/paired_review.v1.schema.json) references the complete,
+independently schema-validated paired report by canonical digest and copies its
+status/reason. Run `pair-binary` with the same input/policy to retrieve that report.
+Neither unchanged declarations nor intended changes establish causal effects,
+semantic equivalence, or approval. The context has its own digest, so an edited
+declaration creates a distinct review identity. These examples are synthetic;
+they do not demonstrate an actual goppi export or an Autofill experiment.
+
+An optional `evaluation_history` in the context preserves declared evaluation
+revisions. `synthetic-review-history.json` demonstrates an invalidated baseline
+and an active successor with a changed rubric. Use it as `--context` in the same
+command above. Each node carries a producer-declared `result_digest` for its arm
+evaluation artifact, evaluation ID, nullable data/golden/rubric/judge/evaluator/
+outcome-definition identities, declared status and invalidation reason. The
+artifact digest is not the paired report digest; its bytes are not loaded or
+authenticated, and need not be canonical JSON. References are retained, but this
+command does not archive result artifacts or perform rescoring.
+
+Predecessors explicitly distinguish `root`, `unknown`, and `supersedes`; the last
+is only a declared revision relation. Known links and arm selectors must name
+supplied records; cycles and selecting the same evaluation for both arms are
+rejected. Nullable selectors stay unknown rather than choosing a latest record.
+All records remain visible, including invalidated predecessors. Their declared
+statuses never replace the paired measurement's `measured`/`not_measured` status.
+Identity comparisons retain differences and unknowns and do not certify that the
+history is complete or that an evaluator was correct.
+
+An optional `case_partition` adds descriptive case-level grouping. Try
+`synthetic-review-partition.json` as `--context`; it includes conditions, history,
+two populated categories, one empty category and an unclassified case. The producer
+declares a `taxonomy_id`, `unit: "case"`, category inventory and exactly one category
+or null assignment for every explicit primary case. Unknown/missing/duplicate
+assignments are rejected; null deliberately means unclassified. Category names and
+membership remain unverified source claims and are never inferred from source text.
+
+The result preserves sorted empty categories and always ends with a null category
+bucket. Each group reports its declared `case_count`, separate baseline/candidate
+slot accounting, and neutral transition counts for primary repeat zero. Group sums
+match the full primary accounting; additional repeats are excluded. Unknown planned
+counts remain null. `case_count` is a case population, not a field-opportunity or
+observed-outcome denominator, and does not establish independent sampling units.
+There are no group rates, confidence intervals, significance tests or gates. For
+overlapping error types or field-level metrics, obtain a separate explicit outcome
+definition and appropriate units; do not relabel them as this exclusive case partition.
+
+Python callers can use `evaluate_paired_review(input_doc, policy_doc, context_doc)`
+from `underwrite.instrument.evidence.paired_review`; it returns the unchanged paired
+evidence and its review together, computing paired inference once. The lower-level
+`review_paired_evidence(evidence, context_doc)` requires an independently validated
+paired report and supports conditions/history only: it cannot reconstruct groups
+without original slots. Neither API authenticates the source declarations.
 
 A slot can attach an optional `source_reason` to either an observed outcome or a
 missing reason. It is a bounded, unverified source annotation: error-like text

@@ -28,7 +28,27 @@ def test_equal_arm_totals_do_not_determine_paired_interval() -> None:
     left = evaluate_paired_binary(aligned, policy)
     right = evaluate_paired_binary(crossed, policy)
     assert left["status"] == right["status"] == "measured"
-    assert left["accounting"] == right["accounting"]
+    left_accounting: Any = left["accounting"]
+    right_accounting: Any = right["accounting"]
+    assert left_accounting["primary_repeat_zero"] == right_accounting["primary_repeat_zero"]
+    assert left_accounting["primary_transitions"] == {
+        "scope": "primary_repeat_zero",
+        "complete_pair_count": len(aligned["primary_case_ids"]),
+        "incomplete_pair_count": 0,
+        "zero_to_zero": 2,
+        "zero_to_one": 0,
+        "one_to_zero": 0,
+        "one_to_one": 2,
+    }
+    assert right_accounting["primary_transitions"] == {
+        "scope": "primary_repeat_zero",
+        "complete_pair_count": len(crossed["primary_case_ids"]),
+        "incomplete_pair_count": 0,
+        "zero_to_zero": 0,
+        "zero_to_one": 2,
+        "one_to_zero": 2,
+        "one_to_one": 0,
+    }
     left_estimate: Any = left["estimate"]
     right_estimate: Any = right["estimate"]
     assert left_estimate["n"] == right_estimate["n"]

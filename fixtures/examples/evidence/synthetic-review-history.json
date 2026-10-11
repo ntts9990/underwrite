@@ -1,0 +1,68 @@
+{
+  "schema": "paired_review_context.v1",
+  "binding": {
+    "input_digest": "sha256:6f8e300912ab835390892646afca9995bcff1824ef9a9f549c7020d21958194e",
+    "policy_digest": "sha256:79cc04ebbf91de193e724186725ec80c96a793b3d66d65126fac032c3aad3f36"
+  },
+  "conditions": [
+    {
+      "name": "prompt",
+      "role": "treatment",
+      "baseline": "synthetic-prompt-a",
+      "candidate": "synthetic-prompt-b"
+    },
+    {
+      "name": "rubric",
+      "role": "invariant",
+      "baseline": "synthetic-rubric-a",
+      "candidate": "synthetic-rubric-b"
+    },
+    {
+      "name": "ocr",
+      "role": "invariant",
+      "baseline": null,
+      "candidate": null
+    }
+  ],
+  "evaluation_history": {
+    "baseline_evaluation_id": "synthetic-eval-old",
+    "candidate_evaluation_id": "synthetic-eval-new",
+    "records": [
+      {
+        "evaluation_id": "synthetic-eval-old",
+        "result_digest": "sha256:f8dce26d708fa66862901f5b6f61e8e290f2ae658c06fe7b72cc9ef20ffb40a7",
+        "declared_status": "invalidated",
+        "invalidation_reason": "Synthetic evaluator annotation corrected; not a real evaluation.",
+        "predecessor": {
+          "relation": "root"
+        },
+        "identities": {
+          "data_digest": "sha256:99513c11cf0d5c46d15cab82d9ee2b4386f765a42dad3dc921e584ba116b1cb8",
+          "golden_digest": "sha256:fb8865eb6620c1afe7f5acf3684f78ccea58b99e320008866832c88ba1c59c84",
+          "rubric_digest": "sha256:545ba3ff628c478f4a9663a3b136fa51a3c74207ca9bea4befe74fae2057bbb6",
+          "judge_id": null,
+          "evaluator_id": "synthetic-evaluator-v1",
+          "outcome_definition_id": "synthetic-binary-endpoint"
+        }
+      },
+      {
+        "evaluation_id": "synthetic-eval-new",
+        "result_digest": "sha256:e2b83b1cbb8538e42642050f1cebc474e5784accc18f4c7a3d65c292a5c2b278",
+        "declared_status": "active",
+        "invalidation_reason": null,
+        "predecessor": {
+          "relation": "supersedes",
+          "evaluation_id": "synthetic-eval-old"
+        },
+        "identities": {
+          "data_digest": "sha256:99513c11cf0d5c46d15cab82d9ee2b4386f765a42dad3dc921e584ba116b1cb8",
+          "golden_digest": "sha256:fb8865eb6620c1afe7f5acf3684f78ccea58b99e320008866832c88ba1c59c84",
+          "rubric_digest": "sha256:e54d8c3d919251dcc3963e4d1e5e5125f4a08056c0e017bcde8b9e17181e8370",
+          "judge_id": null,
+          "evaluator_id": "synthetic-evaluator-v2",
+          "outcome_definition_id": "synthetic-binary-endpoint"
+        }
+      }
+    ]
+  }
+}

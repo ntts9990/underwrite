@@ -1,0 +1,323 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:paired_review.v1",
+  "title": "paired_review.v1",
+  "description": "A bounded review of declared conditions referencing an immutable paired evidence result.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "paired_evidence_ref", "context_digest", "conditions", "declarations_verified", "actual_conditions_verified", "semantic_equivalence_verified", "limitations"],
+  "properties": {
+    "schema": {"const": "paired_review.v1"},
+    "paired_evidence_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "digest", "input_digest", "policy_digest", "status", "reason"],
+      "properties": {
+        "schema": {"const": "paired_binary_evidence.v1"},
+        "digest": {"$ref": "#/$defs/digest"},
+        "input_digest": {"$ref": "#/$defs/digest"},
+        "policy_digest": {"$ref": "#/$defs/digest"},
+        "status": {"enum": ["measured", "not_measured"]},
+        "reason": {
+          "oneOf": [
+            {"type": "null"},
+            {"enum": ["PRIMARY_CASE_INVENTORY_MISSING", "PLANNED_SLOT_INVENTORY_MISSING", "PRIMARY_COHORT_INCOMPLETE", "INSUFFICIENT_PRIMARY_CASES", "ASSUMPTIONS_NOT_DECLARED"]}
+          ]
+        }
+      }
+    },
+    "context_digest": {"$ref": "#/$defs/digest"},
+    "conditions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coverage", "entries"],
+      "properties": {
+        "coverage": {"enum": ["declared", "unknown"]},
+        "entries": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/entry"}}
+      }
+    },
+    "declarations_verified": {"const": false},
+    "actual_conditions_verified": {"const": false},
+    "semantic_equivalence_verified": {"const": false},
+    "evaluation_history": {"$ref": "#/$defs/evaluationHistory"},
+    "case_partition": {"$ref": "#/$defs/casePartition"},
+    "limitations": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 11,
+      "items": {
+        "enum": [
+          "DECLARED_CONDITIONS_NOT_VERIFIED",
+          "CONDITION_SCOPE_NOT_VERIFIED",
+          "DIGEST_BINDING_NOT_PROVENANCE",
+          "SOURCE_METADATA_AVAILABLE_IN_PAIRED_EVIDENCE",
+          "NO_CAUSAL_CONCLUSION",
+          "NO_APPROVAL_OR_DEPLOYMENT_AUTHORITY",
+          "NO_CONDITIONS_DECLARED",
+          "HISTORY_RESULT_REFERENCES_NOT_VERIFIED",
+          "NO_RESCORING_PERFORMED",
+          "HISTORY_COMPLETENESS_UNVERIFIED",
+          "CASE_PARTITION_DECLARED_NOT_VERIFIED"
+        ]
+      },
+      "uniqueItems": true
+    }
+  },
+  "allOf": [
+    {"properties": {"limitations": {"contains": {"const": "DECLARED_CONDITIONS_NOT_VERIFIED"}}}},
+    {"properties": {"limitations": {"contains": {"const": "CONDITION_SCOPE_NOT_VERIFIED"}}}},
+    {"properties": {"limitations": {"contains": {"const": "DIGEST_BINDING_NOT_PROVENANCE"}}}},
+    {"properties": {"limitations": {"contains": {"const": "SOURCE_METADATA_AVAILABLE_IN_PAIRED_EVIDENCE"}}}},
+    {"properties": {"limitations": {"contains": {"const": "NO_CAUSAL_CONCLUSION"}}}},
+    {"properties": {"limitations": {"contains": {"const": "NO_APPROVAL_OR_DEPLOYMENT_AUTHORITY"}}}},
+    {
+      "if": {"required": ["evaluation_history"]},
+      "then": {
+        "properties": {
+          "limitations": {
+            "allOf": [
+              {"contains": {"const": "HISTORY_RESULT_REFERENCES_NOT_VERIFIED"}},
+              {"contains": {"const": "NO_RESCORING_PERFORMED"}},
+              {"contains": {"const": "HISTORY_COMPLETENESS_UNVERIFIED"}}
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "limitations": {
+            "not": {
+              "contains": {
+                "enum": ["HISTORY_RESULT_REFERENCES_NOT_VERIFIED", "NO_RESCORING_PERFORMED", "HISTORY_COMPLETENESS_UNVERIFIED"]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"conditions": {"properties": {"coverage": {"const": "unknown"}}}}},
+      "then": {"properties": {"limitations": {"contains": {"const": "NO_CONDITIONS_DECLARED"}}}},
+      "else": {"properties": {"limitations": {"not": {"contains": {"const": "NO_CONDITIONS_DECLARED"}}}}}
+    },
+    {
+      "if": {"required": ["case_partition"]},
+      "then": {"properties": {"limitations": {"contains": {"const": "CASE_PARTITION_DECLARED_NOT_VERIFIED"}}}},
+      "else": {"properties": {"limitations": {"not": {"contains": {"const": "CASE_PARTITION_DECLARED_NOT_VERIFIED"}}}}}
+    }
+  ],
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "nullableValue": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "\\S"}
+      ]
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "role", "baseline", "candidate", "classification", "unknown_sides"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S"},
+        "role": {"enum": ["treatment", "invariant"]},
+        "baseline": {"$ref": "#/$defs/nullableValue"},
+        "candidate": {"$ref": "#/$defs/nullableValue"},
+        "classification": {"enum": ["intended_change", "unchanged_treatment", "invariant_changed", "invariant_unchanged", "unknown"]},
+        "unknown_sides": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {"enum": ["baseline", "candidate"]},
+          "uniqueItems": true
+        }
+      }
+    },
+    "nullableId": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S"}
+      ]
+    },
+    "predecessor": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["relation"],
+          "properties": {"relation": {"enum": ["root", "unknown"]}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["relation", "evaluation_id"],
+          "properties": {
+            "relation": {"const": "supersedes"},
+            "evaluation_id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S"}
+          }
+        }
+      ]
+    },
+    "identities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["data_digest", "golden_digest", "rubric_digest", "judge_id", "evaluator_id", "outcome_definition_id"],
+      "properties": {
+        "data_digest": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/digest"}]},
+        "golden_digest": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/digest"}]},
+        "rubric_digest": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/digest"}]},
+        "judge_id": {"$ref": "#/$defs/nullableId"},
+        "evaluator_id": {"$ref": "#/$defs/nullableId"},
+        "outcome_definition_id": {"$ref": "#/$defs/nullableId"}
+      }
+    },
+    "historyRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evaluation_id", "result_digest", "declared_status", "invalidation_reason", "predecessor", "identities"],
+      "properties": {
+        "evaluation_id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S"},
+        "result_digest": {
+          "description": "Retained producer-declared evaluation-result artifact identity; not a paired report digest or proof of artifact availability.",
+          "$ref": "#/$defs/digest"
+        },
+        "declared_status": {"enum": ["active", "invalidated", "unknown"]},
+        "invalidation_reason": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "\\S"}
+          ]
+        },
+        "predecessor": {"$ref": "#/$defs/predecessor"},
+        "identities": {"$ref": "#/$defs/identities"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"declared_status": {"const": "invalidated"}}},
+          "then": {"properties": {"invalidation_reason": {"type": "string"}}},
+          "else": {"properties": {"invalidation_reason": {"type": "null"}}}
+        }
+      ]
+    },
+    "identityComparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relation", "baseline", "candidate"],
+      "properties": {
+        "relation": {"enum": ["same", "different", "unknown"]},
+        "baseline": {"oneOf": [{"type": "null"}, {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S"}]},
+        "candidate": {"oneOf": [{"type": "null"}, {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S"}]}
+      }
+    },
+    "evaluationHistory": {
+      "description": "Declared revision history and selected identity comparisons; no artifacts are fetched and no rescoring is performed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["selector_coverage", "selectors", "selected_statuses", "identity_comparisons", "records"],
+      "properties": {
+        "selector_coverage": {"enum": ["complete", "partial", "unknown"]},
+        "selectors": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["baseline_evaluation_id", "candidate_evaluation_id"],
+          "properties": {
+            "baseline_evaluation_id": {"$ref": "#/$defs/nullableId"},
+            "candidate_evaluation_id": {"$ref": "#/$defs/nullableId"}
+          }
+        },
+        "selected_statuses": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["baseline", "candidate"],
+          "properties": {
+            "baseline": {"oneOf": [{"type": "null"}, {"enum": ["active", "invalidated", "unknown"]}]},
+            "candidate": {"oneOf": [{"type": "null"}, {"enum": ["active", "invalidated", "unknown"]}]}
+          }
+        },
+        "identity_comparisons": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["data_digest", "golden_digest", "rubric_digest", "judge_id", "evaluator_id", "outcome_definition_id"],
+          "properties": {
+            "data_digest": {"$ref": "#/$defs/identityComparison"},
+            "golden_digest": {"$ref": "#/$defs/identityComparison"},
+            "rubric_digest": {"$ref": "#/$defs/identityComparison"},
+            "judge_id": {"$ref": "#/$defs/identityComparison"},
+            "evaluator_id": {"$ref": "#/$defs/identityComparison"},
+            "outcome_definition_id": {"$ref": "#/$defs/identityComparison"}
+          }
+        },
+        "records": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {"$ref": "#/$defs/historyRecord"}
+        }
+      }
+    },
+    "slotBucket": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["planned", "reported", "observed_one", "observed_zero", "missing_by_reason", "unreported_planned"],
+      "properties": {
+        "planned": {"oneOf": [{"type": "null"}, {"type": "integer", "minimum": 0}]},
+        "reported": {"type": "integer", "minimum": 0},
+        "observed_one": {"type": "integer", "minimum": 0},
+        "observed_zero": {"type": "integer", "minimum": 0},
+        "missing_by_reason": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["infra", "verifier", "not_started", "unknown"],
+          "properties": {
+            "infra": {"type": "integer", "minimum": 0},
+            "verifier": {"type": "integer", "minimum": 0},
+            "not_started": {"type": "integer", "minimum": 0},
+            "unknown": {"type": "integer", "minimum": 0}
+          }
+        },
+        "unreported_planned": {"oneOf": [{"type": "null"}, {"type": "integer", "minimum": 0}]}
+      }
+    },
+    "transitions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "complete_pair_count", "incomplete_pair_count", "zero_to_zero", "zero_to_one", "one_to_zero", "one_to_one"],
+      "properties": {
+        "scope": {"const": "primary_repeat_zero"},
+        "complete_pair_count": {"type": "integer", "minimum": 0},
+        "incomplete_pair_count": {"type": "integer", "minimum": 0},
+        "zero_to_zero": {"type": "integer", "minimum": 0},
+        "zero_to_one": {"type": "integer", "minimum": 0},
+        "one_to_zero": {"type": "integer", "minimum": 0},
+        "one_to_one": {"type": "integer", "minimum": 0}
+      }
+    },
+    "partitionGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "case_count", "baseline", "candidate", "transitions"],
+      "properties": {
+        "category": {"$ref": "#/$defs/nullableId"},
+        "case_count": {"type": "integer", "minimum": 0, "maximum": 128},
+        "baseline": {"$ref": "#/$defs/slotBucket"},
+        "candidate": {"$ref": "#/$defs/slotBucket"},
+        "transitions": {"$ref": "#/$defs/transitions"}
+      }
+    },
+    "casePartition": {
+      "description": "Declared case-unit groups with descriptive primary repeat-zero accounting only.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["taxonomy_id", "unit", "scope", "groups"],
+      "properties": {
+        "taxonomy_id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S"},
+        "unit": {"const": "case"},
+        "scope": {"const": "primary_repeat_zero"},
+        "groups": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 33,
+          "items": {"$ref": "#/$defs/partitionGroup"}
+        }
+      }
+    }
+  }
+}
