@@ -349,6 +349,63 @@ def _handoff_pilot(cli: Path, work: Path) -> None:
     _require(not refused_store.exists(), "oversized capture mutated store")
 
 
+def _normalization_pilot(cli: Path, work: Path) -> None:
+    source = work / "normalization-source.json"
+    source.write_text(
+        json.dumps(
+            {
+                "testCases": [
+                    {
+                        "name": "synthetic",
+                        "input": "local",
+                        "success": False,
+                        "metricsData": [
+                            {"name": "example", "threshold": 0.5, "success": False, "score": -0.0}
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    observed = _cli_json(
+        cli,
+        ["ingest", "--format", "deepeval.test-run", "--version", "4.1.1", "--file", str(source)],
+        work / "normalization-cli.json",
+        work,
+    )
+    library = _success(
+        [
+            str(cli.parent / "python"),
+            "-c",
+            "import json, sys; from pathlib import Path; "
+            "from underwrite.instrument.ingest.application import packaged_ingestor; "
+            "from underwrite.instrument.ingest.project import Source; "
+            "result = packaged_ingestor(max_bytes=4096, max_depth=16).file("
+            "Path(sys.argv[1]), Source('deepeval.test-run', '4.1.1', None)); "
+            "print(json.dumps(result.observation, sort_keys=True))",
+            str(source),
+        ],
+        work,
+    )
+    _require(library.stderr == "", "installed library emitted unexpected diagnostics")
+    _require(
+        library.stdout.strip() == json.dumps(observed, sort_keys=True),
+        "installed API and CLI disagree on normalized JSON value representation",
+    )
+    payload = cast(dict[str, object], observed["payload"])
+    cases = cast(list[dict[str, object]], payload["testCases"])
+    metric = cast(list[dict[str, object]], cases[0]["metricsData"])[0]
+    _require(
+        type(metric["score"]) is int and metric["score"] == 0,
+        "canonical negative zero was not normalized",
+    )
+    _require(
+        metric["success"] is False and "error" not in metric,
+        "normalization merged boolean, score, or field absence",
+    )
+
+
 def _smoke(dist: Path) -> None:
     core_wheel, app_wheel = _wheels(dist)
     fixtures = ROOT / "fixtures/examples"
@@ -363,6 +420,7 @@ def _smoke(dist: Path) -> None:
         _evidence_pilots(cli, fixtures, work)
         _record_pilots(cli, fixtures, work)
         _handoff_pilot(cli, work)
+        _normalization_pilot(cli, work)
 
         observation = work / "observation.json"
         observed = _cli_json(

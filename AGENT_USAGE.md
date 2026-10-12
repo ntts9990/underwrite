@@ -456,8 +456,9 @@ that command produced no observation, read, or decision, respectively. Use its
 `code` and `reason` to correct the input; measurement and acceptance errors also
 carry `next_action`.
 
-`ingest --json` emits canonical JSON: a number such as `1.0` may appear as `1`
-without changing its numeric meaning. Booleans, `null`, and absent keys remain
+The shared ingestion boundary applies canonical JSON normalization to both
+Python API observations and `ingest --json` output. A number such as `1.0` becomes
+`1`, and negative zero becomes zero, without changing its numeric meaning. Booleans, `null`, and absent keys remain
 distinct; do not turn a missing score into zero or compare a boolean as a number.
 The normalized observation is not a byte-for-byte round trip of the original
 export. Its `raw.hash` identifies the original bytes but cannot reconstruct them;
