@@ -131,6 +131,57 @@ def _check_wheel_origins(venv: Path, wheels: tuple[Path, Path]) -> None:
         )
 
 
+def _promptfoo_numeric_pilot(
+    cli: Path, evidence: Path, work: Path, baseline: dict[str, object]
+) -> None:
+    body = json.loads((evidence / "synthetic-promptfoo-category-mismatch.json").read_bytes())
+    for name in ("successes", "failures", "errors"):
+        body["results"]["stats"][name] = float(body["results"]["stats"][name])
+    for row in body["results"]["results"]:
+        for name in ("promptIdx", "testIdx"):
+            row[name] = float(row[name])
+    source = work / "promptfoo-integral-counts.json"
+    source.write_text(json.dumps(body), encoding="utf-8")
+    manifest = work / "promptfoo-integral-counts.case.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema": "artifact_case.v1",
+                "artifact": {"path": source.name},
+                "source": {"format": "promptfoo.eval-output", "format_version": "0.123.0"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    observed = _cli_json(
+        cli,
+        [
+            "ingest",
+            "--format",
+            "promptfoo.eval-output",
+            "--version",
+            "0.123.0",
+            "--file",
+            str(source),
+        ],
+        work / "promptfoo-integral-observation.json",
+        work,
+    )
+    audited = _cli_json(
+        cli,
+        ["audit-counts", str(manifest)],
+        work / "promptfoo-integral-audit.json",
+        work,
+    )
+    for key in baseline:
+        if key in {"raw_hash", "observation_digest"}:
+            _require(audited[key] != baseline[key], "different raw sources lost their identity")
+        else:
+            _require(audited[key] == baseline[key], "integral count spelling changed accounting")
+    raw = cast(dict[str, object], observed["raw"])
+    _require(raw["hash"] == audited["raw_hash"], "ingest/audit consumed different source bytes")
+
+
 def _evidence_pilots(cli: Path, fixtures: Path, work: Path) -> None:
     evidence = fixtures / "evidence"
     audit = _cli_json(
@@ -140,6 +191,7 @@ def _evidence_pilots(cli: Path, fixtures: Path, work: Path) -> None:
         work,
     )
     _require(audit.get("declared_relation") == "inconsistent", "count mismatch was hidden")
+    _promptfoo_numeric_pilot(cli, evidence, work, audit)
     comparison = _cli_json(
         cli,
         [

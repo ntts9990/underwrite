@@ -353,3 +353,29 @@ def test_unsafe_artifact_entry_is_refused_without_hang(tmp_path: Path, kind: str
     )
     assert child.returncode == ERROR_EXIT and child.stdout == ""
     assert json.loads(child.stderr)["code"] == "SOURCE_READ_FAILED"
+
+
+def test_integral_counter_spellings_keep_audit_coherent_with_original_projection(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    reports: list[dict[str, Any]] = []
+    for floating in (False, True):
+        document = json.loads(GOLDEN.read_bytes())
+        stats = document["results"]["stats"]
+        if floating:
+            for key in ("successes", "failures", "errors"):
+                stats[key] = float(stats[key])
+        raw = json.dumps(document).encode()
+        folder = tmp_path / ("float" if floating else "int")
+        folder.mkdir()
+        case_path = _case(folder, raw)
+        code, report, _, stderr = _invoke(case_path, capsys)
+        assert code == 0 and stderr == ""
+        assert report["raw_hash"] == digest_bytes(raw)
+        assert (folder / "artifact.json").read_bytes() == raw
+        reports.append(report)
+    for key in ("producer_stats", "row_tallies", "deltas", "declared_relation", "findings"):
+        assert reports[0][key] == reports[1][key]
+    assert reports[0]["raw_hash"] != reports[1]["raw_hash"]
+    assert reports[0]["observation_digest"] != reports[1]["observation_digest"]

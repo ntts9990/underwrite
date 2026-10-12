@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Literal, TypedDict, cast
 
-from underwrite_core.canonical import SAFE_INT_MAX
+from underwrite_core.canonical import SAFE_INT_MAX, CanonicalizationError, safe_integer_value
 
 ROW_LIMIT = 2000
 CATEGORIES = ("successes", "failures", "errors")
@@ -43,9 +43,13 @@ Category = Literal["successes", "failures", "errors"]
 
 
 def _count(value: object) -> int:
-    if type(value) is not int or not 0 <= value <= SAFE_INT_MAX:
+    try:
+        count = safe_integer_value(value)
+    except CanonicalizationError:
+        raise AccountingError("INVALID_COUNT") from None
+    if count < 0:
         raise AccountingError("INVALID_COUNT")
-    return value
+    return count
 
 
 def _counts(successes: int, failures: int, errors: int) -> Counts:

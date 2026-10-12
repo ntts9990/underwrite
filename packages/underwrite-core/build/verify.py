@@ -53,7 +53,7 @@ from enum import Enum
 from typing import Any, Final, TypeGuard, cast
 
 SOURCE_DIGESTS: Final[dict[str, str]] = {
-    "canonical.py": "sha256:7cfd0a9b3d95502663fbcff94ca55771d58d4b79125e42ce20e2570ee06d7368",
+    "canonical.py": "sha256:93205ae1aec4e8efba552ba8541158a992d2b3da9f28ca409926e11ed4ffb38e",
     "chain.py": "sha256:63613689228f4f67ae4a8eac56f77c680a917478a285edca4b26aecf8ecbb55c",
     "bundle.py": "sha256:c5a733adff571ca35fcd38ea8163d47f08157bf50b79c371d2ea5186293ef4a5",
 }
@@ -89,8 +89,20 @@ class CanonicalizationError(ValueError):
     """Raised when a value cannot be serialized under CANONICAL_SCHEMA.
 
     ``args[0]`` is one of: NON_NFC_STRING, NON_UTF8_STRING,
-    INT_OUT_OF_SAFE_RANGE, NON_FINITE_NUMBER, UNSUPPORTED_TYPE, INVALID_TAG.
+    INT_OUT_OF_SAFE_RANGE, NON_FINITE_NUMBER, UNSUPPORTED_TYPE, INVALID_TAG,
+    INVALID_INTEGER_VALUE (safe_integer_value admission).
     """
+
+
+def safe_integer_value(value: object) -> int:
+    """Return an exact safe integer value without coercion, rounding, or parsing."""
+    if type(value) is not int and type(value) is not float:
+        raise CanonicalizationError("INVALID_INTEGER_VALUE")
+    if type(value) is float and (not math.isfinite(value) or not value.is_integer()):
+        raise CanonicalizationError("INVALID_INTEGER_VALUE")
+    if abs(value) > SAFE_INT_MAX:
+        raise CanonicalizationError("INVALID_INTEGER_VALUE")
+    return int(value)
 
 
 def canonical_bytes(value: object) -> bytes:

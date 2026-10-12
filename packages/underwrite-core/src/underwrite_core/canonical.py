@@ -41,8 +41,20 @@ class CanonicalizationError(ValueError):
     """Raised when a value cannot be serialized under CANONICAL_SCHEMA.
 
     ``args[0]`` is one of: NON_NFC_STRING, NON_UTF8_STRING,
-    INT_OUT_OF_SAFE_RANGE, NON_FINITE_NUMBER, UNSUPPORTED_TYPE, INVALID_TAG.
+    INT_OUT_OF_SAFE_RANGE, NON_FINITE_NUMBER, UNSUPPORTED_TYPE, INVALID_TAG,
+    INVALID_INTEGER_VALUE (safe_integer_value admission).
     """
+
+
+def safe_integer_value(value: object) -> int:
+    """Return an exact safe integer value without coercion, rounding, or parsing."""
+    if type(value) is not int and type(value) is not float:
+        raise CanonicalizationError("INVALID_INTEGER_VALUE")
+    if type(value) is float and (not math.isfinite(value) or not value.is_integer()):
+        raise CanonicalizationError("INVALID_INTEGER_VALUE")
+    if abs(value) > SAFE_INT_MAX:
+        raise CanonicalizationError("INVALID_INTEGER_VALUE")
+    return int(value)
 
 
 def canonical_bytes(value: object) -> bytes:
