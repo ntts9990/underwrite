@@ -18,6 +18,32 @@ A larger supported handoff may be analyzed without fitting a single record; in
 that case requested storage fails before serialization or store mutation, while
 the CLI retains the complete analysis. Sources are never silently omitted.
 
+For a selected Promptfoo 0.123.0 export, account and retain it without a handwritten
+record specification:
+
+```sh
+underwrite records audit-promptfoo FILE --root PRIVATE_STORE --id NEW_ID --json
+```
+
+This explicitly stores the **entire selected file**, the accounting result or
+diagnostic, and structured invocation metadata. It analyzes and saves the same
+captured bytes. A complete but malformed input is retained; acquisition failure
+stores only the diagnostic and invocation. Even a diagnostic record consumes the
+new ID. Invocation path fields are canonical display metadata, not byte-exact
+argv or a claim that a subprocess ran.
+
+`promptfoo_record.v1` returns independent `analysis` and `storage` objects: exit 0
+means a result was produced and saved, exit 2 means analysis failed but its
+diagnostic was saved, and exit 3 means storage failed (inspect analysis separately).
+A count mismatch is a produced result, not approval or an invocation error.
+Argument, configuration, or response-capacity failures emit `evidence_error.v1`
+on stderr with exit 2 before storing. A failed post-publication verification keeps
+its known record identity in `storage.published_record`; null means no identity
+was returned, not proof that the requested ID is absent. Never overwrite or
+silently retry a reserved ID. Analysis-only `audit-promptfoo` remains unchanged.
+
+For manual selection of arbitrary supported evidence, use an explicit spec:
+
 ```sh
 mkdir -p output
 underwrite records save --root output/records-store \
@@ -27,7 +53,7 @@ underwrite records show --root output/records-store --id synthetic.capture-001 -
 underwrite records verify --root output/records-store --id synthetic.capture-001 --json
 ```
 
-The example is synthetic. Each real capture needs its own explicit
+The manual example is synthetic. Each `records save` capture needs its own explicit
 [`record_spec.v1`](contracts/record_spec.v1.schema.json), unique record ID,
 selection, and honest reproduction status. Source paths are relative to the
 specification file. They are not persisted; a `source_locator` is recorded only

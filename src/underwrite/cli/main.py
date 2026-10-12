@@ -113,6 +113,7 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
         records.configure,
         (
             profile("save", ("root", "spec"), ("record_spec.v1",), ("record_view.v1",)),
+            profile("audit-promptfoo", ("file", "root", "id"), (), ("promptfoo_record.v1",)),
             profile("list", ("root",), (), ("record_catalog.v1",)),
             profile("show", ("root", "id"), (), ("record_view.v1",)),
             profile("verify", ("root", "id"), (), ("record_verification.v1",)),

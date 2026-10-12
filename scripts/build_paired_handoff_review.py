@@ -5,7 +5,14 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
+
+from _schema_compose import embed_contracts
+from _schema_compose import nullable as _nullable
+from _schema_compose import object_schema as _object
+from _schema_compose import reference as _ref
+from _schema_compose import rewrite as _rewrite
+from _schema_compose import tagged as _tagged
 
 from underwrite.cli.handoff_limits import MAX_FILE_BYTES, MAX_SOURCE_FILES, PROFILE
 
@@ -20,65 +27,8 @@ OWNERS = (
 )
 
 
-def _object(properties: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "type": "object",
-        "additionalProperties": False,
-        "required": list(properties),
-        "properties": properties,
-    }
-
-
-def _ref(name: str) -> dict[str, str]:
-    return {"$ref": "#/$defs/" + name}
-
-
-def _nullable(schema: dict[str, Any]) -> dict[str, Any]:
-    return {"oneOf": [{"type": "null"}, schema]}
-
-
-def _tagged(variants: list[dict[str, Any]]) -> dict[str, Any]:
-    """Dispatch closed branches before traversing their bounded nested payloads."""
-    states = [variant["properties"]["state"]["const"] for variant in variants]
-    return {
-        "type": "object",
-        "required": ["state"],
-        "properties": {"state": {"enum": states}},
-        "allOf": [
-            {"if": {"properties": {"state": {"const": state}}}, "then": variant}
-            for state, variant in zip(states, variants, strict=True)
-        ],
-    }
-
-
-def _rewrite(value: Any, prefix: str) -> Any:
-    if isinstance(value, list):
-        return [_rewrite(item, prefix) for item in cast(list[Any], value)]
-    if not isinstance(value, dict):
-        return value
-    if "$id" in value or "$anchor" in value or "$dynamicRef" in value:
-        raise ValueError("NESTED_SCHEMA_SCOPE_UNSUPPORTED")
-    result: dict[str, Any] = {}
-    for key, item in cast(dict[str, Any], value).items():
-        if key == "$ref":
-            if not isinstance(item, str) or not item.startswith("#/$defs/"):
-                raise ValueError("NONLOCAL_DEFINITION_REFERENCE")
-            result[key] = "#/$defs/" + prefix + "__" + item.removeprefix("#/$defs/")
-        else:
-            result[key] = _rewrite(item, prefix)
-    return result
-
-
 def build_schema() -> dict[str, Any]:
-    definitions: dict[str, Any] = {}
-    owners: dict[str, Any] = {}
-    for name in OWNERS:
-        source = json.loads((ROOT / f"contracts/{name}.v1.schema.json").read_bytes())
-        owners[name] = source
-        body = {k: v for k, v in source.items() if k not in {"$id", "$schema", "$defs"}}
-        definitions[name] = _rewrite(body, name)
-        for key, value in source.get("$defs", {}).items():
-            definitions[name + "__" + key] = _rewrite(value, name)
+    definitions, owners = embed_contracts(ROOT, OWNERS)
     digest = {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
     text = {"type": "string", "minLength": 1, "maxLength": 256}
     count = {"type": "integer", "minimum": 0}

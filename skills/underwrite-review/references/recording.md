@@ -8,6 +8,15 @@ explicit `--record-root` and `--record-id` options. It captures the same bytes
 used for analysis and returns independent analysis/storage outcomes. Use the
 manual composition below for other existing command paths.
 
+For a supported Promptfoo export, when the caller explicitly selects a private
+store and new ID and capabilities includes the records audit-promptfoo profile,
+use `records audit-promptfoo FILE --root ROOT --id NEW_ID --json`. This stores the
+entire captured source, result or diagnostic, and actual in-process invocation
+metadata. A malformed captured source is retained; unreadable input produces a
+diagnostic-only record. Inspect both analysis and storage on exits 0/2/3. A null
+published_record does not establish that no ID was reserved. Use the manual path
+when the caller needs selective file omission instead.
+
 1. Select the exact supported underwrite command and its supplied files. Create
    a new private working directory (0700), outside any published source tree.
    Record the actual argv array and working directory in `command.json`; do not
