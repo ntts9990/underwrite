@@ -229,6 +229,20 @@ The pilot commands documented here are available in this development checkout an
 wheels built from it. The previously published PyPI `0.0.1` artifacts have not
 been replaced or released again.
 
+For a Promptfoo 0.123.0 export, audit the supplied file directly without creating
+a manifest:
+
+```sh
+uv run --frozen --no-sync underwrite audit-promptfoo \
+  fixtures/examples/evidence/synthetic-promptfoo-category-mismatch.json --json
+```
+
+This selects the pinned payload profile; it does not authenticate the producer or
+verify an independently supplied expected hash. It uses bounded local-file reads.
+For expected-hash checks, explicit source references/locators, or contained relative
+artifact selection, retain the manifest route below. With default source metadata,
+both routes return the same canonical report for the same bytes.
+
 `audit-counts` reads an `artifact_case.v1` manifest. Its artifact path is relative
 to the manifest, with the same bounded, no-follow reads as `inspect`. This example
 uses a **constructed synthetic fixture**, not an unchanged Promptfoo export or an
