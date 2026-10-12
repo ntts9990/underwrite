@@ -170,7 +170,7 @@ def test_contradictory_score_error_refuses_without_echoing_source_text() -> None
 @pytest.mark.parametrize("key", ["conversationalTestCases", "traceMetricsScores"])
 def test_unsupported_scope_is_not_silently_ignored(key: str) -> None:
     data = source()
-    data[key] = [{}]
+    data[key] = [{}] if key == "conversationalTestCases" else {"agent": {"span": {}}}
     with pytest.raises(DeepevalAccountingError) as caught:
         run(data)
     assert caught.value.code == "UNSUPPORTED_PROFILE"
@@ -262,3 +262,55 @@ def test_source_error_text_is_not_a_new_classification_rule() -> None:
     assert item["state"] == "error" and item["source_success"] is True
     assert "score" not in item
     assert result["counts"]["metrics"]["scored_source_true"] == 0
+
+
+@pytest.mark.parametrize(
+    "groups", [{}, {"agent": {}}, {"agent": {}, "tool": {}, "retriever": {}, "llm": {}, "base": {}}]
+)
+def test_empty_trace_metric_groups_are_ordinary_case_scope(groups: object) -> None:
+    assert run(source(traceMetricsScores=groups)) == run(source())
+
+
+def test_trace_metric_list_is_wrong_source_container() -> None:
+    with pytest.raises(DeepevalAccountingError) as caught:
+        run(source(traceMetricsScores=[]))
+    assert caught.value.code == "INVALID_INPUT"
+
+
+@pytest.mark.parametrize("value", [None, [], "", False])
+def test_trace_metric_root_wrong_types_have_bounded_errors(value: object) -> None:
+    with pytest.raises(DeepevalAccountingError) as caught:
+        run(source(traceMetricsScores=value))
+    assert caught.value.code == "INVALID_INPUT"
+    assert caught.value.reason == "DEEPEVAL_OBJECT_REQUIRED"
+    assert caught.value.location == "/traceMetricsScores"
+
+
+@pytest.mark.parametrize("value", [None, [], "", False])
+def test_trace_metric_group_wrong_types_have_known_group_path(value: object) -> None:
+    with pytest.raises(DeepevalAccountingError) as caught:
+        run(source(traceMetricsScores={"agent": value}))
+    assert caught.value.code == "INVALID_INPUT"
+    assert caught.value.location == "/traceMetricsScores/agent"
+
+
+@pytest.mark.parametrize(
+    "groups", [{"private-source-text": {}}, {1: {}}, {object(): None for _ in range(6)}]
+)
+def test_unknown_or_oversized_trace_groups_do_not_echo_keys(groups: object) -> None:
+    with pytest.raises(DeepevalAccountingError) as caught:
+        run(source(traceMetricsScores=groups))
+    assert caught.value.code == "INVALID_INPUT"
+    assert caught.value.reason == "DEEPEVAL_TRACE_METRIC_GROUP_INVALID"
+    assert caught.value.location == "/traceMetricsScores"
+    assert "private-source-text" not in str(caught.value)
+
+
+@pytest.mark.parametrize("group", ["agent", "tool", "retriever", "llm", "base"])
+def test_each_known_trace_group_only_admits_an_empty_mapping(group: str) -> None:
+    assert run(source(traceMetricsScores={group: {}})) == run(source())
+    with pytest.raises(DeepevalAccountingError) as caught:
+        run(source(traceMetricsScores={group: {"declared_span": {}}}))
+    assert caught.value.code == "UNSUPPORTED_PROFILE"
+    assert caught.value.reason == "DEEPEVAL_SCOPE_UNSUPPORTED"
+    assert caught.value.location == "/traceMetricsScores/" + group

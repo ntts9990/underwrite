@@ -169,7 +169,10 @@ underwrite audit-deepeval /path/to/test_run.json --json
 The `deepeval_accounting.v1` report applies deterministic field-presence rules:
 `score` means `scored`, `error` means `error`, and neither means `unscored`.
 Both fields together, invalid types, and unsupported nonempty conversational or
-trace branches are refused. Case and metric indices locate each source occurrence;
+trace branches are refused. Numeric spellings such as `1` and `1.0` are equivalent;
+booleans, strings, and null are not converted into scores. The trace summary is an
+object: empty known groups are accepted, while populated groups remain unsupported.
+Case and metric indices locate each source occurrence;
 duplicate names do not merge records. `rule_profile` and `applied_rule` identify
 the rules used. `raw_hash` identifies the original file, and `observation_digest`
 binds its common normalized observation. The command selects a pinned profile;

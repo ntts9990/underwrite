@@ -171,7 +171,7 @@ def test_ingestion_resource_limits_remain_typed(
     assert error["code"] == "INPUT_LIMIT_EXCEEDED"
 
 
-@pytest.mark.parametrize("value", [None, True, 1])
+@pytest.mark.parametrize("value", [None, True, "1"])
 def test_raw_metric_score_type_is_checked_before_common_normalization(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], value: object
 ) -> None:
@@ -287,3 +287,33 @@ def test_packaged_schema_failure_is_not_reported_as_source_content_error(
     assert error["code"] == "SCHEMA_CONFIGURATION_ERROR"
     assert error["reason"] == "INVALID_OBSERVATION_SCHEMA"
     assert error["location"] == "" and str(tmp_path) not in stderr
+
+
+def test_numeric_spelling_and_empty_trace_groups_share_domain_results_not_raw_identity(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from underwrite_core.canonical import digest_bytes
+
+    reports: list[dict[str, Any]] = []
+    for spelling in (1, 1.0):
+        body = payload()
+        body["testCases"][0]["metricsData"][0].update(score=spelling, threshold=spelling)
+        body["traceMetricsScores"] = {
+            "agent": {},
+            "tool": {},
+            "retriever": {},
+            "llm": {},
+            "base": {},
+        }
+        path = source_file(tmp_path, body)
+        before = path.read_bytes()
+        code, report, _, stderr = invoke(path, capsys)
+        assert code == 0 and stderr == ""
+        assert report["raw_hash"] == digest_bytes(before)
+        assert path.read_bytes() == before
+        reports.append(report)
+    for key in ("cases", "counts", "declared_case_counts", "scope", "next_actions"):
+        assert reports[0][key] == reports[1][key]
+    assert reports[0]["raw_hash"] != reports[1]["raw_hash"]
+    assert reports[0]["observation_digest"] != reports[1]["observation_digest"]

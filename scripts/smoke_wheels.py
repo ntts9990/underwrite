@@ -367,9 +367,17 @@ def _deepeval_pilot(cli: Path, work: Path) -> None:
                                 "success": False,
                                 "error": "synthetic error",
                             },
+                            {"name": "integer", "threshold": 1, "success": True, "score": 1},
                         ],
                     }
-                ]
+                ],
+                "traceMetricsScores": {
+                    "agent": {},
+                    "tool": {},
+                    "retriever": {},
+                    "llm": {},
+                    "base": {},
+                },
             }
         ),
         encoding="utf-8",
@@ -418,8 +426,9 @@ def _deepeval_pilot(cli: Path, work: Path) -> None:
         work,
     )
     counts = cast(dict[str, dict[str, int]], accounting["counts"])
+    expected_scored = 2
     _require(
-        counts["metrics"]["scored"] == counts["metrics"]["error"] == 1,
+        counts["metrics"]["scored"] == expected_scored and counts["metrics"]["error"] == 1,
         "installed accounting conflated score and evaluator error",
     )
     rows = cast(list[dict[str, object]], accounting["cases"])

@@ -5,8 +5,8 @@ an array, a blank identifier, a non-string, a non-bool, a non-number. Only the r
 and the refusal text differ, and that text is contract, not implementation. So
 ``Shape`` owns the predicates and nothing else: a codec binds it once to its own error
 class and reason prefix, and each call site still names the detail that follows the colon.
-A check whose rule is one format's own (Langfuse's exact key match, DeepEval's float-only
-number, the OTLP proto scalars) stays in that codec, built on ``fail``."""
+A check whose rule is one format's own (Langfuse's exact key match or the OTLP proto
+scalars) stays in that codec, built on ``fail``."""
 
 from __future__ import annotations
 

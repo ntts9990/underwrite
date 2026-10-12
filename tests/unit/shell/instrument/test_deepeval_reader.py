@@ -227,10 +227,6 @@ MALFORMED: dict[str, tuple[object, str]] = {
         _run(testCases=[_case(metricsData=[without(_metric(), "threshold")])]),
         "DEEPEVAL_NUMBER_REQUIRED: threshold",
     ),
-    "metric_threshold_int": (
-        _run(testCases=[_case(metricsData=[_metric(threshold=1)])]),
-        "DEEPEVAL_NUMBER_REQUIRED: threshold",
-    ),
     "metric_threshold_flag": (
         _run(testCases=[_case(metricsData=[_metric(threshold=True)])]),
         "DEEPEVAL_NUMBER_REQUIRED: threshold",
@@ -241,10 +237,6 @@ MALFORMED: dict[str, tuple[object, str]] = {
     ),
     "metric_score_text": (
         _run(testCases=[_case(metricsData=[_metric(score="1.0")])]),
-        "DEEPEVAL_NUMBER_REQUIRED: score",
-    ),
-    "metric_score_int": (
-        _run(testCases=[_case(metricsData=[_metric(score=1)])]),
         "DEEPEVAL_NUMBER_REQUIRED: score",
     ),
     "metric_score_flag": (
@@ -272,3 +264,22 @@ def test_malformed_or_drifted_shape_fails_closed(fault: str) -> None:
     with pytest.raises(DeepevalPayloadError) as caught:
         read_test_run(payload)
     assert caught.value.args == (reason,)
+
+
+@pytest.mark.parametrize("number", [0, 1, -1, 0.25])
+def test_numeric_spellings_preserve_meaning_and_bind_distinct_raw_bytes(
+    number: int | float,
+) -> None:
+    from underwrite_core.canonical import content_digest, digest_bytes
+
+    observations: list[dict[str, object]] = []
+    for spelling in (number, float(number)):
+        value = _run(testCases=[_case(metricsData=[_metric(score=spelling, threshold=spelling)])])
+        raw = json.dumps(value).encode()
+        observation = _ingestor().http_body(raw, "input", SOURCE).observation
+        assert cast(dict[str, object], observation["raw"])["hash"] == digest_bytes(raw)
+        observations.append(observation)
+    assert observations[0]["payload"] == observations[1]["payload"]
+    if type(number) is int:
+        assert observations[0]["raw"] != observations[1]["raw"]
+        assert content_digest(observations[0]) != content_digest(observations[1])
