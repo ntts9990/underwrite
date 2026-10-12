@@ -4,13 +4,17 @@ underwrite reads local artifacts. An agent can run its CLI, keep the JSON output
 and report what each output establishes. It does not need a server or credentials.
 From a source checkout, run `uv sync --frozen --all-groups` once, then use
 `uv run --frozen --no-sync underwrite` in the commands below. An installed CLI can
-use `underwrite` directly.
+use `underwrite` directly. The checkout command uses its matching local core;
+install development app/core wheels from the same checkout together. A development
+app combined with the published same-version core is not a supported pairing.
 
 Run `underwrite --help` first. When listed, `underwrite capabilities --json`
 returns command profiles, required inputs, input/output schema names, and exact
 registered ingest codecs from the executable in use. Check this output instead
-of inferring support from the unchanged package version. Older published builds
-may require help-based discovery. Capability availability is not evidence that
+of inferring support from the unchanged package version. Published PyPI `0.0.1`
+has no `capabilities`, producer-audit, records, or handoff commands; use help-based
+discovery there and the source checkout for the newer workflows below.
+Capability availability is not evidence that
 an arbitrary producer export satisfies a profile.
 
 Choose the input path first. An `underwrite.evidence-bundle` v1 observation can

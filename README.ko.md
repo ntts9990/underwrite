@@ -46,6 +46,10 @@
 
 Python **3.12 이상**과 [uv](https://docs.astral.sh/uv/)가 필요합니다.
 
+현재 집계 검사·기록·handoff 기능을 사용하려면 [소스 체크아웃 빠른 시작](#빠른-시작)을
+따르세요. 아래 명령은 이전 공개판 `0.0.1`을 설치하며, 해당 기능과 `capabilities`는
+포함하지 않습니다. 개발판도 `0.0.1`을 유지하므로 버전 번호가 같아도 기능은 다릅니다.
+
 ```sh
 uv tool install 'underwrite==0.0.1'
 underwrite --help
@@ -59,7 +63,9 @@ underwrite --help
 ## 빠른 시작
 
 소스 체크아웃에서 포함된 합성 예제로 네이티브 전체 경로를 실행합니다. 인접한
-다른 저장소를 체크아웃할 필요는 없습니다.
+다른 저장소를 체크아웃할 필요는 없습니다. `uv sync`는 같은 워크스페이스의
+`underwrite-core`를 사용합니다. 개발 wheel을 설치할 때도 같은 체크아웃에서 만든 앱과
+core를 함께 사용하세요. 버전 번호만 보고 개발판 앱과 공개판 core를 섞지 마세요.
 
 ```sh
 git clone https://github.com/ntts9990/underwrite.git
@@ -154,7 +160,9 @@ cat output/malformed.stderr
 
 ## CLI
 
-옵션은 `underwrite --help` 또는 `underwrite <command> --help`로 확인하세요. 빠른 시작의
+아래 표는 현재 체크아웃 기준입니다. 설치된 기능은 `underwrite --help`로 확인하고,
+목록에 있을 때만 `capabilities --json`을 사용하세요. 각 옵션은
+`underwrite <command> --help`로 확인할 수 있습니다. 빠른 시작의
 `ingest`, `measure`, `accept` 외에 다음 검사 명령을 제공합니다.
 
 | 명령 | 용도 |
@@ -181,7 +189,7 @@ CLI·hook·백그라운드 서비스는 자동으로 설치하지 않습니다.
 
 ## 개발 체크아웃의 근거 검사 파일럿
 
-이 체크아웃에는 집계 검사용 `audit-counts`, 선언 비교용
+이 체크아웃에는 producer별 집계 검사, 불변 기록과 선택 파일 조회, 선언 비교용
 `compare-declarations`, 쌍대 이진 근거 계산용 `pair-binary`가 추가되어 있습니다.
 `review-pair`는 입력·정책 digest에 결속된 의도한 변경, 선언된 평가 이력,
 배타적인 사례 유형별 집계를 제공하며 기존 쌍대 근거를 유지합니다.

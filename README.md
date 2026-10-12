@@ -46,6 +46,11 @@ Exit `0` means a command produced its result, not that a change is approved.
 
 Requires Python **3.12+** and [uv](https://docs.astral.sh/uv/).
 
+For current accounting, records, and handoff workflows, use the [source checkout
+quickstart](#quickstart). The command below installs the older published `0.0.1`,
+which does not include those commands or `capabilities`. Development packages
+still carry `0.0.1`; equal version numbers do not establish equal capabilities.
+
 ```sh
 uv tool install 'underwrite==0.0.1'
 underwrite --help
@@ -59,7 +64,10 @@ standard library; application adapters handle local I/O and schema validation.
 ## Quickstart
 
 Run the complete native path with the included synthetic example from a source
-checkout. No adjacent repository checkout is needed.
+checkout. No adjacent repository checkout is needed. `uv sync` uses the matching
+local `underwrite-core` workspace package. If installing development wheels, use
+app and core wheels built from the same checkout; do not mix the development app
+with the published core merely because their versions match.
 
 ```sh
 git clone https://github.com/ntts9990/underwrite.git
@@ -158,7 +166,9 @@ Expected: exit `1`, stdout size `0`, and this JSON on stderr:
 
 ## CLI
 
-Use `underwrite --help` or `underwrite <command> --help` for options. The quickstart
+The table describes the current checkout. Discover an installed build with
+`underwrite --help`; use `capabilities --json` only when listed. Use
+`underwrite <command> --help` for options. The quickstart
 uses `ingest`, `measure`, and `accept`; these commands provide additional checks:
 
 | Command | Purpose |
@@ -188,8 +198,8 @@ not install a CLI, hook, or background service.
 
 ## Development-checkout evidence pilots
 
-This checkout adds `audit-counts`, `compare-declarations`, and `pair-binary` for
-bounded count auditing, declaration comparison, and paired binary evidence.
+This checkout adds producer accounting, immutable records and selected-file
+retrieval, declaration comparison, and paired evidence workflows.
 `review-pair` adds digest-bound intended changes, declared evaluation history, and
 exclusive case-group accounting while preserving the original paired evidence.
 They run locally with JSON output and no service. See the reproducible examples
