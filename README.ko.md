@@ -100,6 +100,8 @@ uv run --frozen --no-sync underwrite accept \
 현재 `measure`는 네이티브 근거 번들 관측만 받습니다. ingest 성공만으로 외부 원천
 주장을 측정할 수 있게 되는 것은 아닙니다.
 
+완료된 goppi baseline exchange v2는 [`project-baseline`](AGENT_USAGE.md#project-a-completed-goppi-baseline-into-event-observations)으로 행을 직접 재작성하지 않고 사건 관측에 연결할 수 있습니다. 원천 primary 상태·누락·통계 가정을 구분해 보존합니다.
+
 ## 지원 형식
 
 형식과 정확한 지원 버전을 명시적으로 선택합니다.

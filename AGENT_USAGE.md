@@ -83,7 +83,7 @@ is ready; obtain the completed producer artifact and its version context first.
 
 | Producer | Input boundary |
 | --- | --- |
-| goppi | No registered ingest profile. `audit-run` accepts the exact experimental grounded-pilot exchange described below. A generic CLI summary is insufficient; do not manufacture rows from counts. |
+| goppi | `project-baseline` accepts the exact baseline exchange manifest v2 described below; P7 paired handoffs and older grounded-pilot exchanges have separate routes. No generic ingest profile. A CLI summary is insufficient; do not manufacture rows from counts. |
 | Langfuse | The supported `4.35.0` denotes the **server export profile**, not the SDK version. Supply the worker's `observations_v2` or `scores` blob-export file as an uncompressed JSON array with the complete field groups. A REST response, Parquet file, or partially selected export is a different shape. Wait for a completed export manifest; SDK flush alone is insufficient. |
 | DeepEval | Supply the `4.1.1` TestRun JSON written by the tool, with the producer version recorded separately. A deliberately failed test run can still write a valid artifact. An observed score of zero is distinct from an errored metric without a score. |
 | Promptfoo | Supply the `0.123.0` eval output JSON (summary version 3). An assertion-failure exit can accompany a valid export. Use `audit-promptfoo FILE --json` for direct count auditing, or `audit-counts CASE.json --json` with a supplied `artifact_case.v1` manifest for expected-hash checks and explicit source metadata. |
@@ -544,6 +544,73 @@ claim; a future producer must explicitly satisfy the versioned input contract.
 See the [local comparison study](EVIDENCE_REVIEW.md) for the jq baseline,
 aggregate-count counterexample, measured command cost, and unmeasured user value.
 
+## Project a completed goppi baseline into event observations
+
+For `goppi.baseline_case_exchange.manifest.v2`, use the directory containing
+`manifest.json`, `export.json`, `rows.jsonl`, `schema.json`, and `scope.json`:
+
+```sh
+underwrite project-baseline --exchange /path/to/agent-exchange \
+  --direction higher --json > baseline-observation.json
+underwrite measure --observation baseline-observation.json \
+  --policy /path/to/reviewed-event-policy.json --json > baseline-read.json
+```
+
+Choose `higher` or `lower` explicitly for the intended event interpretation.
+Projection needs no statistical policy and returns `observation.v1`, ready for
+the existing native measurement path. The narrow event is the producer's
+`primary_status == observed_true`. Zero means `observed_false`, including binary
+verifier false **and producer-attributed endpoint failures**, such as timeout or
+budget exhaustion. This is not independently established correctness or verifier
+accuracy. Explicit missing outcomes remain missing. No probability forecasts are
+supplied, so prediction counts and calibration remain unavailable.
+
+The command checks fixed-file byte identities, declared scope/manifest content
+digests, source joins, exact ordered case membership and status counts. This
+initial profile requires baseline/repeat-zero/explore and one declared binary
+verifier ID. Case-specific verifier digests form a composite rubric bound by the
+scope digest; a common ID does not establish common verifier logic. Scalar scopes
+or different verifier IDs are unsupported. Dropped,
+duplicated, extra or reordered source rows are errors, not a partial successful
+import. No producer process, model, supplied schema, original source pointer or
+network request runs. Answer bodies, costs, usage, arbitrary source reasons and
+producer authority flags are omitted from the projection.
+
+The observation's `raw.hash` identifies a **consumer-generated canonical native
+bundle**, not the producer's rows or export bytes. `payload.sources` retains the
+original file identities, run/scope identities, ordered expected cases and limits.
+Matching hashes establish byte consistency, not source authentication or label
+truth. Keep the source directory when original bytes are needed; this command
+does not create a record store.
+
+Supply a reviewed `measurement_policy.v3` using `payload.semantic_digest` and
+`payload.sources[0].expected_case_ids`. The digest is a generated convenience
+field; `measure` recomputes the semantic binding rather than trusting that hint.
+Statistical reference rate and assumptions are consumer
+choices; the adapter never invents them. Ordered export cases do not establish
+prespecified statistical order or representativeness. Preserve `unknown` where
+assumptions are unestablished: the read can describe event counts while withholding
+directional inference. A policy omitting or reordering emitted cases is rejected;
+extra policy cases remain missing and withhold inference under the existing
+measurement contract.
+
+The checkout includes a constructed example and a policy whose assumptions are
+all unknown:
+
+```sh
+uv run --frozen --no-sync underwrite project-baseline \
+  --exchange fixtures/examples/baseline-event/exchange --direction higher --json \
+  > output/baseline-observation.json
+uv run --frozen --no-sync underwrite measure \
+  --observation output/baseline-observation.json \
+  --policy fixtures/examples/baseline-event/policy.json --json
+```
+
+This example deliberately includes true, verifier-false, endpoint-false and missing
+states. Its policy applies only to that synthetic declaration; do not reuse its
+semantic digest or inventory for a different producer run. Source status projection
+does not establish paired improvement or satisfy an acceptance claim by itself.
+
 ## Baseline execution inventory
 
 `audit-run` accounts for producer execution units without requiring a candidate
@@ -663,9 +730,11 @@ The shared ingestion boundary applies canonical JSON normalization to both
 Python API observations and `ingest --json` output. A number such as `1.0` becomes
 `1`, and negative zero becomes zero, without changing its numeric meaning. Booleans, `null`, and absent keys remain
 distinct; do not turn a missing score into zero or compare a boolean as a number.
-The normalized observation is not a byte-for-byte round trip of the original
-export. Its `raw.hash` identifies the original bytes but cannot reconstruct them;
-retain the original input file for byte-exact audits or replay.
+For direct `ingest`, the normalized observation is not a byte-for-byte round trip
+of the export: `raw.hash` identifies the input bytes but cannot reconstruct them.
+For `project-baseline`, `raw.hash` identifies the generated native bundle;
+original producer file identities are in `payload.sources`. Retain the original
+input files for byte-exact audits or replay in either route.
 
 An `acceptance_decision.v2` carries `classification`, `reason_codes`,
 `limitations`, and the projected lifecycle state. Keep the read verdict

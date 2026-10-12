@@ -23,6 +23,7 @@ from underwrite.cli import (
     instrument,
     measure,
     pair_binary,
+    project_baseline,
     records,
     release,
     render,
@@ -106,6 +107,20 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
         ),
         _instrument,
         ("project",),
+    ),
+    CommandDescriptor(
+        "project-baseline",
+        "Project exact goppi baseline exchange v2 source claims.",
+        project_baseline.configure,
+        (
+            profile(
+                "goppi-baseline-exchange-v2",
+                ("exchange", "direction"),
+                (),
+                ("observation.v1",),
+            ),
+        ),
+        _standalone(project_baseline.main),
     ),
     CommandDescriptor(
         "records",
