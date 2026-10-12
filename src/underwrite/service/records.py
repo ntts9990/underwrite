@@ -104,14 +104,6 @@ class RecordError(ValueError):
         self.location = location
 
 
-class _ManifestPublished(OSError):
-    """A post-link durability step failed; committed record contents must remain."""
-
-    def __init__(self, staging_file: Path) -> None:
-        super().__init__(errno.EIO, "post-publication failure")
-        self.staging_file = staging_file
-
-
 def _platform_flags() -> tuple[int, int]:
     names = ("O_DIRECTORY", "O_NOFOLLOW", "O_NONBLOCK", "O_NOCTTY")
     values = [getattr(os, name, None) for name in names]
@@ -767,26 +759,34 @@ def _write_staging(staging: Path, raw: bytes) -> Path:
     return path
 
 
-def _publish(record_dir: Path, staging: Path, raw: bytes) -> Path:
+def _publication_absent(record_dir: Path) -> bool:
+    """Permit destructive cleanup only when the completion marker is absent."""
+    try:
+        (record_dir / "manifest.json").lstat()
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    return False
+
+
+def _publish(record_dir: Path, staging: Path, raw: bytes) -> None:
     staging_file = _write_staging(staging, raw)
     try:
         os.link(staging_file, record_dir / "manifest.json", follow_symlinks=False)
-    except OSError:
-        try:
-            staging_file.unlink()
-        except OSError:
-            pass
+    except BaseException:
+        if _publication_absent(record_dir):
+            try:
+                staging_file.unlink()
+            except OSError:
+                pass
         raise
+    _fsync_dir(record_dir)
     try:
-        _fsync_dir(record_dir)
-        try:
-            staging_file.unlink()
-            _fsync_dir(staging)
-        except OSError:
-            pass
-    except OSError as exc:
-        raise _ManifestPublished(staging_file) from exc
-    return staging_file
+        staging_file.unlink()
+        _fsync_dir(staging)
+    except OSError:
+        pass
 
 
 def _save_checked(
@@ -798,8 +798,6 @@ def _save_checked(
     record_dir: Path | None = None
     owned_files: list[Path] = []
     owned_dirs: list[Path] = []
-    manifest_published = False
-    staging_file: Path | None = None
     try:
         records, staging = _store_for_save(root)
         record_dir = _reserve(records, cast(str, checked["record_id"]))
@@ -810,13 +808,8 @@ def _save_checked(
         raw = canonical_bytes(manifest)
         if len(raw) > MAX_MANIFEST_BYTES:
             raise RecordError("INPUT_LIMIT_EXCEEDED", "/spec")
-        staging_file = _publish(record_dir, staging, raw)
-        manifest_published = True
+        _publish(record_dir, staging, raw)
         return RecordSnapshot(manifest, digest_bytes(raw))
-    except _ManifestPublished as exc:
-        staging_file = exc.staging_file
-        manifest_published = True
-        raise RecordError("STORE_IO_ERROR") from None
     except FormatError:
         raise RecordError("INTERNAL_ERROR") from None
     except RecordError:
@@ -824,12 +817,7 @@ def _save_checked(
     except OSError:
         raise RecordError("STORE_IO_ERROR") from None
     finally:
-        if staging_file is not None and not manifest_published:
-            try:
-                staging_file.unlink()
-            except OSError:
-                pass
-        if not manifest_published and records is not None and record_dir is not None:
+        if records is not None and record_dir is not None and _publication_absent(record_dir):
             _cleanup_before_publication(owned_files, owned_dirs, records)
 
 
