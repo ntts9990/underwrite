@@ -430,9 +430,15 @@ def strict_manifest(raw: bytes) -> dict[str, object]:
             object_pairs_hook=pairs,
             parse_constant=lambda _: (_ for _ in ()).throw(FormatError("NONFINITE_NUMBER")),
         )
+    except FormatError:
+        raise
+    except (ValueError, RecursionError) as exc:
+        raise FormatError("INVALID_MANIFEST_JSON") from exc
+
+    try:
         manifest = validate_manifest(value)
         if canonical_bytes(manifest) != raw:
             raise FormatError("NONCANONICAL_MANIFEST")
         return manifest
-    except (UnicodeDecodeError, json.JSONDecodeError, CanonicalizationError, RecursionError) as exc:
+    except (CanonicalizationError, RecursionError) as exc:
         raise FormatError("INVALID_MANIFEST_JSON") from exc

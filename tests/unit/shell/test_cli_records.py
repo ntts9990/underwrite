@@ -305,6 +305,51 @@ def _read_json_args(tmp_path: Path, raw: bytes) -> tuple[list[str], Path]:
     return ["read-json", "--root", str(root), "--id", "synthetic.capture-001", "--name", name], root
 
 
+def _manifest_read_args(command: str, selected_args: list[str]) -> list[str]:
+    if command == "read-json":
+        return [*selected_args, "--json"]
+    return [command, *selected_args[1 : 3 if command == "list" else 5], "--json"]
+
+
+@pytest.mark.parametrize("command", ["show", "list", "verify", "read-json"])
+def test_manifest_integer_limit_is_invalid_record(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], command: str
+) -> None:
+    args, root = _read_json_args(tmp_path, b"{}")
+    path = root / "records/synthetic.capture-001/manifest.json"
+    raw = b"9" * 5000
+    path.write_bytes(raw)
+    error = _error(capsys, _manifest_read_args(command, args), "INVALID_RECORD")
+    assert error["next_action"] == "SELECT_VALID_RECORD"
+    assert error["location"] == "/record"
+    assert path.read_bytes() == raw
+
+
+@pytest.mark.parametrize("command", ["show", "list", "verify", "read-json"])
+@pytest.mark.parametrize("exception", [ValueError, TypeError])
+def test_manifest_validator_bug_remains_internal_error(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+    exception: type[Exception],
+) -> None:
+    from underwrite.service import _record_format
+
+    args, root = _read_json_args(tmp_path, b"{}")
+    path = root / "records/synthetic.capture-001/manifest.json"
+    before = path.read_bytes()
+
+    def fail(value: object) -> dict[str, object]:
+        raise exception("private validator detail")
+
+    monkeypatch.setattr(_record_format, "validate_manifest", fail)
+    error = _error(capsys, _manifest_read_args(command, args), "INTERNAL_ERROR")
+    assert error["next_action"] == "REPORT_INTERNAL_ERROR"
+    assert "private validator detail" not in json.dumps(error)
+    assert path.read_bytes() == before
+
+
 @pytest.mark.parametrize(
     ("raw", "value"),
     [

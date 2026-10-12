@@ -276,8 +276,7 @@ def _manifest_at(directory: int, identifier: str) -> RecordSnapshot:
         if exc.code == "INPUT_LIMIT_EXCEEDED":
             raise RecordError("INVALID_RECORD", "/record") from None
         raise
-    except ValueError:
-        # Includes FormatError and the JSON decoder's integer-token resource limit.
+    except FormatError:
         raise RecordError("INVALID_RECORD", "/record") from None
 
 
