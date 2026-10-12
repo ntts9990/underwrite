@@ -51,9 +51,7 @@ def _invoke(capsys: pytest.CaptureFixture[str], argv: list[str]) -> tuple[int, d
     return code, payload, streams.err if code == 0 else streams.out
 
 
-def _error(
-    capsys: pytest.CaptureFixture[str], argv: list[str], expected: str
-) -> dict[str, Any]:
+def _error(capsys: pytest.CaptureFixture[str], argv: list[str], expected: str) -> dict[str, Any]:
     code, payload, other = _invoke(capsys, argv)
     assert code == ERROR_EXIT and other == ""
     _validator("record_error.v1").validate(payload)
@@ -291,3 +289,134 @@ def test_cli_error_mapping_matches_every_contract_branch() -> None:
     for code in error_map:
         error = records._CliError(code)  # pyright: ignore[reportPrivateUsage]
         compiled.validate(error.payload)
+
+
+# Card: record-reuse | Paper: record_document.v1 | Stage: storage-read
+
+
+def _read_json_args(tmp_path: Path, raw: bytes) -> tuple[list[str], Path]:
+    from underwrite.service.records import save_record
+
+    root, spec_path, source = _inputs(tmp_path)
+    source.write_bytes(raw)
+    manifest = save_record(root, _spec(), spec_path.parent).manifest
+    name = cast(list[dict[str, str]], manifest["files"])[0]["name"]
+    source.unlink()
+    return ["read-json", "--root", str(root), "--id", "synthetic.capture-001", "--name", name], root
+
+
+@pytest.mark.parametrize(
+    ("raw", "value"),
+    [
+        (b' { "status": "failed", "n": 2 } \n', {"status": "failed", "n": 2}),
+        (b"[1,true,null]", [1, True, None]),
+        (b'"string"', "string"),
+        (b"17", 17),
+        (b"true", True),
+        (b"null", None),
+        (b"1e-400", 0),
+        (b"1.00000000000000000000000001", 1),
+    ],
+)
+def test_read_json_accepts_all_admitted_values_and_always_emits_json(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], raw: bytes, value: object
+) -> None:
+    from underwrite_core.canonical import canonical_bytes, digest_bytes
+
+    from underwrite.service.records import read_record
+
+    args, root = _read_json_args(tmp_path, raw)
+    assert records.main(args) == 0
+    streams = capsys.readouterr()
+    assert streams.err == ""
+    output = json.loads(streams.out)
+    assert output["content"] == value
+    assert output["bytes"] == len(raw) and output["sha256"] == digest_bytes(raw)
+    assert output["manifest_digest"] == read_record(root, "synthetic.capture-001").digest
+    assert output["verification_scope"] == "selected_file_against_manifest"
+    assert output["content_representation"] == "parsed_json"
+    assert "valid" not in output and "source_locator" not in output
+    _validator("record_document.v1").validate(output)
+    assert streams.out.encode() == canonical_bytes(output) + b"\n"
+    assert records.main([*args, "--json"]) == 0
+    repeated = capsys.readouterr()
+    assert repeated == streams
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b"",
+        b"binary\x00\xff",
+        b'{"a":1,"a":2}',
+        b"NaN",
+        b"1e400",
+        b'"\\ud800"',
+        b'"e\\u0301"',
+        b"9007199254740993",
+        b'{"secret":"PRIVATE-MARKER"',
+    ],
+)
+def test_read_json_refuses_unsupported_content_with_atomic_finite_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], raw: bytes
+) -> None:
+    args, _ = _read_json_args(tmp_path, raw)
+    error = _error(capsys, args, "UNSUPPORTED_RECORD_CONTENT")
+    assert error["next_action"] == "SELECT_SUPPORTED_RECORD_FILE"
+    assert "PRIVATE-MARKER" not in json.dumps(error)
+    assert str(tmp_path) not in json.dumps(error)
+
+
+@pytest.mark.parametrize("depth", [32, 33])
+def test_read_json_nesting_limit(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], depth: int
+) -> None:
+    args, _ = _read_json_args(tmp_path, b"[" * depth + b"0" + b"]" * depth)
+    if depth == records.DOCUMENT_MAX_DEPTH:
+        code, _, other = _invoke(capsys, args)
+        assert code == 0 and other == ""
+    else:
+        _error(capsys, args, "INPUT_LIMIT_EXCEEDED")
+
+
+def test_read_json_checks_full_output_budget_including_newline(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    args, _ = _read_json_args(tmp_path, b'{"text":"ok"}')
+    assert records.main(args) == 0
+    expected = capsys.readouterr().out
+    limit = len(expected.encode())
+    monkeypatch.setattr(records, "OUTPUT_MAX_BYTES", limit)
+    assert records.main(args) == 0
+    assert capsys.readouterr().out == expected
+    monkeypatch.setattr(records, "OUTPUT_MAX_BYTES", limit - 1)
+    _error(capsys, args, "OUTPUT_LIMIT_EXCEEDED")
+
+
+def test_read_json_checks_integrity_before_content_and_distinguishes_unknown_name(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args, root = _read_json_args(tmp_path, b"binary")
+    selected = root / "records/synthetic.capture-001/files" / args[-1]
+    selected.write_bytes(b"broken")
+    _error(capsys, args, "RECORD_FILE_INTEGRITY_MISMATCH")
+    _error(capsys, [*args[:-1], "unknown.json"], "RECORD_FILE_NOT_FOUND")
+    _error(capsys, [*args[:-1], "../escape"], "INVALID_SPEC")
+
+
+@pytest.mark.parametrize("extra", [[], ["--json"]])
+def test_read_json_usage_errors_are_json_without_json_flag(
+    capsys: pytest.CaptureFixture[str], extra: list[str]
+) -> None:
+    _error(capsys, ["read-json", *extra], "USAGE_ERROR")
+
+
+def test_show_preserves_abbreviated_json_option(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _, root = _read_json_args(tmp_path, b"null")
+    code, shown, other = _invoke(
+        capsys, ["show", "--root", str(root), "--id", "synthetic.capture-001", "--j"]
+    )
+    assert code == 0 and other == ""
+    _validator("record_view.v1").validate(shown)

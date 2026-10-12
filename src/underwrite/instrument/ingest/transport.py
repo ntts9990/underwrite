@@ -5,28 +5,22 @@ from __future__ import annotations
 import json
 import math
 import os
-import stat
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from underwrite._fileio import TransportError as TransportError
+from underwrite._fileio import positive_limit as _positive_limit
+from underwrite._fileio import read_descriptor as read_descriptor
 from underwrite.instrument.ingest import project
 from underwrite.instrument.ingest.project import Projection, Source
 from underwrite.instrument.ingest.schema import ObservationSchema
 
 type Codec = Callable[[object], Projection]
 
-_FILE_READ_CHUNK_BYTES = 64 * 1024
-
 
 class UnsupportedFormat(ValueError):
     """No trusted codec was registered for this exact format/version pair."""
-
-
-class TransportError(ValueError):
-    """Source bytes could not be read within the configured byte budget."""
-
-    attempted_read: bool = False
 
 
 class DecodeError(ValueError):
@@ -39,25 +33,6 @@ class IngestResult:
 
     observation: dict[str, object]
     transport_locator: str
-
-
-def _positive_limit(value: int) -> None:
-    if type(value) is not int or value <= 0:
-        raise ValueError("INGEST_LIMIT_MUST_BE_POSITIVE_INTEGER")
-
-
-def read_descriptor(fd: int, max_bytes: int) -> bytes:
-    """Read a caller-owned regular descriptor, at most budget plus one byte."""
-    _positive_limit(max_bytes)
-    if not stat.S_ISREG(os.fstat(fd).st_mode):
-        raise TransportError("SOURCE_NOT_REGULAR_FILE")
-    data = bytearray()
-    remaining = max_bytes + 1
-    # EOF is the loop condition itself, so no inverted EOF test can spin at end of file.
-    while remaining and (chunk := os.read(fd, min(_FILE_READ_CHUNK_BYTES, remaining))):
-        data.extend(chunk)
-        remaining -= len(chunk)
-    return bytes(data)
 
 
 def _read_bounded_file(path: Path, max_bytes: int) -> bytes:

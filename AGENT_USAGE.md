@@ -259,9 +259,11 @@ success/error counts. `promptfoo_accounting.v1` separates `producer_stats` from
 source-internal contradictions as findings. `declared_relation` is `inconsistent`
 for this example, but exit `0` still means a report was produced. Missing or
 malformed input emits `evidence_error.v1` on stderr, empty stdout, and exit `2`.
-Whole-number count values accept both `1` and `1.0`; fractional values, booleans,
-null, and numeric strings are not converted into counts. Original input bytes and
-their identity remain separate from the normalized count values.
+Whole-number decoded count values accept both `1` and `1.0`; fractional decoded
+values, booleans, null, and numeric strings are not converted into counts. JSON
+floating-point tokens follow the decoder's binary64 precision before count
+validation; this is not exact decimal-literal validation. Original input bytes and
+their identity remain separate from the decoded and normalized count values.
 
 Neither a consistent total nor an empty consistent population establishes a
 planned denominator, actual execution, evaluation quality, or approval. Error
@@ -522,6 +524,13 @@ callers can use `run_goppi_p7_handoff(HandoffRequest(...))` from
 `underwrite.cli.handoff_review` for the same local orchestration and typed envelope.
 
 ## Keep selected evidence in local records
+
+For an existing record, use `records show --root ROOT --id ID --json` to select an
+exact logical name, then `records read-json --root ROOT --id ID --name NAME` to
+retrieve its verified JSON without assembling a filesystem path. Inspect `content`
+for the retained analysis status. This verifies only that selected file against
+its captured manifest; run `records verify` for the whole record and direct links.
+See [read limits and the byte API](STORAGE.md).
 
 For a selected Promptfoo file and an explicit private store, use
 `records audit-promptfoo FILE --root ROOT --id NEW_ID --json`. It captures the

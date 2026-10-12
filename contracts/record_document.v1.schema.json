@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:record_document.v1",
+  "title": "record_document.v1",
+  "description": "Parsed JSON from one verified captured file; identities refer to original bytes. Other files and links are not verified, and provenance is not authenticated.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "record_id",
+    "name",
+    "media_type",
+    "bytes",
+    "sha256",
+    "manifest_digest",
+    "verification_scope",
+    "content_representation",
+    "content"
+  ],
+  "properties": {
+    "schema": {
+      "const": "record_document.v1"
+    },
+    "record_id": {
+      "$ref": "#/$defs/record_id"
+    },
+    "name": {
+      "$ref": "#/$defs/logical_name"
+    },
+    "media_type": {
+      "$ref": "#/$defs/media_type"
+    },
+    "bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1048576
+    },
+    "sha256": {
+      "$ref": "#/$defs/digest"
+    },
+    "manifest_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "verification_scope": {
+      "const": "selected_file_against_manifest"
+    },
+    "content_representation": {
+      "const": "parsed_json"
+    },
+    "content": {
+      "description": "A decoded JSON value admitted by the existing canonical serializer; numeric representation is not exact decimal-literal preservation."
+    }
+  },
+  "$defs": {
+    "record_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 96,
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,95}(?![\\s\\S])"
+    },
+    "logical_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*(?![\\s\\S])"
+    },
+    "media_type": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[\\u0021-\\u007e]+(?![\\s\\S])"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}(?![\\s\\S])"
+    }
+  }
+}
