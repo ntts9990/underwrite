@@ -17,7 +17,7 @@ from typing import Final, NamedTuple, cast
 
 from underwrite_core.canonical import canonical_bytes, digest_bytes
 
-from underwrite._fileio import read_descriptor
+from underwrite._fileio import TransportError, read_descriptor
 from underwrite.service._record_errors import ERROR_SPECS
 from underwrite.service._record_format import (
     MAX_FILE_BYTES,
@@ -190,9 +190,7 @@ def _read_manifest(record_dir: Path, expected_id: str) -> RecordSnapshot:
         _, file_flags = _platform_flags()
         descriptor = os.open(manifest_path, file_flags)
         try:
-            raw = os.read(descriptor, MAX_MANIFEST_BYTES + 1)
-            if os.read(descriptor, 1):
-                raise RecordError("INVALID_RECORD", "/record")
+            raw = read_descriptor(descriptor, MAX_MANIFEST_BYTES)
         finally:
             os.close(descriptor)
         if len(raw) > MAX_MANIFEST_BYTES:
@@ -205,7 +203,7 @@ def _read_manifest(record_dir: Path, expected_id: str) -> RecordSnapshot:
         return RecordSnapshot(manifest, digest_bytes(raw))
     except RecordError:
         raise
-    except (OSError, FormatError):
+    except (OSError, FormatError, TransportError):
         raise RecordError("INVALID_RECORD", "/record") from None
 
 
