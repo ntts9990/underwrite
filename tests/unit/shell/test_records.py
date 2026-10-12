@@ -13,11 +13,29 @@ import pytest
 from jsonschema import Draft202012Validator
 from underwrite_core.canonical import canonical_bytes, digest_bytes
 
-from underwrite.service import records
+from underwrite.service import _record_format, records
 from underwrite.service.records import RecordError
 
 PRIVATE_DIR_MODE = 0o700
 PRIVATE_FILE_MODE = 0o600
+
+
+def test_manifest_decoder_value_error_is_invalid_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    def refuse(*args: object, **kwargs: object) -> object:
+        raise ValueError("decoder resource limit")
+
+    monkeypatch.setattr(_record_format.json, "loads", refuse)
+    with pytest.raises(_record_format.FormatError, match="^INVALID_MANIFEST_JSON$"):
+        _record_format.strict_manifest(b"0")
+
+
+@pytest.mark.parametrize(
+    ("raw", "reason"),
+    [(b'{"x":1,"x":2}', "DUPLICATE_KEY"), (b"NaN", "NONFINITE_NUMBER")],
+)
+def test_manifest_decoder_preserves_owned_errors(raw: bytes, reason: str) -> None:
+    with pytest.raises(_record_format.FormatError, match=f"^{reason}$"):
+        _record_format.strict_manifest(raw)
 
 
 class Validator(Protocol):
