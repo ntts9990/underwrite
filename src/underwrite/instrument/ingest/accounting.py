@@ -1,16 +1,26 @@
-"""Promptfoo accounting adapter over the existing safe, single-buffer case reader."""
+"""Promptfoo accounting over bounded manifest or explicit-file acquisition."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import cast
 
+from underwrite_core.canonical import content_digest
+
 from underwrite.instrument.evidence.accounting import AccountingError, audit_promptfoo
-from underwrite.instrument.ingest.application import DIAGNOSTICS
+from underwrite.instrument.ingest.application import (
+    DEFAULT_MAX_BYTES,
+    DEFAULT_MAX_DEPTH,
+    DIAGNOSTICS,
+    instrument_diagnostic,
+    packaged_ingestor,
+)
 from underwrite.instrument.ingest.inspection import (
     InspectionError,
     inspect_artifact_with_projection,
 )
+from underwrite.instrument.ingest.project import Projection, Source
+from underwrite.instrument.ingest.transport import TransportError, read_local_file
 
 SOURCE = ("promptfoo.eval-output", "0.123.0")
 LIMITATIONS = [
@@ -107,6 +117,16 @@ def audit_case(path: Path) -> dict[str, object]:
             reason, location = trusted
             raise AccountingCaseError("INVALID_INPUT", reason, location)
         raise AccountingCaseError("INVALID_INPUT", "INVALID_ARTIFACT", "/artifact")
+    observation = report["observation"]
+    if not isinstance(observation, dict):
+        raise AccountingCaseError("INTERNAL_ERROR", "INTERNAL_ERROR")
+    observation_digest = cast(dict[str, object], observation).get("digest")
+    return _account_projection(projection, report["raw_hash"], observation_digest, "/artifact")
+
+
+def _account_projection(
+    projection: Projection, raw_hash: object, observation_digest: object, location: str
+) -> dict[str, object]:
     summary = projection.payload.get("results")
     if not isinstance(summary, dict):
         raise AccountingCaseError("INTERNAL_ERROR", "INTERNAL_ERROR")
@@ -116,20 +136,56 @@ def audit_case(path: Path) -> dict[str, object]:
     except AccountingError as exc:
         if str(exc) == "ROW_LIMIT_EXCEEDED":
             raise AccountingCaseError(
-                "COMPUTATION_LIMIT_EXCEEDED", "ROW_LIMIT_EXCEEDED", "/artifact"
+                "COMPUTATION_LIMIT_EXCEEDED", "ROW_LIMIT_EXCEEDED", location
             ) from exc
-        raise AccountingCaseError("INVALID_INPUT", str(exc), "/artifact") from exc
-    observation = report["observation"]
-    if not isinstance(observation, dict):
-        raise AccountingCaseError("INTERNAL_ERROR", "INTERNAL_ERROR")
-    observation_digest = cast(dict[str, object], observation).get("digest")
+        raise AccountingCaseError("INVALID_INPUT", str(exc), location) from exc
     if not isinstance(observation_digest, str):
         raise AccountingCaseError("INTERNAL_ERROR", "INTERNAL_ERROR")
     return {
         "schema": "promptfoo_accounting.v1",
         "source": {"format": SOURCE[0], "format_version": SOURCE[1]},
-        "raw_hash": report["raw_hash"],
+        "raw_hash": raw_hash,
         "observation_digest": observation_digest,
         **counted,
         "limitations": list(LIMITATIONS),
     }
+
+
+def audit_promptfoo_file(path: Path) -> dict[str, object]:
+    """Audit a pinned raw export once; expected-hash checks remain in audit_case."""
+    try:
+        raw = read_local_file(path, DEFAULT_MAX_BYTES)
+    except TransportError as exc:
+        reason = str(exc)
+        if reason == "BYTE_LIMIT_EXCEEDED":
+            code = "INPUT_LIMIT_EXCEEDED"
+        elif reason == "UNSUPPORTED_PLATFORM":
+            code = "UNSUPPORTED_PLATFORM"
+        else:
+            code = "SOURCE_READ_FAILED"
+            if reason != "SOURCE_NOT_REGULAR_FILE":
+                reason = "SOURCE_READ_FAILED"
+        raise AccountingCaseError(code, reason, "/file") from None
+    try:
+        observed, projection = packaged_ingestor(
+            max_bytes=DEFAULT_MAX_BYTES, max_depth=DEFAULT_MAX_DEPTH
+        ).buffered_projection(raw, "promptfoo-file", Source(*SOURCE, None))
+    except tuple(DIAGNOSTICS) as exc:
+        diagnostic = instrument_diagnostic(exc, "ingest")
+        code = cast(str, diagnostic["code"])
+        if code not in {
+            "SOURCE_READ_FAILED",
+            "INPUT_LIMIT_EXCEEDED",
+            "UNSUPPORTED_FORMAT",
+            "SCHEMA_CONFIGURATION_ERROR",
+        }:
+            code = "INVALID_INPUT"
+        location = "" if code == "SCHEMA_CONFIGURATION_ERROR" else "/file"
+        raise AccountingCaseError(code, cast(str, diagnostic["reason"]), location) from None
+    observation = observed.observation
+    return _account_projection(
+        projection,
+        cast(dict[str, object], observation["raw"])["hash"],
+        content_digest(observation),
+        "/file",
+    )

@@ -159,6 +159,7 @@ cat output/malformed.stderr
 
 | 명령 | 용도 |
 | --- | --- |
+| `audit-promptfoo FILE --json` | Promptfoo 0.123.0 원본 파일의 선언 집계와 결과 행을 비교합니다. |
 | `inspect CASE.json --json` | 로컬 아티팩트 매니페스트와 투영 결과를 검사합니다. |
 | `check RELEASE.json --json` | 릴리스 매니페스트에 선언된 근거 연결과 기록 존재 여부를 검사합니다. |
 | `absence --root DIR --glob '*.json' --min 1 --json` | 모집단이 비어 있지 않은지 검사합니다. |

@@ -173,6 +173,17 @@ def _promptfoo_numeric_pilot(
         work / "promptfoo-integral-audit.json",
         work,
     )
+    _cli_json(
+        cli,
+        ["audit-promptfoo", str(source)],
+        work / "promptfoo-integral-direct.json",
+        work,
+    )
+    _require(
+        (work / "promptfoo-integral-direct.json").read_bytes()
+        == (work / "promptfoo-integral-audit.json").read_bytes(),
+        "raw and manifest canonical output differs",
+    )
     for key in baseline:
         if key in {"raw_hash", "observation_digest"}:
             _require(audited[key] != baseline[key], "different raw sources lost their identity")

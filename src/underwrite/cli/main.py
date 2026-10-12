@@ -12,6 +12,7 @@ from underwrite.cli import (
     audit_counts,
     audit_deepeval,
     audit_langfuse,
+    audit_promptfoo,
     audit_run,
     boundary,
     capabilities,
@@ -29,6 +30,7 @@ from underwrite.cli import (
 )
 from underwrite.cli.capabilities import CommandDescriptor, Handler, profile
 from underwrite.instrument.evidence.langfuse_accounting import RULE_PROFILE as LANGFUSE_RULE_PROFILE
+from underwrite.instrument.ingest.accounting import SOURCE as PROMPTFOO_SOURCE
 from underwrite.instrument.ingest.deepeval_accounting import SOURCE as DEEPEVAL_SOURCE
 
 Standalone = Callable[[list[str]], int]
@@ -157,6 +159,13 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
         audit_deepeval.configure,
         (profile("|".join(DEEPEVAL_SOURCE), ("file",), (), ("deepeval_accounting.v1",)),),
         _standalone(audit_deepeval.main),
+    ),
+    CommandDescriptor(
+        "audit-promptfoo",
+        "Audit Promptfoo counts directly from a local export.",
+        audit_promptfoo.configure,
+        (profile("|".join(PROMPTFOO_SOURCE), ("file",), (), ("promptfoo_accounting.v1",)),),
+        _standalone(audit_promptfoo.main),
     ),
     CommandDescriptor(
         "audit-counts",
