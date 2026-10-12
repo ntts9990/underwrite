@@ -349,7 +349,7 @@ def _handoff_pilot(cli: Path, work: Path) -> None:
     _require(not refused_store.exists(), "oversized capture mutated store")
 
 
-def _normalization_pilot(cli: Path, work: Path) -> None:
+def _deepeval_pilot(cli: Path, work: Path) -> None:
     source = work / "normalization-source.json"
     source.write_text(
         json.dumps(
@@ -360,7 +360,13 @@ def _normalization_pilot(cli: Path, work: Path) -> None:
                         "input": "local",
                         "success": False,
                         "metricsData": [
-                            {"name": "example", "threshold": 0.5, "success": False, "score": -0.0}
+                            {"name": "example", "threshold": 0.5, "success": False, "score": -0.0},
+                            {
+                                "name": "evaluator",
+                                "threshold": 0.5,
+                                "success": False,
+                                "error": "synthetic error",
+                            },
                         ],
                     }
                 ]
@@ -405,6 +411,24 @@ def _normalization_pilot(cli: Path, work: Path) -> None:
         "normalization merged boolean, score, or field absence",
     )
 
+    accounting = _cli_json(
+        cli,
+        ["audit-deepeval", str(source)],
+        work / "deepeval-accounting.json",
+        work,
+    )
+    counts = cast(dict[str, dict[str, int]], accounting["counts"])
+    _require(
+        counts["metrics"]["scored"] == counts["metrics"]["error"] == 1,
+        "installed accounting conflated score and evaluator error",
+    )
+    rows = cast(list[dict[str, object]], accounting["cases"])
+    error_metric = cast(list[dict[str, object]], rows[0]["metrics"])[1]
+    _require(
+        error_metric["state"] == "error" and "score" not in error_metric,
+        "installed accounting invented a score for an error",
+    )
+
 
 def _smoke(dist: Path) -> None:
     core_wheel, app_wheel = _wheels(dist)
@@ -420,7 +444,7 @@ def _smoke(dist: Path) -> None:
         _evidence_pilots(cli, fixtures, work)
         _record_pilots(cli, fixtures, work)
         _handoff_pilot(cli, work)
-        _normalization_pilot(cli, work)
+        _deepeval_pilot(cli, work)
 
         observation = work / "observation.json"
         observed = _cli_json(

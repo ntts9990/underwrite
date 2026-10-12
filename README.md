@@ -163,6 +163,7 @@ uses `ingest`, `measure`, and `accept`; these commands provide additional checks
 
 | Command | Purpose |
 | --- | --- |
+| `audit-deepeval FILE --json` | Account for DeepEval 4.1.1 case flags, scores, evaluator errors, and unscored metrics. |
 | `inspect CASE.json --json` | Inspect a local artifact manifest and its projection. |
 | `check RELEASE.json --json` | Check a release manifest's declared evidence linkage and record presence. |
 | `absence --root DIR --glob '*.json' --min 1 --json` | Require a nonempty population. |

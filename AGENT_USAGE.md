@@ -158,6 +158,35 @@ promptfoo grading score is not a calibrated probability; do not copy it into a
 native bundle's prediction field or report a measured pass. Ask for a suitable
 native evidence bundle and an explicit policy when measurement is needed.
 
+## Account for DeepEval scores and evaluator errors
+
+For a completed DeepEval 4.1.1 TestRun JSON, use one command without a manifest:
+
+```sh
+underwrite audit-deepeval /path/to/test_run.json --json
+```
+
+The `deepeval_accounting.v1` report applies deterministic field-presence rules:
+`score` means `scored`, `error` means `error`, and neither means `unscored`.
+Both fields together, invalid types, and unsupported nonempty conversational or
+trace branches are refused. Case and metric indices locate each source occurrence;
+duplicate names do not merge records. `rule_profile` and `applied_rule` identify
+the rules used. `raw_hash` identifies the original file, and `observation_digest`
+binds its common normalized observation. The command selects a pinned profile;
+it cannot authenticate the producer version of an unversioned input file.
+
+Source case flags and metric flags remain separate from scores. A numeric zero
+is not automatically a task failure; an evaluator error has no invented score.
+Mixed cases retain both scored and errored metrics. Absent case flags and declared
+counts remain explicit; passed/failed declarations are compared independently.
+Metric aggregate summaries are not checked, and planned inventory stays unknown.
+The report does not infer why a case failed, a measured effect, or approval.
+
+Exit 0 means descriptive accounting completed, even when evaluator errors or
+count disagreements exist. Invalid input, unsupported scope, or resource refusal
+produces `evidence_error.v1` on stderr with exit 2 and no report on stdout. Normal
+operation needs no producer execution, model call, server, or custom query code.
+
 ## Source-checkout pilot: audit Promptfoo counts
 
 The pilot commands documented here are available in this development checkout and

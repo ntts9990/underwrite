@@ -10,6 +10,7 @@ from pathlib import Path
 from underwrite.cli import (
     accept,
     audit_counts,
+    audit_deepeval,
     audit_run,
     boundary,
     capabilities,
@@ -26,6 +27,7 @@ from underwrite.cli import (
     review_pair,
 )
 from underwrite.cli.capabilities import CommandDescriptor, Handler, profile
+from underwrite.instrument.ingest.deepeval_accounting import SOURCE as DEEPEVAL_SOURCE
 
 Standalone = Callable[[list[str]], int]
 
@@ -132,6 +134,13 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
             ),
         ),
         _standalone(audit_run.main),
+    ),
+    CommandDescriptor(
+        "audit-deepeval",
+        "Distinguish scores, evaluator errors, and unscored DeepEval metrics.",
+        audit_deepeval.configure,
+        (profile("|".join(DEEPEVAL_SOURCE), ("file",), (), ("deepeval_accounting.v1",)),),
+        _standalone(audit_deepeval.main),
     ),
     CommandDescriptor(
         "audit-counts",
