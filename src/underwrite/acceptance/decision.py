@@ -1,4 +1,6 @@
-"""Bind declared candidate claims and reads into an acceptance decision.
+"""Card: measurement-semantics | Paper: ADR-020 | Stage: semantic-repair.
+
+Bind declared candidate claims and reads into an acceptance decision.
 
 Inputs are bounded and digest-checked. Missing reads remain explicit; unmeasured
 and indeterminate results are never converted into passes. Declared basis and
@@ -11,17 +13,16 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any, Final, Literal, TypeGuard, cast
 
-from underwrite_core.canonical import CanonicalizationError, content_digest
+from underwrite_core.canonical import content_digest
 
 from underwrite.acceptance import claims as cl
 from underwrite.acceptance.classify import (
-    AVAILABILITY,
     BASES,
-    CONSISTENT_READS,
-    VERDICTS,
     classify_evidence,
 )
 from underwrite.acceptance.lifecycle import STATES, LifecycleError, project_lifecycle
+from underwrite.measurement_contract.read import ReadBinding, validate_event_read
+from underwrite.measurement_contract.semantics import ContractError
 
 RefusalCode = Literal[
     "AUTHORITY_FIELD_REFUSED",
@@ -39,7 +40,7 @@ RefusalCode = Literal[
     "INVALID_STATE_FOR_EVALUATION",
 ]
 
-SCHEMA: Final = "acceptance_decision.v1"
+SCHEMA: Final = "acceptance_decision.v2"
 CANDIDATE_SCHEMA: Final = "change_candidate.v1"
 KINDS: Final = ("prompt_version", "retrieval_method", "harness_patch", "model_version")
 AUTHORITY_KEYS: Final = frozenset(
@@ -52,10 +53,9 @@ LIMITATIONS: Final = (
     "reads_trusted_as_supplied",
     "read_not_bound_to_candidate",
     "hard_failures_declared",
-    "escalate_not_decisive",
+    "semantic_digest_binds_declaration_only",
+    "supplied_calculations_not_independently_verified",
 )
-# measurement.availability.LOSS_REASON's values (a sibling pure package; bound by test).
-LOSS_REASONS: Final = frozenset({"required_instrument_missing", "required_instrument_error"})
 # A refusal's next action follows from which input its location points into.
 REFUSAL_ACTIONS: Final = {
     "candidate": "CORRECT_CANDIDATE",
@@ -65,7 +65,6 @@ REFUSAL_ACTIONS: Final = {
 _CANDIDATE_KEYS = frozenset(
     {"schema", "candidate_id", "kind", "basis", "current_state", "claims_digest", "hard_failures"}
 )
-_PANEL_LISTS = ("required_instruments", "available", "missing")
 _ID_RE = re.compile(cl.ID_PATTERN)
 _DIGEST_RE = re.compile(cl.DIGEST_PATTERN)
 # change_candidate.v1 hard_failures items: snake_case pattern plus maxLength 64, as one regex.
@@ -154,107 +153,64 @@ def _claims_refusal(error: cl.ClaimsInputError) -> AcceptanceRefusal:
     """Carry a claims refusal over; its detail is structural except for leaked case ids."""
     if error.code == "SELECTION_LEAKS_CONFIRM":
         return AcceptanceRefusal(error.code, "/claims/selection/case_ids")
-    return AcceptanceRefusal("INVALID_CLAIMS", "/claims" + error.detail.rstrip("/"), error.code)
+    return AcceptanceRefusal("INVALID_CLAIMS", "/claims" + error.detail.rstrip("/"), error.reason)
 
 
-def _read(raw: object, where: str) -> tuple[Mapping[str, Any], str]:
-    """The read (only the fields this layer uses are checked) and its canonical digest."""
-    if not _is_object(raw):
-        raise AcceptanceRefusal("INVALID_READ", where)
-    subject, panel, sources = raw.get("subject"), raw.get("availability"), raw.get("sources")
-    valid = (
-        raw.get("schema") == "read.v1"
-        and _is_object(subject)
-        and isinstance(subject.get("subject_id"), str)
-        and _is_object(subject.get("conditions"))
-        and raw.get("verdict") in VERDICTS
-        and type(raw.get("escalate")) is bool
-        and _is_strings(raw.get("reason_codes"))
-        and _is_object(sources)
-        and isinstance(sources.get("policy"), str)
-        and _is_object(panel)
-        and panel.get("state") in AVAILABILITY
-        and type(panel.get("quorum")) is int
-        and type(panel.get("triggered")) is bool
-        and all(_is_strings(panel.get(key)) for key in _PANEL_LISTS)
-    )
-    _require(valid, "INVALID_READ", where)
+def _read(raw: object, where: str) -> ReadBinding:
+    """Validate the shared read contract without recomputing supplied statistics."""
+    if _is_object(raw) and raw.get("schema") == "read.v1":
+        raise AcceptanceRefusal("INVALID_READ", where, "LEGACY_READ_REQUIRES_MIGRATION")
     try:
-        return raw, content_digest(raw)
-    except CanonicalizationError as error:
-        raise AcceptanceRefusal("INVALID_READ", where) from error
+        return validate_event_read(raw)
+    except ContractError as error:
+        raise AcceptanceRefusal("INVALID_READ", where, error.reason) from error
 
 
-def consistent_availability(read: Mapping[str, Any]) -> bool:
-    """Whether a read's verdict, availability and loss reasons are ones a producer emits.
-
-    The panel is one ``measurement.availability.make_policy`` admits (1 <= quorum <=
-    instruments) and its state follows from the counts exactly as ``assess`` derives it;
-    ``tests/unit/pure/acceptance/test_decision.py`` binds both.
-    """
-    panel = read["availability"]
-    required, available, missing = (panel[key] for key in _PANEL_LISTS)
-    reasons = set(read["reason_codes"])
-    if not missing:
-        state = "full"
-    elif len(available) >= panel["quorum"]:
-        state = "partial"
-    else:
-        state = "below_quorum"
-    return (
-        (read["verdict"], panel["state"]) in CONSISTENT_READS
-        and sorted([*available, *missing]) == sorted(required) == sorted(set(required))
-        and 1 <= panel["quorum"] <= len(required)
-        and panel["state"] == state
-        and panel["triggered"] == (state != "full")
-        and (state != "partial" or read["escalate"] is True)
-        and ("below_quorum" in reasons) == (state == "below_quorum")
-        and (state == "full") == (not reasons & LOSS_REASONS)
-    )
-
-
-def _bind(
-    reads: Sequence[object], basis_claims: Sequence[cl.Claim]
-) -> dict[str, tuple[Mapping[str, Any], str]]:
-    """Claim id -> (read, digest) for every supplied read, or the first binding refusal."""
+def _bind(reads: Sequence[object], basis_claims: Sequence[cl.Claim]) -> dict[str, ReadBinding]:
+    """Bind each validated read to its declared subject, policy and semantics."""
     by_subject = {claim.subject_id: claim for claim in basis_claims}
-    bound: dict[str, tuple[Mapping[str, Any], str]] = {}
+    bound: dict[str, ReadBinding] = {}
     for index, raw in enumerate(reads):
         where = f"/reads/{index}"
-        read, digest = _read(raw, where)
-        claim = by_subject.get(read["subject"]["subject_id"])
+        read = _read(raw, where)
+        claim = by_subject.get(read.subject_id)
         if claim is None:
             raise AcceptanceRefusal("UNEXPECTED_CLAIM", f"{where}/subject/subject_id")
         _require(claim.claim_id not in bound, "DUPLICATE_CLAIM", f"{where}/subject/subject_id")
-        policy = read["sources"]["policy"]
-        _require(policy == claim.policy_digest, "READ_POLICY_MISMATCH", f"{where}/sources/policy")
-        conditions = read["subject"]["conditions"]
-        _require(conditions == {}, "READ_NOT_AGGREGATE", f"{where}/subject/conditions")
         _require(
-            consistent_availability(read),
-            "READ_AVAILABILITY_INCONSISTENT",
-            f"{where}/availability",
+            read.policy_digest == claim.policy_digest,
+            "READ_POLICY_MISMATCH",
+            f"{where}/sources/policy",
         )
-        bound[claim.claim_id] = (read, digest)
+        _require(
+            read.semantic_digest == claim.semantic_digest,
+            "INVALID_READ",
+            f"{where}/semantic_digest",
+            "READ_SEMANTIC_MISMATCH",
+        )
+        bound[claim.claim_id] = read
     return bound
 
 
-def _summary(claim: cl.Claim, bound: Mapping[str, tuple[Mapping[str, Any], str]]) -> dict[str, Any]:
-    entry = bound.get(claim.claim_id)
-    summary = None
-    if entry is not None:
-        read, digest = entry
-        summary = {
-            "digest": digest,
-            "verdict": read["verdict"],
-            "escalate": read["escalate"],
-            "reason_codes": list(read["reason_codes"]),
+def _summary(claim: cl.Claim, bound: Mapping[str, ReadBinding]) -> dict[str, Any]:
+    read = bound.get(claim.claim_id)
+    summary = (
+        None
+        if read is None
+        else {
+            "digest": read.read_digest,
+            "schema": read.schema,
+            "profile": read.profile,
+            "verdict": read.verdict,
+            "reason_codes": list(read.reason_codes),
         }
+    )
     return {
         "claim_id": claim.claim_id,
         "subject_id": claim.subject_id,
         "effect": claim.effect,
         "policy_digest": claim.policy_digest,
+        "semantic_digest": claim.semantic_digest,
         "read": summary,
     }
 
@@ -262,7 +218,7 @@ def _summary(claim: cl.Claim, bound: Mapping[str, tuple[Mapping[str, Any], str]]
 def decide(
     candidate: object, claims: object, reads: Sequence[object], assignment: Mapping[str, str]
 ) -> dict[str, Any]:
-    """The ``acceptance_decision.v1`` for one candidate, or an ``AcceptanceRefusal``.
+    """The ``acceptance_decision.v2`` for one candidate, or an ``AcceptanceRefusal``.
 
     ``assignment`` is the shell's stable split of the claims' selection case ids.
     """
@@ -288,7 +244,7 @@ def decide(
     result = classify_evidence(
         basis,
         [(claim.claim_id, claim.effect) for claim in basis_claims],
-        {key: (read["verdict"], read["availability"]["state"]) for key, (read, _) in bound.items()},
+        {key: (read.verdict, read.availability) for key, read in bound.items()},
         hard_failure=bool(item["hard_failures"]),
     )
     classification, reasons = result.classification, result.reason_codes
@@ -319,7 +275,7 @@ def decide(
         "inputs": {
             "claims_digest": declared.digest,
             "candidate_digest": content_digest(item),
-            "read_digests": sorted(digest for _, digest in bound.values()),
+            "read_digests": sorted(read.read_digest for read in bound.values()),
         },
         # How strong the confirm-leak check was: the author chose the fraction. No confirm
         # count: a decision exists only when it is 0 (SELECTION_LEAKS_CONFIRM otherwise).

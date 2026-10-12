@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:measurement_policy.v3",
+  "title": "measurement_policy.v3",
+  "description": "Closed representation. Shared pure owners additionally enforce semantic and cross-field invariants.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "profile",
+    "semantic_digest",
+    "subject",
+    "scope",
+    "expected_case_ids",
+    "eprocess",
+    "assumptions",
+    "diagnostics"
+  ],
+  "properties": {
+    "schema": {
+      "const": "measurement_policy.v3"
+    },
+    "profile": {
+      "const": "binary-event-directional.v1"
+    },
+    "semantic_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subject_id",
+        "conditions"
+      ],
+      "properties": {
+        "subject_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "\\S"
+        },
+        "conditions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [],
+          "properties": {}
+        }
+      }
+    },
+    "scope": {
+      "const": "aggregate"
+    },
+    "expected_case_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "\\S"
+      },
+      "minItems": 1,
+      "maxItems": 2000,
+      "uniqueItems": true
+    },
+    "eprocess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "p0",
+        "alpha_total",
+        "prior_a",
+        "prior_b",
+        "max_observations"
+      ],
+      "properties": {
+        "p0": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "alpha_total": {
+          "const": 0.05
+        },
+        "prior_a": {
+          "const": 1
+        },
+        "prior_b": {
+          "const": 1
+        },
+        "max_observations": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          ]
+        }
+      }
+    },
+    "assumptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "conditional_mean_model",
+        "parameters_prespecified",
+        "order_prespecified",
+        "outcome_independent_selection"
+      ],
+      "properties": {
+        "conditional_mean_model": {
+          "enum": [
+            "declared",
+            "unknown"
+          ]
+        },
+        "parameters_prespecified": {
+          "enum": [
+            "declared",
+            "unknown"
+          ]
+        },
+        "order_prespecified": {
+          "enum": [
+            "declared",
+            "unknown"
+          ]
+        },
+        "outcome_independent_selection": {
+          "enum": [
+            "declared",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ece_bins",
+        "min_bin_n",
+        "all_k"
+      ],
+      "properties": {
+        "ece_bins": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 128
+        },
+        "min_bin_n": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "all_k": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2000
+        }
+      }
+    }
+  }
+}

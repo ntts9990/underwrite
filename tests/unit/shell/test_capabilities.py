@@ -161,3 +161,14 @@ def test_capabilities_usage_error_is_typed_and_atomic(
     error = json.loads(streams.err)
     _validator("evidence_error.v1").validate(error)
     assert error["code"] == "USAGE_ERROR"
+
+
+def test_native_profiles_advertise_only_current_semantics() -> None:
+    descriptors = {item.command: item for item in main.COMMAND_DESCRIPTORS}
+    measurement = descriptors["measure"].profiles[0]
+    assert measurement.name == "binary-event-directional.v1"
+    assert measurement.input_schemas == ("observation.v1", "measurement_policy.v3")
+    assert measurement.output_schemas == ("read.v2",)
+    acceptance = descriptors["accept"].profiles[0]
+    assert acceptance.input_schemas == ("change_candidate.v1", "declared_claims.v2", "read.v2")
+    assert acceptance.output_schemas == ("acceptance_decision.v2",)

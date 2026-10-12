@@ -764,6 +764,145 @@ def _langfuse_pilot(cli: Path, work: Path) -> None:
             )
 
 
+def _native_refusal(cli: Path, args: list[str], work: Path, code: str, reason: str) -> None:
+    result = _command([str(cli), *args, "--json"], work)
+    _require(
+        result.returncode == EVIDENCE_ERROR_EXIT and result.stdout == "",
+        "native refusal wrote success",
+    )
+    try:
+        error: object = json.loads(result.stderr)
+    except json.JSONDecodeError as exc:
+        raise SmokeFailure("native refusal did not write JSON stderr") from exc
+    _require(isinstance(error, dict), "native refusal was not an object")
+    payload = cast(dict[str, object], error)
+    _require(
+        payload.get("code") == code and payload.get("reason") == reason, "wrong native refusal"
+    )
+
+
+def _native_measurement_pilot(cli: Path, fixtures: Path, work: Path) -> None:
+    source = fixtures / "event-measurement"
+    reads: list[Path] = []
+    for variant, verdict in (("", "pass"), ("failure-", "fail")):
+        observation = work / f"{variant}observation.json"
+        observed = _cli_json(
+            cli,
+            [
+                "ingest",
+                "--format",
+                "underwrite.evidence-bundle",
+                "--version",
+                "v1",
+                "--file",
+                str(source / f"{variant}bundle.json"),
+            ],
+            observation,
+            work,
+        )
+        _require(observed.get("schema") == "observation.v1", "ingest schema mismatch")
+        _require(
+            observed.get("source")
+            == {
+                "format": "underwrite.evidence-bundle",
+                "format_version": "v1",
+            },
+            "ingest source mismatch",
+        )
+        output = work / f"{variant}read.json"
+        read = _cli_json(
+            cli,
+            [
+                "measure",
+                "--observation",
+                str(observation),
+                "--policy",
+                str(fixtures / "event-acceptance/policy.json"),
+            ],
+            output,
+            work,
+        )
+        _require(read.get("schema") == "read.v2", "event read schema mismatch")
+        _require(read.get("verdict") == verdict, "event read direction mismatch")
+        _require("score" not in read and "confidence" not in read, "generic confidence returned")
+        reads.append(output)
+    candidate = fixtures / "event-acceptance/candidate-single.json"
+    claims = fixtures / "event-acceptance/claims.json"
+    for index, classification in enumerate(("screened", "rejected")):
+        decision = _cli_json(
+            cli,
+            [
+                "accept",
+                "--candidate",
+                str(candidate),
+                "--claims",
+                str(claims),
+                "--read",
+                str(reads[index]),
+            ],
+            work / f"accept-{classification}.json",
+            work,
+        )
+        _require(decision.get("schema") == "acceptance_decision.v2", "decision schema mismatch")
+        _require(decision.get("classification") == classification, "classification mismatch")
+        _require(decision.get("human_review") == "required", "human review mismatch")
+        _require(decision.get("merge_authorized") is False, "merge authorization mismatch")
+    _native_refusal(
+        cli,
+        [
+            "measure",
+            "--observation",
+            str(work / "observation.json"),
+            "--policy",
+            str(fixtures / "measurement/policy.json"),
+        ],
+        work,
+        "INVALID_POLICY",
+        "LEGACY_POLICY_REQUIRES_MIGRATION",
+    )
+    _native_refusal(
+        cli,
+        [
+            "accept",
+            "--candidate",
+            str(candidate),
+            "--claims",
+            str(fixtures / "acceptance/claims.json"),
+            "--read",
+            str(reads[0]),
+        ],
+        work,
+        "INVALID_CLAIMS",
+        "LEGACY_CLAIMS_REQUIRES_MIGRATION",
+    )
+    _native_refusal(
+        cli,
+        [
+            "accept",
+            "--candidate",
+            str(candidate),
+            "--claims",
+            str(claims),
+            "--read",
+            str(fixtures / "acceptance/read.json"),
+        ],
+        work,
+        "INVALID_READ",
+        "LEGACY_READ_REQUIRES_MIGRATION",
+    )
+    substituted = json.loads(reads[0].read_bytes())
+    substituted["semantics"]["construct"]["definition"] = "A substituted meaning"
+    altered = work / "substituted-read.json"
+    altered.write_text(json.dumps(substituted), encoding="utf-8")
+    _native_refusal(
+        cli,
+        ["accept", "--candidate", str(candidate), "--claims", str(claims), "--read", str(altered)],
+        work,
+        "INVALID_READ",
+        "SEMANTIC_DIGEST_MISMATCH",
+    )
+
+
 def _smoke(dist: Path) -> None:
     core_wheel, app_wheel = _wheels(dist)
     fixtures = ROOT / "fixtures/examples"
@@ -781,71 +920,7 @@ def _smoke(dist: Path) -> None:
         _deepeval_pilot(cli, work)
         _langfuse_pilot(cli, work)
 
-        observation = work / "observation.json"
-        observed = _cli_json(
-            cli,
-            [
-                "ingest",
-                "--format",
-                "underwrite.evidence-bundle",
-                "--version",
-                "v1",
-                "--file",
-                str(fixtures / "measurement/bundle.json"),
-            ],
-            observation,
-            work,
-        )
-        _require(observed.get("schema") == "observation.v1", "ingest schema mismatch")
-        _require(
-            observed.get("source")
-            == {"format": "underwrite.evidence-bundle", "format_version": "v1"},
-            "ingest source mismatch",
-        )
-
-        reads: list[Path] = []
-        for subject in ("quality", "latency"):
-            output = work / f"read-{subject}.json"
-            read = _cli_json(
-                cli,
-                [
-                    "measure",
-                    "--observation",
-                    str(observation),
-                    "--policy",
-                    str(fixtures / f"acceptance/policy-{subject}.json"),
-                ],
-                output,
-                work,
-            )
-            _require(read.get("schema") == "read.v1", f"{subject} read schema mismatch")
-            _require(
-                read.get("subject") == {"subject_id": f"suite.{subject}", "conditions": {}},
-                f"{subject} read subject mismatch",
-            )
-            _require(read.get("verdict") == "pass", f"{subject} read did not pass")
-            reads.append(output)
-
-        decision = _cli_json(
-            cli,
-            [
-                "accept",
-                "--candidate",
-                str(fixtures / "acceptance/candidate.json"),
-                "--claims",
-                str(fixtures / "acceptance/claims.json"),
-                "--read",
-                str(reads[0]),
-                "--read",
-                str(reads[1]),
-            ],
-            work / "accept.json",
-            work,
-        )
-        _require(decision.get("schema") == "acceptance_decision.v1", "decision schema mismatch")
-        _require(decision.get("classification") == "screened", "classification mismatch")
-        _require(decision.get("human_review") == "required", "human review mismatch")
-        _require(decision.get("merge_authorized") is False, "merge authorization mismatch")
+        _native_measurement_pilot(cli, fixtures, work)
 
         malformed = work / "malformed-bundle.json"
         malformed.write_text(

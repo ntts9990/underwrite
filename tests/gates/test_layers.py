@@ -26,6 +26,7 @@ _PURE_APP_DIRS = {
     "underwrite.instrument.evidence": REPO_ROOT / "src/underwrite/instrument/evidence",
     "underwrite.measurement": REPO_ROOT / "src/underwrite/measurement",
     "underwrite.acceptance": REPO_ROOT / "src/underwrite/acceptance",
+    "underwrite.measurement_contract": REPO_ROOT / "src/underwrite/measurement_contract",
 }
 _PURE_APP_PREFIXES = tuple(_PURE_APP_DIRS.keys())
 _PURE_APP_ALLOWED_PREFIXES = ("underwrite_core", *_PURE_APP_PREFIXES)

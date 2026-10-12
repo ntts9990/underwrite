@@ -14,7 +14,7 @@ from underwrite_core.canonical import digest_bytes
 
 ROOT = repo_root(Path(__file__).resolve())
 EXPORT = ROOT / "fixtures/golden/external/promptfoo/results.json"
-POLICY = ROOT / "fixtures/examples/measurement/policy.json"
+POLICY = ROOT / "fixtures/examples/event-measurement/policy.json"
 MEASURE_ERROR_EXIT = 2
 
 

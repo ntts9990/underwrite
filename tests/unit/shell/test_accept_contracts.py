@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Protocol, cast, get_args
 
 import pytest
+from _event_acceptance import SEMANTIC_DIGEST, event_read
 from _repo_paths import repo_root
 from jsonschema import Draft202012Validator
 
@@ -17,13 +18,12 @@ from underwrite.acceptance import classify as cf
 from underwrite.acceptance import decision as dc
 from underwrite.acceptance.lifecycle import STATES
 from underwrite.instrument.ingest.schema import packaged_validator
-from underwrite.measurement.read import assemble_read
 
 ROOT = repo_root(Path(__file__).resolve())
 NAMES = (
-    "declared_claims.v1",
+    "declared_claims.v2",
     "change_candidate.v1",
-    "acceptance_decision.v1",
+    "acceptance_decision.v2",
     "acceptance_error.v1",
 )
 FIXTURES = ROOT / "fixtures/examples/measurement"
@@ -60,16 +60,18 @@ def claims_document() -> dict[str, Any]:
             "subject_id": "suite.quality",
             "effect": "disqualifying",
             "policy_digest": DIGEST,
+            "semantic_digest": SEMANTIC_DIGEST,
         },
         {
             "claim_id": "latency",
             "subject_id": "suite.latency",
             "effect": "validity",
             "policy_digest": DIGEST,
+            "semantic_digest": SEMANTIC_DIGEST,
         },
     ]
     return {
-        "schema": "declared_claims.v1",
+        "schema": "declared_claims.v2",
         "candidate_id": "prompt-v2",
         "required_claims": {basis: copy.deepcopy(entries) for basis in cf.BASES},
         "selection": {"salt": "author-salt", "confirm_fraction": 0.25, "case_ids": ["c1"]},
@@ -90,16 +92,12 @@ def candidate_document(**changes: Any) -> dict[str, Any]:
 
 
 def produced_reads() -> list[dict[str, Any]]:
-    """Real read.v1 documents at full, partial and below-quorum availability."""
-    observation = json.loads((FIXTURES / "read-input.json").read_text())
-    policy = json.loads((FIXTURES / "policy.json").read_text())
-    reads: list[dict[str, Any]] = []
-    for quorum, extra in ((1, []), (1, ["inspect"]), (2, ["inspect"])):
-        variant = {**policy, "quorum": quorum, "required_instruments": ["deepeval", *extra]}
-        reads.append(
-            assemble_read(observation, variant, observation_digest=DIGEST, policy_digest=DIGEST)
-        )
-    return reads
+    """Real event reads across outcome availability states."""
+    return [
+        event_read("synthetic", "pass"),
+        event_read("synthetic", "not_measured", "partial"),
+        event_read("synthetic", "not_measured", "below_quorum"),
+    ]
 
 
 def decisions() -> list[dict[str, Any]]:
@@ -136,7 +134,7 @@ def test_contract_is_a_self_contained_packaged_schema(name: str) -> None:
 
 
 def test_claims_contract_restates_its_owners() -> None:
-    claims, read = schema("declared_claims.v1"), schema("read.v1")
+    claims, read = schema("declared_claims.v2"), schema("read.v1")
     subject = read["$defs"]["subject"]["properties"]["subject_id"]
     identifier = claims["$defs"]["id"]
     assert (identifier["pattern"], identifier["minLength"]) == (
@@ -168,7 +166,7 @@ def test_candidate_contract_restates_its_owners() -> None:
 
 
 def test_decision_contract_restates_its_owners() -> None:
-    decision = schema("acceptance_decision.v1")
+    decision = schema("acceptance_decision.v2")
     properties, defs = decision["properties"], decision["$defs"]
     assert tuple(properties["classification"]["enum"]) == cf.CLASSIFICATIONS
     assert tuple(properties["reason_codes"]["items"]["enum"]) == cf.REASON_CODES
@@ -183,11 +181,13 @@ def test_decision_contract_restates_its_owners() -> None:
     assert limitations["items"]["enum"] == [*dc.LIMITATIONS, cf.PARTIAL_FAIL]
     assert [rule["contains"]["const"] for rule in limitations["allOf"]] == list(dc.LIMITATIONS)
     selection = properties["selection"]["properties"]
-    declared = schema("declared_claims.v1")["properties"]["selection"]["properties"]
+    declared = schema("declared_claims.v2")["properties"]["selection"]["properties"]
     assert selection["confirm_fraction"] == declared["confirm_fraction"]
     assert selection["case_count"]["maximum"] == declared["case_ids"]["maxItems"]
     assert "selection" in decision["required"]
-    read_reasons = schema("read.v1")["$defs"]["reason_codes"]["items"]["enum"]
+    from underwrite.measurement_contract.semantics import DECISION_REASONS
+
+    read_reasons = list(DECISION_REASONS)
     assert defs["read_reason_codes"]["items"]["enum"] == read_reasons
     assert defs["id"]["pattern"] == cl.ID_PATTERN
     assert (
@@ -202,7 +202,7 @@ def test_decision_contract_restates_its_owners() -> None:
 
 
 def test_every_emitted_decision_validates() -> None:
-    check = validator("acceptance_decision.v1")
+    check = validator("acceptance_decision.v2")
     found = decisions()
     assert {d["classification"] for d in found} == set(cf.CLASSIFICATIONS)
     for decision in found:
@@ -228,14 +228,14 @@ def test_decision_contract_refuses_authority_and_dropped_limitations(
     path: str, value: object
 ) -> None:
     decision = decisions()[0]
-    assert valid("acceptance_decision.v1", decision)
-    assert not valid("acceptance_decision.v1", {**decision, path: value})
+    assert valid("acceptance_decision.v2", decision)
+    assert not valid("acceptance_decision.v2", {**decision, path: value})
 
 
 def test_decision_contract_requires_the_selection_summary() -> None:
     decision = decisions()[0]
     del decision["selection"]
-    assert not valid("acceptance_decision.v1", decision)
+    assert not valid("acceptance_decision.v2", decision)
 
 
 def test_not_measured_summary_needs_a_reason() -> None:
@@ -248,18 +248,24 @@ def test_not_measured_summary_needs_a_reason() -> None:
     for claim in broken["claims"]:
         if claim["read"] and claim["read"]["verdict"] == "not_measured":
             claim["read"]["reason_codes"] = []
-    assert valid("acceptance_decision.v1", decision) and not valid("acceptance_decision.v1", broken)
+    assert valid("acceptance_decision.v2", decision) and not valid("acceptance_decision.v2", broken)
 
 
 def test_documents_the_pure_layer_accepts_validate() -> None:
-    assert valid("declared_claims.v1", claims_document())
+    assert valid("declared_claims.v2", claims_document())
     assert valid("change_candidate.v1", candidate_document())
     over = claims_document()
     over["required_claims"]["held_in"] = [
-        {"claim_id": f"c{i}", "subject_id": f"s{i}", "effect": "validity", "policy_digest": DIGEST}
+        {
+            "claim_id": f"c{i}",
+            "subject_id": f"s{i}",
+            "effect": "validity",
+            "policy_digest": DIGEST,
+            "semantic_digest": SEMANTIC_DIGEST,
+        }
         for i in range(cl.MAX_CLAIMS_PER_BASIS + 1)
     ]
-    assert not valid("declared_claims.v1", over)
+    assert not valid("declared_claims.v2", over)
     with pytest.raises(cl.ClaimsInputError):
         cl.parse_claims(over)
 

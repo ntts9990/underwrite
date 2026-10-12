@@ -95,3 +95,35 @@ def test_cli_output_failures_are_not_written_as_evidence(
             tmp_path / "underwrite", ["ingest"], output, tmp_path
         )
     assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    "returncode,stdout,payload",
+    [
+        (0, "", {"code": "INVALID_READ", "reason": "SEMANTIC_DIGEST_MISMATCH"}),
+        (2, "partial", {"code": "INVALID_READ", "reason": "SEMANTIC_DIGEST_MISMATCH"}),
+        (2, "", {"code": "INVALID_READ", "reason": "OTHER"}),
+        (2, "", []),
+    ],
+)
+def test_native_refusal_gate_rejects_wrong_exit_output_or_reason(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    returncode: int,
+    stdout: str,
+    payload: object,
+) -> None:
+    def response(
+        args: list[str], cwd: Path, *, project_environment: Path | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args, returncode, stdout, json.dumps(payload))
+
+    monkeypatch.setattr(smoke_wheels, "_command", response)
+    with pytest.raises(smoke_wheels.SmokeFailure):
+        smoke_wheels._native_refusal(  # pyright: ignore[reportPrivateUsage]
+            tmp_path / "cli",
+            ["accept"],
+            tmp_path,
+            "INVALID_READ",
+            "SEMANTIC_DIGEST_MISMATCH",
+        )

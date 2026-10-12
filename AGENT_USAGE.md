@@ -96,13 +96,63 @@ implicitly a calibrated probability or a permission to merge.
 ## Complete native workflow
 
 The [README quickstart](README.md#quickstart) runs `ingest` → `measure` → `accept`
-with the included native evidence bundle, two explicit policies, and declared
+with the included synthetic native evidence bundle, an explicit event policy, and declared
 candidate claims. Keep each JSON result as an artifact. `measure` produces a
-`read.v1`; supply a `--read` for each required claim you intend to evaluate.
+`read.v2`; supply a `--read` for each required claim you intend to evaluate.
 Missing required claims remain explicit in the acceptance decision. A command
 exiting `0` means it produced an output, not that it
 approved a change. Acceptance always requires human review and sets
 `merge_authorized` to `false`.
+
+## Measurement meaning and migration
+
+The current native path uses `measurement_policy.v3`, profile
+`binary-event-directional.v1`, `read.v2`, `declared_claims.v2`, and
+`acceptance_decision.v2`. Package versions remain `0.0.1`; use this checkout or
+matching development wheels, not the older published packages.
+
+The native bundle declares `payload.measurement_semantics` (`measurement_semantics.v1`):
+the construct, binary event and positive meaning, desirable direction, unit,
+outcome metric, rubric/label source, sampling frame, and prediction role. The
+policy binds its semantic digest and an ordered expected-case inventory. Claim
+bindings include subject, policy digest and semantic digest. A display name alone
+cannot turn relevance into latency. Digests bind declarations, not their truth.
+
+| Output | Meaning and limits |
+| --- | --- |
+| `population` | Coverage of the explicit expected inventory, including cases absent from every observed stream. Unknown prediction availability has null counts, not an invented zero. |
+| `directional` / `decision` | Separate upper and lower evidence around the declared event-rate reference `p0`. The desired direction determines favorable versus unfavorable; no crossing is inconclusive. |
+| `diagnostics.event_rate` | Observed positive outcomes divided by observed expected-case outcomes; it describes that subset, not a representative population estimate. |
+| Brier / ECE | Diagnostics for declared probabilities of the same event, declared before its outcome. A bounded grading score is not automatically a probability. Missing pairs or unknown forecast timing withhold calibration. |
+| `all_k_success` | `C(c,k)/C(n,k)`: probability that all cases in a uniformly selected size-k subset have a positive event label. Positive is not necessarily desirable (for example, an incident with direction `lower`). This is neither at-least-one pass@k nor per-task repeat reliability. Incomplete expected outcomes withhold its value. |
+
+Directional inference requires complete expected outcomes and declared conditional
+mean, prespecification, ordering and outcome-independent selection assumptions.
+Otherwise wealth is withheld and the verdict is `not_measured`. Assumptions,
+label truth and sampling representativeness are not independently verified.
+The aggregate profile allocates total alpha 0.05 across two sides (0.025 each,
+threshold 40). Its crossing control is conditional on those assumptions, not a
+posterior correctness probability; it gives no cross-run multiplicity control.
+`pass` means favorable directional evidence for the declared event and reference,
+not validated general quality. Calibration never votes on that verdict. No
+heuristic confidence score, jury weight or calibration threshold substitutes for
+directional evidence.
+
+The quickstart's eight synthetic outcomes all succeed while forecasts are
+deliberately imperfect. `fixtures/examples/event-measurement/failure-bundle.json`
+instead has all failures with perfect zero forecasts: measurement returns `fail`,
+and the quickstart candidate is rejected when supplied that read. These are
+constructed regression controls, not empirical validity or real-user evidence.
+The secondary event in `fixtures/examples/event-acceptance` has a distinct meaning;
+the candidate selection-history inventory is separate from the measurement inventory.
+
+Historical `measurement_policy.v1/v2`, `read.v1`, `declared_claims.v1`, and their
+examples remain available for inspection/reproduction. Current `measure` and
+`accept` explicitly refuse them. Do not change a schema label or reuse a legacy
+verdict: obtain the actual event/label/forecast declarations and expected cases,
+bind a new policy, remeasure, and reseal claims for the new reads. A supplied
+read's structural/binding validation neither recomputes its statistics nor
+authenticates its producer. Preserve source artifacts and inspect limitations.
 
 ## Local promptfoo export: ingest, then stop at the measurement boundary
 
@@ -143,7 +193,7 @@ uv run --frozen --no-sync underwrite ingest \
 
 uv run --frozen --no-sync underwrite measure \
   --observation output/promptfoo-observation.json \
-  --policy fixtures/examples/measurement/policy.json --json \
+  --policy fixtures/examples/event-measurement/policy.json --json \
   > output/promptfoo-read.json 2> output/promptfoo-measure-error.json
 ```
 
@@ -483,7 +533,7 @@ are unreleased: older strict validators may reject reason-bearing outputs, so
 use the matching contracts from the same checkout or built wheel.
 
 A nonsignificant p-value does not establish equivalence. None of these three
-pilot reports is a `read.v1`, an acceptance decision, or merge authorization; do
+pilot reports is a `read.v2`, an acceptance decision, or merge authorization; do
 not supply them to `accept`. Report computation returns exit `0` even for
 `inconsistent`, `different`, `unknown`, or `not_measured`. Invalid inputs and
 resource-limit failures return exit `2` with only `evidence_error.v1` on stderr.
@@ -523,7 +573,7 @@ independent cases. There are no pooled outcome counts or rates across groups.
 
 `binary_run_audit.v1` on stdout with exit 0 means accounting completed. Invalid
 inputs produce `evidence_error.v1` on stderr with exit 2. Neither result is a
-`read.v1` or a replacement for `pair-binary` when actual paired evidence exists.
+`read.v2` or a replacement for `pair-binary` when actual paired evidence exists.
 
 ## Review a completed paired handoff in one call
 
@@ -600,8 +650,10 @@ claims. Retain those distinctions when reporting a saved record to the user.
 ## Read the envelopes
 
 Check `schema` before interpreting JSON. An `observation.v1` records normalized
-source content and byte identity. A `read.v1` carries `verdict`, `reason_codes`,
-`availability`, and the observation and policy digests in `sources`. An
+source content and byte identity. A `read.v2` carries `verdict`, `reason_codes`,
+population coverage, directional evidence, and the observation and policy digests
+in `sources`. Its `semantic_digest` binds declared meaning; diagnostics remain
+separate from `decision`. An
 `instrument_error.v1`, `measurement_error.v1`, or `acceptance_error.v1` means
 that command produced no observation, read, or decision, respectively. Use its
 `code` and `reason` to correct the input; measurement and acceptance errors also
@@ -615,9 +667,10 @@ The normalized observation is not a byte-for-byte round trip of the original
 export. Its `raw.hash` identifies the original bytes but cannot reconstruct them;
 retain the original input file for byte-exact audits or replay.
 
-An `acceptance_decision.v1` carries `classification`, `reason_codes`,
-`limitations`, and the projected lifecycle state. Keep `not_measured` (no
-measurement) distinct from `indeterminate` (acceptance cannot settle the
+An `acceptance_decision.v2` carries `classification`, `reason_codes`,
+`limitations`, and the projected lifecycle state. Keep the read verdict
+`not_measured` (directional conclusion withheld; some diagnostics may still be
+measured) distinct from `indeterminate` (acceptance cannot settle the
 candidate). Neither grants approval.
 
 ## Task prompt for a coding agent
@@ -639,5 +692,5 @@ Report the output schema, relevant result, evidence limits, missing inputs, and
 artifact paths. Keep source claims separate from consumer checks and measurements.
 A command's completion, matching digest, matching declarations, or nonsignificant
 result is not provenance, equivalence, or permission to merge. A pilot report is
-not a read.v1. Stop an unsupported path and report its typed error and next action.
+not a read.v2. Stop an unsupported path and report its typed error and next action.
 ```

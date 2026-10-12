@@ -15,7 +15,7 @@ from underwrite_core.canonical import canonical_bytes, tagged_digest
 from underwrite.acceptance import claims as cl
 from underwrite.acceptance.claims import ClaimsInputError, parse_claims
 from underwrite.instrument.evidence.split import assign_split
-from underwrite.measurement import read_input
+from underwrite.measurement_contract.semantics import MAX_CASES
 
 ROOT = repo_root(Path(__file__))
 POLICY_A = "sha256:" + "a" * 64
@@ -28,6 +28,7 @@ def _claim(claim_id: str, subject_id: str, effect: str = "validity") -> dict[str
         "subject_id": subject_id,
         "effect": effect,
         "policy_digest": POLICY_A,
+        "semantic_digest": POLICY_A,
     }
 
 
@@ -37,7 +38,7 @@ def _document() -> dict[str, Any]:
         _claim("latency", "suite.latency"),
     ]
     return {
-        "schema": "declared_claims.v1",
+        "schema": "declared_claims.v2",
         "candidate_id": "prompt-v2",
         "required_claims": {
             "same_batch": copy.deepcopy(pair),
@@ -94,6 +95,7 @@ CHANGES = [
     (("required_claims", "held_in", 1, "subject_id"), "suite.other"),
     (("required_claims", "held_out", 0, "effect"), "validity"),
     (("required_claims", "held_out", 1, "policy_digest"), POLICY_B),
+    (("required_claims", "held_out", 1, "semantic_digest"), POLICY_B),
     (("selection", "salt"), "other-salt"),
     (("selection", "confirm_fraction"), 0.5),
     (("selection", "case_ids"), ["c1", "c3"]),
@@ -125,7 +127,7 @@ REQ = "/required_claims"
 REFUSALS: list[tuple[str, object, str, str]] = [
     ("not an object", [], "INVALID_CLAIMS", "/"),
     ("unknown top-level key", _set(("threshold",), 0.9), "INVALID_CLAIMS", "/"),
-    ("wrong schema", _set(("schema",), "declared_claims.v2"), "INVALID_CLAIMS", "/schema"),
+    ("wrong schema", _set(("schema",), "declared_claims.v1"), "INVALID_CLAIMS", "/schema"),
     ("missing candidate", _without("candidate_id"), "INVALID_CLAIMS", "/candidate_id"),
     ("bad candidate id", _set(("candidate_id",), "has space"), "INVALID_CLAIMS", "/candidate_id"),
     ("claims not an object", _set(("required_claims",), []), "INVALID_CLAIMS", REQ),
@@ -248,7 +250,7 @@ def test_basis_accepts_one_to_the_maximum_claims(count: int) -> None:
 
 
 def test_selection_bound_is_the_largest_population_one_basis_can_measure() -> None:
-    assert cl.MAX_SELECTION_CASES == cl.MAX_CLAIMS_PER_BASIS * read_input.MAX_CASES
+    assert cl.MAX_SELECTION_CASES == cl.MAX_CLAIMS_PER_BASIS * MAX_CASES
 
 
 @pytest.mark.parametrize("count", [1, cl.MAX_SELECTION_CASES])
@@ -332,3 +334,21 @@ def test_claims_for_an_unknown_basis_are_refused() -> None:
 def test_limitations_name_the_unverified_preconditions() -> None:
     assert cl.LIMITATIONS == ("claims_sealing_is_digest_binding", "split_parameters_author_chosen")
     assert all(re.fullmatch(r"[a-z][a-z0-9_]*", code) for code in cl.LIMITATIONS)
+
+
+def test_legacy_claims_require_explicit_migration() -> None:
+    document = _document()
+    document["schema"] = "declared_claims.v1"
+    with pytest.raises(ClaimsInputError) as caught:
+        parse_claims(document)
+    assert caught.value.reason == "LEGACY_CLAIMS_REQUIRES_MIGRATION"
+
+
+@pytest.mark.parametrize("value", [None, "", "sha256:" + "A" * 64, "sha256:" + "a" * 63])
+def test_claim_semantic_digest_is_required_and_canonical(value: object) -> None:
+    document = _document()
+    document["required_claims"]["same_batch"][0]["semantic_digest"] = value
+    with pytest.raises(ClaimsInputError) as caught:
+        parse_claims(document)
+    assert caught.value.code == "INVALID_CLAIMS"
+    assert caught.value.detail == "/required_claims/same_batch/0/semantic_digest"

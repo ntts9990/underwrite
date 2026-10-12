@@ -22,8 +22,13 @@ from underwrite.instrument.ingest.schema import (
     packaged_validator,
 )
 from underwrite.instrument.ingest.transport import decode_json
-from underwrite.measurement.read import assemble_read
+from underwrite.measurement.event_read import (
+    EVENT_READ_REASONS,
+    EventReadError,
+    assemble_event_read,
+)
 from underwrite.measurement.read_input import READ_INPUT_REASONS, ReadInputError
+from underwrite.measurement_contract.semantics import PROFILE
 
 OBSERVATION_MAX_BYTES = 4 * 1024 * 1024
 OBSERVATION_MAX_DEPTH = 64
@@ -75,7 +80,7 @@ def configure(parser: argparse.ArgumentParser) -> None:
         "--policy",
         required=True,
         type=Path,
-        help="Profile binary-calibration-two-stage.v1 in complete measurement_policy.v2.",
+        help="Profile binary-event-directional.v1 in complete measurement_policy.v3.",
     )
     parser.add_argument("--json", action="store_true", help="Canonical read on stdout.")
     parser.description = (
@@ -142,7 +147,7 @@ def _subject_fragment(read: dict[str, Any]) -> dict[str, Any]:
     return cast("dict[str, Any]", subject)
 
 
-def measurement_validators() -> tuple[Validator, Validator]:
+def legacy_measurement_validators() -> tuple[Validator, Validator]:
     """Localize only fixed trusted seed/subject positions; never fetch a URI."""
     try:
         assets: dict[str, dict[str, Any]] = {}
@@ -176,6 +181,11 @@ def measurement_validators() -> tuple[Validator, Validator]:
         raise SchemaConfigurationError("INVALID_MEASUREMENT_SCHEMA") from exc
 
 
+def measurement_validators() -> tuple[Validator, Validator]:
+    """Current closed contracts from trusted package assets; never resolve source URIs."""
+    return packaged_validator("read.v2"), packaged_validator("measurement_policy.v3")
+
+
 def _read(args: argparse.Namespace) -> dict[str, Any]:
     observation, observation_digest = read_document(
         args.observation,
@@ -201,15 +211,12 @@ def _read(args: argparse.Namespace) -> dict[str, Any]:
         "INVALID_OBSERVATION",
         "/observation",
     )
-    if policy.get("schema") == "measurement_policy.v1":
-        raise MeasurementError("INVALID_POLICY", "COMPLETE_V2_POLICY_REQUIRED", "/policy")
-    if (
-        policy.get("schema") != "measurement_policy.v2"
-        or policy.get("profile") != "binary-calibration-two-stage.v1"
-    ):
+    if policy.get("schema") in {"measurement_policy.v1", "measurement_policy.v2"}:
+        raise MeasurementError("INVALID_POLICY", "LEGACY_POLICY_REQUIRES_MIGRATION", "/policy")
+    if policy.get("schema") != "measurement_policy.v3" or policy.get("profile") != PROFILE:
         raise MeasurementError("UNSUPPORTED_PROFILE", "UNSUPPORTED_POLICY_PROFILE", "/policy")
     validate(policy_validator, policy, MeasurementError, "INVALID_POLICY", "/policy")
-    result = assemble_read(
+    result = assemble_event_read(
         observation, policy, observation_digest=observation_digest, policy_digest=policy_digest
     )
     validate(read_validator, result, MeasurementError, "INTERNAL_ERROR")
@@ -226,16 +233,14 @@ def _human(read: dict[str, Any]) -> str:
     lines = ["Measurement completed; exit 0 is not approval. Source claims remain unverified."]
     for key in (
         "subject",
+        "semantic_digest",
         "verdict",
-        "score",
-        "escalate",
+        "decision",
         "reason_codes",
-        "availability",
-        "signals",
-        "eprocess",
-        "jury",
-        "calibration",
-        "strata",
+        "population",
+        "directional",
+        "diagnostics",
+        "limitations",
         "sources",
     ):
         lines.append(f"{key}: " + display(read[key]))
@@ -251,7 +256,7 @@ def main(argv: list[str]) -> int:
         output = (canonical_bytes(read).decode() if args.json else _human(read)) + "\n"
         if len(output.encode()) > OUTPUT_MAX_BYTES:
             raise MeasurementError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
-    except ReadInputError as exc:
+    except (ReadInputError, EventReadError) as exc:
         if (
             exc.code
             in {
@@ -260,7 +265,8 @@ def main(argv: list[str]) -> int:
                 "UNSUPPORTED_PROFILE",
                 "INPUT_LIMIT_EXCEEDED",
             }
-            and exc.reason in READ_INPUT_REASONS
+            and exc.reason
+            in (EVENT_READ_REASONS if isinstance(exc, EventReadError) else READ_INPUT_REASONS)
             and exc.location in {"/observation", "/policy"}
         ):
             error = MeasurementError(exc.code, exc.reason, exc.location)

@@ -145,7 +145,10 @@ def ece(pairs: Sequence[Pair], bins: int, min_bin_n: int) -> ECEMeasure:
 
 
 def pass_k(successes: int, trials: int, k: int) -> PassKMeasure:
-    """P(all k of k independent draws without replacement succeed) = C(c, k) / C(n, k).
+    """Fraction of uniformly selected k-subsets with all successes = C(c, k) / C(n, k).
+
+    Sampling without replacement is dependent. This is not the probability of at
+    least one success (pass@k), nor per-task repeat reliability.
 
     With ``trials < k`` the estimator is undefined and the view is not_measured
     (``n_below_k``); that is arithmetic, not a policy threshold.

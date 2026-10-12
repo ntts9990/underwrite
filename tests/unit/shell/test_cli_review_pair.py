@@ -136,7 +136,7 @@ def test_review_is_not_a_native_read(tmp_path: Path, capsys: Any) -> None:
     _, report, _ = invoke(tmp_path, capsys)
     path = tmp_path / "review.json"
     path.write_text(json.dumps(report))
-    fixtures = ROOT / "fixtures/examples/acceptance"
+    fixtures = ROOT / "fixtures/examples/event-acceptance"
     code = accept_main(
         [
             "--candidate",

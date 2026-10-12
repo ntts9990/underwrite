@@ -284,10 +284,10 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
         measure.configure,
         (
             profile(
-                "binary-calibration-two-stage.v1",
+                "binary-event-directional.v1",
                 ("observation", "policy"),
-                ("observation.v1", "measurement_policy.v2"),
-                ("read.v1",),
+                ("observation.v1", "measurement_policy.v3"),
+                ("read.v2",),
             ),
         ),
         _standalone(measure.main),
@@ -300,8 +300,8 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
             profile(
                 "declared-claims",
                 ("candidate", "claims", "read"),
-                ("change_candidate.v1", "declared_claims.v1", "read.v1"),
-                ("acceptance_decision.v1",),
+                ("change_candidate.v1", "declared_claims.v2", "read.v2"),
+                ("acceptance_decision.v2",),
             ),
         ),
         _standalone(accept.main),

@@ -6,17 +6,17 @@ import heapq
 import re
 import sys
 import unicodedata
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, cast, get_args
 
 from underwrite.measurement import availability, eprocess, stratify
+from underwrite.measurement_contract.semantics import MAX_CASES as MAX_CASES
+from underwrite.measurement_contract.semantics import MAX_IDENTITY as MAX_IDENTITY
 
 # Any is confined to decoded external JSON; prepare replaces source rows with DTOs.
 JSON = Mapping[str, Any]
-MAX_CASES = 2000
 MAX_CELLS = 128
-MAX_IDENTITY = 128
 MAX_WORK = 2 * MAX_CASES**2
 # statistical_seed.v1's const; the pure layer cannot read contracts/, so
 # tests/gates/test_s5_statistical_contract.py pins this copy to its owner.
@@ -249,7 +249,10 @@ def _slot(row: JSON, state: str | None) -> Slot:
     return Slot(outcome, prediction, cost, state if state in ("error", "missing") else None)
 
 
-def _selected(payload: JSON, selector: JSON) -> tuple[dict[str, Slot], dict[str, str], list[str]]:
+def select_slots(
+    payload: JSON, selector: JSON, *, decode: Callable[[JSON, str | None], Slot] = _slot
+) -> tuple[dict[str, Slot], dict[str, str], list[str]]:
+    """Select identities/order/availability, with an explicit consumed-value decoder."""
     matches = [r for r in payload["readings"] if all(r.get(k) == v for k, v in selector.items())]
     require(len(matches) <= 1, "AMBIGUOUS_SELECTOR")
     rows: list[JSON] = matches[0]["rows"] if matches else []
@@ -290,7 +293,7 @@ def _selected(payload: JSON, selector: JSON) -> tuple[dict[str, Slot], dict[str,
                 "CONFLICTING_CASE_CONDITIONS",
             )
             splits[case_id] = identity(row["split"], "/observation")
-        slots[case_id] = _slot(row, states.get(case_id))
+        slots[case_id] = decode(row, states.get(case_id))
     order = list(slots)
     for case_id, state in states.items():
         require(state != "observed" or case_id in slots, "CONTRADICTORY_AVAILABILITY")
@@ -348,7 +351,7 @@ def prepare(observation: JSON, policy: JSON) -> Prepared:
         )
         bounded(sum(len(r["rows"]) for r in payload["readings"]) <= 2 * MAX_CASES, "/observation")
         selected = [
-            _selected(payload, policy["inputs"][slot]) for slot in ("eprocess", "calibration")
+            select_slots(payload, policy["inputs"][slot]) for slot in ("eprocess", "calibration")
         ]
         ids = list(dict.fromkeys(key for slots, _, _ in selected for key in slots))
         bounded(len(ids) <= MAX_CASES, "/observation")

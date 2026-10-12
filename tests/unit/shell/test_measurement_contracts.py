@@ -173,3 +173,39 @@ def test_error_contract_is_finite_and_never_echoes_arbitrary_diagnostics() -> No
             validator.validate({**error, field: "raw private input"})
     with pytest.raises(ValidationError):
         validator.validate({**error, "payload": "private"})
+
+
+def test_current_event_contract_assets_and_policy_required_fields() -> None:
+    from underwrite.cli.measure import measurement_validators
+
+    current = ("measurement_semantics.v1", "measurement_policy.v3", "read.v2")
+    for name in current:
+        Draft202012Validator.check_schema(_schema(name))
+        assert (ROOT / "src/underwrite/_contracts" / f"{name}.schema.json").read_bytes() == (
+            ROOT / "contracts" / f"{name}.schema.json"
+        ).read_bytes()
+    _, validator = measurement_validators()
+    policy = json.loads((ROOT / "fixtures/examples/event-measurement/policy.json").read_bytes())
+    validator.validate(policy)
+    for field in policy:
+        with pytest.raises(ValidationError):
+            validator.validate({key: value for key, value in policy.items() if key != field})
+    with pytest.raises(ValidationError):
+        validator.validate(_policy())
+
+
+def test_current_event_policy_nested_objects_are_closed() -> None:
+    from underwrite.cli.measure import measurement_validators
+
+    _, validator = measurement_validators()
+    original = json.loads((ROOT / "fixtures/examples/event-measurement/policy.json").read_bytes())
+    for name in ("subject", "eprocess", "assumptions", "diagnostics"):
+        policy = copy.deepcopy(original)
+        policy[name]["undeclared"] = True
+        with pytest.raises(ValidationError):
+            validator.validate(policy)
+        for field in original[name]:
+            policy = copy.deepcopy(original)
+            del policy[name][field]
+            with pytest.raises(ValidationError):
+                validator.validate(policy)

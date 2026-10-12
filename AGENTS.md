@@ -32,7 +32,11 @@ opening or merging a PR does not authorize a version bump.
 
 - `packages/underwrite-core/src/underwrite_core`: dependency-free integrity primitives.
 - `src/underwrite/instrument/evidence`, `measurement`, `acceptance`, and `adjudication`:
-  pure logic importing only the standard library and `underwrite_core`.
+  pure logic using the standard library, `underwrite_core`, and the shared pure
+  measurement contracts; independent domain packages do not import each other.
+- `src/underwrite/measurement_contract`: shared pure semantic and read-binding
+  contracts below the independent measurement and acceptance domains. It contains
+  no statistical engine or I/O. See [ADR-020](docs/adr/ADR-020-shared-measurement-contract.md).
 - `src/underwrite/instrument/ingest`, `fleet`, `service`, and `cli`: effectful adapters.
 - `src/underwrite/_fileio.py`: shared effectful descriptor reading below the independent
   shell adapters; pure code cannot import it. See [ADR-019](docs/adr/ADR-019-shared-descriptor-reader.md).
