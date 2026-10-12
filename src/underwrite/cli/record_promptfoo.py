@@ -15,12 +15,16 @@ from underwrite.cli.evidence import (
     REPORT_MAX_BYTES,
     EvidenceError,
     ReportOutput,
-    output_line_size,
     run_cli,
 )
 from underwrite.cli.local_json import Validator, validate
-from underwrite.cli.record_capture import saved_record, store_captured_record
-from underwrite.cli.records import OUTPUT_MAX_BYTES, record_error_candidates, record_error_payload
+from underwrite.cli.record_capture import (
+    STORAGE_FAILURE_EXIT,
+    admit_record_response,
+    render_record_response,
+    store_captured_record,
+)
+from underwrite.cli.records import OUTPUT_MAX_BYTES, record_error_payload
 from underwrite.instrument.ingest.accounting import (
     SOURCE,
     AccountingCaseError,
@@ -37,7 +41,6 @@ from underwrite.service.records import (
 
 SCHEMA = "promptfoo_record.v1"
 COMMAND = "records audit-promptfoo"
-_STORAGE_FAILURE_EXIT = 3
 
 
 @dataclass(frozen=True)
@@ -175,54 +178,10 @@ def _analysis_text(analysis: dict[str, Any]) -> str:
     )
 
 
-def _storage_text(storage: dict[str, Any]) -> str:
-    if storage["state"] == "saved":
-        return f"Saved and verified record: {storage['record_id']} ({storage['manifest_digest']})."
-    error = storage["error"]
-    text = f"Storage failed: {error['code']} ({error['reason']}); next: {error['next_action']}."
-    known = storage["published_record"]
-    if known is not None:
-        return (
-            text + f" Returned record identity: {known['record_id']} ({known['manifest_digest']})."
-        )
-    return text + " No record identity returned; a record may still exist."
-
-
 def render_human(report: dict[str, object]) -> str:
-    return (
-        _analysis_text(cast(dict[str, Any], report["analysis"]))
-        + "\n"
-        + _storage_text(cast(dict[str, Any], report["storage"]))
-        + f"\nExit: {report['exit_code']}."
+    return render_record_response(
+        report, analysis_text=_analysis_text(cast(dict[str, Any], report["analysis"]))
     )
-
-
-def _admit_response(
-    envelope: dict[str, Any], contracts: _Contracts, identifier: str, count: int, as_json: bool
-) -> None:
-    digest = "sha256:" + "0" * 64
-    representative = envelope.get("storage") or saved_record(identifier, digest, count)
-    envelope["storage"] = representative
-    _check(contracts.aggregate, envelope)
-    base_size = output_line_size(canonical_bytes(envelope))
-    storage_size = len(canonical_bytes(representative))
-    maximum = base_size
-    human_prefix = _analysis_text(envelope["analysis"]) + "\n"
-    human_maximum = output_line_size(render_human(envelope))
-    identity = {"record_id": identifier, "manifest_digest": digest}
-    for error in record_error_candidates():
-        for published in (None, identity):
-            candidate = {"state": "error", "error": error, "published_record": published}
-            _check(contracts.storage, candidate)
-            maximum = max(maximum, base_size - storage_size + len(canonical_bytes(candidate)))
-            human_maximum = max(
-                human_maximum,
-                output_line_size(
-                    human_prefix + _storage_text(candidate) + f"\nExit: {_STORAGE_FAILURE_EXIT}."
-                ),
-            )
-    if (maximum if as_json else human_maximum) > OUTPUT_MAX_BYTES:
-        raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
 
 
 def run_record_promptfoo(
@@ -249,10 +208,28 @@ def run_record_promptfoo(
             "error": record_error_payload(RecordError("INVALID_SPEC", "/spec/files")),
             "published_record": None,
         }
-        envelope["exit_code"] = _STORAGE_FAILURE_EXIT
-        _admit_response(envelope, contracts, identifier, 0, as_json)
+        envelope["exit_code"] = STORAGE_FAILURE_EXIT
+        admit_record_response(
+            envelope,
+            aggregate_validator=contracts.aggregate,
+            storage_validator=contracts.storage,
+            identifier=identifier,
+            count=0,
+            analysis_text=_analysis_text(analysis),
+            as_json=as_json,
+            max_bytes=OUTPUT_MAX_BYTES,
+        )
         return envelope
-    _admit_response(envelope, contracts, identifier, len(files), as_json)
+    admit_record_response(
+        envelope,
+        aggregate_validator=contracts.aggregate,
+        storage_validator=contracts.storage,
+        identifier=identifier,
+        count=len(files),
+        analysis_text=_analysis_text(analysis),
+        as_json=as_json,
+        max_bytes=OUTPUT_MAX_BYTES,
+    )
     spec = CapturedRecordSpec(
         record_id=identifier,
         kind="promptfoo.accounting",
@@ -272,7 +249,7 @@ def run_record_promptfoo(
         root, spec, contracts.verification, contracts.record_error
     )
     if envelope["storage"]["state"] == "error":
-        envelope["exit_code"] = _STORAGE_FAILURE_EXIT
+        envelope["exit_code"] = STORAGE_FAILURE_EXIT
     return envelope
 
 

@@ -63,10 +63,27 @@ another gate. Standalone contributors use this guide and AGENTS.md without a
 sibling checkout. Keep the observable contract stable during refactoring and
 record why a genuinely different boundary needs a new implementation.
 
+For a common module, identify the shared responsibility, observable contract,
+invariants, failure meaning, and reason for change. Code can implement the same
+rule differently; similar code can also represent different domain concepts.
+Reuse the existing owner when the meanings agree, and document a meaningful
+difference before creating another path. A number called a score is not enough to
+combine task outcomes, calibration, statistical evidence, or decision policy.
+
+Use the existing functional core and effectful shell. Pure computations depend on
+domain contracts; CLI, filesystem, network, clock, and process adapters handle
+technical interaction. Apply a small port at a concrete interaction or substitution
+boundary when useful, without requiring an interface for every function or a DI
+framework. [Ports and adapters](https://alistair.cockburn.us/hexagonal-architecture)
+describes this separation; it is a design pattern, not a formal conformance standard.
+Keep producer-specific semantics at their existing owners and test the shared
+contract, including failure and interpretation boundaries, before refactoring.
+
 | Concern | Existing owner | Maintain the boundary |
 | --- | --- | --- |
 | Bounded local input | `_fileio.read_descriptor`, `instrument/ingest/transport.decode_json`, `inspection.read_at`, `local_capture.RootReader` | Reuse strict decoding and descriptor reads; captured-byte flows must not reopen source paths for storage |
 | CLI results and errors | `cli/evidence.py`, `service/_record_errors.py` and its CLI/schema projections | Reuse the emitter and owned diagnostics; distinguish analysis, storage, and process exits |
+| Composed record responses | `cli/record_capture.py` | Share response admission, storage verification and storage wording; retain producer-specific analysis, input selection and meaning in their command adapters |
 | Paired calculation and review | `instrument/evidence/paired_review.evaluate_paired_review` | Calculate once; presentations project results rather than derive new verdicts |
 | Source joins | The exact profile's ingest adapter and pure evidence verifier | Keep path/byte access separate from semantic joins; do not execute supplied schemas or source code |
 | Contracts and packaged resources | `contracts/`, `_contracts` links, single-purpose schema generators | One authored owner; generate composed views and verify installed bytes rather than hand-copy fields |

@@ -396,11 +396,11 @@ def test_large_analysis_full_scans_do_not_scale_with_error_candidate_count(
     def error_variants() -> tuple[dict[str, object], ...]:
         return candidates if all_candidates else candidates[:1]
 
-    monkeypatch.setattr(command, "record_error_candidates", error_variants)
+    monkeypatch.setattr(record_capture, "record_error_candidates", error_variants)
     serialized: list[bool] = []
     validated: list[bool] = []
-    real_canonical = command.canonical_bytes
-    real_check = command._check  # pyright: ignore[reportPrivateUsage]
+    real_canonical = record_capture.canonical_bytes
+    real_check = record_capture.validate
     real_validate = evidence.validate
 
     def is_aggregate(value: object) -> bool:
@@ -414,19 +414,19 @@ def test_large_analysis_full_scans_do_not_scale_with_error_candidate_count(
             serialized.append(True)
         return real_canonical(value)
 
-    def check(validator: command.Validator, value: object) -> None:
+    def check(validator: command.Validator, value: object, *args: Any) -> None:
         if is_aggregate(value):
             validated.append(True)
-        real_check(validator, value)
+        real_check(validator, value, *args)
 
     def validate_final(*args: Any, **kwargs: Any) -> None:
         if is_aggregate(args[1]):
             validated.append(True)
         real_validate(*args, **kwargs)
 
-    monkeypatch.setattr(command, "canonical_bytes", encode)
+    monkeypatch.setattr(record_capture, "canonical_bytes", encode)
     monkeypatch.setattr(evidence, "canonical_bytes", encode)
-    monkeypatch.setattr(command, "_check", check)
+    monkeypatch.setattr(record_capture, "validate", check)
     monkeypatch.setattr(evidence, "validate", validate_final)
     code, report, _, _ = invoke(path, tmp_path / "store", capsys)
     assert code == 0 and report["storage"]["state"] == "saved"

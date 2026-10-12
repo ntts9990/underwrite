@@ -14,6 +14,12 @@ read it for the shared development loop and quality criteria. This repository
 owns its product contracts and verification commands below. If absent, follow
 this file and CONTRIBUTING.md; standalone public clones require no sibling file.
 
+Use [the implementation ownership criteria](CONTRIBUTING.md#implementation-owners)
+for common-module and architecture decisions. Identify logical responsibility and
+contract before comparing code shape; reuse existing owners without merging
+different measurement meanings. Keep the pure core/effectful adapter boundaries
+below, and introduce ports only for concrete interactions that need them.
+
 Prioritize structured JSON results for the calling agent: include result states,
 input and policy identities, populations/missingness, and interpretation limits
 where applicable and supported by the available evidence.
