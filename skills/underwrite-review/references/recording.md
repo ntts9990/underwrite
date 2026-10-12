@@ -8,6 +8,17 @@ explicit `--record-root` and `--record-id` options. It captures the same bytes
 used for analysis and returns independent analysis/storage outcomes. Use the
 manual composition below for other existing command paths.
 
+For supported Langfuse exports, if capabilities lists the records audit-langfuse
+profile and the caller selected a private store and new ID, prefer
+`records audit-langfuse --observations FILE --scores FILE --root ROOT --id NEW_ID --json`.
+It retains the entire selected files using the same buffers as analysis. It attempts
+both inputs independently, keeps acquisition errors per input, and stores no partial
+source buffer. Inspect analysis and storage separately on exits 0/2/3; saving an
+error consumes the ID. Recover the result or primary error with `records read-json`
+using `analysis/accounting.json` or `analysis/error.json`; `invocation.json` keeps
+all acquisition diagnostics. Raw source content is not redacted, and the two files
+are not an atomic producer snapshot. Use the manual path for selective omission.
+
 For a supported Promptfoo export, when the caller explicitly selects a private
 store and new ID and capabilities includes the records audit-promptfoo profile,
 use `records audit-promptfoo FILE --root ROOT --id NEW_ID --json`. This stores the

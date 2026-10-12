@@ -5,6 +5,22 @@ It does not discover inputs, execute an evaluation, or certify provenance.
 Commands are available in this checkout and wheels built from it; the package
 version alone does not establish availability.
 
+For two supported Langfuse exports, use
+`records audit-langfuse --observations FILE --scores FILE --root ROOT --id NEW_ID --json`.
+It analyzes and retains the same complete input buffers, the result or diagnostic,
+and invocation metadata. Both paths are attempted independently; incomplete reads
+are never retained as complete sources. Per-input acquisition errors remain in the
+output and saved invocation. The entire selected files may contain sensitive source
+content; they are not redacted. Two files are not an atomic producer snapshot.
+
+The `langfuse_record.v1` envelope keeps analysis and storage independent: exits
+0/2/3 mean result saved, diagnostic saved, or storage failed. Even a diagnostic-only
+record consumes the ID. Read `analysis/accounting.json` or `analysis/error.json`
+with `records read-json`; `invocation.json` preserves input acquisition details.
+Generated analysis is admitted within the selected-read limit before storage.
+Large original files can be retained without being readable through that JSON route.
+See [the Langfuse workflow](AGENT_USAGE.md#account-for-langfuse-score-kinds-and-associations).
+
 For an exact supported goppi paired handoff, `review-handoff` can analyze and save
 in one call with `--record-root ROOT --record-id ID`; see
 [the agent workflow](AGENT_USAGE.md#review-a-completed-paired-handoff-in-one-call).
