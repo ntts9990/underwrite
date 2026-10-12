@@ -104,6 +104,8 @@ commands, result handling, and a reusable task prompt. The external formats belo
 can be ingested, but `measure` currently accepts only native evidence-bundle
 observations; ingestion alone does not make an external source claim measurable.
 
+Completed goppi baseline exchange v2 files can use [`project-baseline`](AGENT_USAGE.md#project-a-completed-goppi-baseline-into-event-observations) to produce native event observations without rewriting rows. Source primary outcomes, missingness, and statistical assumptions remain distinct.
+
 ## Supported formats
 
 Choose the format and exact supported version explicitly.

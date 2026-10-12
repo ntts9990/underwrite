@@ -903,6 +903,62 @@ def _native_measurement_pilot(cli: Path, fixtures: Path, work: Path) -> None:
     )
 
 
+def _baseline_event_pilot(cli: Path, fixtures: Path, work: Path) -> None:
+    source = fixtures / "baseline-event"
+    observation_path = work / "baseline-observation.json"
+    observation = _cli_json(
+        cli,
+        ["project-baseline", "--exchange", str(source / "exchange"), "--direction", "higher"],
+        observation_path,
+        work,
+    )
+    encoded = observation_path.read_text(encoding="utf-8")
+    _require(observation.get("schema") == "observation.v1", "baseline projection schema")
+    _require("SYNTHETIC_ANSWER_NOT_FOR_PROJECTION" not in encoded, "baseline answer leaked")
+    _require("indeterminate:agent_budget" not in encoded, "baseline private reason leaked")
+    read = _cli_json(
+        cli,
+        [
+            "measure",
+            "--observation",
+            str(observation_path),
+            "--policy",
+            str(source / "policy.json"),
+        ],
+        work / "baseline-read.json",
+        work,
+    )
+    _require(read.get("verdict") == "not_measured", "baseline inference was fabricated")
+    population = cast(dict[str, object], read["population"])
+    predictions = cast(dict[str, object], population["predictions"])
+    _require(
+        predictions["status"] == "unavailable" and predictions["observed_count"] is None,
+        "baseline predictions were fabricated",
+    )
+    diagnostics = cast(dict[str, dict[str, object]], read["diagnostics"])
+    source_counts = json.loads((source / "exchange/export.json").read_bytes())["counts"]
+    event = diagnostics["event_rate"]
+    _require(
+        event["positive_count"] == source_counts["observed_true"]
+        and event["n"] == source_counts["observed_true"] + source_counts["observed_false"],
+        "baseline primary labels changed",
+    )
+    _require(diagnostics["brier"]["value"] is None, "baseline forecast loss was fabricated")
+    altered = work / "altered-baseline-exchange"
+    altered.mkdir()
+    for path in (source / "exchange").iterdir():
+        (altered / path.name).write_bytes(path.read_bytes())
+    rows = altered / "rows.jsonl"
+    rows.write_bytes(rows.read_bytes().replace(b"observed_true", b"observed_false", 1))
+    _native_refusal(
+        cli,
+        ["project-baseline", "--exchange", str(altered), "--direction", "higher"],
+        work,
+        "INVALID_INPUT",
+        "BASELINE_FILE_IDENTITY_MISMATCH",
+    )
+
+
 def _smoke(dist: Path) -> None:
     core_wheel, app_wheel = _wheels(dist)
     fixtures = ROOT / "fixtures/examples"
@@ -921,6 +977,7 @@ def _smoke(dist: Path) -> None:
         _langfuse_pilot(cli, work)
 
         _native_measurement_pilot(cli, fixtures, work)
+        _baseline_event_pilot(cli, fixtures, work)
 
         malformed = work / "malformed-bundle.json"
         malformed.write_text(

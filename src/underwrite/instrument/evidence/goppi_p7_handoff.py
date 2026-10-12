@@ -12,6 +12,7 @@ from typing import cast
 
 from underwrite_core.canonical import CanonicalizationError, canonical_bytes, digest_bytes
 
+from underwrite.instrument.evidence.goppi_identity import length_prefixed_digest
 from underwrite.instrument.evidence.paired_binary import ARMS, MAX_PRIMARY_CASES, MAX_SLOTS
 
 MAX_CASES = min(MAX_PRIMARY_CASES, MAX_SLOTS // (2 * len(ARMS)))
@@ -1744,11 +1745,7 @@ def _verify_response(
         cast(str, old["runner_receipt_digest"]),
         cast(str, old["answer_manifest_content_digest"]),
     )
-    framed = b"".join(
-        str(len(encoded)).encode("ascii") + b":" + encoded
-        for encoded in (part.encode("utf-8") for part in trace_parts)
-    )
-    if response["trace_digest"] != digest_bytes(framed):
+    if response["trace_digest"] != length_prefixed_digest(trace_parts):
         raise _fail("HANDOFF_RESPONSE_TRACE_MISMATCH", location)
     joins = (
         (response["run_id"], old["run_id"]),
