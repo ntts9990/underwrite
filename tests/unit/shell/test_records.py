@@ -543,3 +543,385 @@ def test_read_only_operations_do_not_create_staging(tmp_path: Path) -> None:
     records.list_records(root)
     records.verify_record(root, "capture.001")
     assert not (root / ".staging").exists()
+
+
+# Card: record-reuse | Paper: record_document.v1 | Stage: storage-read
+
+
+def test_selected_read_returns_captured_bytes_without_mutation_or_source(
+    tmp_path: Path,
+) -> None:
+    raw = b"binary\x00\xff"
+    root, _ = _save(tmp_path, raw)
+    (tmp_path / "source/result.json").unlink()
+    before = {
+        path: (path.read_bytes(), path.stat().st_mode) for path in root.rglob("*") if path.is_file()
+    }
+    result = records.read_record_file(root, "capture.001", "source/result.json")
+    assert result.data == raw
+    assert result.sha256 == digest_bytes(raw)
+    assert result.manifest_digest == records.read_record(root, "capture.001").digest
+    assert result.record_id == "capture.001" and result.name == "source/result.json"
+    assert result.media_type == "application/json"
+    assert {path: (path.read_bytes(), path.stat().st_mode) for path in before} == before
+
+
+@pytest.mark.parametrize("name", ["../escape", "/absolute", "source/../result.json", "bad\\name"])
+def test_selected_read_refuses_invalid_names(tmp_path: Path, name: str) -> None:
+    root, _ = _save(tmp_path)
+    _assert_error("INVALID_SPEC", lambda: records.read_record_file(root, "capture.001", name))
+
+
+@pytest.mark.parametrize("limit", [True, 0, -1, records.RECORD_READ_MAX_BYTES + 1])
+def test_selected_read_refuses_invalid_budget(tmp_path: Path, limit: int) -> None:
+    root, _ = _save(tmp_path)
+    _assert_error(
+        "INVALID_SPEC",
+        lambda: records.read_record_file(
+            root, "capture.001", "source/result.json", max_bytes=limit
+        ),
+    )
+
+
+def test_selected_read_unlisted_name_and_declared_limit_never_open_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _ = _save(tmp_path)
+    original = os.open
+
+    def guarded(
+        path: str | Path, flags: int, mode: int = 0o777, *, dir_fd: int | None = None
+    ) -> int:
+        assert path != "files", "Refused selection must not open selected-file subtree"
+        return original(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "open", guarded)
+    _assert_error(
+        "RECORD_FILE_NOT_FOUND",
+        lambda: records.read_record_file(root, "capture.001", "missing.json"),
+    )
+    _assert_error(
+        "INPUT_LIMIT_EXCEEDED",
+        lambda: records.read_record_file(root, "capture.001", "source/result.json", max_bytes=1),
+    )
+
+
+@pytest.mark.parametrize("replacement", [b"x", b'{"no":true}\n'])
+def test_selected_read_checks_captured_length_and_hash(tmp_path: Path, replacement: bytes) -> None:
+    root, _ = _save(tmp_path)
+    (root / "records/capture.001/files/source/result.json").write_bytes(replacement)
+    _assert_error(
+        "RECORD_FILE_INTEGRITY_MISMATCH",
+        lambda: records.read_record_file(root, "capture.001", "source/result.json"),
+    )
+
+
+def test_selected_read_limit_exact_and_file_growth(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    raw = b"1234"
+    root, _ = _save(tmp_path, raw)
+    assert (
+        records.read_record_file(root, "capture.001", "source/result.json", max_bytes=4).data == raw
+    )
+    selected = root / "records/capture.001/files/source/result.json"
+    original = records.read_descriptor
+
+    def grow(descriptor: int, max_bytes: int) -> bytes:
+        if os.fstat(descriptor).st_ino == selected.stat().st_ino:
+            selected.write_bytes(b"12345")
+        return original(descriptor, max_bytes)
+
+    monkeypatch.setattr(records, "read_descriptor", grow)
+    _assert_error(
+        "INPUT_LIMIT_EXCEEDED",
+        lambda: records.read_record_file(root, "capture.001", "source/result.json", max_bytes=4),
+    )
+
+
+@pytest.mark.parametrize(
+    "relative",
+    [
+        ".",
+        "records",
+        ".staging",
+        "records/capture.001",
+        "records/capture.001/files",
+        "records/capture.001/files/source",
+        "records/capture.001/files/source/result.json",
+        "records/capture.001/manifest.json",
+    ],
+)
+def test_selected_read_checks_private_modes_on_every_opened_node(
+    tmp_path: Path, relative: str
+) -> None:
+    root, _ = _save(tmp_path)
+    path = root / relative
+    path.chmod(0o755 if path.is_dir() else 0o644)
+    _assert_error(
+        "INSECURE_STORE",
+        lambda: records.read_record_file(root, "capture.001", "source/result.json"),
+    )
+
+
+@pytest.mark.parametrize(
+    "relative",
+    [
+        ".",
+        "records",
+        ".staging",
+        "records/capture.001",
+        "records/capture.001/files",
+        "records/capture.001/files/source",
+        "records/capture.001/files/source/result.json",
+        "records/capture.001/manifest.json",
+    ],
+)
+def test_selected_read_refuses_symlinks_at_every_control_node(
+    tmp_path: Path, relative: str
+) -> None:
+    root, _ = _save(tmp_path)
+    path = root if relative == "." else root / relative
+    target = tmp_path / "moved"
+    path.rename(target)
+    path.symlink_to(target, target_is_directory=target.is_dir())
+    _assert_error(
+        "INVALID_STORE_LAYOUT",
+        lambda: records.read_record_file(root, "capture.001", "source/result.json"),
+    )
+
+
+@pytest.mark.parametrize("kind", ["missing", "fifo", "directory"])
+def test_selected_read_missing_and_wrong_type(tmp_path: Path, kind: str) -> None:
+    root, _ = _save(tmp_path)
+    path = root / "records/capture.001/files/source/result.json"
+    path.unlink()
+    if kind == "fifo":
+        os.mkfifo(path, 0o600)
+    elif kind == "directory":
+        path.mkdir(mode=0o700)
+    code = "SOURCE_READ_FAILED" if kind == "missing" else "INVALID_STORE_LAYOUT"
+    _assert_error(code, lambda: records.read_record_file(root, "capture.001", "source/result.json"))
+
+
+def test_selected_read_anchors_manifest_and_file_to_same_record_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _ = _save(tmp_path, b"original")
+    directory = root / "records/capture.001"
+    original = records.read_descriptor
+    captured = False
+
+    def replace_record(descriptor: int, max_bytes: int) -> bytes:
+        nonlocal captured
+        raw = original(descriptor, max_bytes)
+        if not captured:
+            captured = True
+            directory.rename(root / "records/moved")
+            directory.mkdir(mode=0o700)
+            (directory / "files").symlink_to(root / "records/moved/files", target_is_directory=True)
+        return raw
+
+    monkeypatch.setattr(records, "read_descriptor", replace_record)
+    result = records.read_record_file(root, "capture.001", "source/result.json")
+    assert result.data == b"original"
+
+
+def test_selected_read_refuses_replaced_nested_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _ = _save(tmp_path)
+    nested = root / "records/capture.001/files/source"
+    original = os.open
+
+    def replace_nested(
+        path: str | Path, flags: int, mode: int = 0o777, *, dir_fd: int | None = None
+    ) -> int:
+        if path == "source":
+            nested.rename(tmp_path / "moved")
+            nested.symlink_to(tmp_path / "moved", target_is_directory=True)
+        return original(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "open", replace_nested)
+    _assert_error(
+        "INVALID_STORE_LAYOUT",
+        lambda: records.read_record_file(root, "capture.001", "source/result.json"),
+    )
+
+
+def test_selected_read_checks_opened_permissions_and_releases_all_descriptors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _ = _save(tmp_path)
+    original = os.open
+    opened: list[int] = []
+
+    def change_mode(
+        path: str | Path, flags: int, mode: int = 0o777, *, dir_fd: int | None = None
+    ) -> int:
+        descriptor = original(path, flags, mode, dir_fd=dir_fd)
+        opened.append(descriptor)
+        if path == "result.json":
+            os.fchmod(descriptor, 0o644)
+        return descriptor
+
+    monkeypatch.setattr(os, "open", change_mode)
+    _assert_error(
+        "INSECURE_STORE",
+        lambda: records.read_record_file(root, "capture.001", "source/result.json"),
+    )
+    assert opened
+    for descriptor in opened:
+        with pytest.raises(OSError):
+            os.fstat(descriptor)
+
+
+def test_selected_read_returns_verified_buffer_after_leaf_replacement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _ = _save(tmp_path, b"original")
+    path = root / "records/capture.001/files/source/result.json"
+    inode = path.stat().st_ino
+    original = records.read_descriptor
+
+    def replace_leaf(descriptor: int, max_bytes: int) -> bytes:
+        raw = original(descriptor, max_bytes)
+        if os.fstat(descriptor).st_ino == inode:
+            path.unlink()
+            path.write_bytes(b"different")
+        return raw
+
+    monkeypatch.setattr(records, "read_descriptor", replace_leaf)
+    assert records.read_record_file(root, "capture.001", "source/result.json").data == b"original"
+
+
+@pytest.mark.parametrize("flag", ["O_NOFOLLOW", "O_DIRECTORY", "O_NONBLOCK", "O_NOCTTY"])
+def test_selected_read_refuses_missing_platform_flags(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, flag: str
+) -> None:
+    root, _ = _save(tmp_path)
+    monkeypatch.delattr(os, flag)
+    _assert_error(
+        "UNSUPPORTED_PLATFORM",
+        lambda: records.read_record_file(root, "capture.001", "source/result.json"),
+    )
+
+
+def test_selected_read_refuses_missing_dir_fd_support(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _ = _save(tmp_path)
+    original = os.open
+
+    def unsupported(
+        path: str | Path, flags: int, mode: int = 0o777, *, dir_fd: int | None = None
+    ) -> int:
+        if dir_fd is not None:
+            raise NotImplementedError
+        return original(path, flags, mode)
+
+    monkeypatch.setattr(os, "open", unsupported)
+    _assert_error(
+        "UNSUPPORTED_PLATFORM",
+        lambda: records.read_record_file(root, "capture.001", "source/result.json"),
+    )
+
+
+def test_selected_read_does_not_verify_other_files_or_links(tmp_path: Path) -> None:
+    source = _source(tmp_path)
+    root = tmp_path / "store"
+    linked = records.save_record(root, _spec("linked.001"), source)
+    spec = _spec()
+    spec["links"] = [
+        {"relation": "input", "record_id": "linked.001", "manifest_digest": linked.digest}
+    ]
+    files = cast(list[dict[str, object]], spec["files"])
+    files.append({**files[0], "name": "other.json"})
+    records.save_record(root, spec, source)
+    (root / "records/capture.001/files/other.json").write_bytes(b"corrupted")
+    (root / "records/linked.001/manifest.json").write_bytes(b"corrupted")
+    assert (
+        records.read_record_file(root, "capture.001", "source/result.json").data == b'{"ok":true}\n'
+    )
+    assert records.verify_record(root, "capture.001")["valid"] is False
+
+
+@pytest.mark.parametrize(
+    ("relative", "code"),
+    [
+        ("records/capture.001/manifest.json", "RECORD_NOT_PUBLISHED"),
+        ("records/capture.001", "RECORD_NOT_FOUND"),
+        ("records", "STORE_NOT_FOUND"),
+        (".", "STORE_NOT_FOUND"),
+    ],
+)
+def test_selected_read_distinguishes_missing_control_nodes(
+    tmp_path: Path, relative: str, code: str
+) -> None:
+    root, _ = _save(tmp_path)
+    path = root if relative == "." else root / relative
+    path.rename(tmp_path / "moved")
+    _assert_error(code, lambda: records.read_record_file(root, "capture.001", "source/result.json"))
+
+
+@pytest.mark.parametrize("mutation", ["syntax", "id", "noncanonical", "oversize", "huge_integer"])
+def test_selected_read_refuses_invalid_manifest(tmp_path: Path, mutation: str) -> None:
+    root, manifest = _save(tmp_path)
+    if mutation == "syntax":
+        raw = b"invalid"
+    elif mutation == "huge_integer":
+        raw = b"9" * 5000
+    elif mutation == "id":
+        raw = canonical_bytes({**manifest, "record_id": "different"})
+    elif mutation == "noncanonical":
+        raw = canonical_bytes(manifest) + b"\n"
+    else:
+        raw = b" " * (records.MAX_MANIFEST_BYTES + 1)
+    (root / "records/capture.001/manifest.json").write_bytes(raw)
+    _assert_error(
+        "INVALID_RECORD",
+        lambda: records.read_record_file(root, "capture.001", "source/result.json"),
+    )
+
+
+def test_selected_read_allows_ancestor_symlink_but_anchors_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _ = _save(tmp_path)
+    ancestor = tmp_path / "ancestor"
+    ancestor.symlink_to(tmp_path, target_is_directory=True)
+    assert (
+        records.read_record_file(ancestor / root.name, "capture.001", "source/result.json").data
+        == b'{"ok":true}\n'
+    )
+    monkeypatch.chdir(tmp_path)
+    assert (
+        records.read_record_file(Path(root.name), "capture.001", "source/result.json").data
+        == b'{"ok":true}\n'
+    )
+
+
+def test_selected_read_checks_opened_size_and_source_io_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _ = _save(tmp_path, b"1234")
+    selected = root / "records/capture.001/files/source/result.json"
+    selected.write_bytes(b"12345")
+    _assert_error(
+        "INPUT_LIMIT_EXCEEDED",
+        lambda: records.read_record_file(root, "capture.001", "source/result.json", max_bytes=4),
+    )
+    selected.write_bytes(b"1234")
+    original = records.read_descriptor
+
+    def unreadable(descriptor: int, max_bytes: int) -> bytes:
+        if os.fstat(descriptor).st_ino == selected.stat().st_ino:
+            raise PermissionError("private-path")
+        return original(descriptor, max_bytes)
+
+    monkeypatch.setattr(records, "read_descriptor", unreadable)
+    error = _assert_error(
+        "SOURCE_READ_FAILED",
+        lambda: records.read_record_file(root, "capture.001", "source/result.json"),
+    )
+    assert "private-path" not in str(error)

@@ -24,6 +24,7 @@ forbidden_modules=
     underwrite.fleet
     underwrite.service
     underwrite.cli
+    underwrite._fileio
 
 [importlinter:contract:layer-hierarchy]
 name = Layer hierarchy: shell above pure above core
@@ -31,5 +32,6 @@ type = layers
 layers=
     underwrite.cli
     underwrite.service | underwrite.fleet | underwrite.instrument.ingest
+    underwrite._fileio
     underwrite.instrument.evidence | underwrite.measurement | underwrite.acceptance | underwrite.adjudication
     underwrite_core

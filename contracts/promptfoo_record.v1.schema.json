@@ -412,6 +412,15 @@
         },
         {
           "$ref": "#/$defs/record_error__INTERNAL_ERROR"
+        },
+        {
+          "$ref": "#/$defs/record_error__RECORD_FILE_NOT_FOUND"
+        },
+        {
+          "$ref": "#/$defs/record_error__RECORD_FILE_INTEGRITY_MISMATCH"
+        },
+        {
+          "$ref": "#/$defs/record_error__UNSUPPORTED_RECORD_CONTENT"
         }
       ]
     },
@@ -646,6 +655,45 @@
         },
         "next_action": {
           "const": "REPORT_INTERNAL_ERROR"
+        }
+      }
+    },
+    "record_error__RECORD_FILE_NOT_FOUND": {
+      "properties": {
+        "code": {
+          "const": "RECORD_FILE_NOT_FOUND"
+        },
+        "reason": {
+          "const": "RECORD_FILE_NOT_LISTED"
+        },
+        "next_action": {
+          "const": "SELECT_LISTED_RECORD_FILE"
+        }
+      }
+    },
+    "record_error__RECORD_FILE_INTEGRITY_MISMATCH": {
+      "properties": {
+        "code": {
+          "const": "RECORD_FILE_INTEGRITY_MISMATCH"
+        },
+        "reason": {
+          "const": "RECORD_FILE_INTEGRITY_MISMATCH"
+        },
+        "next_action": {
+          "const": "SELECT_VALID_RECORD"
+        }
+      }
+    },
+    "record_error__UNSUPPORTED_RECORD_CONTENT": {
+      "properties": {
+        "code": {
+          "const": "UNSUPPORTED_RECORD_CONTENT"
+        },
+        "reason": {
+          "const": "RECORD_CONTENT_NOT_REPRESENTABLE_AS_JSON"
+        },
+        "next_action": {
+          "const": "SELECT_SUPPORTED_RECORD_FILE"
         }
       }
     },

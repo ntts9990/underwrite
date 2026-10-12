@@ -116,6 +116,7 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
             profile("audit-promptfoo", ("file", "root", "id"), (), ("promptfoo_record.v1",)),
             profile("list", ("root",), (), ("record_catalog.v1",)),
             profile("show", ("root", "id"), (), ("record_view.v1",)),
+            profile("read-json", ("root", "id", "name"), (), ("record_document.v1",)),
             profile("verify", ("root", "id"), (), ("record_verification.v1",)),
         ),
         _standalone(records.main),

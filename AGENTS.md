@@ -28,6 +28,8 @@ opening or merging a PR does not authorize a version bump.
 - `src/underwrite/instrument/evidence`, `measurement`, `acceptance`, and `adjudication`:
   pure logic importing only the standard library and `underwrite_core`.
 - `src/underwrite/instrument/ingest`, `fleet`, `service`, and `cli`: effectful adapters.
+- `src/underwrite/_fileio.py`: shared effectful descriptor reading below the independent
+  shell adapters; pure code cannot import it. See [ADR-019](docs/adr/ADR-019-shared-descriptor-reader.md).
 - `contracts`: JSON Schema contracts; installed schemas must match these resources.
 - `tests` and `packages/underwrite-core/tests`: application and core tests.
 

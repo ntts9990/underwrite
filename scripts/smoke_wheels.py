@@ -216,6 +216,27 @@ def _promptfoo_record_pilot(
         (store / "records/captured/files/source/promptfoo.bin").read_bytes() == source.read_bytes(),
         "captured source differs from the selected bytes",
     )
+    recovered = _cli_json(
+        cli,
+        [
+            "records",
+            "read-json",
+            "--root",
+            str(store),
+            "--id",
+            "captured",
+            "--name",
+            "analysis/accounting.json",
+        ],
+        work / "recovered-accounting.json",
+        work,
+    )
+    _require(recovered["content"] == expected, "selected read changed the saved result")
+    _require(
+        recovered["manifest_digest"] == storage["manifest_digest"]
+        and recovered["verification_scope"] == "selected_file_against_manifest",
+        "selected read misrepresented its identity or scope",
+    )
     malformed = work / "malformed-promptfoo.json"
     malformed.write_bytes(b"{")
     failed = _command(
@@ -244,6 +265,25 @@ def _promptfoo_record_pilot(
     _require(
         (store / "records/diagnostic/files/source/promptfoo.bin").read_bytes() == b"{",
         "malformed complete source was not retained",
+    )
+    recovered_error = _cli_json(
+        cli,
+        [
+            "records",
+            "read-json",
+            "--root",
+            str(store),
+            "--id",
+            "diagnostic",
+            "--name",
+            "analysis/error.json",
+        ],
+        work / "recovered-error.json",
+        work,
+    )
+    _require(
+        recovered_error["content"] == diagnostic["analysis"]["error"],
+        "selected read replaced the saved diagnostic",
     )
 
 

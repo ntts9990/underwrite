@@ -8,16 +8,19 @@ import sys
 from pathlib import Path
 from typing import NoReturn, cast
 
-from underwrite_core.canonical import canonical_bytes
+from underwrite_core.canonical import CanonicalizationError, canonical_bytes
 
 from underwrite.cli.local_json import read_document, validate
 from underwrite.instrument.ingest.application import NEXT_ACTIONS
 from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
+from underwrite.instrument.ingest.transport import DecodeError, decode_json
+from underwrite.service._record_errors import ERROR_SPECS
 from underwrite.service.records import (
     RecordError,
     RecordSnapshot,
     list_records,
     read_record,
+    read_record_file,
     save_record,
     verify_record,
 )
@@ -27,28 +30,11 @@ SPEC_MAX_DEPTH = 16
 OUTPUT_MAX_BYTES = 2 * 1024 * 1024
 
 _ERRORS: dict[str, tuple[str, str]] = {
-    "INVALID_SPEC": ("INVALID_RECORD_SPEC", "CORRECT_RECORD_SPEC"),
-    "INVALID_RECORD": ("INVALID_RECORD_MANIFEST", "SELECT_VALID_RECORD"),
-    "INVALID_STORE_LAYOUT": ("INVALID_STORE_LAYOUT", "SELECT_VALID_STORE"),
-    "INSECURE_STORE": ("INSECURE_STORE_PERMISSIONS", "SECURE_STORE"),
-    "STORE_NOT_FOUND": ("STORE_NOT_FOUND", "CREATE_OR_SELECT_STORE"),
-    "RECORD_NOT_FOUND": ("RECORD_NOT_FOUND", "SELECT_EXISTING_RECORD"),
-    "RECORD_EXISTS": ("RECORD_ALREADY_EXISTS", "USE_NEW_RECORD_ID"),
-    "RECORD_CAPTURE_INCOMPLETE": ("RECORD_CAPTURE_INCOMPLETE", "USE_NEW_RECORD_ID"),
-    "RECORD_NOT_PUBLISHED": ("RECORD_NOT_PUBLISHED", "SELECT_PUBLISHED_RECORD"),
-    "SOURCE_READ_FAILED": ("SOURCE_READ_FAILED", "CHECK_SOURCE_FILE"),
-    "INPUT_LIMIT_EXCEEDED": ("INPUT_LIMIT_EXCEEDED", "REDUCE_INPUT_SIZE"),
-    "RECORD_LIMIT_EXCEEDED": ("RECORD_LIMIT_EXCEEDED", "REDUCE_RECORD_COUNT"),
-    "STORE_IO_ERROR": ("STORE_IO_ERROR", "CHECK_STORE_IO"),
-    "UNSUPPORTED_PLATFORM": ("UNSUPPORTED_PLATFORM", NEXT_ACTIONS["UNSUPPORTED_PLATFORM"]),
-    "USAGE_ERROR": ("INVALID_ARGUMENTS_SEE_HELP", NEXT_ACTIONS["USAGE_ERROR"]),
-    "SCHEMA_CONFIGURATION_ERROR": (
-        "INVALID_PACKAGED_CONTRACT",
-        NEXT_ACTIONS["SCHEMA_CONFIGURATION_ERROR"],
-    ),
-    "OUTPUT_LIMIT_EXCEEDED": ("OUTPUT_LIMIT_EXCEEDED", "REDUCE_OUTPUT_SIZE"),
-    "INTERNAL_ERROR": ("INTERNAL_ERROR", NEXT_ACTIONS["INTERNAL_ERROR"]),
+    code: (reason, NEXT_ACTIONS[code] if action is None else action)
+    for code, (reason, action) in ERROR_SPECS.items()
 }
+DOCUMENT_MAX_DEPTH = 32
+
 _SERVICE_LOCATIONS = frozenset(
     {"", "/spec", "/spec/files", "/spec/links", "/record", "/record_id", "/catalog"}
 )
@@ -94,6 +80,12 @@ def configure(parser: argparse.ArgumentParser) -> None:
     show = commands.add_parser("show", help="Show one complete published record.")
     _common(show)
     show.add_argument("--id", required=True, help="Record ID.")
+    document = commands.add_parser(
+        "read-json", help="Read one retained JSON file, verified against its manifest; always JSON."
+    )
+    _common(document)
+    document.add_argument("--id", required=True, help="Record ID.")
+    document.add_argument("--name", required=True, help="Exact logical name from manifest.files.")
     verify = commands.add_parser("verify", help="Verify stored bytes and direct links.")
     _common(verify)
     verify.add_argument("--id", required=True, help="Record ID.")
@@ -168,6 +160,39 @@ def _view(snapshot: RecordSnapshot) -> dict[str, object]:
     }
 
 
+def _document(root: Path, identifier: str, name: str) -> dict[str, object]:
+    """Embed a parsed representation after checking raw byte identity.
+
+    Card: record-reuse | Paper: record_document.v1 | Stage: storage-read
+    Decimal/exponent tokens use existing binary64 decoding, not exact decimal arithmetic.
+    """
+    selected = read_record_file(root, identifier, name)
+    try:
+        content = decode_json(selected.data, DOCUMENT_MAX_DEPTH)
+        canonical_bytes(content)
+    except DecodeError as exc:
+        code = (
+            "INPUT_LIMIT_EXCEEDED"
+            if str(exc) == "DEPTH_LIMIT_EXCEEDED"
+            else "UNSUPPORTED_RECORD_CONTENT"
+        )
+        raise _CliError(code, "/record") from None
+    except CanonicalizationError:
+        raise _CliError("UNSUPPORTED_RECORD_CONTENT", "/record") from None
+    return {
+        "schema": "record_document.v1",
+        "record_id": selected.record_id,
+        "name": selected.name,
+        "media_type": selected.media_type,
+        "bytes": len(selected.data),
+        "sha256": selected.sha256,
+        "manifest_digest": selected.manifest_digest,
+        "verification_scope": "selected_file_against_manifest",
+        "content_representation": "parsed_json",
+        "content": content,
+    }
+
+
 def _produce(args: argparse.Namespace) -> tuple[dict[str, object], str]:
     root = cast(Path, args.root)
     command = cast(str, args.records_command)
@@ -176,6 +201,8 @@ def _produce(args: argparse.Namespace) -> tuple[dict[str, object], str]:
         return _view(save_record(root, _spec(spec_path), spec_path.parent)), "record_view.v1"
     if command == "show":
         return _view(read_record(root, cast(str, args.id))), "record_view.v1"
+    if command == "read-json":
+        return _document(root, cast(str, args.id), cast(str, args.name)), "record_document.v1"
     if command == "list":
         return list_records(root), "record_catalog.v1"
     return verify_record(root, cast(str, args.id)), "record_verification.v1"
@@ -210,10 +237,13 @@ def main(argv: list[str]) -> int:
         return record_promptfoo.main(argv[1:])
     parser = _Parser(prog="underwrite records", allow_abbrev=False)
     configure(parser)
+    as_json = "--json" in argv or bool(argv and argv[0] == "read-json")
     try:
         args = parser.parse_args(argv)
         report = _validated_report(args)
-        output = _render(report, as_json=cast(bool, args.json))
+        output = _render(
+            report, as_json=cast(bool, args.json) or args.records_command == "read-json"
+        )
         if len(output.encode("utf-8")) + 1 > OUTPUT_MAX_BYTES:
             raise _CliError("OUTPUT_LIMIT_EXCEEDED", "/output")
     except RecordError as exc:
@@ -227,4 +257,4 @@ def main(argv: list[str]) -> int:
     else:
         sys.stdout.write(output + "\n")
         return 0
-    return _emit_error(error, as_json="--json" in argv)
+    return _emit_error(error, as_json=as_json)

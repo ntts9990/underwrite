@@ -92,6 +92,43 @@ with `valid: false` for damaged stored bytes or direct links. Invalid invocation
 invalid target manifests, and storage failures return exit 2 with
 `record_error.v1` on stderr and no success payload.
 
+To read a retained JSON result by its manifest logical name, use:
+
+```sh
+underwrite records read-json --root STORE --id RECORD_ID --name analysis/accounting.json
+```
+
+Find logical names with `records show` when needed. `read-json` always emits JSON;
+`--json` is optional. It returns `record_document.v1`, including `content`, the
+original file's byte length and hash, and the captured manifest digest. It reads
+and verifies that same selected buffer before returning any content. The scope
+is **selected_file_against_manifest**: other files and links are not checked.
+Use `records verify` separately when whole-record verification is needed. A saved
+failure remains a failure inside `content`; exit 0 here only means retrieval worked.
+
+The selected input cap is 1 MiB, JSON depth is 32, and the complete output cap is
+2 MiB including the final newline. All JSON root types are supported when admitted
+by the existing strict decoder and canonical serializer. Duplicate keys, invalid
+UTF-8, non-finite/unsafe numbers, unsupported Unicode, and non-JSON content are
+refused. An intact binary file is unsupported content, not a damaged record.
+Decimal/exponent tokens use the existing binary64 interpretation; integer tokens
+retain the existing integer path. `content` is not the original byte or exact
+decimal spelling, and stored strings are not NFC-rewritten.
+Unknown logical names, byte mismatches and unsupported content have separate
+bounded errors. Reading creates no files and never reopens a producer source path.
+
+Python callers can obtain verified bytes, including non-JSON content within the
+same fixed input cap, without knowing the physical store layout:
+
+```python
+from pathlib import Path
+from underwrite.service.records import read_record_file
+
+selected = read_record_file(Path("STORE"), "RECORD_ID", "analysis/accounting.json")
+raw = selected.data
+# selected.sha256 identifies raw; selected.manifest_digest identifies its manifest.
+```
+
 Verification checks stored bytes and direct manifest links. It does not rerun
 commands or recursively verify linked bundles. `rerun_verification: referenced`
 means only that an explicit verification artifact is linked. Its claims remain

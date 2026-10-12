@@ -7,7 +7,8 @@ import hashlib
 import os
 import secrets
 import stat
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Generator, Iterable
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -15,6 +16,8 @@ from typing import Final, NamedTuple, cast
 
 from underwrite_core.canonical import canonical_bytes, digest_bytes
 
+from underwrite._fileio import read_descriptor
+from underwrite.service._record_errors import ERROR_SPECS
 from underwrite.service._record_format import (
     MAX_FILE_BYTES,
     MAX_FILES,
@@ -24,6 +27,7 @@ from underwrite.service._record_format import (
     MAX_SELECTION_EXCLUDED,
     MAX_TOTAL_BYTES,
     FormatError,
+    logical_name,
     record_id,
     strict_manifest,
     validate_captured_spec,
@@ -35,28 +39,8 @@ _DIR_MODE: Final = 0o700
 _FILE_MODE: Final = 0o600
 _READ_SIZE: Final = 1024 * 1024
 RECORD_MAX_FILES: Final = MAX_FILES
-ERROR_CODES: Final = frozenset(
-    {
-        "INVALID_SPEC",
-        "INVALID_RECORD",
-        "INVALID_STORE_LAYOUT",
-        "INSECURE_STORE",
-        "STORE_NOT_FOUND",
-        "RECORD_NOT_FOUND",
-        "RECORD_EXISTS",
-        "RECORD_CAPTURE_INCOMPLETE",
-        "RECORD_NOT_PUBLISHED",
-        "SOURCE_READ_FAILED",
-        "INPUT_LIMIT_EXCEEDED",
-        "RECORD_LIMIT_EXCEEDED",
-        "STORE_IO_ERROR",
-        "UNSUPPORTED_PLATFORM",
-        "USAGE_ERROR",
-        "SCHEMA_CONFIGURATION_ERROR",
-        "OUTPUT_LIMIT_EXCEEDED",
-        "INTERNAL_ERROR",
-    }
-)
+RECORD_READ_MAX_BYTES: Final = 1024 * 1024
+ERROR_CODES: Final = frozenset(ERROR_SPECS)
 
 
 class RecordSnapshot(NamedTuple):
@@ -64,6 +48,21 @@ class RecordSnapshot(NamedTuple):
 
     manifest: dict[str, object]
     digest: str
+
+
+@dataclass(frozen=True)
+class RecordFileSnapshot:
+    """Captured bytes checked against one captured manifest, not whole-record validity.
+
+    Card: record-reuse | Paper: record_document.v1 | Stage: storage-read
+    """
+
+    record_id: str
+    name: str
+    media_type: str
+    data: bytes
+    sha256: str
+    manifest_digest: str
 
 
 @dataclass(frozen=True)
@@ -214,6 +213,156 @@ def read_record(root: Path, identifier: str) -> RecordSnapshot:
     records = _store_for_read(root)
     directory = _record_dir(records, identifier)
     return _read_manifest(directory, identifier)
+
+
+@contextmanager
+def _private_descriptor(
+    path: str | Path,
+    *,
+    parent: int | None = None,
+    directory: bool,
+    missing: str,
+) -> Generator[int]:
+    """Validate the opened control node; descendants remain relative to its fd."""
+    directory_flags, file_flags = _platform_flags()
+    try:
+        descriptor = os.open(path, directory_flags if directory else file_flags, dir_fd=parent)
+    except FileNotFoundError:
+        raise RecordError(missing, "/record") from None
+    except NotImplementedError:
+        raise RecordError("UNSUPPORTED_PLATFORM") from None
+    except OSError as exc:
+        code = (
+            "INVALID_STORE_LAYOUT"
+            if exc.errno in {errno.ELOOP, errno.ENOTDIR, errno.EISDIR}
+            else "STORE_IO_ERROR"
+        )
+        raise RecordError(code, "/record") from None
+    try:
+        info = os.fstat(descriptor)
+        expected = stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode)
+        if not expected:
+            raise RecordError("INVALID_STORE_LAYOUT", "/record")
+        if not _private(info.st_mode):
+            raise RecordError("INSECURE_STORE", "/record")
+        yield descriptor
+    except OSError:
+        raise RecordError("STORE_IO_ERROR", "/record") from None
+    finally:
+        os.close(descriptor)
+
+
+def _read_descriptor_bytes(descriptor: int, limit: int) -> bytes:
+    if os.fstat(descriptor).st_size > limit:
+        raise RecordError("INPUT_LIMIT_EXCEEDED", "/record")
+    raw = read_descriptor(descriptor, limit)
+    if len(raw) > limit:
+        raise RecordError("INPUT_LIMIT_EXCEEDED", "/record")
+    return raw
+
+
+def _manifest_at(directory: int, identifier: str) -> RecordSnapshot:
+    try:
+        with _private_descriptor(
+            "manifest.json", parent=directory, directory=False, missing="RECORD_NOT_PUBLISHED"
+        ) as descriptor:
+            raw = _read_descriptor_bytes(descriptor, MAX_MANIFEST_BYTES)
+        manifest = strict_manifest(raw)
+        if manifest["record_id"] != identifier:
+            raise RecordError("INVALID_RECORD", "/record")
+        return RecordSnapshot(manifest, digest_bytes(raw))
+    except RecordError as exc:
+        if exc.code == "INPUT_LIMIT_EXCEEDED":
+            raise RecordError("INVALID_RECORD", "/record") from None
+        raise
+    except ValueError:
+        # Includes FormatError and the JSON decoder's integer-token resource limit.
+        raise RecordError("INVALID_RECORD", "/record") from None
+
+
+def _selected_bytes_at(directory: int, name: str, limit: int) -> bytes:
+    try:
+        with ExitStack() as opened:
+            parent = directory
+            parts = ["files", *name.split("/")]
+            for part in parts[:-1]:
+                parent = opened.enter_context(
+                    _private_descriptor(
+                        part, parent=parent, directory=True, missing="SOURCE_READ_FAILED"
+                    )
+                )
+            descriptor = opened.enter_context(
+                _private_descriptor(
+                    parts[-1], parent=parent, directory=False, missing="SOURCE_READ_FAILED"
+                )
+            )
+            return _read_descriptor_bytes(descriptor, limit)
+    except RecordError as exc:
+        if exc.code == "STORE_IO_ERROR":
+            raise RecordError("SOURCE_READ_FAILED", "/record") from None
+        raise
+
+
+def _selected_file(snapshot: RecordSnapshot, name: str, limit: int) -> dict[str, object]:
+    for file in cast(list[dict[str, object]], snapshot.manifest["files"]):
+        if file["name"] == name:
+            if cast(int, file["bytes"]) > limit:
+                raise RecordError("INPUT_LIMIT_EXCEEDED", "/record")
+            return file
+    raise RecordError("RECORD_FILE_NOT_FOUND", "/record")
+
+
+def read_record_file(
+    root: Path, identifier: str, name: str, *, max_bytes: int = RECORD_READ_MAX_BYTES
+) -> RecordFileSnapshot:
+    """Return bounded bytes checked against a manifest under the same record fd.
+
+    Card: record-reuse | Paper: record_document.v1 | Stage: storage-read
+    The caller selects root through normal ancestor resolution. Root itself and
+    all descendants are opened no-follow and checked for private permissions.
+    Unrelated files/links and original sources are not read or verified.
+    """
+    try:
+        checked_id = record_id(identifier)
+    except FormatError:
+        raise RecordError("INVALID_SPEC", "/record_id") from None
+    try:
+        checked_name = logical_name(name)
+    except FormatError:
+        raise RecordError("INVALID_SPEC", "/spec/files") from None
+    if type(max_bytes) is not int or not 0 < max_bytes <= RECORD_READ_MAX_BYTES:
+        raise RecordError("INVALID_SPEC", "/spec/files")
+    with ExitStack() as opened:
+        root_fd = opened.enter_context(
+            _private_descriptor(root, directory=True, missing="STORE_NOT_FOUND")
+        )
+        records_fd = opened.enter_context(
+            _private_descriptor(
+                "records", parent=root_fd, directory=True, missing="STORE_NOT_FOUND"
+            )
+        )
+        try:
+            with _private_descriptor(
+                ".staging", parent=root_fd, directory=True, missing="STORE_NOT_FOUND"
+            ):
+                pass
+        except RecordError as exc:
+            if exc.code != "STORE_NOT_FOUND":
+                raise
+        directory = opened.enter_context(
+            _private_descriptor(
+                checked_id, parent=records_fd, directory=True, missing="RECORD_NOT_FOUND"
+            )
+        )
+        snapshot = _manifest_at(directory, checked_id)
+        selected = _selected_file(snapshot, checked_name, max_bytes)
+        raw = _selected_bytes_at(directory, checked_name, max_bytes)
+    digest = digest_bytes(raw)
+    if len(raw) != selected["bytes"] or digest != selected["sha256"]:
+        raise RecordError("RECORD_FILE_INTEGRITY_MISMATCH", "/record")
+    return RecordFileSnapshot(
+        checked_id, checked_name, cast(str, selected["media_type"]), raw, digest, snapshot.digest
+    )
 
 
 def _validate_references(root: Path, spec: dict[str, object]) -> None:

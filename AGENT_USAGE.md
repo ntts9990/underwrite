@@ -525,6 +525,13 @@ callers can use `run_goppi_p7_handoff(HandoffRequest(...))` from
 
 ## Keep selected evidence in local records
 
+For an existing record, use `records show --root ROOT --id ID --json` to select an
+exact logical name, then `records read-json --root ROOT --id ID --name NAME` to
+retrieve its verified JSON without assembling a filesystem path. Inspect `content`
+for the retained analysis status. This verifies only that selected file against
+its captured manifest; run `records verify` for the whole record and direct links.
+See [read limits and the byte API](STORAGE.md).
+
 For a selected Promptfoo file and an explicit private store, use
 `records audit-promptfoo FILE --root ROOT --id NEW_ID --json`. It captures the
 same bytes used for accounting without a handwritten record spec. Inspect both

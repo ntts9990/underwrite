@@ -269,3 +269,11 @@ def test_disallowed_import_is_detected_in_temp_copy(tmp_path: Path) -> None:
     violations = find_disallowed_imports(copy_dir, _PURE_APP_ALLOWED_PREFIXES)
 
     assert any("psycopg" in message for message in violations)
+
+
+def test_descriptor_reader_has_one_effectful_owner_and_compatible_reexports() -> None:
+    import underwrite._fileio as fileio
+    from underwrite.instrument.ingest import transport
+
+    assert transport.read_descriptor is fileio.read_descriptor
+    assert transport.TransportError is fileio.TransportError

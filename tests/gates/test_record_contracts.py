@@ -23,6 +23,7 @@ NAMES = (
     "record_spec.v1",
     "result_record.v1",
     "record_view.v1",
+    "record_document.v1",
     "record_catalog.v1",
     "record_verification.v1",
     "record_error.v1",
@@ -48,9 +49,7 @@ def schema(name: str) -> dict[str, Any]:
 
 
 def validator(name: str) -> Validator:
-    return cast(
-        "Validator", Draft202012Validator(schema(name), format_checker=FormatChecker())
-    )
+    return cast("Validator", Draft202012Validator(schema(name), format_checker=FormatChecker()))
 
 
 def valid_spec() -> dict[str, Any]:
@@ -276,8 +275,7 @@ def test_cross_name_casefold_and_prefix_conflicts_remain_runtime_checks(
     spec = valid_spec()
     first = spec["files"][0]
     spec["files"] = [
-        {**first, "name": name, "path": f"input-{index}.txt"}
-        for index, name in enumerate(names)
+        {**first, "name": name, "path": f"input-{index}.txt"} for index, name in enumerate(names)
     ]
     validator("record_spec.v1").validate(spec)
 
@@ -316,9 +314,7 @@ def test_links_are_direct_dependencies_or_related_records_without_extra_semantic
             {**record, "manifest_digest": content_digest(record)}
         )
     # One relation per record_id is a P2 semantic check, beyond exact-object uniqueness.
-    record["links"].append(
-        {**link, "relation": "related", "manifest_digest": "sha256:" + "b" * 64}
-    )
+    record["links"].append({**link, "relation": "related", "manifest_digest": "sha256:" + "b" * 64})
     validator("result_record.v1").validate(record)
 
 
@@ -360,9 +356,7 @@ def test_record_identity_kind_roles_and_collection_bounds() -> None:
 def test_spec_bounds_and_stored_file_size_are_finite() -> None:
     spec = valid_spec()
     file_spec = spec["files"][0]
-    spec["files"] = [
-        {**file_spec, "name": f"source/{index}.txt"} for index in range(65)
-    ]
+    spec["files"] = [{**file_spec, "name": f"source/{index}.txt"} for index in range(65)]
     with pytest.raises(ValidationError):
         validator("record_spec.v1").validate(spec)
     spec = valid_spec()
@@ -575,3 +569,66 @@ def test_record_errors_have_exact_owned_code_reason_action_and_safe_location() -
         compiled.validate(sample)
     with pytest.raises(ValidationError):
         compiled.validate({**sample, "location": "/record\n"})
+
+
+@pytest.mark.parametrize("name", ["record_error", "record_document"])
+def test_generated_record_read_contracts_are_current(name: str) -> None:
+    subprocess.run(
+        [sys.executable, str(ROOT / f"scripts/build_{name}.py"), "--check"],
+        cwd=ROOT,
+        check=True,
+    )
+
+
+def test_record_error_vocabulary_matches_its_runtime_owner() -> None:
+    from underwrite.cli.records import record_error_payload
+    from underwrite.service._record_errors import ERROR_SPECS
+    from underwrite.service.records import ERROR_CODES, RecordError
+
+    document = schema("record_error.v1")
+    assert set(document["$defs"]) == set(ERROR_SPECS) == set(ERROR_CODES)
+    for code in ERROR_SPECS:
+        payload = record_error_payload(RecordError(code))
+        validator("record_error.v1").validate(payload)
+        fields = document["$defs"][code]["properties"]
+        assert all(
+            payload[key] == fields[key]["const"] for key in ("code", "reason", "next_action")
+        )
+
+
+def test_selected_document_reuses_record_identity_definitions() -> None:
+    from underwrite.service.records import RECORD_READ_MAX_BYTES
+
+    document = schema("record_document.v1")
+    owner = schema("result_record.v1")
+    for name, definition in document["$defs"].items():
+        assert definition == owner["$defs"][name]
+    assert document["properties"]["bytes"]["maximum"] == RECORD_READ_MAX_BYTES
+    assert document["properties"]["verification_scope"] == {
+        "const": "selected_file_against_manifest"
+    }
+
+
+@pytest.mark.parametrize("content", [{"state": "error"}, [1, None], "text", 1, 0.5, True, None])
+def test_selected_document_accepts_admitted_json_roots_without_full_record_claim(
+    content: object,
+) -> None:
+    document: dict[str, Any] = {
+        "schema": "record_document.v1",
+        "record_id": "selected",
+        "name": "analysis/error.json",
+        "media_type": "application/json",
+        "bytes": 1,
+        "sha256": "sha256:" + "0" * 64,
+        "manifest_digest": "sha256:" + "1" * 64,
+        "verification_scope": "selected_file_against_manifest",
+        "content_representation": "parsed_json",
+        "content": content,
+    }
+    validator("record_document.v1").validate(document)
+    for invalid in (
+        {**document, "valid": True},
+        {**document, "verification_scope": "stored_bytes_and_direct_links"},
+    ):
+        with pytest.raises(ValidationError):
+            validator("record_document.v1").validate(invalid)

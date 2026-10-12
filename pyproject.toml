@@ -59,6 +59,7 @@ source-include = [
     "contracts/record_spec.v1.schema.json",
     "contracts/result_record.v1.schema.json",
     "contracts/record_view.v1.schema.json",
+    "contracts/record_document.v1.schema.json",
     "contracts/record_catalog.v1.schema.json",
     "contracts/record_verification.v1.schema.json",
     "contracts/record_error.v1.schema.json",

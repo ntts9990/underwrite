@@ -5,58 +5,378 @@
   "description": "Finite records command failure without caller-supplied diagnostics.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema", "code", "reason", "location", "next_action", "retryable", "exit_code"],
+  "required": [
+    "schema",
+    "code",
+    "reason",
+    "location",
+    "next_action",
+    "retryable",
+    "exit_code"
+  ],
   "properties": {
-    "schema": {"const": "record_error.v1"},
-    "code": {"type": "string"},
-    "reason": {"type": "string"},
+    "schema": {
+      "const": "record_error.v1"
+    },
+    "code": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
     "location": {
       "type": "string",
       "maxLength": 128,
       "pattern": "^(?:|/(?:root|store|record_id|spec(?:/(?:files|links)(?:/[0-9]+(?:/[a-z_]+)?)?)?|source_base|record|catalog|verification|output))(?![\\s\\S])"
     },
-    "next_action": {"type": "string"},
-    "retryable": {"const": false},
-    "exit_code": {"const": 2}
+    "next_action": {
+      "type": "string"
+    },
+    "retryable": {
+      "const": false
+    },
+    "exit_code": {
+      "const": 2
+    }
   },
   "oneOf": [
-    {"$ref": "#/$defs/INVALID_SPEC"},
-    {"$ref": "#/$defs/INVALID_RECORD"},
-    {"$ref": "#/$defs/INVALID_STORE_LAYOUT"},
-    {"$ref": "#/$defs/INSECURE_STORE"},
-    {"$ref": "#/$defs/STORE_NOT_FOUND"},
-    {"$ref": "#/$defs/RECORD_NOT_FOUND"},
-    {"$ref": "#/$defs/RECORD_EXISTS"},
-    {"$ref": "#/$defs/RECORD_CAPTURE_INCOMPLETE"},
-    {"$ref": "#/$defs/RECORD_NOT_PUBLISHED"},
-    {"$ref": "#/$defs/SOURCE_READ_FAILED"},
-    {"$ref": "#/$defs/INPUT_LIMIT_EXCEEDED"},
-    {"$ref": "#/$defs/RECORD_LIMIT_EXCEEDED"},
-    {"$ref": "#/$defs/STORE_IO_ERROR"},
-    {"$ref": "#/$defs/UNSUPPORTED_PLATFORM"},
-    {"$ref": "#/$defs/USAGE_ERROR"},
-    {"$ref": "#/$defs/SCHEMA_CONFIGURATION_ERROR"},
-    {"$ref": "#/$defs/OUTPUT_LIMIT_EXCEEDED"},
-    {"$ref": "#/$defs/INTERNAL_ERROR"}
+    {
+      "$ref": "#/$defs/INVALID_SPEC"
+    },
+    {
+      "$ref": "#/$defs/INVALID_RECORD"
+    },
+    {
+      "$ref": "#/$defs/INVALID_STORE_LAYOUT"
+    },
+    {
+      "$ref": "#/$defs/INSECURE_STORE"
+    },
+    {
+      "$ref": "#/$defs/STORE_NOT_FOUND"
+    },
+    {
+      "$ref": "#/$defs/RECORD_NOT_FOUND"
+    },
+    {
+      "$ref": "#/$defs/RECORD_EXISTS"
+    },
+    {
+      "$ref": "#/$defs/RECORD_CAPTURE_INCOMPLETE"
+    },
+    {
+      "$ref": "#/$defs/RECORD_NOT_PUBLISHED"
+    },
+    {
+      "$ref": "#/$defs/SOURCE_READ_FAILED"
+    },
+    {
+      "$ref": "#/$defs/INPUT_LIMIT_EXCEEDED"
+    },
+    {
+      "$ref": "#/$defs/RECORD_LIMIT_EXCEEDED"
+    },
+    {
+      "$ref": "#/$defs/STORE_IO_ERROR"
+    },
+    {
+      "$ref": "#/$defs/UNSUPPORTED_PLATFORM"
+    },
+    {
+      "$ref": "#/$defs/USAGE_ERROR"
+    },
+    {
+      "$ref": "#/$defs/SCHEMA_CONFIGURATION_ERROR"
+    },
+    {
+      "$ref": "#/$defs/OUTPUT_LIMIT_EXCEEDED"
+    },
+    {
+      "$ref": "#/$defs/INTERNAL_ERROR"
+    },
+    {
+      "$ref": "#/$defs/RECORD_FILE_NOT_FOUND"
+    },
+    {
+      "$ref": "#/$defs/RECORD_FILE_INTEGRITY_MISMATCH"
+    },
+    {
+      "$ref": "#/$defs/UNSUPPORTED_RECORD_CONTENT"
+    }
   ],
   "$defs": {
-    "INVALID_SPEC": {"properties": {"code": {"const": "INVALID_SPEC"}, "reason": {"const": "INVALID_RECORD_SPEC"}, "next_action": {"const": "CORRECT_RECORD_SPEC"}}},
-    "INVALID_RECORD": {"properties": {"code": {"const": "INVALID_RECORD"}, "reason": {"const": "INVALID_RECORD_MANIFEST"}, "next_action": {"const": "SELECT_VALID_RECORD"}}},
-    "INVALID_STORE_LAYOUT": {"properties": {"code": {"const": "INVALID_STORE_LAYOUT"}, "reason": {"const": "INVALID_STORE_LAYOUT"}, "next_action": {"const": "SELECT_VALID_STORE"}}},
-    "INSECURE_STORE": {"properties": {"code": {"const": "INSECURE_STORE"}, "reason": {"const": "INSECURE_STORE_PERMISSIONS"}, "next_action": {"const": "SECURE_STORE"}}},
-    "STORE_NOT_FOUND": {"properties": {"code": {"const": "STORE_NOT_FOUND"}, "reason": {"const": "STORE_NOT_FOUND"}, "next_action": {"const": "CREATE_OR_SELECT_STORE"}}},
-    "RECORD_NOT_FOUND": {"properties": {"code": {"const": "RECORD_NOT_FOUND"}, "reason": {"const": "RECORD_NOT_FOUND"}, "next_action": {"const": "SELECT_EXISTING_RECORD"}}},
-    "RECORD_EXISTS": {"properties": {"code": {"const": "RECORD_EXISTS"}, "reason": {"const": "RECORD_ALREADY_EXISTS"}, "next_action": {"const": "USE_NEW_RECORD_ID"}}},
-    "RECORD_CAPTURE_INCOMPLETE": {"properties": {"code": {"const": "RECORD_CAPTURE_INCOMPLETE"}, "reason": {"const": "RECORD_CAPTURE_INCOMPLETE"}, "next_action": {"const": "USE_NEW_RECORD_ID"}}},
-    "RECORD_NOT_PUBLISHED": {"properties": {"code": {"const": "RECORD_NOT_PUBLISHED"}, "reason": {"const": "RECORD_NOT_PUBLISHED"}, "next_action": {"const": "SELECT_PUBLISHED_RECORD"}}},
-    "SOURCE_READ_FAILED": {"properties": {"code": {"const": "SOURCE_READ_FAILED"}, "reason": {"const": "SOURCE_READ_FAILED"}, "next_action": {"const": "CHECK_SOURCE_FILE"}}},
-    "INPUT_LIMIT_EXCEEDED": {"properties": {"code": {"const": "INPUT_LIMIT_EXCEEDED"}, "reason": {"const": "INPUT_LIMIT_EXCEEDED"}, "next_action": {"const": "REDUCE_INPUT_SIZE"}}},
-    "RECORD_LIMIT_EXCEEDED": {"properties": {"code": {"const": "RECORD_LIMIT_EXCEEDED"}, "reason": {"const": "RECORD_LIMIT_EXCEEDED"}, "next_action": {"const": "REDUCE_RECORD_COUNT"}}},
-    "STORE_IO_ERROR": {"properties": {"code": {"const": "STORE_IO_ERROR"}, "reason": {"const": "STORE_IO_ERROR"}, "next_action": {"const": "CHECK_STORE_IO"}}},
-    "UNSUPPORTED_PLATFORM": {"properties": {"code": {"const": "UNSUPPORTED_PLATFORM"}, "reason": {"const": "UNSUPPORTED_PLATFORM"}, "next_action": {"const": "USE_SUPPORTED_PLATFORM"}}},
-    "USAGE_ERROR": {"properties": {"code": {"const": "USAGE_ERROR"}, "reason": {"const": "INVALID_ARGUMENTS_SEE_HELP"}, "next_action": {"const": "CORRECT_ARGUMENTS"}}},
-    "SCHEMA_CONFIGURATION_ERROR": {"properties": {"code": {"const": "SCHEMA_CONFIGURATION_ERROR"}, "reason": {"const": "INVALID_PACKAGED_CONTRACT"}, "next_action": {"const": "REINSTALL_PACKAGE"}}},
-    "OUTPUT_LIMIT_EXCEEDED": {"properties": {"code": {"const": "OUTPUT_LIMIT_EXCEEDED"}, "reason": {"const": "OUTPUT_LIMIT_EXCEEDED"}, "next_action": {"const": "REDUCE_OUTPUT_SIZE"}}},
-    "INTERNAL_ERROR": {"properties": {"code": {"const": "INTERNAL_ERROR"}, "reason": {"const": "INTERNAL_ERROR"}, "next_action": {"const": "REPORT_INTERNAL_ERROR"}}}
+    "INVALID_SPEC": {
+      "properties": {
+        "code": {
+          "const": "INVALID_SPEC"
+        },
+        "reason": {
+          "const": "INVALID_RECORD_SPEC"
+        },
+        "next_action": {
+          "const": "CORRECT_RECORD_SPEC"
+        }
+      }
+    },
+    "INVALID_RECORD": {
+      "properties": {
+        "code": {
+          "const": "INVALID_RECORD"
+        },
+        "reason": {
+          "const": "INVALID_RECORD_MANIFEST"
+        },
+        "next_action": {
+          "const": "SELECT_VALID_RECORD"
+        }
+      }
+    },
+    "INVALID_STORE_LAYOUT": {
+      "properties": {
+        "code": {
+          "const": "INVALID_STORE_LAYOUT"
+        },
+        "reason": {
+          "const": "INVALID_STORE_LAYOUT"
+        },
+        "next_action": {
+          "const": "SELECT_VALID_STORE"
+        }
+      }
+    },
+    "INSECURE_STORE": {
+      "properties": {
+        "code": {
+          "const": "INSECURE_STORE"
+        },
+        "reason": {
+          "const": "INSECURE_STORE_PERMISSIONS"
+        },
+        "next_action": {
+          "const": "SECURE_STORE"
+        }
+      }
+    },
+    "STORE_NOT_FOUND": {
+      "properties": {
+        "code": {
+          "const": "STORE_NOT_FOUND"
+        },
+        "reason": {
+          "const": "STORE_NOT_FOUND"
+        },
+        "next_action": {
+          "const": "CREATE_OR_SELECT_STORE"
+        }
+      }
+    },
+    "RECORD_NOT_FOUND": {
+      "properties": {
+        "code": {
+          "const": "RECORD_NOT_FOUND"
+        },
+        "reason": {
+          "const": "RECORD_NOT_FOUND"
+        },
+        "next_action": {
+          "const": "SELECT_EXISTING_RECORD"
+        }
+      }
+    },
+    "RECORD_EXISTS": {
+      "properties": {
+        "code": {
+          "const": "RECORD_EXISTS"
+        },
+        "reason": {
+          "const": "RECORD_ALREADY_EXISTS"
+        },
+        "next_action": {
+          "const": "USE_NEW_RECORD_ID"
+        }
+      }
+    },
+    "RECORD_CAPTURE_INCOMPLETE": {
+      "properties": {
+        "code": {
+          "const": "RECORD_CAPTURE_INCOMPLETE"
+        },
+        "reason": {
+          "const": "RECORD_CAPTURE_INCOMPLETE"
+        },
+        "next_action": {
+          "const": "USE_NEW_RECORD_ID"
+        }
+      }
+    },
+    "RECORD_NOT_PUBLISHED": {
+      "properties": {
+        "code": {
+          "const": "RECORD_NOT_PUBLISHED"
+        },
+        "reason": {
+          "const": "RECORD_NOT_PUBLISHED"
+        },
+        "next_action": {
+          "const": "SELECT_PUBLISHED_RECORD"
+        }
+      }
+    },
+    "SOURCE_READ_FAILED": {
+      "properties": {
+        "code": {
+          "const": "SOURCE_READ_FAILED"
+        },
+        "reason": {
+          "const": "SOURCE_READ_FAILED"
+        },
+        "next_action": {
+          "const": "CHECK_SOURCE_FILE"
+        }
+      }
+    },
+    "INPUT_LIMIT_EXCEEDED": {
+      "properties": {
+        "code": {
+          "const": "INPUT_LIMIT_EXCEEDED"
+        },
+        "reason": {
+          "const": "INPUT_LIMIT_EXCEEDED"
+        },
+        "next_action": {
+          "const": "REDUCE_INPUT_SIZE"
+        }
+      }
+    },
+    "RECORD_LIMIT_EXCEEDED": {
+      "properties": {
+        "code": {
+          "const": "RECORD_LIMIT_EXCEEDED"
+        },
+        "reason": {
+          "const": "RECORD_LIMIT_EXCEEDED"
+        },
+        "next_action": {
+          "const": "REDUCE_RECORD_COUNT"
+        }
+      }
+    },
+    "STORE_IO_ERROR": {
+      "properties": {
+        "code": {
+          "const": "STORE_IO_ERROR"
+        },
+        "reason": {
+          "const": "STORE_IO_ERROR"
+        },
+        "next_action": {
+          "const": "CHECK_STORE_IO"
+        }
+      }
+    },
+    "UNSUPPORTED_PLATFORM": {
+      "properties": {
+        "code": {
+          "const": "UNSUPPORTED_PLATFORM"
+        },
+        "reason": {
+          "const": "UNSUPPORTED_PLATFORM"
+        },
+        "next_action": {
+          "const": "USE_SUPPORTED_PLATFORM"
+        }
+      }
+    },
+    "USAGE_ERROR": {
+      "properties": {
+        "code": {
+          "const": "USAGE_ERROR"
+        },
+        "reason": {
+          "const": "INVALID_ARGUMENTS_SEE_HELP"
+        },
+        "next_action": {
+          "const": "CORRECT_ARGUMENTS"
+        }
+      }
+    },
+    "SCHEMA_CONFIGURATION_ERROR": {
+      "properties": {
+        "code": {
+          "const": "SCHEMA_CONFIGURATION_ERROR"
+        },
+        "reason": {
+          "const": "INVALID_PACKAGED_CONTRACT"
+        },
+        "next_action": {
+          "const": "REINSTALL_PACKAGE"
+        }
+      }
+    },
+    "OUTPUT_LIMIT_EXCEEDED": {
+      "properties": {
+        "code": {
+          "const": "OUTPUT_LIMIT_EXCEEDED"
+        },
+        "reason": {
+          "const": "OUTPUT_LIMIT_EXCEEDED"
+        },
+        "next_action": {
+          "const": "REDUCE_OUTPUT_SIZE"
+        }
+      }
+    },
+    "INTERNAL_ERROR": {
+      "properties": {
+        "code": {
+          "const": "INTERNAL_ERROR"
+        },
+        "reason": {
+          "const": "INTERNAL_ERROR"
+        },
+        "next_action": {
+          "const": "REPORT_INTERNAL_ERROR"
+        }
+      }
+    },
+    "RECORD_FILE_NOT_FOUND": {
+      "properties": {
+        "code": {
+          "const": "RECORD_FILE_NOT_FOUND"
+        },
+        "reason": {
+          "const": "RECORD_FILE_NOT_LISTED"
+        },
+        "next_action": {
+          "const": "SELECT_LISTED_RECORD_FILE"
+        }
+      }
+    },
+    "RECORD_FILE_INTEGRITY_MISMATCH": {
+      "properties": {
+        "code": {
+          "const": "RECORD_FILE_INTEGRITY_MISMATCH"
+        },
+        "reason": {
+          "const": "RECORD_FILE_INTEGRITY_MISMATCH"
+        },
+        "next_action": {
+          "const": "SELECT_VALID_RECORD"
+        }
+      }
+    },
+    "UNSUPPORTED_RECORD_CONTENT": {
+      "properties": {
+        "code": {
+          "const": "UNSUPPORTED_RECORD_CONTENT"
+        },
+        "reason": {
+          "const": "RECORD_CONTENT_NOT_REPRESENTABLE_AS_JSON"
+        },
+        "next_action": {
+          "const": "SELECT_SUPPORTED_RECORD_FILE"
+        }
+      }
+    }
   }
 }
