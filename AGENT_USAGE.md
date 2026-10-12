@@ -18,7 +18,7 @@ enter the native `ingest` → `measure` → `accept` workflow with an explicit p
 and declared claims. A supported external export can be ingested as source claims
 and byte identity; it does not produce a measurable read under the current profile.
 External observations do not enter `measure`. The separate source-checkout
-`audit-counts` pilot can audit a Promptfoo 0.123.0 artifact; it does not create a
+`audit-promptfoo FILE` pilot can audit a Promptfoo 0.123.0 artifact; it does not create a
 measurement read. The promptfoo example below deliberately calls `measure` to
 show that command's typed refusal.
 
@@ -82,7 +82,7 @@ is ready; obtain the completed producer artifact and its version context first.
 | goppi | No registered ingest profile. `audit-run` accepts the exact experimental grounded-pilot exchange described below. A generic CLI summary is insufficient; do not manufacture rows from counts. |
 | Langfuse | The supported `4.35.0` denotes the **server export profile**, not the SDK version. Supply the worker's `observations_v2` or `scores` blob-export file as an uncompressed JSON array with the complete field groups. A REST response, Parquet file, or partially selected export is a different shape. Wait for a completed export manifest; SDK flush alone is insufficient. |
 | DeepEval | Supply the `4.1.1` TestRun JSON written by the tool, with the producer version recorded separately. A deliberately failed test run can still write a valid artifact. An observed score of zero is distinct from an errored metric without a score. |
-| Promptfoo | Supply the `0.123.0` eval output JSON (summary version 3). An assertion-failure exit can accompany a valid export. Count auditing additionally uses a supplied `artifact_case.v1` manifest. |
+| Promptfoo | Supply the `0.123.0` eval output JSON (summary version 3). An assertion-failure exit can accompany a valid export. Use `audit-promptfoo FILE --json` for direct count auditing, or `audit-counts CASE.json --json` with a supplied `artifact_case.v1` manifest for expected-hash checks and explicit source metadata. |
 
 The [producer checks](EVIDENCE_REVIEW.md) distinguish fresh tool-generated
 synthetic evaluations, archived captures, and constructed examples. They test
