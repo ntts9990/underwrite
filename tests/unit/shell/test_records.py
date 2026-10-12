@@ -555,8 +555,12 @@ def _interrupt_after_publication(
 @pytest.mark.parametrize(
     "phase",
     [
-        "prepublication", "record_sync", "staging_unlink",
-        "link_after", "link_before", "link_unknown",
+        "prepublication",
+        "record_sync",
+        "staging_unlink",
+        "link_after",
+        "link_before",
+        "link_unknown",
         "publication_return",
     ],
 )
@@ -1274,3 +1278,173 @@ def test_catalog_at_entry_limit_stays_sorted_and_closes_scan(
     assert result["record_count"] == len(entries)
     assert scan.consumed == len(entries)
     assert scan.closed
+
+
+def _two_source_spec(tmp_path: Path) -> tuple[Path, dict[str, object]]:
+    source = _source(tmp_path)
+    (source / "second.json").write_bytes(b'{"second":true}\n')
+    spec = _spec()
+    entries = cast(list[dict[str, object]], spec["files"])
+    entries.append({**entries[0], "name": "source/second.json", "path": "second.json"})
+    return source, spec
+
+
+@pytest.mark.parametrize("error_type", [KeyboardInterrupt, SystemExit, OSError])
+@pytest.mark.parametrize("operation", ["open", "stat"])
+@pytest.mark.parametrize("source_index", [0, 1])
+def test_source_acquisition_exception_closes_every_acquired_descriptor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    error_type: type[BaseException],
+    operation: str,
+    source_index: int,
+) -> None:
+    source, spec = _two_source_spec(tmp_path)
+    original_bytes = {path.name: path.read_bytes() for path in source.iterdir()}
+    root = tmp_path / "store"
+    paths = [source / "result.json", source / "second.json"]
+    acquired: list[int] = []
+    interruption = error_type("injected source acquisition failure")
+    original_open, original_stat = os.open, os.fstat
+
+    def open_source(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        if operation == "open" and path == paths[source_index]:
+            raise interruption
+        descriptor = original_open(path, flags, mode, dir_fd=dir_fd)
+        if path in paths:
+            acquired.append(descriptor)
+        return descriptor
+
+    def inspect_source(descriptor: int) -> os.stat_result:
+        if operation == "stat" and descriptor in acquired and len(acquired) == source_index + 1:
+            raise interruption
+        return original_stat(descriptor)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "open", open_source)
+        patch.setattr(os, "fstat", inspect_source)
+        with pytest.raises(RecordError if error_type is OSError else error_type) as caught:
+            records.save_record(root, spec, source)
+    if error_type is OSError:
+        assert isinstance(caught.value, RecordError)
+        assert caught.value.code == "SOURCE_READ_FAILED"
+        assert caught.value.location == "/spec/files"
+    else:
+        assert caught.value is interruption
+    leaked: list[int] = []
+    for descriptor in acquired:
+        try:
+            original_stat(descriptor)
+        except OSError:
+            continue
+        leaked.append(descriptor)
+        os.close(descriptor)
+    assert not root.exists()
+    assert {path.name: path.read_bytes() for path in source.iterdir()} == original_bytes
+    assert len(acquired) == source_index + (operation == "stat")
+    assert leaked == []
+
+
+def test_source_descriptors_stay_open_through_capture_and_close_afterward(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source, spec = _two_source_spec(tmp_path)
+    root = tmp_path / "store"
+    descriptors: list[int] = []
+    original = records._copy_one  # pyright: ignore[reportPrivateUsage]
+
+    def copy(descriptor: int, expected: int, output: Path, allowance: int) -> tuple[int, str]:
+        assert stat.S_ISREG(os.fstat(descriptor).st_mode)
+        descriptors.append(descriptor)
+        return original(descriptor, expected, output, allowance)
+
+    monkeypatch.setattr(records, "_copy_one", copy)
+    records.save_record(root, spec, source)
+    assert len(descriptors) == len(cast(list[object], spec["files"]))
+    for descriptor in descriptors:
+        with pytest.raises(OSError):
+            os.fstat(descriptor)
+    assert records.verify_record(root, "capture.001")["valid"] is True
+
+
+@pytest.mark.parametrize("refusal", ["nonregular", "file_limit", "total_limit"])
+def test_source_acquisition_refusals_close_prior_and_current_descriptors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    refusal: str,
+) -> None:
+    source, spec = _two_source_spec(tmp_path)
+    root = tmp_path / "store"
+    if refusal == "nonregular":
+        (source / "second.json").unlink()
+        (source / "second.json").mkdir()
+        code = "SOURCE_READ_FAILED"
+    else:
+        first_size = (source / "result.json").stat().st_size
+        second_size = (source / "second.json").stat().st_size
+        assert second_size > first_size
+        limit = "MAX_FILE_BYTES" if refusal == "file_limit" else "MAX_TOTAL_BYTES"
+        monkeypatch.setattr(records, limit, first_size if refusal == "file_limit" else second_size)
+        code = "INPUT_LIMIT_EXCEEDED"
+    original = os.fstat
+    descriptors: list[int] = []
+
+    def inspect(descriptor: int) -> os.stat_result:
+        descriptors.append(descriptor)
+        return original(descriptor)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "fstat", inspect)
+        error = _assert_error(code, lambda: records.save_record(root, spec, source))
+    assert error.location == "/spec/files"
+    assert len(descriptors) == len(cast(list[object], spec["files"]))
+    for descriptor in descriptors:
+        with pytest.raises(OSError):
+            os.fstat(descriptor)
+    assert not root.exists()
+
+
+@pytest.mark.parametrize("error_type", [KeyboardInterrupt, SystemExit])
+def test_interruption_after_source_acquisition_closes_all_descriptors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    error_type: type[BaseException],
+) -> None:
+    source, spec = _two_source_spec(tmp_path)
+    root = tmp_path / "store"
+    original = os.fstat
+    descriptors: list[int] = []
+    interruption = error_type("before capture")
+
+    def inspect(descriptor: int) -> os.stat_result:
+        descriptors.append(descriptor)
+        return original(descriptor)
+
+    def interrupt(
+        root: Path,
+        checked: dict[str, object],
+        capture: Callable[[Path, list[Path], list[Path]], list[dict[str, object]]],
+    ) -> records.RecordSnapshot:
+        del root, checked, capture
+        assert len(descriptors) == len(cast(list[object], spec["files"]))
+        for descriptor in descriptors:
+            assert stat.S_ISREG(original(descriptor).st_mode)
+        raise interruption
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "fstat", inspect)
+        patch.setattr(records, "_save_checked", interrupt)
+        with pytest.raises(error_type) as caught:
+            records.save_record(root, spec, source)
+    assert caught.value is interruption
+    for descriptor in descriptors:
+        with pytest.raises(OSError):
+            os.fstat(descriptor)
+    assert not root.exists()
