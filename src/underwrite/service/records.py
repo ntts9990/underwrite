@@ -11,6 +11,7 @@ from collections.abc import Callable, Generator, Iterable
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from itertools import islice
 from pathlib import Path
 from typing import Final, NamedTuple, cast
 
@@ -865,7 +866,8 @@ def list_records(root: Path) -> dict[str, object]:
     """Derive a bounded, sorted catalog from complete and unpublished directories."""
     records = _store_for_read(root)
     try:
-        entries = list(os.scandir(records))
+        with os.scandir(records) as iterator:
+            entries = list(islice(iterator, MAX_RECORDS + 1))
     except OSError:
         raise RecordError("STORE_IO_ERROR", "/catalog") from None
     if len(entries) > MAX_RECORDS:

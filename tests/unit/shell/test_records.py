@@ -6,7 +6,8 @@ import stat
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from pathlib import Path
-from typing import Protocol, cast
+from types import TracebackType
+from typing import Protocol, Self, cast
 
 import pytest
 from jsonschema import Draft202012Validator
@@ -925,3 +926,85 @@ def test_selected_read_checks_opened_size_and_source_io_failure(
         lambda: records.read_record_file(root, "capture.001", "source/result.json"),
     )
     assert "private-path" not in str(error)
+
+
+class _CatalogScan:
+    """An observable scandir iterator with normal, early-stop and I/O paths."""
+
+    def __init__(self, entries: list[os.DirEntry[str]], *, fail: bool = False) -> None:
+        self.entries = iter(entries)
+        self.fail = fail
+        self.consumed = 0
+        self.closed = False
+
+    def __iter__(self) -> Self:
+        return self
+
+    def __next__(self) -> os.DirEntry[str]:
+        if self.fail and self.consumed:
+            raise OSError("controlled iteration failure")
+        try:
+            entry = next(self.entries)
+        except StopIteration:
+            self.closed = True
+            raise
+        self.consumed += 1
+        return entry
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self.closed = True
+
+
+@pytest.mark.parametrize("io_error", [False, True])
+def test_catalog_bounds_entry_consumption_and_closes_scan(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    io_error: bool,
+) -> None:
+    root, _ = _save(tmp_path)
+    limit = 2
+    monkeypatch.setattr(records, "MAX_RECORDS", limit)
+    # Uninspectable sentinels ensure no metadata is accessed on either refusal.
+    entry = cast(os.DirEntry[str], object())
+    scan = _CatalogScan([entry] * (limit + 5), fail=io_error)
+
+    def scandir(path: Path) -> _CatalogScan:
+        return scan
+
+    monkeypatch.setattr(records.os, "scandir", scandir)
+    expected = "STORE_IO_ERROR" if io_error else "RECORD_LIMIT_EXCEEDED"
+    error = _assert_error(expected, lambda: records.list_records(root))
+    assert error.location == "/catalog"
+    assert scan.consumed == (1 if io_error else limit + 1)
+    assert scan.closed
+
+
+def test_catalog_at_entry_limit_stays_sorted_and_closes_scan(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, _ = _save(tmp_path)
+    records.save_record(root, _spec("a.earlier"), tmp_path / "source")
+    with os.scandir(root / "records") as iterator:
+        entries = sorted(iterator, key=lambda entry: entry.name, reverse=True)
+    monkeypatch.setattr(records, "MAX_RECORDS", len(entries))
+    scan = _CatalogScan(entries)
+
+    def scandir(path: Path) -> _CatalogScan:
+        return scan
+
+    monkeypatch.setattr(records.os, "scandir", scandir)
+    result = records.list_records(root)
+    rows = cast(list[dict[str, object]], result["records"])
+    assert [row["record_id"] for row in rows] == sorted(entry.name for entry in entries)
+    assert result["record_count"] == len(entries)
+    assert scan.consumed == len(entries)
+    assert scan.closed
