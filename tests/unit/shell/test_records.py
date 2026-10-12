@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from pathlib import Path
@@ -13,6 +14,7 @@ import pytest
 from jsonschema import Draft202012Validator
 from underwrite_core.canonical import canonical_bytes, digest_bytes
 
+from underwrite._fileio import TransportError
 from underwrite.service import _record_format, records
 from underwrite.service.records import RecordError
 
@@ -562,6 +564,95 @@ def test_read_only_operations_do_not_create_staging(tmp_path: Path) -> None:
     records.list_records(root)
     records.verify_record(root, "capture.001")
     assert not (root / ".staging").exists()
+
+
+@pytest.mark.parametrize("operation", ["read", "list", "verify"])
+def test_manifest_read_accepts_short_reads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str
+) -> None:
+    root, _ = _save(tmp_path)
+    operations: dict[str, Callable[[], object]] = {
+        "read": lambda: records.read_record(root, "capture.001"),
+        "list": lambda: records.list_records(root),
+        "verify": lambda: records.verify_record(root, "capture.001"),
+    }
+    invoke = operations[operation]
+    expected = invoke()
+    manifest_path = root / "records/capture.001/manifest.json"
+    before = manifest_path.read_bytes()
+    monkeypatch.setattr(records, "MAX_MANIFEST_BYTES", len(before))
+    original_read = os.read
+
+    def short_read(descriptor: int, size: int) -> bytes:
+        return original_read(descriptor, min(size, 7))
+
+    monkeypatch.setattr(os, "read", short_read)
+    assert invoke() == expected
+    assert manifest_path.read_bytes() == before
+
+
+@pytest.mark.parametrize("failure", ["truncated", "overflow", "io"])
+def test_manifest_read_refuses_incomplete_or_over_budget_bytes_and_closes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    root, _ = _save(tmp_path)
+    manifest_path = root / "records/capture.001/manifest.json"
+    before = manifest_path.read_bytes()
+    monkeypatch.setattr(records, "MAX_MANIFEST_BYTES", len(before))
+    original_read = os.read
+    descriptors: list[int] = []
+    consumed = 0
+
+    def interrupted_read(descriptor: int, size: int) -> bytes:
+        nonlocal consumed
+        if not descriptors:
+            descriptors.append(descriptor)
+            if failure == "overflow":
+                with manifest_path.open("ab") as stream:
+                    stream.write(b"xx")
+        elif failure == "truncated":
+            return b""
+        elif failure == "io":
+            raise OSError("read failure")
+        chunk = original_read(descriptor, min(size, 7))
+        consumed += len(chunk)
+        return chunk
+
+    monkeypatch.setattr(os, "read", interrupted_read)
+    error = _assert_error("INVALID_RECORD", lambda: records.read_record(root, "capture.001"))
+    assert error.location == "/record"
+    assert len(descriptors) == 1
+    with pytest.raises(OSError):
+        os.fstat(descriptors[0])
+    if failure == "overflow":
+        assert consumed == len(before) + 1
+    else:
+        assert manifest_path.read_bytes() == before
+
+
+@pytest.mark.parametrize("error_type", [TransportError, ValueError, TypeError])
+def test_manifest_read_closes_on_reader_refusal_without_masking_unexpected_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error_type: type[Exception]
+) -> None:
+    root, _ = _save(tmp_path)
+    failure = error_type("reader failure")
+    descriptors: list[int] = []
+
+    def refuse(descriptor: int, limit: int) -> bytes:
+        descriptors.append(descriptor)
+        raise failure
+
+    monkeypatch.setattr(records, "read_descriptor", refuse)
+    if isinstance(failure, TransportError):
+        error = _assert_error("INVALID_RECORD", lambda: records.read_record(root, "capture.001"))
+        assert error.location == "/record"
+    else:
+        with pytest.raises(error_type) as caught:
+            records.read_record(root, "capture.001")
+        assert caught.value is failure
+    assert len(descriptors) == 1
+    with pytest.raises(OSError):
+        os.fstat(descriptors[0])
 
 
 # Card: record-reuse | Paper: record_document.v1 | Stage: storage-read
