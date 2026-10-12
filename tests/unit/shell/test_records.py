@@ -495,6 +495,122 @@ def test_prepublication_failure_removes_only_owned_paths(
     assert (source / "result.json").exists()
 
 
+def _interrupt_publication(
+    monkeypatch: pytest.MonkeyPatch, root: Path, phase: str, interruption: BaseException
+) -> None:
+    record_dir = root / "records/capture.001"
+    original_sync = records._fsync_dir  # pyright: ignore[reportPrivateUsage]
+    original_unlink = Path.unlink
+    original_link = os.link
+    original_lstat = Path.lstat
+    inspecting_marker = False
+
+    def link(src: Path, dst: Path, *, follow_symlinks: bool = True) -> None:
+        nonlocal inspecting_marker
+        if phase in {"link_before", "link_unknown"}:
+            inspecting_marker = phase == "link_unknown"
+            raise interruption
+        original_link(src, dst, follow_symlinks=follow_symlinks)
+        if phase == "link_after":
+            raise interruption
+
+    def lstat(path: Path) -> os.stat_result:
+        if inspecting_marker and path == record_dir / "manifest.json":
+            raise OSError("cannot inspect completion marker")
+        return original_lstat(path)
+
+    def sync(path: Path) -> None:
+        published = (record_dir / "manifest.json").exists()
+        if path == record_dir and (
+            (phase == "prepublication" and not published and (path / "files").exists())
+            or (phase == "record_sync" and published)
+        ):
+            raise interruption
+        original_sync(path)
+
+    def unlink(path: Path, missing_ok: bool = False) -> None:
+        if phase == "staging_unlink" and path.parent == root / ".staging":
+            raise interruption
+        original_unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(records, "_fsync_dir", sync)
+    monkeypatch.setattr(Path, "unlink", unlink)
+    monkeypatch.setattr(os, "link", link)
+    monkeypatch.setattr(Path, "lstat", lstat)
+
+
+def _interrupt_after_publication(
+    monkeypatch: pytest.MonkeyPatch, interruption: BaseException
+) -> None:
+    original = records._publish  # pyright: ignore[reportPrivateUsage]
+
+    def publish(record_dir: Path, staging: Path, raw: bytes) -> None:
+        original(record_dir, staging, raw)
+        raise interruption
+
+    monkeypatch.setattr(records, "_publish", publish)
+
+
+@pytest.mark.parametrize("api", ["source", "captured"])
+@pytest.mark.parametrize(
+    "phase",
+    [
+        "prepublication", "record_sync", "staging_unlink",
+        "link_after", "link_before", "link_unknown",
+        "publication_return",
+    ],
+)
+@pytest.mark.parametrize("error_type", [KeyboardInterrupt, SystemExit, RuntimeError])
+def test_capture_interruption_preserves_publication_boundary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    api: str,
+    phase: str,
+    error_type: type[BaseException],
+) -> None:
+    raw = b"selected bytes"
+    source = _source(tmp_path, raw)
+    root = tmp_path / "store"
+    records.save_record(root, _spec("existing.001"), source)
+    existing = root / "records/existing.001"
+    before = {path: path.read_bytes() for path in existing.rglob("*") if path.is_file()}
+    record_dir = root / "records/capture.001"
+    interruption = error_type("interrupted capture")
+    with monkeypatch.context() as patch:
+        _interrupt_publication(patch, root, phase, interruption)
+        if phase == "publication_return":
+            _interrupt_after_publication(patch, interruption)
+        with pytest.raises(error_type) as caught:
+            if api == "source":
+                records.save_record(root, _spec(), source)
+            else:
+                spec = records.CapturedRecordSpec(
+                    record_id="capture.001",
+                    kind="source.capture",
+                    label="Local capture",
+                    metadata={},
+                    links=(),
+                    selection_excluded=None,
+                    rerun_verification={"status": "not_performed", "reference": None},
+                    provenance={"verified": False, "attestation_ref": None},
+                    files=(records.CapturedRecordFile("source/result.json", "result", raw),),
+                )
+                records.save_captured_record(root, spec)
+    assert caught.value is interruption
+    assert {path: path.read_bytes() for path in existing.rglob("*") if path.is_file()} == before
+    assert (source / "result.json").read_bytes() == raw
+    if phase in {"prepublication", "link_before"}:
+        assert not record_dir.exists()
+        assert not list((root / ".staging").iterdir())
+    else:
+        assert (record_dir / "files/source/result.json").read_bytes() == raw
+        if phase == "link_unknown":
+            assert not (record_dir / "manifest.json").exists()
+            assert list((root / ".staging").iterdir())
+        else:
+            assert records.verify_record(root, "capture.001")["valid"] is True
+
+
 def test_postpublication_fsync_failure_preserves_complete_record(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
