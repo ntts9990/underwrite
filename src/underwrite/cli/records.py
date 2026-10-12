@@ -101,6 +101,12 @@ def configure(parser: argparse.ArgumentParser) -> None:
         "audit-langfuse", help="Audit and retain two entire Langfuse export files."
     )
     record_langfuse.configure(langfuse)
+    from underwrite.cli import record_deepeval
+
+    deepeval = commands.add_parser(
+        "audit-deepeval", help="Audit and retain one entire DeepEval TestRun file."
+    )
+    record_deepeval.configure(deepeval)
 
 
 def _input_error(code: str, reason: str, location: str) -> Exception:
@@ -237,6 +243,10 @@ def _emit_error(error: _CliError, *, as_json: bool) -> int:
 
 
 def main(argv: list[str]) -> int:
+    if argv and argv[0] == "audit-deepeval":
+        from underwrite.cli import record_deepeval
+
+        return record_deepeval.main(argv[1:])
     if argv and argv[0] == "audit-langfuse":
         from underwrite.cli import record_langfuse
 

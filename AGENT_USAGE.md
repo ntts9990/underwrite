@@ -254,6 +254,28 @@ count disagreements exist. Invalid input, unsupported scope, or resource refusal
 produces `evidence_error.v1` on stderr with exit 2 and no report on stdout. Normal
 operation needs no producer execution, model call, server, or custom query code.
 
+When retention is requested and capabilities lists `records audit-deepeval`,
+analyze and save the same selected bytes in one call:
+
+```sh
+underwrite records audit-deepeval test_run.json --root /private/review-store \
+  --id deepeval.review-001 --json
+underwrite records read-json --root /private/review-store --id deepeval.review-001 \
+  --name analysis/accounting.json
+```
+
+`deepeval_record.v1` separates source acquisition, analysis, and storage. Exit 0
+means a result was saved, 2 means a diagnostic was saved, and 3 means storage failed;
+inspect the analysis even when storage failed. Configuration and response-capacity
+refusals occur before storage and use `evidence_error.v1` stderr. Complete malformed
+input is retained in full; failed acquisition stores no partial source. The selected
+TestRun may contain sensitive content and is not redacted. A diagnostic consumes
+its new ID. Recover failures from `analysis/error.json`, with effective invocation
+metadata in `invocation.json`. Null `published_record` does not prove that no ID was
+reserved. The saved result retains the existing zero/error/sibling and unknown
+population meanings; storage verification grants no producer or approval authority.
+Use analysis-only `audit-deepeval` when storage is not requested.
+
 ## Source-checkout pilot: audit Promptfoo counts
 
 The pilot commands documented here are available in this development checkout and

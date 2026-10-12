@@ -8,6 +8,15 @@ explicit `--record-root` and `--record-id` options. It captures the same bytes
 used for analysis and returns independent analysis/storage outcomes. Use the
 manual composition below for other existing command paths.
 
+For a supported DeepEval TestRun, prefer the capabilities-listed
+`records audit-deepeval FILE --root ROOT --id NEW_ID --json` when the caller requests
+whole-file retention in an explicit private store. Inspect analysis and storage
+separately on exits 0/2/3. Complete malformed input is retained; acquisition failure
+stores only the actual diagnostic and invocation, and consumes the ID. Recover
+`analysis/accounting.json` or `analysis/error.json` with `records read-json`.
+The TestRun is not redacted, and a stored evaluator error remains an error without
+a score. Use the manual path if the caller needs selective omission.
+
 For supported Langfuse exports, if capabilities lists the records audit-langfuse
 profile and the caller selected a private store and new ID, prefer
 `records audit-langfuse --observations FILE --scores FILE --root ROOT --id NEW_ID --json`.
