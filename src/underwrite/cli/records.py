@@ -97,6 +97,12 @@ def configure(parser: argparse.ArgumentParser) -> None:
     verify = commands.add_parser("verify", help="Verify stored bytes and direct links.")
     _common(verify)
     verify.add_argument("--id", required=True, help="Record ID.")
+    from underwrite.cli import record_promptfoo
+
+    audit = commands.add_parser(
+        "audit-promptfoo", help="Audit and retain one entire Promptfoo file."
+    )
+    record_promptfoo.configure(audit)
 
 
 def _input_error(code: str, reason: str, location: str) -> Exception:
@@ -117,6 +123,15 @@ def _service_error(error: RecordError) -> _CliError:
 def record_error_payload(error: RecordError) -> dict[str, object]:
     """Reuse the record command's finite diagnostic mapping in composed workflows."""
     return _service_error(error).payload
+
+
+def record_error_candidates() -> tuple[dict[str, object], ...]:
+    """Return finite formatter-owned variants for composed-response admission."""
+    return tuple(
+        record_error_payload(RecordError(code, location))
+        for code in sorted(_ERRORS)
+        for location in sorted(_SERVICE_LOCATIONS)
+    )
 
 
 def _spec(path: Path) -> dict[str, object]:
@@ -189,6 +204,10 @@ def _emit_error(error: _CliError, *, as_json: bool) -> int:
 
 
 def main(argv: list[str]) -> int:
+    if argv and argv[0] == "audit-promptfoo":
+        from underwrite.cli import record_promptfoo
+
+        return record_promptfoo.main(argv[1:])
     parser = _Parser(prog="underwrite records", allow_abbrev=False)
     configure(parser)
     try:

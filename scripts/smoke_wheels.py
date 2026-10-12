@@ -193,6 +193,60 @@ def _promptfoo_numeric_pilot(
     _require(raw["hash"] == audited["raw_hash"], "ingest/audit consumed different source bytes")
 
 
+def _promptfoo_record_pilot(
+    cli: Path, evidence: Path, work: Path, expected: dict[str, object]
+) -> None:
+    source = evidence / "synthetic-promptfoo-category-mismatch.json"
+    store = work / "promptfoo-records"
+    report = _cli_json(
+        cli,
+        ["records", "audit-promptfoo", str(source), "--root", str(store), "--id", "captured"],
+        work / "promptfoo-record.json",
+        work,
+    )
+    analysis = cast(dict[str, object], report["analysis"])
+    storage = cast(dict[str, object], report["storage"])
+    _require(analysis["report"] == expected, "record capture changed accounting")
+    _require(storage["state"] == "saved", "record capture did not save")
+    _require(
+        cast(dict[str, object], storage["verification"])["valid"] is True,
+        "record capture did not verify",
+    )
+    _require(
+        (store / "records/captured/files/source/promptfoo.bin").read_bytes() == source.read_bytes(),
+        "captured source differs from the selected bytes",
+    )
+    malformed = work / "malformed-promptfoo.json"
+    malformed.write_bytes(b"{")
+    failed = _command(
+        [
+            str(cli),
+            "records",
+            "audit-promptfoo",
+            str(malformed),
+            "--root",
+            str(store),
+            "--id",
+            "diagnostic",
+            "--json",
+        ],
+        work,
+    )
+    _require(
+        failed.returncode == EVIDENCE_ERROR_EXIT and failed.stderr == "",
+        "wrong saved-diagnostic exit",
+    )
+    diagnostic = json.loads(failed.stdout)
+    _require(
+        diagnostic["analysis"]["state"] == "error" and diagnostic["storage"]["state"] == "saved",
+        "saved analysis failure lost independent outcomes",
+    )
+    _require(
+        (store / "records/diagnostic/files/source/promptfoo.bin").read_bytes() == b"{",
+        "malformed complete source was not retained",
+    )
+
+
 def _evidence_pilots(cli: Path, fixtures: Path, work: Path) -> None:
     evidence = fixtures / "evidence"
     audit = _cli_json(
@@ -203,6 +257,7 @@ def _evidence_pilots(cli: Path, fixtures: Path, work: Path) -> None:
     )
     _require(audit.get("declared_relation") == "inconsistent", "count mismatch was hidden")
     _promptfoo_numeric_pilot(cli, evidence, work, audit)
+    _promptfoo_record_pilot(cli, evidence, work, audit)
     comparison = _cli_json(
         cli,
         [

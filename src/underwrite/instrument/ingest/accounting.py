@@ -151,8 +151,8 @@ def _account_projection(
     }
 
 
-def audit_promptfoo_file(path: Path) -> dict[str, object]:
-    """Audit a pinned raw export once; expected-hash checks remain in audit_case."""
+def read_promptfoo_file(path: Path) -> bytes:
+    """Capture one complete bounded raw file with existing accounting diagnostics."""
     try:
         raw = read_local_file(path, DEFAULT_MAX_BYTES)
     except TransportError as exc:
@@ -166,6 +166,11 @@ def audit_promptfoo_file(path: Path) -> dict[str, object]:
             if reason != "SOURCE_NOT_REGULAR_FILE":
                 reason = "SOURCE_READ_FAILED"
         raise AccountingCaseError(code, reason, "/file") from None
+    return raw
+
+
+def audit_promptfoo_bytes(raw: bytes) -> dict[str, object]:
+    """Audit the supplied buffer, retaining the original projection and byte bounds."""
     try:
         observed, projection = packaged_ingestor(
             max_bytes=DEFAULT_MAX_BYTES, max_depth=DEFAULT_MAX_DEPTH
@@ -189,3 +194,8 @@ def audit_promptfoo_file(path: Path) -> dict[str, object]:
         content_digest(observation),
         "/file",
     )
+
+
+def audit_promptfoo_file(path: Path) -> dict[str, object]:
+    """Audit a pinned raw export once; expected-hash checks remain in audit_case."""
+    return audit_promptfoo_bytes(read_promptfoo_file(path))

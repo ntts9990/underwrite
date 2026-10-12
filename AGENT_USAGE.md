@@ -523,6 +523,13 @@ callers can use `run_goppi_p7_handoff(HandoffRequest(...))` from
 
 ## Keep selected evidence in local records
 
+For a selected Promptfoo file and an explicit private store, use
+`records audit-promptfoo FILE --root ROOT --id NEW_ID --json`. It captures the
+same bytes used for accounting without a handwritten record spec. Inspect both
+`analysis` and `storage`, including on exit 2 or 3. The entire selected source is
+retained when fully read, including malformed input; see [capture semantics](STORAGE.md).
+
+
 Use [`records`](STORAGE.md) to copy explicit inputs, policies, results, and actual
 command diagnostics into a private immutable bundle. Capture completion, byte
 verification, declared rerun evidence, and independent provenance are different

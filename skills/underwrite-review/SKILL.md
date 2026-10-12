@@ -29,10 +29,12 @@ Exit `0` means a typed report was produced; it does not mean success, approval, 
 Report the commands and artifact paths, what each output establishes, material gaps, and the next concrete evidence needed. For an `acceptance_decision.v1`, report its human review requirement and `merge_authorized` value; other reports grant no such authority. Do not infer independent provenance, causal improvement, equivalence, or user adoption from these outputs.
 
 When the caller requests durable local records, use an explicit store root and
-`records save --spec SPEC --root ROOT --json` after the analysis. Follow
+the supported one-call capture route or `records save --spec SPEC --root ROOT --json`
+after the analysis, as specified in
 [the recording procedure](references/recording.md). Preserve original inputs and
-use a new ID; do not overwrite or repair an existing bundle. Verify the saved
-record and report `valid`, record ID, and manifest digest separately from the
+use a new ID; do not overwrite or repair an existing bundle. Use the composed
+command’s returned verification, or verify a manually saved record, and report
+`valid`, record ID, and manifest digest separately from the
 analysis result. A saved failure remains a failed analysis; a failed save does
 not erase an analysis result. Byte integrity and a referenced rerun artifact are
 not independent provenance or approval.
