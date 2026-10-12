@@ -1,0 +1,1057 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:read.v2",
+  "title": "read.v2",
+  "description": "Closed representation. Shared pure owners additionally enforce semantic and cross-field invariants.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "profile",
+    "scope",
+    "subject",
+    "semantics",
+    "semantic_digest",
+    "sources",
+    "population",
+    "directional",
+    "diagnostics",
+    "decision",
+    "verdict",
+    "reason_codes",
+    "limitations"
+  ],
+  "properties": {
+    "schema": {
+      "const": "read.v2"
+    },
+    "profile": {
+      "const": "binary-event-directional.v1"
+    },
+    "scope": {
+      "const": "aggregate"
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subject_id",
+        "conditions"
+      ],
+      "properties": {
+        "subject_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "\\S"
+        },
+        "conditions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [],
+          "properties": {}
+        }
+      }
+    },
+    "semantics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "profile",
+        "construct",
+        "event",
+        "unit",
+        "sampling_unit",
+        "desirable_direction",
+        "outcome",
+        "prediction",
+        "population"
+      ],
+      "properties": {
+        "schema": {
+          "const": "measurement_semantics.v1"
+        },
+        "profile": {
+          "const": "binary-event-directional.v1"
+        },
+        "construct": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "definition"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "\\S"
+            },
+            "definition": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "\\S"
+            }
+          }
+        },
+        "event": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "positive_label_definition"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "\\S"
+            },
+            "positive_label_definition": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "\\S"
+            }
+          }
+        },
+        "unit": {
+          "const": "proportion"
+        },
+        "sampling_unit": {
+          "const": "case"
+        },
+        "desirable_direction": {
+          "enum": [
+            "higher",
+            "lower"
+          ]
+        },
+        "outcome": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "instrument",
+            "metric_id",
+            "label_source",
+            "rubric"
+          ],
+          "properties": {
+            "instrument": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "\\S"
+            },
+            "metric_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "\\S"
+            },
+            "label_source": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "version",
+                "reference"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "\\S"
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "\\S"
+                },
+                "reference": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024,
+                  "pattern": "\\S"
+                }
+              }
+            },
+            "rubric": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "version",
+                "reference"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "\\S"
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "\\S"
+                },
+                "reference": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024,
+                  "pattern": "\\S"
+                }
+              }
+            }
+          }
+        },
+        "prediction": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "status"
+              ],
+              "properties": {
+                "status": {
+                  "const": "unavailable"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "status",
+                "instrument",
+                "metric_id",
+                "event_id",
+                "timing",
+                "reference"
+              ],
+              "properties": {
+                "status": {
+                  "const": "declared_probability_of_event"
+                },
+                "instrument": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "\\S"
+                },
+                "metric_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "\\S"
+                },
+                "event_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "\\S"
+                },
+                "timing": {
+                  "enum": [
+                    "before_outcome",
+                    "unknown"
+                  ]
+                },
+                "reference": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024,
+                  "pattern": "\\S"
+                }
+              }
+            }
+          ]
+        },
+        "population": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "frame_id",
+            "description"
+          ],
+          "properties": {
+            "frame_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "\\S"
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "\\S"
+            }
+          }
+        }
+      }
+    },
+    "semantic_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observations",
+        "policy"
+      ],
+      "properties": {
+        "observations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "minItems": 1,
+          "maxItems": 1
+        },
+        "policy": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "population": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expected",
+        "outcomes",
+        "predictions"
+      ],
+      "properties": {
+        "expected": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "count",
+            "ordered_inventory_digest"
+          ],
+          "properties": {
+            "count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2000
+            },
+            "ordered_inventory_digest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          }
+        },
+        "outcomes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "observed_count",
+            "missing_ids",
+            "error_ids"
+          ],
+          "properties": {
+            "observed_count": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2000
+            },
+            "missing_ids": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "\\S"
+              },
+              "minItems": 0,
+              "maxItems": 2000,
+              "uniqueItems": true
+            },
+            "error_ids": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "\\S"
+              },
+              "minItems": 0,
+              "maxItems": 2000,
+              "uniqueItems": true
+            }
+          }
+        },
+        "predictions": {
+          "type": "object",
+          "required": [
+            "status"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "unavailable",
+                "declared"
+              ]
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "status": {
+                    "const": "unavailable"
+                  }
+                }
+              },
+              "then": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "status",
+                  "observed_count",
+                  "missing_ids",
+                  "error_ids"
+                ],
+                "properties": {
+                  "status": {
+                    "const": "unavailable"
+                  },
+                  "observed_count": {
+                    "type": "null"
+                  },
+                  "missing_ids": {
+                    "type": "null"
+                  },
+                  "error_ids": {
+                    "type": "null"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "status": {
+                    "const": "declared"
+                  }
+                }
+              },
+              "then": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "status",
+                  "observed_count",
+                  "missing_ids",
+                  "error_ids"
+                ],
+                "properties": {
+                  "status": {
+                    "const": "declared"
+                  },
+                  "observed_count": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2000
+                  },
+                  "missing_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "pattern": "\\S"
+                    },
+                    "minItems": 0,
+                    "maxItems": 2000,
+                    "uniqueItems": true
+                  },
+                  "error_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "pattern": "\\S"
+                    },
+                    "minItems": 0,
+                    "maxItems": 2000,
+                    "uniqueItems": true
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "directional": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "availability",
+        "p0",
+        "alpha_total",
+        "side_alpha",
+        "threshold",
+        "prior_a",
+        "prior_b",
+        "max_observations",
+        "desirable_direction",
+        "error_control",
+        "assumptions",
+        "e_upper",
+        "e_lower",
+        "consumed_count",
+        "successes",
+        "failures",
+        "unused_observed_count",
+        "stop_reason"
+      ],
+      "properties": {
+        "method": {
+          "const": "beta-mixture-two-direction.v1"
+        },
+        "availability": {
+          "enum": [
+            "measured",
+            "not_measured"
+          ]
+        },
+        "p0": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "alpha_total": {
+          "const": 0.05
+        },
+        "side_alpha": {
+          "const": 0.025
+        },
+        "threshold": {
+          "const": 40
+        },
+        "prior_a": {
+          "const": 1
+        },
+        "prior_b": {
+          "const": 1
+        },
+        "max_observations": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          ]
+        },
+        "desirable_direction": {
+          "enum": [
+            "higher",
+            "lower"
+          ]
+        },
+        "error_control": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "method",
+            "upper_null",
+            "lower_null",
+            "per_side_alpha",
+            "point_null_union_alpha"
+          ],
+          "properties": {
+            "method": {
+              "const": "bonferroni_equal_two_sides"
+            },
+            "upper_null": {
+              "const": "conditional_mean_lte_p0"
+            },
+            "lower_null": {
+              "const": "conditional_mean_gte_p0"
+            },
+            "per_side_alpha": {
+              "const": 0.025
+            },
+            "point_null_union_alpha": {
+              "const": 0.05
+            }
+          }
+        },
+        "assumptions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "conditional_mean_model",
+            "parameters_prespecified",
+            "order_prespecified",
+            "outcome_independent_selection"
+          ],
+          "properties": {
+            "conditional_mean_model": {
+              "enum": [
+                "declared",
+                "unknown"
+              ]
+            },
+            "parameters_prespecified": {
+              "enum": [
+                "declared",
+                "unknown"
+              ]
+            },
+            "order_prespecified": {
+              "enum": [
+                "declared",
+                "unknown"
+              ]
+            },
+            "outcome_independent_selection": {
+              "enum": [
+                "declared",
+                "unknown"
+              ]
+            }
+          }
+        },
+        "e_upper": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "number",
+              "minimum": 0
+            }
+          ]
+        },
+        "e_lower": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "number",
+              "minimum": 0
+            }
+          ]
+        },
+        "consumed_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2000
+        },
+        "successes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2000
+        },
+        "failures": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2000
+        },
+        "unused_observed_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2000
+        },
+        "stop_reason": {
+          "enum": [
+            "upper_crossing",
+            "lower_crossing",
+            "conflicting_crossing",
+            "budget_observations",
+            "end_of_population",
+            "withheld"
+          ]
+        }
+      }
+    },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event_rate",
+        "brier",
+        "ece",
+        "all_k_success"
+      ],
+      "properties": {
+        "event_rate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "method",
+            "unit",
+            "availability",
+            "value",
+            "n",
+            "reason_codes",
+            "scope",
+            "positive_count"
+          ],
+          "properties": {
+            "method": {
+              "const": "observed-event-fraction.v1"
+            },
+            "unit": {
+              "const": "proportion"
+            },
+            "availability": {
+              "enum": [
+                "measured",
+                "not_measured"
+              ]
+            },
+            "value": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              ]
+            },
+            "n": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2000
+            },
+            "reason_codes": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "prediction_semantics_unavailable",
+                  "forecast_timing_unknown",
+                  "paired_population_incomplete",
+                  "no_observed_outcomes",
+                  "bin_below_min_n",
+                  "n_below_k",
+                  "outcome_population_incomplete"
+                ]
+              },
+              "minItems": 0,
+              "maxItems": 7,
+              "uniqueItems": true
+            },
+            "scope": {
+              "const": "observed_expected_cases"
+            },
+            "positive_count": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2000
+            }
+          }
+        },
+        "brier": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "method",
+            "unit",
+            "availability",
+            "value",
+            "n",
+            "reason_codes"
+          ],
+          "properties": {
+            "method": {
+              "const": "brier-mean-squared-error.v1"
+            },
+            "unit": {
+              "const": "squared_probability"
+            },
+            "availability": {
+              "enum": [
+                "measured",
+                "not_measured"
+              ]
+            },
+            "value": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              ]
+            },
+            "n": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2000
+            },
+            "reason_codes": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "prediction_semantics_unavailable",
+                  "forecast_timing_unknown",
+                  "paired_population_incomplete",
+                  "no_observed_outcomes",
+                  "bin_below_min_n",
+                  "n_below_k",
+                  "outcome_population_incomplete"
+                ]
+              },
+              "minItems": 0,
+              "maxItems": 7,
+              "uniqueItems": true
+            }
+          }
+        },
+        "ece": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "method",
+            "unit",
+            "availability",
+            "value",
+            "n",
+            "reason_codes",
+            "bins",
+            "min_bin_n",
+            "bin_counts"
+          ],
+          "properties": {
+            "method": {
+              "const": "fixed-width-absolute-gap.v1"
+            },
+            "unit": {
+              "const": "probability"
+            },
+            "availability": {
+              "enum": [
+                "measured",
+                "not_measured"
+              ]
+            },
+            "value": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              ]
+            },
+            "n": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2000
+            },
+            "reason_codes": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "prediction_semantics_unavailable",
+                  "forecast_timing_unknown",
+                  "paired_population_incomplete",
+                  "no_observed_outcomes",
+                  "bin_below_min_n",
+                  "n_below_k",
+                  "outcome_population_incomplete"
+                ]
+              },
+              "minItems": 0,
+              "maxItems": 7,
+              "uniqueItems": true
+            },
+            "bins": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 128
+            },
+            "min_bin_n": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "bin_counts": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2000
+              },
+              "minItems": 1,
+              "maxItems": 128
+            }
+          }
+        },
+        "all_k_success": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "method",
+            "unit",
+            "availability",
+            "value",
+            "n",
+            "reason_codes",
+            "estimand",
+            "c",
+            "k"
+          ],
+          "properties": {
+            "method": {
+              "const": "uniform-subset-all-success.v1"
+            },
+            "unit": {
+              "const": "fraction_of_k_subsets"
+            },
+            "availability": {
+              "enum": [
+                "measured",
+                "not_measured"
+              ]
+            },
+            "value": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              ]
+            },
+            "n": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2000
+            },
+            "reason_codes": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "prediction_semantics_unavailable",
+                  "forecast_timing_unknown",
+                  "paired_population_incomplete",
+                  "no_observed_outcomes",
+                  "bin_below_min_n",
+                  "n_below_k",
+                  "outcome_population_incomplete"
+                ]
+              },
+              "minItems": 0,
+              "maxItems": 7,
+              "uniqueItems": true
+            },
+            "estimand": {
+              "const": "all_k_satisfied"
+            },
+            "c": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2000
+            },
+            "k": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2000
+            }
+          }
+        }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "favorable",
+            "unfavorable",
+            "inconclusive",
+            "withheld"
+          ]
+        }
+      }
+    },
+    "verdict": {
+      "enum": [
+        "pass",
+        "fail",
+        "warn",
+        "not_measured"
+      ]
+    },
+    "reason_codes": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "assumptions_not_declared",
+          "outcome_population_incomplete",
+          "conflicting_directional_crossing",
+          "favorable_threshold_crossed",
+          "unfavorable_threshold_crossed",
+          "threshold_not_reached",
+          "observation_budget_exhausted"
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 7,
+      "uniqueItems": true
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "source_claims_not_independently_verified",
+          "semantic_digest_binds_declaration_only",
+          "assumption_statuses_not_independently_verified",
+          "sampling_representativeness_not_established",
+          "label_truth_not_established",
+          "finite_sample_binning_diagnostic",
+          "all_k_is_case_subset_not_per_task_repeat",
+          "no_cross_run_multiplicity_control",
+          "no_posterior_correctness_probability",
+          "no_merge_or_deployment_authority",
+          "forecast_probability_meaning_declared_not_verified"
+        ]
+      },
+      "minItems": 10,
+      "maxItems": 11,
+      "uniqueItems": true
+    }
+  }
+}

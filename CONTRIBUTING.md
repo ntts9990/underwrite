@@ -85,6 +85,7 @@ contract, including failure and interpretation boundaries, before refactoring.
 | CLI results and errors | `cli/evidence.py`, `service/_record_errors.py` and its CLI/schema projections | Reuse the emitter and owned diagnostics; distinguish analysis, storage, and process exits |
 | Composed record responses | `cli/record_capture.py` | Share response admission, storage verification and storage wording; retain producer-specific analysis, input selection and meaning in their command adapters |
 | Paired calculation and review | `instrument/evidence/paired_review.evaluate_paired_review` | Calculate once; presentations project results rather than derive new verdicts |
+| Measurement meaning and read binding | `measurement_contract` | Share semantic identity and read invariants below independent pure domains; measurement owns statistics, acceptance owns claim binding and classification |
 | Source joins | The exact profile's ingest adapter and pure evidence verifier | Keep path/byte access separate from semantic joins; do not execute supplied schemas or source code |
 | Contracts and packaged resources | `contracts/`, `_contracts` links, single-purpose schema generators | One authored owner; generate composed views and verify installed bytes rather than hand-copy fields |
 | Immutable records | `service/records.save_record`, `save_captured_record`, and `read_record_file` | Share publication and selected-byte read owners; publication/readback failures remain failures, and selected-file integrity is distinct from whole-record verification and provenance |

@@ -230,12 +230,12 @@ def test_root_help_describes_bounded_nonapproval_command(capsys: Any) -> None:
     assert "not approval" in stdout
 
 
-def test_paired_evidence_is_not_legacy_accept_read(tmp_path: Path, capsys: Any) -> None:
+def test_paired_evidence_is_not_a_native_accept_read(tmp_path: Path, capsys: Any) -> None:
     status, report, other = invoke(tmp_path, capsys)
     assert status == 0 and other == ""
     report_path = tmp_path / "paired.json"
     write(report_path, report)
-    fixtures = ROOT / "fixtures/examples/acceptance"
+    fixtures = ROOT / "fixtures/examples/event-acceptance"
     exit_code = accept_main(
         [
             "--candidate",

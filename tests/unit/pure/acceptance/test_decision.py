@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import ast
 import copy
-import itertools
 import json
 from pathlib import Path
 from typing import Any
 
 import pytest
+from _event_acceptance import SEMANTIC_DIGEST
+from _event_acceptance import event_read as read
 from _repo_paths import repo_root
 from underwrite_core.canonical import content_digest
 
@@ -17,45 +18,27 @@ from underwrite.acceptance import decision as dc
 from underwrite.acceptance.claims import parse_claims
 from underwrite.acceptance.decision import AcceptanceRefusal, authority_keys, decide
 from underwrite.instrument.evidence.split import assign_split
-from underwrite.measurement import availability
-from underwrite.measurement.read import assemble_read
 
 ROOT = repo_root(Path(__file__))
 POLICY = "sha256:" + "a" * 64
 OTHER_POLICY = "sha256:" + "b" * 64
 ASSIGNMENT = {"c1": "explore", "c2": "explore"}
 CLAIMS = (("quality", "suite.quality", "disqualifying"), ("latency", "suite.latency", "validity"))
-# (verdict, state) -> (available, missing, quorum, reasons, escalate) over [deepeval, inspect].
-SHAPES: dict[tuple[str, str], tuple[list[str], list[str], int, list[str], bool]] = {
-    ("pass", "full"): (["deepeval", "inspect"], [], 1, [], False),
-    ("warn", "full"): (["deepeval", "inspect"], [], 1, [], True),
-    ("fail", "full"): (["deepeval", "inspect"], [], 1, [], False),
-    ("not_measured", "full"): (["deepeval", "inspect"], [], 1, ["signal_not_measured"], True),
-    ("warn", "partial"): (["deepeval"], ["inspect"], 1, ["required_instrument_missing"], True),
-    ("fail", "partial"): (["deepeval"], ["inspect"], 1, ["required_instrument_error"], True),
-    ("not_measured", "partial"): (
-        ["deepeval"],
-        ["inspect"],
-        1,
-        ["signal_not_measured", "required_instrument_missing"],
-        True,
-    ),
-    ("not_measured", "below_quorum"): (
-        ["deepeval"],
-        ["inspect"],
-        2,
-        ["below_quorum", "required_instrument_missing"],
-        True,
-    ),
-}
 
 
 def claims_document() -> dict[str, Any]:
     entries = [
-        {"claim_id": c, "subject_id": s, "effect": e, "policy_digest": POLICY} for c, s, e in CLAIMS
+        {
+            "claim_id": c,
+            "subject_id": s,
+            "effect": e,
+            "policy_digest": POLICY,
+            "semantic_digest": SEMANTIC_DIGEST,
+        }
+        for c, s, e in CLAIMS
     ]
     return {
-        "schema": "declared_claims.v1",
+        "schema": "declared_claims.v2",
         "candidate_id": "prompt-v2",
         "required_claims": {basis: copy.deepcopy(entries) for basis in dc.BASES},
         "selection": {"salt": "author-salt", "confirm_fraction": 0.25, "case_ids": ["c1", "c2"]},
@@ -73,27 +56,6 @@ def candidate_document(**changes: Any) -> dict[str, Any]:
         "hard_failures": [],
     }
     return {**document, **changes}
-
-
-def read(subject: str, verdict: str = "pass", state: str = "full") -> dict[str, Any]:
-    available, missing, quorum, reasons, escalate = SHAPES[(verdict, state)]
-    return {
-        "schema": "read.v1",
-        "subject": {"subject_id": subject, "conditions": {}},
-        "verdict": verdict,
-        "score": None if verdict == "not_measured" else 0.5,
-        "escalate": escalate,
-        "reason_codes": list(reasons),
-        "availability": {
-            "required_instruments": ["deepeval", "inspect"],
-            "quorum": quorum,
-            "available": list(available),
-            "missing": list(missing),
-            "state": state,
-            "triggered": state != "full",
-        },
-        "sources": {"observations": ["sha256:" + "c" * 64], "policy": POLICY},
-    }
 
 
 def all_pass() -> list[dict[str, Any]]:
@@ -125,21 +87,26 @@ def run(candidate: dict[str, Any], reads: list[dict[str, Any]]) -> dict[str, Any
 
 def test_screened_decision_is_the_whole_document() -> None:
     candidate, reads = candidate_document(), all_pass()
-    reads[1]["reason_codes"] = []
     digests = {r["subject"]["subject_id"]: content_digest(r) for r in reads}
 
     def summary(claim_id: str, subject: str, effect: str) -> dict[str, Any]:
-        found = {"digest": digests[subject], "verdict": "pass", "escalate": False}
+        found = {
+            "digest": digests[subject],
+            "verdict": "pass",
+            "schema": "read.v2",
+            "profile": "binary-event-directional.v1",
+        }
         return {
             "claim_id": claim_id,
             "subject_id": subject,
             "effect": effect,
             "policy_digest": POLICY,
-            "read": {**found, "reason_codes": []},
+            "semantic_digest": SEMANTIC_DIGEST,
+            "read": {**found, "reason_codes": ["favorable_threshold_crossed"]},
         }
 
     assert run(candidate, reads) == {
-        "schema": "acceptance_decision.v1",
+        "schema": "acceptance_decision.v2",
         "candidate_id": "prompt-v2",
         "basis": "same_batch",
         "classification": "screened",
@@ -172,7 +139,8 @@ def test_limitations_name_every_unverified_precondition() -> None:
             "reads_trusted_as_supplied",
             "read_not_bound_to_candidate",
             "hard_failures_declared",
-            "escalate_not_decisive",
+            "semantic_digest_binds_declaration_only",
+            "supplied_calculations_not_independently_verified",
         ]
     )
 
@@ -199,21 +167,16 @@ def test_missing_claim_is_a_null_read_and_indeterminate() -> None:
     assert decision["inputs"]["read_digests"] == [content_digest(read("suite.quality"))]
 
 
-def test_not_measured_and_warn_summaries_carry_escalate_and_reasons() -> None:
-    reads = [
-        read("suite.quality", "warn", "partial"),
-        read("suite.latency", "not_measured", "below_quorum"),
-    ]
+def test_not_measured_and_warn_summaries_preserve_reasons() -> None:
+    reads = [read("suite.quality", "warn"), read("suite.latency", "not_measured", "below_quorum")]
     decision = run(candidate_document(current_state="screened"), reads)
     assert decision["classification"] == "indeterminate"
-    assert decision["next_state"] == "screened"
     assert decision["reason_codes"] == ["claim_warn", "claim_not_measured"]
-    latency, quality = (c["read"] for c in decision["claims"])
-    assert latency["verdict"] == "not_measured" and latency["escalate"] is True
-    assert latency["reason_codes"] == ["below_quorum", "required_instrument_missing"]
-    assert quality["verdict"] == "warn" and quality["reason_codes"] == [
-        "required_instrument_missing"
-    ]
+    for claim in decision["claims"]:
+        summary = claim["read"]
+        assert "escalate" not in summary
+        assert summary["schema"] == "read.v2"
+        assert summary["reason_codes"]
 
 
 def test_held_out_all_pass_on_a_proposed_candidate_is_lifecycle_ineligible() -> None:
@@ -245,18 +208,14 @@ def test_declared_hard_failure_classifies_the_terminal_negative_state() -> None:
         ("suite.latency", ("indeterminate", "validity_claim_failed")),
     ],
 )
-def test_partial_fail_counts_as_measured_fail_and_says_so(
-    subject: str, expected: tuple[str, str]
-) -> None:
+def test_full_fail_retains_claim_effect(subject: str, expected: tuple[str, str]) -> None:
     reads = [
-        read(subject, "fail", "partial"),
+        read(subject, "fail"),
         *(r for r in all_pass() if r["subject"]["subject_id"] != subject),
     ]
     decision = run(candidate_document(), reads)
     assert (decision["classification"], decision["reason_codes"][0]) == expected
-    assert decision["limitations"] == sorted(
-        [*dc.LIMITATIONS, "measured_fail_under_partial_availability"]
-    )
+    assert decision["limitations"] == sorted(dc.LIMITATIONS)
     full = run(candidate_document(), [read(subject, "fail"), *reads[1:]])
     assert full["limitations"] == sorted(dc.LIMITATIONS)
 
@@ -503,14 +462,9 @@ def _broken(path: str, value: object) -> dict[str, Any]:
         ("reason_codes", [1]),
         ("sources", KeyError),
         ("sources.policy", None),
-        ("availability", []),
-        ("availability.state", "absent"),
-        ("availability.quorum", True),
-        ("availability.quorum", 1.0),
-        ("availability.triggered", 0),
-        ("availability.required_instruments", "deepeval"),
-        ("availability.available", KeyError),
-        ("availability.missing", [None]),
+        ("population.outcomes.observed_count", -1),
+        ("directional.e_upper", float("nan")),
+        ("semantic_digest", "sha256:" + "0" * 64),
         ("score", float("nan")),
     ],
 )
@@ -535,21 +489,12 @@ def test_other_documents_passed_as_reads_are_refused(document: str) -> None:
     assert (error.code, error.location) == ("INVALID_READ", "/reads/0")
 
 
-def test_real_producer_reads_bind() -> None:
-    policy = json.loads((ROOT / "fixtures/examples/measurement/policy.json").read_text())
-    produced: list[dict[str, Any]] = []
-    for quorum, extra in ((1, []), (1, ["inspect"]), (2, ["inspect"])):
-        variant = {**policy, "quorum": quorum, "required_instruments": ["deepeval", *extra]}
-        one = assemble_read(
-            _observation(), variant, observation_digest=POLICY, policy_digest=POLICY
-        )
-        produced.append(one)
-    states = [one["availability"]["state"] for one in produced]
-    assert states == ["full", "partial", "below_quorum"]
-    for one in produced:
-        one["subject"]["subject_id"] = "suite.quality"
-        decision = run(candidate_document(), [one])
-        assert decision["claims"][1]["read"]["verdict"] == one["verdict"]
+@pytest.mark.parametrize("state", ["full", "partial", "below_quorum"])
+def test_real_producer_reads_bind(state: str) -> None:
+    one = read("suite.quality", "not_measured", state)
+    decision = run(candidate_document(), [one])
+    assert decision["classification"] == "indeterminate"
+    assert decision["claims"][1]["read"]["verdict"] == "not_measured"
 
 
 def test_read_for_a_claim_outside_the_basis_is_unexpected() -> None:
@@ -565,6 +510,7 @@ def test_other_basis_claims_bind_no_read() -> None:
             "subject_id": "suite.cost",
             "effect": "validity",
             "policy_digest": POLICY,
+            "semantic_digest": SEMANTIC_DIGEST,
         }
     )
     candidate = candidate_document(claims_digest=parse_claims(claims).digest)
@@ -591,171 +537,33 @@ def test_conditioned_read_is_not_aggregate() -> None:
     conditioned = read("suite.latency")
     conditioned["subject"]["conditions"] = {"locale": "ko"}
     error = refusal(reads=[conditioned])
-    assert (error.code, error.location) == ("READ_NOT_AGGREGATE", "/reads/0/subject/conditions")
+    assert (error.code, error.location) == ("INVALID_READ", "/reads/0")
 
 
-def test_binding_refusals_follow_subject_policy_aggregate_availability() -> None:
+def test_contract_validation_precedes_subject_binding() -> None:
     bad = read("suite.cost")
-    bad["sources"]["policy"] = OTHER_POLICY
-    bad["subject"]["conditions"] = {"k": "v"}
-    bad["availability"]["state"] = "partial"
-    assert refusal(reads=[bad]).code == "UNEXPECTED_CLAIM"
-    bad["subject"]["subject_id"] = "suite.quality"
-    assert refusal(reads=[bad]).code == "READ_POLICY_MISMATCH"
-    bad["sources"]["policy"] = POLICY
-    assert refusal(reads=[bad]).code == "READ_NOT_AGGREGATE"
-    bad["subject"]["conditions"] = {}
-    assert refusal(reads=[bad]).code == "READ_AVAILABILITY_INCONSISTENT"
+    bad["population"]["outcomes"]["observed_count"] = 0
+    assert refusal(reads=[bad]).code == "INVALID_READ"
 
 
-BELOW = ["below_quorum", "required_instrument_missing"]
-BOTH = ["deepeval", "inspect"]
-# name -> (top-level changes, availability changes) applied to a consistent partial warn.
-INCONSISTENCIES: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {
-    # schema-caught shapes (read.v1 measured_read / availability)
-    "pass_partial": ({"verdict": "pass"}, {}),
-    "measured_below_quorum": ({"reason_codes": BELOW}, {"quorum": 2, "state": "below_quorum"}),
-    "full_with_missing": ({}, {"state": "full"}),
-    "triggered_off": ({}, {"triggered": False}),
-    "partial_not_escalated": ({"escalate": False}, {}),
-    # schema-valid inconsistencies
-    "full_with_loss_reason": (
-        {"verdict": "pass", "escalate": False, "reason_codes": ["required_instrument_error"]},
-        {"available": BOTH, "missing": [], "state": "full", "triggered": False},
-    ),
-    "partial_below_quorum_count": ({}, {"quorum": 2}),
-    "below_quorum_reason_at_partial": ({"reason_codes": BELOW}, {}),
-    "partial_without_loss_reason": ({"reason_codes": []}, {}),
-    "below_quorum_without_reason": (
-        {"verdict": "not_measured", "reason_codes": ["required_instrument_missing"]},
-        {"quorum": 2, "state": "below_quorum"},
-    ),
-    "instrument_outside_required": ({}, {"missing": ["judge"]}),
-    "instrument_in_both": ({}, {"available": BOTH}),
-    "duplicate_required": ({}, {"required_instruments": ["deepeval", "deepeval", "inspect"]}),
-    "duplicate_available": (
-        {},
-        {
-            "available": ["deepeval", "deepeval"],
-            "required_instruments": ["deepeval", "deepeval", "inspect"],
-        },
-    ),
-}
+@pytest.mark.parametrize("state", ["partial", "below_quorum"])
+def test_missing_outcomes_cannot_be_promoted_to_pass(state: str) -> None:
+    bad = read("suite.quality", "not_measured", state)
+    bad["verdict"] = "pass"
+    assert refusal(reads=[bad]).code == "INVALID_READ"
 
 
-def _inconsistent(change: str) -> dict[str, Any]:
-    top, panel = INCONSISTENCIES[change]
-    changed = read("suite.quality", "warn", "partial")
-    changed.update(copy.deepcopy(top))
-    changed["availability"].update(copy.deepcopy(panel))
-    return changed
+def test_semantic_binding_is_required_even_for_valid_reads() -> None:
+    claims = claims_document()
+    claims["required_claims"]["same_batch"][0]["semantic_digest"] = OTHER_POLICY
+    candidate = candidate_document(claims_digest=parse_claims(claims).digest)
+    error = refusal(candidate, claims)
+    assert (error.code, error.reason) == ("INVALID_READ", "READ_SEMANTIC_MISMATCH")
 
 
-@pytest.mark.parametrize("change", INCONSISTENCIES)
-def test_read_whose_verdict_contradicts_its_availability_is_refused(change: str) -> None:
-    assert dc.consistent_availability(read("suite.quality", "warn", "partial"))
-    error = refusal(reads=[read("suite.latency"), _inconsistent(change)])
-    assert (error.code, error.location) == (
-        "READ_AVAILABILITY_INCONSISTENT",
-        "/reads/1/availability",
-    )
-
-
-def test_every_admitted_shape_is_consistent() -> None:
-    for verdict, state in SHAPES:
-        assert dc.consistent_availability(read("s", verdict, state)), (verdict, state)
-    assert set(SHAPES) == set(dc.CONSISTENT_READS)
-
-
-def test_loss_reasons_are_availability_s() -> None:
-    assert set(availability.LOSS_REASON.values()) == dc.LOSS_REASONS
-
-
-# (verdict, required, available, quorum, reasons): panels no quorum policy admits
-# (make_policy refuses each); read.v1 refuses only the zero quorum.
-UNREACHABLE: dict[str, tuple[str, list[str], list[str], int, list[str]]] = {
-    "no_instruments_full_pass": ("pass", [], [], 1, []),
-    "quorum_zero_partial_fail": ("fail", ["deepeval"], [], 0, ["required_instrument_missing"]),
-    "quorum_above_panel": ("not_measured", ["deepeval"], [], 2, BELOW),
-}
-
-
-@pytest.mark.parametrize("name", UNREACHABLE)
-def test_panel_outside_every_policy_is_inconsistent(name: str) -> None:
-    verdict, required, reported, quorum, reasons = UNREACHABLE[name]
-    with pytest.raises(availability.AvailabilityInputError):
-        availability.make_policy(required, quorum)
-    missing = [one for one in required if one not in reported]
-    state = "full" if not missing else "partial" if len(reported) >= quorum else "below_quorum"
-    panel = {
-        "required_instruments": required,
-        "quorum": quorum,
-        "available": reported,
-        "missing": missing,
-        "state": state,
-        "triggered": state != "full",
-    }
-    one = read("suite.quality", verdict)
-    one.update(reason_codes=reasons, escalate=state != "full", availability=panel)
-    assert not dc.consistent_availability(one)
-    error = refusal(reads=[one])
-    assert (error.code, error.location) == (
-        "READ_AVAILABILITY_INCONSISTENT",
-        "/reads/0/availability",
-    )
-
-
-def _assessed(required: tuple[str, ...], quorum: int, reported: tuple[str, ...], loss: str) -> Any:
-    policy = availability.make_policy(required, quorum)
-    losses: dict[object, object] = {name: loss for name in required if name not in reported}
-    return availability.assess(policy, reported, losses)
-
-
-GRID = [
-    (required, quorum, reported, loss)
-    for size in (1, 2, 3)
-    for required in [("deepeval", "inspect", "judge")[:size]]
-    for quorum in range(1, size + 1)
-    for count in range(size + 1)
-    for reported in itertools.combinations(required, count)
-    for loss in ("missing", "error")
-]
-
-
-@pytest.mark.parametrize("required,quorum,reported,loss", GRID)
-def test_state_from_counts_is_availability_assess(
-    required: tuple[str, ...], quorum: int, reported: tuple[str, ...], loss: str
-) -> None:
-    """Every read the cap and the panel-less branch can produce is consistent; any other
-    state for the same panel is not."""
-    assessed = _assessed(required, quorum, reported, loss)
-    panel = availability.project(assessed)
-    produced: list[dict[str, Any]] = []
-    for verdict in ("pass", "warn", "fail"):
-        capped = availability.cap(availability.make_panel_read(verdict, 0.5, False), assessed)
-        produced.append({**availability.project_capped(capped), "availability": panel})
-    unmeasured = ["signal_not_measured"]
-    if assessed.state == "below_quorum":
-        unmeasured.append("below_quorum")
-    unmeasured.extend(availability.loss_reasons(assessed))
-    produced.append(
-        {
-            "verdict": "not_measured",
-            "escalate": True,
-            "reason_codes": unmeasured,
-            "availability": panel,
-        }
-    )
-    for one in produced:
-        assert dc.consistent_availability(one), one
-        for other in ("full", "partial", "below_quorum"):
-            if other != assessed.state:
-                moved = {**one, "availability": {**panel, "state": other}}
-                assert not dc.consistent_availability(moved), (one, other)
-
-
-def test_grid_reaches_every_state() -> None:
-    assert {_assessed(*case).state for case in GRID} == {"full", "partial", "below_quorum"}
+def test_legacy_read_cannot_enter_current_acceptance() -> None:
+    error = refusal(reads=[{"schema": "read.v1"}])
+    assert (error.code, error.reason) == ("INVALID_READ", "LEGACY_READ_REQUIRES_MIGRATION")
 
 
 # --- structure ---------------------------------------------------------------------------

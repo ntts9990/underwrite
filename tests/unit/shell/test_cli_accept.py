@@ -26,10 +26,10 @@ from underwrite.instrument.ingest.application import NEXT_ACTIONS
 from underwrite.instrument.ingest.schema import SchemaConfigurationError
 
 ROOT = repo_root(Path(__file__).resolve())
-GOLDEN = ROOT / "fixtures/examples/acceptance"
-MEASUREMENT = ROOT / "fixtures/examples/measurement"
+GOLDEN = ROOT / "fixtures/examples/event-acceptance"
+MEASUREMENT = ROOT / "fixtures/examples/event-measurement"
 ERROR_EXIT = 2
-PASSING = ("read.json", "read-latency.json")
+PASSING = ("read.json", "read-secondary.json")
 NOT_MEASURED = ("read.json", "read-not-measured.json")
 
 
@@ -75,7 +75,7 @@ def decision(capsys: pytest.CaptureFixture[str], argv: list[str]) -> dict[str, A
     output = capsys.readouterr()
     assert output.err == ""
     produced = json.loads(output.out)
-    validator("acceptance_decision.v1").validate(produced)
+    validator("acceptance_decision.v2").validate(produced)
     return produced
 
 
@@ -101,53 +101,42 @@ type Json = None | bool | int | float | str | list[Json] | dict[str, Json]
 def assert_measurement_golden(actual: dict[str, Json], expected: dict[str, Json]) -> None:
     """Standalone behavior and boundary checks."""
     actual, expected = deepcopy(actual), deepcopy(expected)
-    actual_signals, expected_signals = actual["signals"], expected["signals"]
-    assert isinstance(actual_signals, list) and isinstance(expected_signals, list)
-    sections = [
-        (actual["eprocess"], expected["eprocess"], ("e_lower", "e_upper", "e_value")),
-        (actual["jury"], expected["jury"], ("e_value",)),
-        (actual_signals[0], expected_signals[0], ("e_value",)),
-    ]
-    for produced, golden, fields in sections:
-        if golden is None:
-            continue
-        assert isinstance(produced, dict) and isinstance(golden, dict)
-        if golden["availability"] == "measured":
-            for field in fields:
-                value, reference = produced.pop(field), golden.pop(field)
-                assert type(value) is float and type(reference) is float
-                assert math.isfinite(value) and math.isfinite(reference)
-                assert math.isclose(value, reference, rel_tol=1e-9, abs_tol=0)
+    produced, golden = actual["directional"], expected["directional"]
+    assert isinstance(produced, dict) and isinstance(golden, dict)
+    if golden["availability"] == "measured":
+        for field in ("e_lower", "e_upper"):
+            value, reference = produced.pop(field), golden.pop(field)
+            assert type(value) is float and type(reference) is float
+            assert math.isfinite(value) and math.isfinite(reference)
+            assert math.isclose(value, reference, rel_tol=1e-9, abs_tol=0)
     # JSON encoding distinguishes numeric types (including int versus float),
     # while sorting only removes irrelevant object member order.
     assert json.dumps(actual, sort_keys=True) == json.dumps(expected, sort_keys=True)
 
 
-def test_measurement_golden_accepts_independently_observed_linux_values() -> None:
+def test_measurement_golden_accepts_one_ulp_numeric_variation() -> None:
     expected: dict[str, Json] = load("read.json")
     actual = deepcopy(expected)
-    eprocess, jury, signals = actual["eprocess"], actual["jury"], actual["signals"]
-    assert isinstance(eprocess, dict) and isinstance(jury, dict) and isinstance(signals, list)
-    signal = signals[0]
-    assert isinstance(signal, dict)
-    eprocess.update(
-        e_lower=0.41666666666666635, e_upper=0.9166666666666667, e_value=0.6666666666666665
-    )
-    jury["e_value"] = signal["e_value"] = 0.6666666666666665
+    directional = actual["directional"]
+    assert isinstance(directional, dict)
+    for key in ("e_lower", "e_upper"):
+        value = directional[key]
+        assert isinstance(value, float)
+        directional[key] = math.nextafter(value, math.inf)
     assert_measurement_golden(actual, expected)
 
 
 @pytest.mark.parametrize(
     ("section", "field", "value"),
     [
-        ("eprocess", "e_value", 0.67),
-        ("eprocess", "e_value", math.inf),
-        ("eprocess", "e_value", math.nan),
-        ("eprocess", "e_value", 1),
-        ("availability", "state", "partial"),
+        ("directional", "e_upper", 0.67),
+        ("directional", "e_upper", math.inf),
+        ("directional", "e_upper", math.nan),
+        ("directional", "e_upper", 1),
+        ("directional", "availability", "not_measured"),
         ("sources", "policy", "sha256:" + "0" * 64),
-        ("", "score", math.nextafter(1.0, 2.0)),
-        ("", "score", 1.0),
+        ("", "verdict", "fail"),
+        ("", "semantic_digest", "sha256:" + "f" * 64),
     ],
 )
 def test_measurement_golden_rejects_drift_outside_the_numerical_contract(
@@ -162,26 +151,26 @@ def test_measurement_golden_rejects_drift_outside_the_numerical_contract(
         assert_measurement_golden(actual, expected)
 
 
-@pytest.mark.parametrize("name", ["quality", "latency"])
-def test_derived_policies_change_only_the_subject(name: str) -> None:
-    source = json.loads((MEASUREMENT / "policy.json").read_bytes())
-    derived = load(f"policy-{name}.json")
-    assert derived == {**source, "subject": {"conditions": {}, "subject_id": f"suite.{name}"}}
+def test_secondary_fixture_measures_a_distinct_declared_event() -> None:
+    primary, secondary = load("read.json"), load("read-secondary.json")
+    assert primary["semantic_digest"] != secondary["semantic_digest"]
+    assert primary["semantics"]["event"]["id"] != secondary["semantics"]["event"]["id"]
+    assert primary["semantics"]["unit"] == secondary["semantics"]["unit"] == "proportion"
 
 
 @pytest.mark.parametrize(
     ("read", "observation", "policy"),
     [
-        ("read.json", "read-input.json", "quality"),
-        ("read-latency.json", "read-input.json", "latency"),
-        ("read-not-measured.json", "observation-below-quorum.json", "latency"),
+        ("read.json", "observation.json", "policy.json"),
+        ("read-secondary.json", "observation-secondary.json", "policy-secondary.json"),
+        ("read-not-measured.json", "observation-unavailable.json", "policy-secondary.json"),
     ],
 )
 def test_golden_reads_are_what_measure_writes(
     read: str, observation: str, policy: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    argv = ["measure", "--observation", str(MEASUREMENT / observation)]
-    assert main([*argv, "--policy", str(GOLDEN / f"policy-{policy}.json"), "--json"]) == 0
+    argv = ["measure", "--observation", str(GOLDEN / observation)]
+    assert main([*argv, "--policy", str(GOLDEN / policy), "--json"]) == 0
     output = capsys.readouterr()
     assert output.err == ""
     produced: dict[str, Json] = json.loads(output.out)
@@ -193,19 +182,22 @@ def test_golden_claims_bind_their_policies_and_the_candidate_seals_them() -> Non
     claims = load("claims.json")
     for basis in claims["required_claims"].values():
         for claim in basis:
-            policy = load(f"policy-{claim['claim_id']}.json")
+            policy = load(
+                "policy.json" if claim["claim_id"] == "event" else "policy-secondary.json"
+            )
             assert claim["subject_id"] == policy["subject"]["subject_id"]
             assert claim["policy_digest"] == content_digest(policy)
+            assert claim["semantic_digest"] == policy["semantic_digest"]
     assert load("candidate.json")["claims_digest"] == parse_claims(claims).digest
 
 
 @pytest.mark.parametrize(
     ("reads", "golden", "classification", "next_state", "reasons"),
     [
-        (PASSING, "accept.json", "screened", "screened", ["stage_screened"]),
+        (PASSING, "decision.json", "screened", "screened", ["stage_screened"]),
         (
             NOT_MEASURED,
-            "accept-not-measured.json",
+            "decision-indeterminate.json",
             "indeterminate",
             "proposed",
             ["claim_not_measured"],
@@ -224,9 +216,9 @@ def test_goldens_are_the_command_output(
     assert main(args(reads=reads)) == 0
     output = capsys.readouterr()
     assert output.err == ""
-    assert output.out == (GOLDEN / "expected" / golden).read_text(encoding="utf-8")
+    assert output.out == (GOLDEN / golden).read_text(encoding="utf-8")
     produced = json.loads(output.out)
-    validator("acceptance_decision.v1").validate(produced)
+    validator("acceptance_decision.v2").validate(produced)
     assert (produced["classification"], produced["next_state"]) == (classification, next_state)
     assert produced["reason_codes"] == reasons
     assert produced["inputs"]["read_digests"] == sorted(
@@ -236,10 +228,10 @@ def test_goldens_are_the_command_output(
 
 
 def test_not_measured_golden_explains_the_gap_per_claim() -> None:
-    claims = {c["claim_id"]: c["read"] for c in load("expected/accept-not-measured.json")["claims"]}
-    assert claims["quality"]["verdict"] == "pass"
-    gap = claims["latency"]
-    assert gap["verdict"] == "not_measured" and gap["escalate"] is True
+    claims = {c["claim_id"]: c["read"] for c in load("decision-indeterminate.json")["claims"]}
+    assert claims["event"]["verdict"] == "pass"
+    gap = claims["secondary"]
+    assert gap["verdict"] == "not_measured" and "escalate" not in gap
     assert gap["reason_codes"] == load("read-not-measured.json")["reason_codes"]
 
 
@@ -252,14 +244,22 @@ def test_human_mode_explains_each_claim_and_claims_no_authority(
     lines = output.out.splitlines()
     assert "not approval" in lines[0] and "merge_authorized is false" in lines[0]
     assert "classification: indeterminate (proposed -> proposed)" in lines
-    assert any(line.startswith("claim latency (validity, suite.latency): ") for line in lines)
-    assert any('"not_measured"' in line and "below_quorum" in line for line in lines)
+    assert any(
+        line.startswith("claim secondary (validity, synthetic.secondary-event-rate): ")
+        for line in lines
+    )
+    assert any(
+        '"not_measured"' in line and "outcome_population_incomplete" in line for line in lines
+    )
     assert 'selection: {"case_count": 3, "confirm_fraction": 0.2}' in lines
 
 
 def test_missing_claim_read_is_named_in_human_mode(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(args(reads=("read.json",))[:-1]) == 0
-    assert "claim latency (validity, suite.latency): no read supplied" in capsys.readouterr().out
+    assert (
+        "claim secondary (validity, synthetic.secondary-event-rate): no read supplied"
+        in capsys.readouterr().out
+    )
 
 
 def test_a_rejected_decision_exits_zero(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
@@ -284,9 +284,9 @@ def test_accept_is_listed_in_the_top_level_help(capsys: pytest.CaptureFixture[st
 
 
 def test_read_bound_is_the_claims_contract_bound() -> None:
-    claims = schema("declared_claims.v1")
+    claims = schema("declared_claims.v2")
     assert accept.MAX_READS == claims["$defs"]["basis_claims"]["maxItems"]
-    assert accept.MAX_READS == schema("acceptance_decision.v1")["properties"]["claims"]["maxItems"]
+    assert accept.MAX_READS == schema("acceptance_decision.v2")["properties"]["claims"]["maxItems"]
 
 
 def test_the_bound_itself_is_admitted(capsys: pytest.CaptureFixture[str]) -> None:
@@ -524,13 +524,6 @@ REFUSALS: dict[str, tuple[Scenario, str | None, str, str]] = {
     "UNEXPECTED_CLAIM": (_unexpected, None, "/reads/0/subject/subject_id", "CORRECT_READ"),
     "DUPLICATE_CLAIM": (_duplicate, None, "/reads/1/subject/subject_id", "CORRECT_READ"),
     "READ_POLICY_MISMATCH": (_policy_mismatch, None, "/reads/0/sources/policy", "CORRECT_READ"),
-    "READ_NOT_AGGREGATE": (_conditioned, None, "/reads/0/subject/conditions", "CORRECT_READ"),
-    "READ_AVAILABILITY_INCONSISTENT": (
-        _inconsistent,
-        None,
-        "/reads/0/availability",
-        "CORRECT_READ",
-    ),
     "INVALID_STATE_FOR_EVALUATION": (
         _terminal,
         None,
@@ -559,7 +552,10 @@ REFUSALS: dict[str, tuple[Scenario, str | None, str, str]] = {
 
 
 def test_every_contract_code_has_a_cli_scenario() -> None:
-    assert list(REFUSALS) == schema("acceptance_error.v1")["properties"]["code"]["enum"]
+    retained_legacy = {"READ_NOT_AGGREGATE", "READ_AVAILABILITY_INCONSISTENT"}
+    assert set(REFUSALS) | retained_legacy == set(
+        schema("acceptance_error.v1")["properties"]["code"]["enum"]
+    )
 
 
 @pytest.mark.parametrize("code", list(REFUSALS))
@@ -648,19 +644,59 @@ def test_candidate_and_claims_refusals_precede_opening_any_read(
     error(capsys, code)
 
 
-def test_read_with_another_seed_is_an_invalid_read(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize("scenario", [_conditioned, _inconsistent])
+def test_invalid_event_read_is_refused(
+    scenario: Scenario,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    seed = schema("statistical_seed.v1")["const"]
-    assert load("read.json")["seed"] == seed
-    assert main(args(reads=(_read_with(tmp_path, seed=seed + 1),))) == ERROR_EXIT
-    assert error(capsys, "INVALID_READ")["reason"] == "SCHEMA_VALIDATION_FAILED"
+    assert main(scenario(tmp_path, monkeypatch)) == ERROR_EXIT
+    assert error(capsys, "INVALID_READ")["location"] == "/reads/0"
 
 
-def test_inconsistent_read_is_schema_valid_so_decide_refuses_it() -> None:
-    read = {**load("read.json"), "reason_codes": ["required_instrument_missing"]}
+def test_schema_valid_cross_field_inconsistency_is_refused_by_shared_owner(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    read = {**load("read.json"), "verdict": "fail"}
     measurement_validators()[0].validate(read)
-    assert not dc.consistent_availability(read)
+    assert main(args(reads=(write(tmp_path, "read.json", read),))) == ERROR_EXIT
+    assert error(capsys, "INVALID_READ")["reason"] != "SCHEMA_VALIDATION_FAILED"
+
+
+@pytest.mark.parametrize("contradiction", ["successes", "failures"])
+def test_directional_prefix_cannot_contradict_observed_totals(
+    contradiction: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    read = load("read.json")
+    observed = read["population"]["outcomes"]["observed_count"]
+    if contradiction == "successes":
+        read["diagnostics"]["event_rate"].update(positive_count=0, value=0)
+        read["diagnostics"]["all_k_success"].update(c=0, value=0)
+    else:
+        read["directional"].update(successes=0, failures=observed)
+    # Each field satisfies JSON Schema; the shared owner must reject cross-field counts.
+    measurement_validators()[0].validate(read)
+    path = write(tmp_path, "impossible-population.json", read)
+    assert main(args(reads=(path,))) == ERROR_EXIT
+    refusal = error(capsys, "INVALID_READ")
+    assert refusal["reason"] == "INCONSISTENT_READ"
+    assert refusal["location"] == "/reads/0"
+
+
+@pytest.mark.parametrize("kind", ["claims", "read"])
+def test_legacy_input_is_refused_with_migration_reason(
+    kind: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    document = {"schema": "declared_claims.v1" if kind == "claims" else "read.v1"}
+    path = write(tmp_path, "legacy.json", document)
+    argv = args(claims=path) if kind == "claims" else args(reads=(path,))
+    assert main(argv) == ERROR_EXIT
+    payload = error(capsys, "INVALID_CLAIMS" if kind == "claims" else "INVALID_READ")
+    assert payload["reason"] == f"LEGACY_{kind.upper()}_REQUIRES_MIGRATION"
 
 
 def test_a_case_id_the_split_would_refuse_is_refused_by_the_reader_first(

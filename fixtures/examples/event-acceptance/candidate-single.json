@@ -1,0 +1,1 @@
+{"basis":"same_batch","candidate_id":"synthetic-event-change","claims_digest":"sha256:c37fac2cfd42ac1a4d6e3555a800e048afd574be074ff7a95aa82dbcee35955d","current_state":"proposed","hard_failures":[],"kind":"harness_patch","schema":"change_candidate.v1"}

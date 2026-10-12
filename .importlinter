@@ -19,6 +19,7 @@ source_modules=
     underwrite.measurement
     underwrite.acceptance
     underwrite.adjudication
+    underwrite.measurement_contract
 forbidden_modules=
     underwrite.instrument.ingest
     underwrite.fleet
@@ -34,4 +35,5 @@ layers=
     underwrite.service | underwrite.fleet | underwrite.instrument.ingest
     underwrite._fileio
     underwrite.instrument.evidence | underwrite.measurement | underwrite.acceptance | underwrite.adjudication
+    underwrite.measurement_contract
     underwrite_core

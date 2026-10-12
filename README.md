@@ -25,7 +25,7 @@ Python CLI and library that connects local evidence to explicit measurement and
 acceptance policies, while keeping missing evidence visible.
 
 - **One observation contract.** Normalize supported payload profiles without turning source claims into measured conclusions.
-- **Explicit measurement.** Declare inputs, subject, calibration, quorum, and statistical thresholds in a policy.
+- **Explicit measurement.** Bind a binary event, direction, expected population, and statistical assumptions to a policy.
 - **Visible uncertainty.** Keep `not_measured`, `indeterminate`, and `abstained` distinct; inspect the result before acting.
 
 ```text
@@ -46,7 +46,7 @@ Exit `0` means a command produced its result, not that a change is approved.
 
 Requires Python **3.12+** and [uv](https://docs.astral.sh/uv/).
 
-For current accounting, records, and handoff workflows, use the [source checkout
+For current measurement, accounting, records, and handoff workflows, use the [source checkout
 quickstart](#quickstart). The command below installs the older published `0.0.1`,
 which does not include those commands or `capabilities`. Development packages
 still carry `0.0.1`; equal version numbers do not establish equal capabilities.
@@ -77,27 +77,24 @@ mkdir -p output
 
 uv run --frozen --no-sync underwrite ingest \
   --format underwrite.evidence-bundle --version v1 \
-  --file fixtures/examples/measurement/bundle.json --json \
+  --file fixtures/examples/event-measurement/bundle.json --json \
   > output/observation.json
 
 uv run --frozen --no-sync underwrite measure \
   --observation output/observation.json \
-  --policy fixtures/examples/acceptance/policy-quality.json --json \
-  > output/read-quality.json
-
-uv run --frozen --no-sync underwrite measure \
-  --observation output/observation.json \
-  --policy fixtures/examples/acceptance/policy-latency.json --json \
-  > output/read-latency.json
+  --policy fixtures/examples/event-acceptance/policy.json --json \
+  > output/read-event.json
 
 uv run --frozen --no-sync underwrite accept \
-  --candidate fixtures/examples/acceptance/candidate.json \
-  --claims fixtures/examples/acceptance/claims.json \
-  --read output/read-quality.json \
-  --read output/read-latency.json --json
+  --candidate fixtures/examples/event-acceptance/candidate-single.json \
+  --claims fixtures/examples/event-acceptance/claims.json \
+  --read output/read-event.json --json
 ```
 
-The reads are computed from the supplied bundle and policies. The final result is
+This constructed example measures a synthetic binary event proportion, not general
+quality or latency. The `read.v2` is computed from the bundle and
+`measurement_policy.v3`; calibration diagnostics do not vote on its verdict.
+See [measurement meaning and migration](AGENT_USAGE.md#measurement-meaning-and-migration). The final result is
 `screened`, requires human review, and keeps `merge_authorized` false. Repeat
 `--read` for each required claim. A successful classification does not authorize a
 merge or deployment.

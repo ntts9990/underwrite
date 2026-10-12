@@ -25,7 +25,7 @@
 근거가 빠진 경우도 결과에 그대로 드러냅니다.
 
 - **하나의 관측 계약.** 지원하는 페이로드를 정규화하면서 원천 주장을 측정 결론과 구분합니다.
-- **명시적 측정.** 입력, 대상, 보정, 정족수, 통계 임계값을 정책에 선언합니다.
+- **명시적 측정.** 이진 사건, 바람직한 방향, 기대 모집단, 통계 가정을 정책에 결합합니다.
 - **드러나는 불확실성.** `not_measured`, `indeterminate`, `abstained`를 구분합니다. 행동에 옮기기 전에 결과를 확인하세요.
 
 ```text
@@ -46,7 +46,7 @@
 
 Python **3.12 이상**과 [uv](https://docs.astral.sh/uv/)가 필요합니다.
 
-현재 집계 검사·기록·handoff 기능을 사용하려면 [소스 체크아웃 빠른 시작](#빠른-시작)을
+현재 측정·집계 검사·기록·handoff 기능을 사용하려면 [소스 체크아웃 빠른 시작](#빠른-시작)을
 따르세요. 아래 명령은 이전 공개판 `0.0.1`을 설치하며, 해당 기능과 `capabilities`는
 포함하지 않습니다. 개발판도 `0.0.1`을 유지하므로 버전 번호가 같아도 기능은 다릅니다.
 
@@ -75,27 +75,23 @@ mkdir -p output
 
 uv run --frozen --no-sync underwrite ingest \
   --format underwrite.evidence-bundle --version v1 \
-  --file fixtures/examples/measurement/bundle.json --json \
+  --file fixtures/examples/event-measurement/bundle.json --json \
   > output/observation.json
 
 uv run --frozen --no-sync underwrite measure \
   --observation output/observation.json \
-  --policy fixtures/examples/acceptance/policy-quality.json --json \
-  > output/read-quality.json
-
-uv run --frozen --no-sync underwrite measure \
-  --observation output/observation.json \
-  --policy fixtures/examples/acceptance/policy-latency.json --json \
-  > output/read-latency.json
+  --policy fixtures/examples/event-acceptance/policy.json --json \
+  > output/read-event.json
 
 uv run --frozen --no-sync underwrite accept \
-  --candidate fixtures/examples/acceptance/candidate.json \
-  --claims fixtures/examples/acceptance/claims.json \
-  --read output/read-quality.json \
-  --read output/read-latency.json --json
+  --candidate fixtures/examples/event-acceptance/candidate-single.json \
+  --claims fixtures/examples/event-acceptance/claims.json \
+  --read output/read-event.json --json
 ```
 
-측정 결과(read)는 제공된 번들과 정책으로 계산됩니다. 최종 결과는 `screened`이며,
+이 예제는 합성 이진 사건의 비율을 측정합니다. 일반 품질이나 지연 시간을 측정하지
+않습니다. `read.v2`는 번들과 `measurement_policy.v3`으로 계산하며, 보정 진단값은
+판정에 투표하지 않습니다. [측정 의미와 마이그레이션](AGENT_USAGE.md#measurement-meaning-and-migration)을 참고하세요. 최종 결과는 `screened`이며,
 사람의 검토가 필요하고 `merge_authorized`는 false로 유지됩니다. 필요한 주장마다
 `--read`를 반복해 전달합니다. 분류에 성공했다고 병합이나 배포가 허가되는 것은 아닙니다.
 

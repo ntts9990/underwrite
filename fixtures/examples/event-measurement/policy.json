@@ -1,0 +1,38 @@
+{
+  "schema": "measurement_policy.v3",
+  "profile": "binary-event-directional.v1",
+  "semantic_digest": "sha256:38aa1561c1fe293c27505baa3a05521be0c1cba96134d65c0c73572250447f0b",
+  "subject": {
+    "subject_id": "synthetic.event-rate",
+    "conditions": {}
+  },
+  "scope": "aggregate",
+  "expected_case_ids": [
+    "synthetic-case-0",
+    "synthetic-case-1",
+    "synthetic-case-2",
+    "synthetic-case-3",
+    "synthetic-case-4",
+    "synthetic-case-5",
+    "synthetic-case-6",
+    "synthetic-case-7"
+  ],
+  "eprocess": {
+    "p0": 0.5,
+    "alpha_total": 0.05,
+    "prior_a": 1,
+    "prior_b": 1,
+    "max_observations": null
+  },
+  "assumptions": {
+    "conditional_mean_model": "declared",
+    "parameters_prespecified": "declared",
+    "order_prespecified": "declared",
+    "outcome_independent_selection": "declared"
+  },
+  "diagnostics": {
+    "ece_bins": 2,
+    "min_bin_n": 2,
+    "all_k": 2
+  }
+}
