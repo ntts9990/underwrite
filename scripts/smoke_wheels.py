@@ -597,6 +597,73 @@ def _deepeval_pilot(cli: Path, work: Path) -> None:
     )
 
 
+def _langfuse_record_pilot(
+    cli: Path, work: Path, observed: Path, scores: Path, expected: dict[str, object]
+) -> None:
+    inputs = (work / "observations.json", work / "scores.json")
+    for source, copied in zip((observed, scores), inputs, strict=True):
+        copied.write_bytes(source.read_bytes())
+    store = work / "langfuse-records"
+    arguments = [
+        "records",
+        "audit-langfuse",
+        "--observations",
+        str(inputs[0]),
+        "--scores",
+        str(inputs[1]),
+        "--root",
+        str(store),
+    ]
+    report = _cli_json(cli, [*arguments, "--id", "captured"], work / "langfuse-record.json", work)
+    analysis = cast(dict[str, object], report["analysis"])
+    storage = cast(dict[str, object], report["storage"])
+    _require(analysis["report"] == expected, "Langfuse capture changed accounting")
+    _require(storage["state"] == "saved", "Langfuse capture failed to save")
+    for source, role in zip(inputs, ("observations", "scores"), strict=True):
+        _require(
+            (store / f"records/captured/files/source/{role}.bin").read_bytes()
+            == source.read_bytes(),
+            "Langfuse retained source differs",
+        )
+        source.unlink()
+    recovered = _cli_json(
+        cli,
+        [
+            "records",
+            "read-json",
+            "--root",
+            str(store),
+            "--id",
+            "captured",
+            "--name",
+            "analysis/accounting.json",
+        ],
+        work / "langfuse-recovered.json",
+        work,
+    )
+    _require(recovered["content"] == expected, "Langfuse stored analysis could not be reused")
+    _require(
+        recovered["manifest_digest"] == storage["manifest_digest"],
+        "Langfuse recovered manifest differs",
+    )
+    failed = _command([str(cli), *arguments, "--id", "unavailable", "--json"], work)
+    _require(
+        failed.returncode == EVIDENCE_ERROR_EXIT and failed.stderr == "",
+        "Langfuse diagnostic capture used the wrong channel or exit",
+    )
+    diagnostic = json.loads(failed.stdout)
+    _require(
+        diagnostic["analysis"]["phase"] == "acquisition"
+        and diagnostic["storage"]["state"] == "saved",
+        "Langfuse acquisition failure lost independent storage",
+    )
+    for source in diagnostic["sources"].values():
+        _require(
+            source["state"] == "unavailable" and "error" in source,
+            "Langfuse input failure was not retained",
+        )
+
+
 def _langfuse_pilot(cli: Path, work: Path) -> None:
     golden = ROOT / "fixtures/golden/external/langfuse"
     observed = golden / "observations_v2-2026-09-14T06-40-00.json"
@@ -608,6 +675,7 @@ def _langfuse_pilot(cli: Path, work: Path) -> None:
         work,
     )
     counts = cast(dict[str, object], report["counts"])
+    _langfuse_record_pilot(cli, work, observed, scores, report)
     _require(
         counts["by_data_type"] == {"NUMERIC": 2, "BOOLEAN": 1, "CATEGORICAL": 1, "TEXT": 1},
         "installed Langfuse score kinds changed",

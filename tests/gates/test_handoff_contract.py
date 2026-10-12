@@ -14,7 +14,7 @@ from jsonschema import Draft202012Validator
 ROOT = Path(__file__).resolve().parents[2]
 
 
-@pytest.mark.parametrize("name", ["paired_handoff_review", "promptfoo_record"])
+@pytest.mark.parametrize("name", ["paired_handoff_review", "promptfoo_record", "langfuse_record"])
 def test_generated_handoff_contract_matches_owners(name: str) -> None:
     result = subprocess.run(
         [sys.executable, f"scripts/build_{name}.py", "--check"],
@@ -26,7 +26,7 @@ def test_generated_handoff_contract_matches_owners(name: str) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-@pytest.mark.parametrize("name", ["paired_handoff_review", "promptfoo_record"])
+@pytest.mark.parametrize("name", ["paired_handoff_review", "promptfoo_record", "langfuse_record"])
 def test_composite_contract_has_only_resolvable_local_references(name: str) -> None:
     document = json.loads((ROOT / f"contracts/{name}.v1.schema.json").read_bytes())
     Draft202012Validator.check_schema(document)
@@ -131,3 +131,126 @@ def test_promptfoo_record_exit_and_capture_states_are_bound(
         validator.validate(acquisition)
         with pytest.raises(ValidationError):
             validator.validate({**acquisition, "source": envelope["source"]})
+
+
+@pytest.mark.parametrize("observations", [False, True])
+@pytest.mark.parametrize("scores", [False, True])
+@pytest.mark.parametrize("storage_error", [False, True])
+def test_langfuse_record_binds_sources_capture_count_phase_and_exit(
+    observations: bool, scores: bool, storage_error: bool
+) -> None:
+    from jsonschema.exceptions import ValidationError
+
+    from underwrite.cli.evidence import EvidenceError
+    from underwrite.cli.local_json import Validator
+    from underwrite.cli.record_capture import saved_record
+    from underwrite.cli.records import record_error_payload
+    from underwrite.service.records import RecordError
+
+    validator = cast(
+        Validator,
+        Draft202012Validator(
+            json.loads((ROOT / "contracts/langfuse_record.v1.schema.json").read_bytes())
+        ),
+    )
+    error = EvidenceError("INVALID_INPUT", "INVALID_INPUT").payload
+    captured = {"state": "captured", "raw_hash": "sha256:" + "a" * 64, "bytes": 1}
+    sources = {
+        role: captured if available else {"state": "unavailable", "error": error}
+        for role, available in (("observations", observations), ("scores", scores))
+    }
+    count = 2 + observations + scores
+    storage = (
+        {
+            "state": "error",
+            "error": record_error_payload(RecordError("STORE_IO_ERROR")),
+            "published_record": None,
+        }
+        if storage_error
+        else saved_record("capture", "sha256:" + "0" * 64, count)
+    )
+    phase = "analysis" if observations and scores else "acquisition"
+    analysis = {"state": "error", "phase": phase, "error": error}
+    envelope: dict[str, Any] = {
+        "schema": "langfuse_record.v1",
+        "command": "records audit-langfuse",
+        "sources": sources,
+        "analysis": analysis,
+        "storage": storage,
+        "exit_code": 3 if storage_error else 2,
+    }
+    validator.validate(envelope)
+    for wrong in {0, 2, 3} - {envelope["exit_code"]}:
+        with pytest.raises(ValidationError):
+            validator.validate({**envelope, "exit_code": wrong})
+    with pytest.raises(ValidationError):
+        validator.validate(
+            {
+                **envelope,
+                "analysis": {
+                    **analysis,
+                    "phase": ("acquisition" if phase == "analysis" else "analysis"),
+                },
+            }
+        )
+    if not storage_error:
+        for wrong_count in {2, 3, 4} - {count}:
+            with pytest.raises(ValidationError):
+                validator.validate(
+                    {
+                        **envelope,
+                        "storage": saved_record("capture", "sha256:" + "0" * 64, wrong_count),
+                    }
+                )
+    for role, available in (("observations", observations), ("scores", scores)):
+        if not available:
+            with pytest.raises(ValidationError):
+                validator.validate(
+                    {**envelope, "sources": {**sources, role: {"state": "unavailable"}}}
+                )
+
+
+def test_langfuse_record_result_requires_both_complete_sources() -> None:
+    from jsonschema.exceptions import ValidationError
+
+    from underwrite.cli.evidence import EvidenceError
+    from underwrite.cli.local_json import Validator
+    from underwrite.cli.record_capture import saved_record
+    from underwrite.instrument.ingest.langfuse_accounting import audit_langfuse_files
+
+    golden = ROOT / "fixtures/golden/external/langfuse"
+    report = audit_langfuse_files(
+        golden / "observations_v2-2026-09-14T06-40-00.json",
+        golden / "scores-2026-09-14T06-40-00.json",
+    )
+    validator = cast(
+        Validator,
+        Draft202012Validator(
+            json.loads((ROOT / "contracts/langfuse_record.v1.schema.json").read_bytes())
+        ),
+    )
+    captured = {"state": "captured", "raw_hash": "sha256:" + "a" * 64, "bytes": 1}
+    envelope = {
+        "schema": "langfuse_record.v1",
+        "command": "records audit-langfuse",
+        "sources": {"observations": captured, "scores": captured},
+        "analysis": {"state": "result", "report": report},
+        "storage": saved_record("capture", "sha256:" + "0" * 64, 4),
+        "exit_code": 0,
+    }
+    validator.validate(envelope)
+    for role in ("observations", "scores"):
+        with pytest.raises(ValidationError):
+            validator.validate(
+                {
+                    **envelope,
+                    "sources": {
+                        "observations": captured,
+                        "scores": captured,
+                        role: {
+                            "state": "unavailable",
+                            "error": EvidenceError("INVALID_INPUT", "INVALID_INPUT").payload,
+                        },
+                    },
+                }
+            )

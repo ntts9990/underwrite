@@ -95,6 +95,12 @@ def configure(parser: argparse.ArgumentParser) -> None:
         "audit-promptfoo", help="Audit and retain one entire Promptfoo file."
     )
     record_promptfoo.configure(audit)
+    from underwrite.cli import record_langfuse
+
+    langfuse = commands.add_parser(
+        "audit-langfuse", help="Audit and retain two entire Langfuse export files."
+    )
+    record_langfuse.configure(langfuse)
 
 
 def _input_error(code: str, reason: str, location: str) -> Exception:
@@ -231,6 +237,10 @@ def _emit_error(error: _CliError, *, as_json: bool) -> int:
 
 
 def main(argv: list[str]) -> int:
+    if argv and argv[0] == "audit-langfuse":
+        from underwrite.cli import record_langfuse
+
+        return record_langfuse.main(argv[1:])
     if argv and argv[0] == "audit-promptfoo":
         from underwrite.cli import record_promptfoo
 

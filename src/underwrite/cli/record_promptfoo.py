@@ -19,6 +19,7 @@ from underwrite.cli.evidence import (
     run_cli,
 )
 from underwrite.cli.local_json import Validator, validate
+from underwrite.cli.record_capture import saved_record, store_captured_record
 from underwrite.cli.records import OUTPUT_MAX_BYTES, record_error_candidates, record_error_payload
 from underwrite.instrument.ingest.accounting import (
     SOURCE,
@@ -32,8 +33,6 @@ from underwrite.service.records import (
     CapturedRecordFile,
     CapturedRecordSpec,
     RecordError,
-    save_captured_record,
-    verify_record,
 )
 
 SCHEMA = "promptfoo_record.v1"
@@ -164,24 +163,6 @@ def _files(
     return tuple(files)
 
 
-def _saved(identifier: str, digest: str, count: int) -> dict[str, object]:
-    return {
-        "state": "saved",
-        "record_id": identifier,
-        "manifest_digest": digest,
-        "verification": {
-            "schema": "record_verification.v1",
-            "record_id": identifier,
-            "manifest_digest": digest,
-            "valid": True,
-            "files_checked": count,
-            "links_checked": 0,
-            "findings": [],
-            "verification_scope": "stored_bytes_and_direct_links",
-        },
-    }
-
-
 def _analysis_text(analysis: dict[str, Any]) -> str:
     if analysis["state"] == "error":
         error = analysis["error"]
@@ -220,7 +201,7 @@ def _admit_response(
     envelope: dict[str, Any], contracts: _Contracts, identifier: str, count: int, as_json: bool
 ) -> None:
     digest = "sha256:" + "0" * 64
-    representative = envelope.get("storage") or _saved(identifier, digest, count)
+    representative = envelope.get("storage") or saved_record(identifier, digest, count)
     envelope["storage"] = representative
     _check(contracts.aggregate, envelope)
     base_size = output_line_size(canonical_bytes(envelope))
@@ -242,25 +223,6 @@ def _admit_response(
             )
     if (maximum if as_json else human_maximum) > OUTPUT_MAX_BYTES:
         raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
-
-
-def _store(root: Path, spec: CapturedRecordSpec, contracts: _Contracts) -> dict[str, Any]:
-    known: dict[str, object] | None = None
-    try:
-        snapshot = save_captured_record(root, spec)
-        known = {"record_id": spec.record_id, "manifest_digest": snapshot.digest}
-        verification = verify_record(root, spec.record_id)
-        _check(contracts.verification, verification)
-        expected = _saved(spec.record_id, snapshot.digest, len(spec.files))
-        if verification != expected["verification"]:
-            raise RecordError("STORE_IO_ERROR")
-        return expected
-    except RecordError as exc:
-        error = record_error_payload(exc)
-    except Exception:
-        error = record_error_payload(RecordError("INTERNAL_ERROR"))
-    _check(contracts.record_error, error)
-    return {"state": "error", "error": error, "published_record": known}
 
 
 def run_record_promptfoo(
@@ -306,7 +268,9 @@ def run_record_promptfoo(
         provenance={"verified": False, "attestation_ref": None},
         files=files,
     )
-    envelope["storage"] = _store(root, spec, contracts)
+    envelope["storage"] = store_captured_record(
+        root, spec, contracts.verification, contracts.record_error
+    )
     if envelope["storage"]["state"] == "error":
         envelope["exit_code"] = _STORAGE_FAILURE_EXIT
     return envelope

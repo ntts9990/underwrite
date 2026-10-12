@@ -9,6 +9,7 @@ from typing import Any, cast
 import pytest
 from underwrite_core.canonical import canonical_bytes, digest_bytes
 
+from underwrite.cli import record_capture
 from underwrite.cli import record_promptfoo as command
 from underwrite.cli import records as record_cli
 from underwrite.instrument.ingest import accounting as adapter
@@ -163,7 +164,7 @@ def test_storage_failure_retains_success_or_failed_analysis(
         del root, spec
         raise records.RecordError("STORE_IO_ERROR")
 
-    monkeypatch.setattr(command, "save_captured_record", fail)
+    monkeypatch.setattr(record_capture, "save_captured_record", fail)
     code, report, stdout, stderr = invoke(path, store, capsys)
     assert code == report["exit_code"] == STORAGE_ERROR_EXIT and stdout and not stderr
     assert report["analysis"]["state"] == ("error" if invalid_source else "result")
@@ -210,7 +211,7 @@ def test_verification_failure_keeps_known_returned_identity(
         del root, identifier
         raise records.RecordError("STORE_IO_ERROR")
 
-    monkeypatch.setattr(command, "verify_record", fail)
+    monkeypatch.setattr(record_capture, "verify_record", fail)
     code, report, _, _ = invoke(path, store, capsys)
     assert code == STORAGE_ERROR_EXIT and report["analysis"]["state"] == "result"
     assert report["storage"]["published_record"] == {
@@ -228,14 +229,14 @@ def test_output_admission_failure_calls_no_save(
 ) -> None:
     path, store = source(tmp_path), tmp_path / "store"
     called: list[bool] = []
-    original = command.save_captured_record
+    original = record_capture.save_captured_record
 
     def track(root: Path, spec: records.CapturedRecordSpec) -> records.RecordSnapshot:
         called.append(True)
         return original(root, spec)
 
     monkeypatch.setattr(command, "OUTPUT_MAX_BYTES", 1)
-    monkeypatch.setattr(command, "save_captured_record", track)
+    monkeypatch.setattr(record_capture, "save_captured_record", track)
     args = [str(path), "--root", str(store), "--id", "sample"] + (["--json"] if as_json else [])
     assert command.main(args) == ANALYSIS_ERROR_EXIT
     streams = capsys.readouterr()
@@ -431,3 +432,34 @@ def test_large_analysis_full_scans_do_not_scale_with_error_candidate_count(
     assert code == 0 and report["storage"]["state"] == "saved"
     expected_passes = len(("admission", "final_emitter"))
     assert len(serialized) == len(validated) == expected_passes
+
+
+@pytest.mark.parametrize("during_verification", [False, True])
+@pytest.mark.parametrize("failure", [RuntimeError, KeyboardInterrupt])
+def test_shared_capture_limits_unexpected_errors_without_swallowing_interrupts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    during_verification: bool,
+    failure: type[BaseException],
+) -> None:
+    path, store = source(tmp_path), tmp_path / "store"
+    problem = failure("private diagnostic")
+
+    def fail(*args: object) -> Any:
+        del args
+        raise problem
+
+    monkeypatch.setattr(
+        record_capture, "verify_record" if during_verification else "save_captured_record", fail
+    )
+    if failure is KeyboardInterrupt:
+        with pytest.raises(KeyboardInterrupt) as caught:
+            command.run_record_promptfoo(path, store, "sample")
+        assert caught.value is problem
+        return
+    report = command.run_record_promptfoo(path, store, "sample")
+    storage = cast(dict[str, Any], report["storage"])
+    assert report["exit_code"] == STORAGE_ERROR_EXIT
+    assert storage["error"]["code"] == "INTERNAL_ERROR"
+    assert "private diagnostic" not in json.dumps(report)
+    assert (storage["published_record"] is not None) == during_verification

@@ -195,6 +195,33 @@ Input, unsupported-identifier, resource, and ambiguity refusals use the existing
 `evidence_error.v1` stderr envelope and exit 2. The report does not authorize a
 change or establish statistical improvement.
 
+To preserve both selected exports and their analysis in the same operation, use
+the `records audit-langfuse` profile when it is listed by capabilities:
+
+```sh
+underwrite records audit-langfuse --observations observations_v2.json --scores scores.json \
+  --root /private/review-store --id langfuse.review-001 --json
+underwrite records read-json --root /private/review-store --id langfuse.review-001 \
+  --name analysis/accounting.json
+```
+
+This retains the entire selected files, including source content omitted from the
+accounting report. Analysis and storage use the same captured bytes; the two exports
+are not an atomic producer snapshot. `langfuse_record.v1` separates input acquisition,
+analysis, and storage. Exit 0 means a result was saved, exit 2 means a diagnostic was
+saved, and exit 3 means storage failed; inspect analysis even on exit 3. Configuration
+and output-capacity refusals occur before storage and use `evidence_error.v1` stderr.
+
+Both explicit inputs are attempted independently. Complete malformed bytes can be
+retained, while failed acquisition retains no partial input. Each unavailable input
+keeps its error; the first in observations/scores order is the primary acquisition
+diagnostic. A diagnostic record consumes its new ID. Recover a saved failure from
+`analysis/error.json`; recover acquisition details from `invocation.json`. The
+returned verification and manifest digest concern stored byte integrity, not source
+provenance or export completeness. Null `published_record` means no identity was
+returned, not proof that the ID is free. Use a new ID after inspecting failure.
+Analysis-only `audit-langfuse` remains available without creating a store.
+
 ## Account for DeepEval scores and evaluator errors
 
 For a completed DeepEval 4.1.1 TestRun JSON, use one command without a manifest:

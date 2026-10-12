@@ -55,12 +55,13 @@ def _instrument_error(exc: Exception, location: str) -> LangfuseFileError:
     )
 
 
-def _capture(
-    ingestor: Ingestor, path: Path, role: str
-) -> tuple[dict[str, object], dict[str, object]]:
+def read_langfuse_file(path: Path, role: str) -> bytes:
+    """Read one complete bounded export, with a role-only diagnostic location."""
+    if role not in SOURCES:
+        raise ValueError("unknown Langfuse source role")
     location = "/" + role
     try:
-        raw = read_local_file(path, DEFAULT_MAX_BYTES)
+        return read_local_file(path, DEFAULT_MAX_BYTES)
     except TransportError as exc:
         reason = str(exc)
         if reason == "BYTE_LIMIT_EXCEEDED":
@@ -72,10 +73,15 @@ def _capture(
             if reason != "SOURCE_NOT_REGULAR_FILE":
                 reason = "SOURCE_READ_FAILED"
         raise LangfuseFileError(code, reason, location) from None
+
+
+def _capture(
+    ingestor: Ingestor, raw: bytes, role: str
+) -> tuple[dict[str, object], dict[str, object]]:
     try:
         result, projection = ingestor.buffered_projection(raw, role, Source(*SOURCES[role], None))
     except tuple(DIAGNOSTICS) as exc:
-        raise _instrument_error(exc, location) from None
+        raise _instrument_error(exc, "/" + role) from None
     observation = result.observation
     identity = {
         "format": SOURCES[role][0],
@@ -93,8 +99,30 @@ def audit_langfuse_files(observations_file: Path, scores_file: Path) -> dict[str
         ingestor = packaged_ingestor(max_bytes=DEFAULT_MAX_BYTES, max_depth=DEFAULT_MAX_DEPTH)
     except tuple(DIAGNOSTICS) as exc:
         raise _instrument_error(exc, "") from None
-    observation_identity, observations = _capture(ingestor, observations_file, "observations")
-    score_identity, scores = _capture(ingestor, scores_file, "scores")
+    observation_identity, observations = _capture(
+        ingestor, read_langfuse_file(observations_file, "observations"), "observations"
+    )
+    score_identity, scores = _capture(ingestor, read_langfuse_file(scores_file, "scores"), "scores")
+    return _account(observation_identity, observations, score_identity, scores)
+
+
+def audit_langfuse_bytes(observations: bytes, scores: bytes) -> dict[str, object]:
+    """Account for the exact two supplied buffers without reopening their sources."""
+    try:
+        ingestor = packaged_ingestor(max_bytes=DEFAULT_MAX_BYTES, max_depth=DEFAULT_MAX_DEPTH)
+    except tuple(DIAGNOSTICS) as exc:
+        raise _instrument_error(exc, "") from None
+    observation_identity, observation_payload = _capture(ingestor, observations, "observations")
+    score_identity, score_payload = _capture(ingestor, scores, "scores")
+    return _account(observation_identity, observation_payload, score_identity, score_payload)
+
+
+def _account(
+    observation_identity: dict[str, object],
+    observations: dict[str, object],
+    score_identity: dict[str, object],
+    scores: dict[str, object],
+) -> dict[str, object]:
     try:
         counted = account_langfuse(observations["observations"], scores["scores"])
     except LangfuseAccountingError as exc:
