@@ -158,6 +158,39 @@ promptfoo grading score is not a calibrated probability; do not copy it into a
 native bundle's prediction field or report a measured pass. Ask for a suitable
 native evidence bundle and an explicit policy when measurement is needed.
 
+## Account for Langfuse score kinds and associations
+
+Use the complete-field, uncompressed JSON exports from the supported Langfuse
+server profile 4.35.0 (not its SDK version):
+
+```sh
+underwrite audit-langfuse --observations observations_v2.json --scores scores.json --json
+```
+
+`langfuse_accounting.v1` preserves score rows in source order, counts them by
+NUMERIC, BOOLEAN, CATEGORICAL, or TEXT kind, and explains each association using
+explicit rules. Numeric value and nullable text remain separate source fields: stored
+category/text zero is not a failed evaluation, and BOOLEAN does not grant task
+success. No custom query or producer execution is required.
+
+An exact `(project_id, trace_id, observation_id)` match identifies a supplied
+observation. A null observation ID is trace-level and never attaches to a root
+span. A non-null unmatched ID is an unresolved reference in these supplied files.
+Observations without local scores are counted separately; planned evaluations,
+missing execution counts, and export completeness remain unknown.
+
+Original IDs are checked before joining. Non-NFC opaque IDs and ambiguous duplicate
+observation keys are explicitly refused rather than merged or rewritten. Repeated
+score IDs remain separate source rows. Display text is NFC-normalized; original
+row coordinates and each file's raw hash preserve the link to source bytes.
+Observation digests identify normalized input content, not independent provenance.
+Raw prompts, answers, metadata, and file paths are excluded from the report.
+
+Exit 0 means descriptive accounting completed, including unresolved references.
+Input, unsupported-identifier, resource, and ambiguity refusals use the existing
+`evidence_error.v1` stderr envelope and exit 2. The report does not authorize a
+change or establish statistical improvement.
+
 ## Account for DeepEval scores and evaluator errors
 
 For a completed DeepEval 4.1.1 TestRun JSON, use one command without a manifest:

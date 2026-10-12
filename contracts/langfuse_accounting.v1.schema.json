@@ -1,0 +1,580 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:langfuse_accounting.v1",
+  "title": "langfuse_accounting.v1",
+  "description": "Supplied score rows and exact field links; no task verdict.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "rule_profile",
+    "sources",
+    "scope",
+    "observations",
+    "scores",
+    "counts",
+    "planned",
+    "limitations",
+    "next_actions"
+  ],
+  "properties": {
+    "schema": {
+      "const": "langfuse_accounting.v1"
+    },
+    "rule_profile": {
+      "const": "langfuse.score-accounting.v1"
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observations",
+        "scores"
+      ],
+      "properties": {
+        "observations": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "format",
+            "format_version",
+            "raw_hash",
+            "observation_digest",
+            "claims_verified"
+          ],
+          "properties": {
+            "format": {
+              "const": "langfuse.observations-v2"
+            },
+            "format_version": {
+              "const": "4.35.0"
+            },
+            "raw_hash": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}(?![\\s\\S])"
+            },
+            "observation_digest": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}(?![\\s\\S])"
+            },
+            "claims_verified": {
+              "const": false
+            }
+          }
+        },
+        "scores": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "format",
+            "format_version",
+            "raw_hash",
+            "observation_digest",
+            "claims_verified"
+          ],
+          "properties": {
+            "format": {
+              "const": "langfuse.scores"
+            },
+            "format_version": {
+              "const": "4.35.0"
+            },
+            "raw_hash": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}(?![\\s\\S])"
+            },
+            "observation_digest": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}(?![\\s\\S])"
+            },
+            "claims_verified": {
+              "const": false
+            }
+          }
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "population",
+        "export_completeness",
+        "planned_evaluations",
+        "unit",
+        "claims_verified",
+        "display_text"
+      ],
+      "properties": {
+        "population": {
+          "const": "supplied_rows"
+        },
+        "export_completeness": {
+          "const": "unknown"
+        },
+        "planned_evaluations": {
+          "const": "unknown"
+        },
+        "unit": {
+          "const": "score_row"
+        },
+        "claims_verified": {
+          "const": false
+        },
+        "display_text": {
+          "const": "nfc_normalized"
+        }
+      }
+    },
+    "observations": {
+      "type": "array",
+      "maxItems": 512,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "observation_index",
+          "id",
+          "project_id",
+          "trace_id",
+          "type",
+          "local_score_count"
+        ],
+        "properties": {
+          "observation_index": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 511
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "project_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "trace_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "type": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "local_score_count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2048
+          }
+        }
+      }
+    },
+    "scores": {
+      "type": "array",
+      "maxItems": 2048,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "score_index",
+          "id",
+          "project_id",
+          "trace_id",
+          "observation_id",
+          "name",
+          "data_type",
+          "value",
+          "string_value",
+          "kind_rule",
+          "association",
+          "association_rule",
+          "target_observation_index"
+        ],
+        "properties": {
+          "score_index": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2047
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "project_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "trace_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "observation_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "data_type": {
+            "enum": [
+              "NUMERIC",
+              "BOOLEAN",
+              "CATEGORICAL",
+              "TEXT"
+            ]
+          },
+          "value": {
+            "type": "number"
+          },
+          "string_value": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1024
+          },
+          "kind_rule": {
+            "enum": [
+              "NUMERIC_SCORE",
+              "BOOLEAN_SCORE",
+              "CATEGORICAL_SCORE",
+              "TEXT_SCORE"
+            ]
+          },
+          "association": {
+            "enum": [
+              "observation_local",
+              "trace_level",
+              "unresolved_observation_reference"
+            ]
+          },
+          "association_rule": {
+            "enum": [
+              "MATCHED_OBSERVATION_SCORE",
+              "TRACE_LEVEL_SCORE",
+              "UNRESOLVED_OBSERVATION_SCORE"
+            ]
+          },
+          "target_observation_index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 511
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "data_type": {
+                  "const": "NUMERIC"
+                }
+              },
+              "required": [
+                "data_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "kind_rule": {
+                  "const": "NUMERIC_SCORE"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "data_type": {
+                  "const": "BOOLEAN"
+                }
+              },
+              "required": [
+                "data_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "kind_rule": {
+                  "const": "BOOLEAN_SCORE"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "data_type": {
+                  "const": "CATEGORICAL"
+                }
+              },
+              "required": [
+                "data_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "kind_rule": {
+                  "const": "CATEGORICAL_SCORE"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "data_type": {
+                  "const": "TEXT"
+                }
+              },
+              "required": [
+                "data_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "kind_rule": {
+                  "const": "TEXT_SCORE"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "association": {
+                  "const": "observation_local"
+                }
+              },
+              "required": [
+                "association"
+              ]
+            },
+            "then": {
+              "properties": {
+                "association_rule": {
+                  "const": "MATCHED_OBSERVATION_SCORE"
+                },
+                "observation_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "target_observation_index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 511
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "association": {
+                  "const": "trace_level"
+                }
+              },
+              "required": [
+                "association"
+              ]
+            },
+            "then": {
+              "properties": {
+                "association_rule": {
+                  "const": "TRACE_LEVEL_SCORE"
+                },
+                "observation_id": {
+                  "type": "null"
+                },
+                "target_observation_index": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "association": {
+                  "const": "unresolved_observation_reference"
+                }
+              },
+              "required": [
+                "association"
+              ]
+            },
+            "then": {
+              "properties": {
+                "association_rule": {
+                  "const": "UNRESOLVED_OBSERVATION_SCORE"
+                },
+                "observation_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "target_observation_index": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observations",
+        "scores",
+        "by_data_type",
+        "associations",
+        "observations_without_local_scores"
+      ],
+      "properties": {
+        "observations": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 512
+        },
+        "scores": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2048
+        },
+        "by_data_type": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "NUMERIC",
+            "BOOLEAN",
+            "CATEGORICAL",
+            "TEXT"
+          ],
+          "properties": {
+            "NUMERIC": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2048
+            },
+            "BOOLEAN": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2048
+            },
+            "CATEGORICAL": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2048
+            },
+            "TEXT": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2048
+            }
+          }
+        },
+        "associations": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "observation_local",
+            "trace_level",
+            "unresolved_observation_reference"
+          ],
+          "properties": {
+            "observation_local": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2048
+            },
+            "trace_level": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2048
+            },
+            "unresolved_observation_reference": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2048
+            }
+          }
+        },
+        "observations_without_local_scores": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 512
+        }
+      }
+    },
+    "planned": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "count",
+        "missing_execution_count"
+      ],
+      "properties": {
+        "status": {
+          "const": "unknown"
+        },
+        "count": {
+          "const": null
+        },
+        "missing_execution_count": {
+          "const": null
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "string",
+        "enum": [
+          "SOURCE_CLAIMS_UNVERIFIED",
+          "EXPORT_COMPLETENESS_UNKNOWN",
+          "PLANNED_EVALUATIONS_UNKNOWN",
+          "SCORE_VALUES_NOT_TASK_VERDICTS",
+          "NO_STATISTICAL_OR_APPROVAL_AUTHORITY"
+        ]
+      },
+      "const": [
+        "SOURCE_CLAIMS_UNVERIFIED",
+        "EXPORT_COMPLETENESS_UNKNOWN",
+        "PLANNED_EVALUATIONS_UNKNOWN",
+        "SCORE_VALUES_NOT_TASK_VERDICTS",
+        "NO_STATISTICAL_OR_APPROVAL_AUTHORITY"
+      ]
+    },
+    "next_actions": {
+      "type": "array",
+      "maxItems": 2,
+      "items": {
+        "type": "string",
+        "enum": [
+          "SUPPLY_PLANNED_INVENTORY_FOR_MISSINGNESS",
+          "INSPECT_UNRESOLVED_OBSERVATION_REFERENCES"
+        ]
+      },
+      "uniqueItems": true
+    }
+  }
+}

@@ -11,6 +11,7 @@ from underwrite.cli import (
     accept,
     audit_counts,
     audit_deepeval,
+    audit_langfuse,
     audit_run,
     boundary,
     capabilities,
@@ -27,6 +28,7 @@ from underwrite.cli import (
     review_pair,
 )
 from underwrite.cli.capabilities import CommandDescriptor, Handler, profile
+from underwrite.instrument.evidence.langfuse_accounting import RULE_PROFILE as LANGFUSE_RULE_PROFILE
 from underwrite.instrument.ingest.deepeval_accounting import SOURCE as DEEPEVAL_SOURCE
 
 Standalone = Callable[[list[str]], int]
@@ -134,6 +136,20 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
             ),
         ),
         _standalone(audit_run.main),
+    ),
+    CommandDescriptor(
+        "audit-langfuse",
+        "Account for supplied Langfuse score kinds and associations.",
+        audit_langfuse.configure,
+        (
+            profile(
+                LANGFUSE_RULE_PROFILE,
+                ("observations", "scores"),
+                (),
+                ("langfuse_accounting.v1",),
+            ),
+        ),
+        _standalone(audit_langfuse.main),
     ),
     CommandDescriptor(
         "audit-deepeval",

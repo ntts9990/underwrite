@@ -491,6 +491,52 @@ def _deepeval_pilot(cli: Path, work: Path) -> None:
     )
 
 
+def _langfuse_pilot(cli: Path, work: Path) -> None:
+    golden = ROOT / "fixtures/golden/external/langfuse"
+    observed = golden / "observations_v2-2026-09-14T06-40-00.json"
+    scores = golden / "scores-2026-09-14T06-40-00.json"
+    report = _cli_json(
+        cli,
+        ["audit-langfuse", "--observations", str(observed), "--scores", str(scores)],
+        work / "langfuse-accounting.json",
+        work,
+    )
+    counts = cast(dict[str, object], report["counts"])
+    _require(
+        counts["by_data_type"] == {"NUMERIC": 2, "BOOLEAN": 1, "CATEGORICAL": 1, "TEXT": 1},
+        "installed Langfuse score kinds changed",
+    )
+    _require(
+        counts["associations"]
+        == {
+            "observation_local": 3,
+            "trace_level": 2,
+            "unresolved_observation_reference": 0,
+        },
+        "installed Langfuse associations changed",
+    )
+    _require(
+        counts["observations_without_local_scores"] == 1,
+        "trace-level scores were incorrectly attached to an observation",
+    )
+    _require(
+        report["planned"]
+        == {
+            "status": "unknown",
+            "count": None,
+            "missing_execution_count": None,
+        },
+        "installed accounting fabricated planned population",
+    )
+    rows = cast(list[dict[str, object]], report["scores"])
+    for row in rows:
+        if row["data_type"] in ("TEXT", "CATEGORICAL"):
+            _require(
+                row["value"] == 0 and isinstance(row["string_value"], str),
+                "non-numeric score fields were not retained",
+            )
+
+
 def _smoke(dist: Path) -> None:
     core_wheel, app_wheel = _wheels(dist)
     fixtures = ROOT / "fixtures/examples"
@@ -506,6 +552,7 @@ def _smoke(dist: Path) -> None:
         _record_pilots(cli, fixtures, work)
         _handoff_pilot(cli, work)
         _deepeval_pilot(cli, work)
+        _langfuse_pilot(cli, work)
 
         observation = work / "observation.json"
         observed = _cli_json(
