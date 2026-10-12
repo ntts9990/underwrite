@@ -163,6 +163,7 @@ uses `ingest`, `measure`, and `accept`; these commands provide additional checks
 
 | Command | Purpose |
 | --- | --- |
+| `audit-langfuse --observations FILE --scores FILE --json` | Account for Langfuse 4.35.0 score kinds and supplied-row associations. |
 | `audit-deepeval FILE --json` | Account for DeepEval 4.1.1 case flags, scores, evaluator errors, and unscored metrics. |
 | `inspect CASE.json --json` | Inspect a local artifact manifest and its projection. |
 | `check RELEASE.json --json` | Check a release manifest's declared evidence linkage and record presence. |
