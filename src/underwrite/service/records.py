@@ -492,8 +492,11 @@ def _copy_one(
     descriptor: int, expected: int, output: Path, total_allowance: int
 ) -> tuple[int, str]:
     def chunks() -> Iterable[bytes]:
-        while chunk := os.read(descriptor, _READ_SIZE):
-            yield chunk
+        try:
+            while chunk := os.read(descriptor, _READ_SIZE):
+                yield chunk
+        except OSError:
+            raise RecordError("SOURCE_READ_FAILED", "/spec/files") from None
 
     return _write_one(chunks(), expected, output, total_allowance, source_backed=True)
 

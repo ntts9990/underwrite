@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -62,6 +63,47 @@ def _error(capsys: pytest.CaptureFixture[str], argv: list[str], expected: str) -
 def _save_args(root: Path, spec: Path, *, as_json: bool = True) -> list[str]:
     args = ["save", "--root", str(root), "--spec", str(spec)]
     return [*args, "--json"] if as_json else args
+
+
+@pytest.mark.parametrize(
+    ("failure", "code", "action"),
+    [
+        ("read", "SOURCE_READ_FAILED", "CHECK_SOURCE_FILE"),
+        ("write", "STORE_IO_ERROR", "CHECK_STORE_IO"),
+    ],
+)
+def test_save_io_failures_provide_owner_specific_private_recovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    failure: str,
+    code: str,
+    action: str,
+) -> None:
+    root, spec_path, source = _inputs(tmp_path)
+    before = source.read_bytes()
+    source_info = source.stat()
+    original_read = os.read
+
+    def read(descriptor: int, size: int) -> bytes:
+        info = os.fstat(descriptor)
+        if (info.st_dev, info.st_ino) == (source_info.st_dev, source_info.st_ino):
+            raise OSError("private-source-error")
+        return original_read(descriptor, size)
+
+    def write(descriptor: int, data: bytes | memoryview) -> int:
+        raise OSError("private-destination-error")
+
+    monkeypatch.setattr(os, failure, read if failure == "read" else write)
+    payload = _error(capsys, _save_args(root, spec_path), code)
+    assert payload["next_action"] == action
+    assert payload["location"] == ("/spec/files" if failure == "read" else "")
+    serialized = json.dumps(payload)
+    assert "private-source-error" not in serialized
+    assert "private-destination-error" not in serialized
+    assert str(source) not in serialized
+    assert source.read_bytes() == before
+    assert not (root / "records/synthetic.capture-001").exists()
 
 
 def test_save_show_list_and_verify_emit_their_exact_contracts(

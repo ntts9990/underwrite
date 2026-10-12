@@ -435,6 +435,47 @@ def test_verify_rechecks_linked_artifact_name_and_rerun_role(tmp_path: Path, fau
     ]
 
 
+@pytest.mark.parametrize("failure", ["source_first", "source_partial", "destination"])
+def test_capture_io_failure_identifies_owner_and_cleans_up(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    raw = b"private source bytes"
+    source = _source(tmp_path, raw)
+    root = tmp_path / "store"
+    original_read = os.read
+    original_write = os.write
+    source_descriptors: list[int] = []
+    target_descriptors: list[int] = []
+
+    def read(descriptor: int, size: int) -> bytes:
+        first = not source_descriptors
+        source_descriptors.append(descriptor)
+        if failure == "source_first" or (failure == "source_partial" and not first):
+            raise OSError("private read failure")
+        return original_read(descriptor, min(size, 7))
+
+    def write(descriptor: int, data: bytes | memoryview) -> int:
+        target_descriptors.append(descriptor)
+        if failure == "destination":
+            raise OSError("private write failure")
+        return original_write(descriptor, data)
+
+    monkeypatch.setattr(os, "read", read)
+    monkeypatch.setattr(os, "write", write)
+    expected = "STORE_IO_ERROR" if failure == "destination" else "SOURCE_READ_FAILED"
+    error = _assert_error(expected, lambda: records.save_record(root, _spec(), source))
+    assert error.location == ("" if failure == "destination" else "/spec/files")
+    assert source_descriptors
+    if failure != "source_first":
+        assert target_descriptors
+    for descriptor in {*source_descriptors, *target_descriptors}:
+        with pytest.raises(OSError):
+            os.fstat(descriptor)
+    assert not (root / "records/capture.001").exists()
+    assert not list((root / ".staging").iterdir())
+    assert (source / "result.json").read_bytes() == raw
+
+
 def test_prepublication_failure_removes_only_owned_paths(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
