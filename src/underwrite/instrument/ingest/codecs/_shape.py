@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import NoReturn, TypeGuard
 
+from underwrite_core.canonical import CanonicalizationError, safe_integer_value
+
 
 def is_dict(value: object) -> TypeGuard[dict[str, object]]:
     return isinstance(value, dict)
@@ -81,7 +83,13 @@ class Shape:
             self.fail("FLAG_REQUIRED", key if detail is None else detail)
 
     def count(self, payload: dict[str, object], key: str, detail: str | None = None) -> None:
-        if type(payload.get(key)) is not int:
+        value = payload.get(key)
+        if type(value) is int:
+            # Preserve legacy signed-int admission and later canonical-range diagnostics.
+            return
+        try:
+            safe_integer_value(value)
+        except CanonicalizationError:
             self.fail("COUNT_REQUIRED", key if detail is None else detail)
 
     def number(self, payload: dict[str, object], key: str, detail: str | None = None) -> None:

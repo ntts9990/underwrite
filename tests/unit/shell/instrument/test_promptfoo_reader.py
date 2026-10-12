@@ -320,8 +320,8 @@ MALFORMED: dict[str, tuple[object, str]] = {
         _metrics_output(score="2"),
         "PROMPTFOO_NUMBER_REQUIRED: prompt 0 metrics score",
     ),
-    "prompt_metrics_pass_count_float": (
-        _metrics_output(testPassCount=2.0),
+    "prompt_metrics_pass_count_fraction": (
+        _metrics_output(testPassCount=2.5),
         "PROMPTFOO_COUNT_REQUIRED: prompt 0 metrics testPassCount",
     ),
     "stats_missing": (
@@ -339,3 +339,77 @@ def test_malformed_or_drifted_shape_fails_closed(fault: str) -> None:
     with pytest.raises(PromptfooPayloadError) as caught:
         CODECS[(FORMAT, VERSION)](payload)
     assert caught.value.args == (reason,)
+
+
+@pytest.mark.parametrize(
+    "group,key",
+    [
+        ("stats", "successes"),
+        ("stats", "failures"),
+        ("stats", "errors"),
+        ("row", "promptIdx"),
+        ("row", "testIdx"),
+        ("metrics", "testPassCount"),
+        ("metrics", "testFailCount"),
+        ("metrics", "testErrorCount"),
+        ("metrics", "assertPassCount"),
+        ("metrics", "assertFailCount"),
+    ],
+)
+def test_every_count_site_accepts_equivalent_numeric_spelling(group: str, key: str) -> None:
+    from underwrite_core.canonical import content_digest, digest_bytes
+
+    observations: list[dict[str, object]] = []
+    for value in (1, 1.0):
+        factory = {"stats": _stats_output, "row": _row_output, "metrics": _metrics_output}[group]
+        raw = json.dumps(factory(**{key: value})).encode()
+        result, original = _ingestor().buffered_projection(raw, "bytes", SOURCE)
+        summary = cast(dict[str, object], original.payload["results"])
+        if group == "stats":
+            selected = cast(dict[str, object], summary["stats"])
+        elif group == "row":
+            selected = cast(list[dict[str, object]], summary["results"])[0]
+        else:
+            selected = cast(
+                dict[str, object], cast(list[dict[str, object]], summary["prompts"])[0]["metrics"]
+            )
+        assert type(selected[key]) is type(value)
+        assert cast(dict[str, object], result.observation["raw"])["hash"] == digest_bytes(raw)
+        observations.append(result.observation)
+    assert observations[0]["payload"] == observations[1]["payload"]
+    assert content_digest(observations[0]) != content_digest(observations[1])
+
+
+@pytest.mark.parametrize("value", [-1, -1.0])
+def test_signed_count_admission_does_not_add_nonnegative_policy(value: int | float) -> None:
+    projection = read_eval_output(_stats_output(successes=value))
+    stats = cast(dict[str, object], cast(dict[str, object], projection.payload["results"])["stats"])
+    assert stats["successes"] == value and type(stats["successes"]) is type(value)
+
+
+def test_unsafe_integer_retains_projection_diagnostic_while_float_is_codec_refusal() -> None:
+    from underwrite_core.canonical import SAFE_INT_MAX
+
+    from underwrite.instrument.ingest.project import ProjectionError
+
+    integer = _stats_output(successes=SAFE_INT_MAX + 1)
+    read_eval_output(integer)
+    with pytest.raises(ProjectionError) as caught:
+        _receive(integer)
+    assert caught.value.__cause__ is not None
+    assert caught.value.__cause__.args == ("INT_OUT_OF_SAFE_RANGE",)
+    with pytest.raises(PromptfooPayloadError, match="PROMPTFOO_COUNT_REQUIRED: stats successes"):
+        read_eval_output(_stats_output(successes=float(SAFE_INT_MAX + 2)))
+
+
+@pytest.mark.parametrize("value", [True, None, "1", 0.5, float("nan"), float("inf")])
+def test_count_admission_never_coerces_noninteger_values(value: object) -> None:
+    with pytest.raises(PromptfooPayloadError, match="PROMPTFOO_COUNT_REQUIRED: stats successes"):
+        read_eval_output(_stats_output(successes=value))
+
+
+def test_integral_float_enum_and_version_remain_unsupported() -> None:
+    with pytest.raises(PromptfooPayloadError, match="PROMPTFOO_FAILURE_REASON_UNSUPPORTED"):
+        read_eval_output(_row_output(failureReason=0.0))
+    with pytest.raises(PromptfooPayloadError, match="PROMPTFOO_SUMMARY_VERSION_UNSUPPORTED"):
+        read_eval_output(_summary_output(version=3.0))

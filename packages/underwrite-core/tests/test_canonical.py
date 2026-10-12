@@ -431,3 +431,49 @@ def test_cross_language_golden_bytes_match_recorded_source_sha256() -> None:
         canonical_path = CROSS_LANGUAGE_DIR / info["canonical_bytes_file"]
         actual = hashlib.sha256(canonical_path.read_bytes()).hexdigest()
         assert actual == info["sha256"], name
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        0,
+        -0.0,
+        1,
+        1.0,
+        -1,
+        -1.0,
+        SAFE_INT_MAX,
+        -SAFE_INT_MAX,
+        float(SAFE_INT_MAX),
+        -float(SAFE_INT_MAX),
+    ],
+)
+def test_safe_integer_value_accepts_exact_numeric_integer(value: int | float) -> None:
+    result = canonical.safe_integer_value(value)
+    assert type(result) is int and result == value
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        True,
+        False,
+        None,
+        "1",
+        [],
+        {},
+        0.5,
+        -0.5,
+        float("nan"),
+        float("inf"),
+        -float("inf"),
+        SAFE_INT_MAX + 1,
+        -(SAFE_INT_MAX + 1),
+        float(SAFE_INT_MAX + 2),
+        -float(SAFE_INT_MAX + 2),
+        1e30,
+    ],
+)
+def test_safe_integer_value_rejects_without_rounding_or_coercion(value: object) -> None:
+    with pytest.raises(CanonicalizationError, match="^INVALID_INTEGER_VALUE$"):
+        canonical.safe_integer_value(value)

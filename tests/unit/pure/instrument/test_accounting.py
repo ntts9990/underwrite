@@ -71,7 +71,10 @@ def test_only_verified_source_flag_conflicts_are_findings() -> None:
     assert len(result["findings"]) <= len(rows) + 3
 
 
-@pytest.mark.parametrize("value", [-1, True, 1.0, math.nan, SAFE_INT_MAX + 1])
+@pytest.mark.parametrize(
+    "value",
+    [-1, -1.0, True, 1.5, None, "1", math.nan, math.inf, SAFE_INT_MAX + 1, float(SAFE_INT_MAX + 2)],
+)
 def test_direct_counter_inputs_reject_invalid_numbers(value: object) -> None:
     with pytest.raises(AccountingError, match="INVALID_COUNT"):
         audit_promptfoo({"successes": value, "failures": 0, "errors": 0}, [])
@@ -102,3 +105,11 @@ def test_direct_row_inputs_reject_invalid_flags(row: object) -> None:
 def test_row_limit_is_checked_before_row_traversal() -> None:
     with pytest.raises(AccountingError, match="ROW_LIMIT_EXCEEDED"):
         audit_promptfoo({"successes": 0, "failures": 0, "errors": 0}, [object()] * (ROW_LIMIT + 1))
+
+
+def test_integral_float_counters_are_normalized_for_original_projection_consumers() -> None:
+    result = audit_promptfoo(
+        {"successes": 1.0, "failures": 0.0, "errors": -0.0}, [{"success": True, "failureReason": 0}]
+    )
+    assert result["declared_relation"] == "consistent"
+    assert all(type(value) is int for value in result["producer_stats"].values())
