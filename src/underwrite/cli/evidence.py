@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -16,6 +17,23 @@ from underwrite.instrument.ingest.application import NEXT_ACTIONS
 from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
 
 REPORT_MAX_BYTES = 1024 * 1024
+
+
+@dataclass(frozen=True)
+class ReportOutput:
+    """Output contract and presentation for a composed CLI report."""
+
+    schema: str
+    max_bytes: int = REPORT_MAX_BYTES
+    exit_status: Callable[[dict[str, object]], int] | None = None
+    human: Callable[[dict[str, object]], str] | None = None
+
+
+def output_line_size(encoded: str | bytes) -> int:
+    """Account for the exact UTF-8 payload plus the emitter's final newline."""
+    return len(encoded.encode("utf-8") if isinstance(encoded, str) else encoded) + 1
+
+
 ERROR_ACTIONS = {
     **NEXT_ACTIONS,
     "INVALID_INPUT": "CORRECT_INPUT",
@@ -77,24 +95,34 @@ def run_cli(
     argv: list[str],
     configure: Callable[[argparse.ArgumentParser], None],
     produce: Callable[[argparse.Namespace], dict[str, object]],
-    result_schema: str,
+    result_schema: str | ReportOutput,
     output_max_bytes: int = REPORT_MAX_BYTES,
 ) -> int:
     """Emit a complete report once, or one typed error with no stdout prefix."""
     parser = _Parser(prog=f"underwrite {command}", allow_abbrev=False)
+    specification = (
+        ReportOutput(result_schema, output_max_bytes)
+        if isinstance(result_schema, str)
+        else result_schema
+    )
     try:
         configure(parser)
         args = parser.parse_args(argv)
         report = produce(args)
-        validate(packaged_validator(result_schema), report, EvidenceError, "INTERNAL_ERROR")
+        validate(packaged_validator(specification.schema), report, EvidenceError, "INTERNAL_ERROR")
         output = (
             canonical_bytes(report).decode("utf-8")
             if args.json
+            else specification.human(report)
+            if specification.human is not None
             else "Completed evidence computation; no approval or independent provenance.\n"
             + json.dumps(report, ensure_ascii=True, sort_keys=True, indent=2)
         )
-        if len(output.encode("utf-8")) + 1 > output_max_bytes:
+        if output_line_size(output) > specification.max_bytes:
             raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
+        exit_code = (
+            specification.exit_status(report) if specification.exit_status is not None else 0
+        )
     except EvidenceError as exc:
         return _error(exc, "--json" in argv)
     except SchemaConfigurationError:
@@ -105,4 +133,4 @@ def run_cli(
     except Exception:
         return _error(EvidenceError("INTERNAL_ERROR", "INTERNAL_ERROR"), "--json" in argv)
     print(output)
-    return 0
+    return exit_code

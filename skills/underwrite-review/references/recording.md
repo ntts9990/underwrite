@@ -3,6 +3,11 @@
 Use this procedure only for an explicitly selected local review and store.
 It composes existing commands; it adds no background process or producer run.
 
+For a supported completed goppi P7 handoff, prefer the `review-handoff` command's
+explicit `--record-root` and `--record-id` options. It captures the same bytes
+used for analysis and returns independent analysis/storage outcomes. Use the
+manual composition below for other existing command paths.
+
 1. Select the exact supported underwrite command and its supplied files. Create
    a new private working directory (0700), outside any published source tree.
    Record the actual argv array and working directory in `command.json`; do not

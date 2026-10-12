@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import unicodedata
 from dataclasses import dataclass
-from typing import TypeGuard
+from typing import TypeGuard, cast
 
 from underwrite_core.canonical import CanonicalizationError, canonical_bytes, digest_bytes
 
@@ -89,7 +89,7 @@ def validate_source(source: Source) -> None:
 
 
 def project(projection: Projection, source: Source, raw_bytes: bytes) -> dict[str, object]:
-    """Build canonicalizable facts, preserving the hash of received bytes.
+    """Build canonical JSON-domain facts, preserving the hash of received bytes.
 
     The ingest boundary validates this result once against observation.v1.
     Source identities are checked rather than rewritten as different URIs.
@@ -111,10 +111,9 @@ def project(projection: Projection, source: Source, raw_bytes: bytes) -> dict[st
             "raw": raw,
             "normalization": {"nfc": True},
         }
-        json.dumps(observation, allow_nan=False)
-        canonical_bytes(observation)
+        encoded = canonical_bytes(observation)
+        return cast(dict[str, object], json.loads(encoded))
     except ProjectionError:
         raise
     except (CanonicalizationError, UnicodeError, TypeError, ValueError, RecursionError) as exc:
         raise ProjectionError("INVALID_PROJECTION") from exc
-    return observation

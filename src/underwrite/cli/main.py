@@ -10,11 +10,13 @@ from pathlib import Path
 from underwrite.cli import (
     accept,
     audit_counts,
+    audit_deepeval,
     audit_run,
     boundary,
     capabilities,
     commands,
     compare_declarations,
+    handoff_review,
     inspection,
     instrument,
     measure,
@@ -25,6 +27,7 @@ from underwrite.cli import (
     review_pair,
 )
 from underwrite.cli.capabilities import CommandDescriptor, Handler, profile
+from underwrite.instrument.ingest.deepeval_accounting import SOURCE as DEEPEVAL_SOURCE
 
 Standalone = Callable[[list[str]], int]
 
@@ -133,6 +136,13 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
         _standalone(audit_run.main),
     ),
     CommandDescriptor(
+        "audit-deepeval",
+        "Distinguish scores, evaluator errors, and unscored DeepEval metrics.",
+        audit_deepeval.configure,
+        (profile("|".join(DEEPEVAL_SOURCE), ("file",), (), ("deepeval_accounting.v1",)),),
+        _standalone(audit_deepeval.main),
+    ),
+    CommandDescriptor(
         "audit-counts",
         "Audit declared counts in one supported artifact.",
         audit_counts.configure,
@@ -191,6 +201,20 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
             ),
         ),
         _standalone(review_pair.main),
+    ),
+    CommandDescriptor(
+        "review-handoff",
+        "Review a local producer handoff and optionally save its evidence.",
+        handoff_review.configure,
+        (
+            profile(
+                "goppi.p7_regrade_consumer_handoff.v1",
+                ("handoff",),
+                (),
+                ("paired_handoff_review.v1",),
+            ),
+        ),
+        _standalone(handoff_review.main),
     ),
     CommandDescriptor(
         "inspect",

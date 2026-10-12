@@ -14,6 +14,7 @@ from typing import cast
 ROOT = Path(__file__).resolve().parents[1]
 COMMAND_TIMEOUT = 120
 EVIDENCE_ERROR_EXIT = 2
+STORAGE_ERROR_EXIT = 3
 
 
 class SmokeFailure(Exception):
@@ -263,6 +264,172 @@ def _record_pilots(cli: Path, fixtures: Path, work: Path) -> None:
     _require(listing.get("record_count") == 1, "installed record catalog mismatch")
 
 
+def _handoff_pilot(cli: Path, work: Path) -> None:
+    source = work / "handoff-source"
+    _success(
+        [
+            sys.executable,
+            "-c",
+            "import sys; from pathlib import Path; "
+            "from tests.drivers.goppi_p7_fixture import build_goppi_p7_fixture; "
+            "build_goppi_p7_fixture().write(Path(sys.argv[1])); "
+            "build_goppi_p7_fixture(((True, True),) * 22).write(Path(sys.argv[2]))",
+            str(source),
+            str(work / "larger-handoff-source"),
+        ],
+        ROOT,
+    )
+    store = work / "handoff-store"
+    report = _cli_json(
+        cli,
+        [
+            "review-handoff",
+            "--handoff",
+            str(source / "study/paired-analysis-input"),
+            "--source-root",
+            str(source),
+            "--record-root",
+            str(store),
+            "--record-id",
+            "synthetic.handoff",
+        ],
+        work / "handoff-result.json",
+        work,
+    )
+    analysis = cast(dict[str, object], report["analysis"])
+    summary = cast(dict[str, object], analysis["summary"])
+    _require(summary["measurement_status"] == "not_measured", "handoff fabricated measurement")
+    _require(summary["conditions_coverage"] == "unknown", "handoff fabricated conditions")
+    saved = cast(dict[str, object], report["storage"])
+    _require(saved["state"] == "saved", "installed handoff capture failed")
+    verification = _cli_json(
+        cli,
+        ["records", "verify", "--root", str(store), "--id", "synthetic.handoff"],
+        work / "handoff-verified.json",
+        work,
+    )
+    _require(verification["valid"] is True, "installed handoff record is damaged")
+
+    larger_source = work / "larger-handoff-source"
+    larger_args = [
+        "review-handoff",
+        "--handoff",
+        str(larger_source / "study/paired-analysis-input"),
+        "--source-root",
+        str(larger_source),
+    ]
+    larger = _cli_json(cli, larger_args, work / "larger-handoff.json", work)
+    _require(
+        cast(dict[str, object], larger["analysis"])["state"] == "result",
+        "installed analysis inherited storage capacity",
+    )
+    refused_store = work / "refused-handoff-store"
+    refused = _command(
+        [
+            str(cli),
+            *larger_args,
+            "--record-root",
+            str(refused_store),
+            "--record-id",
+            "too-large",
+            "--json",
+        ],
+        work,
+    )
+    _require(
+        refused.returncode == STORAGE_ERROR_EXIT and refused.stderr == "",
+        "wrong storage refusal exit",
+    )
+    refusal = json.loads(refused.stdout)
+    _require(refusal["analysis"] == larger["analysis"], "storage refusal lost analysis")
+    _require(
+        refusal["storage"]["error"]["code"] == "INPUT_LIMIT_EXCEEDED",
+        "wrong storage refusal diagnostic",
+    )
+    _require(not refused_store.exists(), "oversized capture mutated store")
+
+
+def _deepeval_pilot(cli: Path, work: Path) -> None:
+    source = work / "normalization-source.json"
+    source.write_text(
+        json.dumps(
+            {
+                "testCases": [
+                    {
+                        "name": "synthetic",
+                        "input": "local",
+                        "success": False,
+                        "metricsData": [
+                            {"name": "example", "threshold": 0.5, "success": False, "score": -0.0},
+                            {
+                                "name": "evaluator",
+                                "threshold": 0.5,
+                                "success": False,
+                                "error": "synthetic error",
+                            },
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    observed = _cli_json(
+        cli,
+        ["ingest", "--format", "deepeval.test-run", "--version", "4.1.1", "--file", str(source)],
+        work / "normalization-cli.json",
+        work,
+    )
+    library = _success(
+        [
+            str(cli.parent / "python"),
+            "-c",
+            "import json, sys; from pathlib import Path; "
+            "from underwrite.instrument.ingest.application import packaged_ingestor; "
+            "from underwrite.instrument.ingest.project import Source; "
+            "result = packaged_ingestor(max_bytes=4096, max_depth=16).file("
+            "Path(sys.argv[1]), Source('deepeval.test-run', '4.1.1', None)); "
+            "print(json.dumps(result.observation, sort_keys=True))",
+            str(source),
+        ],
+        work,
+    )
+    _require(library.stderr == "", "installed library emitted unexpected diagnostics")
+    _require(
+        library.stdout.strip() == json.dumps(observed, sort_keys=True),
+        "installed API and CLI disagree on normalized JSON value representation",
+    )
+    payload = cast(dict[str, object], observed["payload"])
+    cases = cast(list[dict[str, object]], payload["testCases"])
+    metric = cast(list[dict[str, object]], cases[0]["metricsData"])[0]
+    _require(
+        type(metric["score"]) is int and metric["score"] == 0,
+        "canonical negative zero was not normalized",
+    )
+    _require(
+        metric["success"] is False and "error" not in metric,
+        "normalization merged boolean, score, or field absence",
+    )
+
+    accounting = _cli_json(
+        cli,
+        ["audit-deepeval", str(source)],
+        work / "deepeval-accounting.json",
+        work,
+    )
+    counts = cast(dict[str, dict[str, int]], accounting["counts"])
+    _require(
+        counts["metrics"]["scored"] == counts["metrics"]["error"] == 1,
+        "installed accounting conflated score and evaluator error",
+    )
+    rows = cast(list[dict[str, object]], accounting["cases"])
+    error_metric = cast(list[dict[str, object]], rows[0]["metrics"])[1]
+    _require(
+        error_metric["state"] == "error" and "score" not in error_metric,
+        "installed accounting invented a score for an error",
+    )
+
+
 def _smoke(dist: Path) -> None:
     core_wheel, app_wheel = _wheels(dist)
     fixtures = ROOT / "fixtures/examples"
@@ -276,6 +443,8 @@ def _smoke(dist: Path) -> None:
         _check_wheel_origins(venv, wheels)
         _evidence_pilots(cli, fixtures, work)
         _record_pilots(cli, fixtures, work)
+        _handoff_pilot(cli, work)
+        _deepeval_pilot(cli, work)
 
         observation = work / "observation.json"
         observed = _cli_json(

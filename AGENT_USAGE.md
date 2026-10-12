@@ -158,6 +158,35 @@ promptfoo grading score is not a calibrated probability; do not copy it into a
 native bundle's prediction field or report a measured pass. Ask for a suitable
 native evidence bundle and an explicit policy when measurement is needed.
 
+## Account for DeepEval scores and evaluator errors
+
+For a completed DeepEval 4.1.1 TestRun JSON, use one command without a manifest:
+
+```sh
+underwrite audit-deepeval /path/to/test_run.json --json
+```
+
+The `deepeval_accounting.v1` report applies deterministic field-presence rules:
+`score` means `scored`, `error` means `error`, and neither means `unscored`.
+Both fields together, invalid types, and unsupported nonempty conversational or
+trace branches are refused. Case and metric indices locate each source occurrence;
+duplicate names do not merge records. `rule_profile` and `applied_rule` identify
+the rules used. `raw_hash` identifies the original file, and `observation_digest`
+binds its common normalized observation. The command selects a pinned profile;
+it cannot authenticate the producer version of an unversioned input file.
+
+Source case flags and metric flags remain separate from scores. A numeric zero
+is not automatically a task failure; an evaluator error has no invented score.
+Mixed cases retain both scored and errored metrics. Absent case flags and declared
+counts remain explicit; passed/failed declarations are compared independently.
+Metric aggregate summaries are not checked, and planned inventory stays unknown.
+The report does not infer why a case failed, a measured effect, or approval.
+
+Exit 0 means descriptive accounting completed, even when evaluator errors or
+count disagreements exist. Invalid input, unsupported scope, or resource refusal
+produces `evidence_error.v1` on stderr with exit 2 and no report on stdout. Normal
+operation needs no producer execution, model call, server, or custom query code.
+
 ## Source-checkout pilot: audit Promptfoo counts
 
 The pilot commands documented here are available in this development checkout and
@@ -388,6 +417,57 @@ independent cases. There are no pooled outcome counts or rates across groups.
 inputs produce `evidence_error.v1` on stderr with exit 2. Neither result is a
 `read.v1` or a replacement for `pair-binary` when actual paired evidence exists.
 
+## Review a completed paired handoff in one call
+
+For the exact experimental `goppi.p7_regrade_consumer_handoff.v1` profile, use
+`review-handoff` to validate the declared files and receipt-to-slot mapping,
+compute paired evidence once, and return the evidence and review together:
+
+```sh
+underwrite review-handoff \
+  --handoff /path/to/goppi/qa-evidence/STUDY/paired-analysis-input \
+  --source-root /path/to/goppi --json
+```
+
+The handoff directory contains `consumer-handoff.json` and `manifest.json`.
+The explicit source root must contain that directory and every referenced file.
+Without `--source-root`, only files inside the handoff directory are allowed;
+parents are never inferred. Caller paths may be relative, but producer pointers
+cannot escape the root or traverse symlinks. This profile reads completed local
+artifacts; it never runs goppi, a model, the supplied verifier, or a producer schema.
+
+Add `--record-root /path/to/private-store --record-id review-001` to save the same
+captured bytes and generated results. The store parent must exist. No handwritten
+record specification is needed. Without those options, no store is created.
+An existing ID is a conflict; it is never overwritten or treated as a new success.
+Analysis and storage have separate resource limits. A valid analysis can exceed
+the record file budget: requested storage then returns `INPUT_LIMIT_EXCEEDED`
+with exit 3 and the complete analysis, without creating or changing the store.
+No selected source is dropped to make a record fit.
+
+`paired_handoff_review.v1` separates `analysis` from `storage` and includes the
+actual process `exit_code`. A result with no requested storage or saved storage
+exits 0, including `not_measured`. An analysis error exits 2; any storage error
+exits 3 while retaining the analysis result or error. Component error envelopes
+retain their own exit-code fields, which are distinct from the enclosing process.
+Parsing errors use the existing stderr error envelope and exit 2. Ordinary input
+and output-limit refusals use the aggregate on stdout. An unusable installed
+response schema is an exceptional configuration failure on stderr; an output
+budget smaller than its truthful diagnostic cannot admit storage side effects.
+
+The included policy is used unchanged. Missing comparison context produces a
+consumer-authored empty condition list with canonical input/policy bindings;
+condition coverage remains unknown. Observed outcome counts are descriptive,
+not causal improvement, statistical equivalence, or approval. Original missing
+outcomes and offline regrade outcomes retain their distinct identities.
+Contradictory producer flags remain findings when the required bytes and bindings
+are valid; integrity failures are errors. Raw answers, keys, private material
+bodies, and the consumer executable/environment are not captured in the record.
+
+The existing `review-pair --input --policy --context` output is unchanged. Python
+callers can use `run_goppi_p7_handoff(HandoffRequest(...))` from
+`underwrite.cli.handoff_review` for the same local orchestration and typed envelope.
+
 ## Keep selected evidence in local records
 
 Use [`records`](STORAGE.md) to copy explicit inputs, policies, results, and actual
@@ -404,6 +484,14 @@ source content and byte identity. A `read.v1` carries `verdict`, `reason_codes`,
 that command produced no observation, read, or decision, respectively. Use its
 `code` and `reason` to correct the input; measurement and acceptance errors also
 carry `next_action`.
+
+The shared ingestion boundary applies canonical JSON normalization to both
+Python API observations and `ingest --json` output. A number such as `1.0` becomes
+`1`, and negative zero becomes zero, without changing its numeric meaning. Booleans, `null`, and absent keys remain
+distinct; do not turn a missing score into zero or compare a boolean as a number.
+The normalized observation is not a byte-for-byte round trip of the original
+export. Its `raw.hash` identifies the original bytes but cannot reconstruct them;
+retain the original input file for byte-exact audits or replay.
 
 An `acceptance_decision.v1` carries `classification`, `reason_codes`,
 `limitations`, and the projected lifecycle state. Keep `not_measured` (no
