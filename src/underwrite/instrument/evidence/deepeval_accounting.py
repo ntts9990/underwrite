@@ -12,6 +12,7 @@ MAX_CASES = 512
 MAX_METRICS = 2048
 MAX_NAME_LENGTH = 256
 MAX_ERROR_LENGTH = 1024
+TRACE_METRIC_GROUPS = frozenset({"agent", "tool", "retriever", "llm", "base"})
 RULE_PROFILE = "deepeval.metric-accounting.v1"
 RULES = MappingProxyType(
     {
@@ -115,12 +116,27 @@ def _presence(obj: dict[str, object], key: str, location: str) -> dict[str, obje
     return {"present": True, "value": _integer(obj[key], location)}
 
 
+def _trace_metrics_scope(value: object) -> None:
+    location = "/traceMetricsScores"
+    groups = _object(value, location)
+    if len(groups) > len(TRACE_METRIC_GROUPS):
+        raise _error("DEEPEVAL_TRACE_METRIC_GROUP_INVALID", location)
+    if any(type(key) is not str or key not in TRACE_METRIC_GROUPS for key in groups):
+        raise _error("DEEPEVAL_TRACE_METRIC_GROUP_INVALID", location)
+    for key, group in groups.items():
+        entries = _object(group, location + "/" + key)
+        if entries:
+            raise _error("DEEPEVAL_SCOPE_UNSUPPORTED", location + "/" + key, "UNSUPPORTED_PROFILE")
+
+
 def _scope(payload: dict[str, object]) -> None:
-    for key in ("conversationalTestCases", "traceMetricsScores"):
-        if key in payload:
-            items = _array(payload[key], MAX_METRICS, "/" + key)
-            if items:
-                raise _error("DEEPEVAL_SCOPE_UNSUPPORTED", "/" + key, "UNSUPPORTED_PROFILE")
+    key = "conversationalTestCases"
+    if key in payload:
+        items = _array(payload[key], MAX_METRICS, "/" + key)
+        if items:
+            raise _error("DEEPEVAL_SCOPE_UNSUPPORTED", "/" + key, "UNSUPPORTED_PROFILE")
+    if "traceMetricsScores" in payload:
+        _trace_metrics_scope(payload["traceMetricsScores"])
 
 
 def _case_trace(case: dict[str, object], location: str) -> None:

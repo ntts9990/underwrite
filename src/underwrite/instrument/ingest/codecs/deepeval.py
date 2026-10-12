@@ -94,23 +94,17 @@ def _array(value: object, reason: str) -> list[object]:
     return value
 
 
-def _number(payload: dict[str, object], key: str) -> None:
-    # 4.1.1 serializes every float field as a float (1 -> 1.0); an int is not its output.
-    if type(payload.get(key)) is not float:
-        _SHAPE.fail("NUMBER_REQUIRED", key)
-
-
 def _metric(value: object) -> None:
     metric = _SHAPE.as_closed_object(value, _METRIC_KEYS, "metric")
     _SHAPE.identifier(metric, "name")
-    _number(metric, "threshold")
+    _SHAPE.number(metric, "threshold")
     _SHAPE.flag(metric, "success")
     # 4.1.1 writes exactly one of these: an evaluated score or a producer error.
     # Neither present is an unscored metric and is preserved as such, not filled in.
     if "score" in metric and "error" in metric:
         raise DeepevalPayloadError("DEEPEVAL_METRIC_SCORE_AND_ERROR")
     if "score" in metric:
-        _number(metric, "score")
+        _SHAPE.number(metric, "score")
     if "error" in metric:
         _SHAPE.text(metric, "error")
 
