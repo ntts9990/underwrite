@@ -47,6 +47,7 @@ source-include = [
     "contracts/promptfoo_accounting.v1.schema.json",
     "contracts/promptfoo_record.v1.schema.json",
     "contracts/deepeval_accounting.v1.schema.json",
+    "contracts/deepeval_record.v1.schema.json",
     "contracts/langfuse_accounting.v1.schema.json",
     "contracts/langfuse_record.v1.schema.json",
     "contracts/declared_comparison_case.v1.schema.json",
@@ -125,7 +126,7 @@ testpaths = ["tests", "packages/underwrite-core/tests"]
 pythonpath = ["tests", "src"]
 
 [tool.deptry]
-known_first_party = ["underwrite", "underwrite_core", "_schema_compose"]
+known_first_party = ["underwrite", "underwrite_core", "_schema_compose", "_record_schema"]
 # The workspace distribution imports as underwrite_core.
 package_module_name_map = { "underwrite-core" = ["underwrite_core"] }
 extend_exclude = ["packages/.*/tests", "fixtures/golden"]

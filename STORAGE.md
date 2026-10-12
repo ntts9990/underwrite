@@ -5,6 +5,16 @@ It does not discover inputs, execute an evaluation, or certify provenance.
 Commands are available in this checkout and wheels built from it; the package
 version alone does not establish availability.
 
+For a supported DeepEval TestRun, use
+`records audit-deepeval FILE --root ROOT --id NEW_ID --json` to analyze and retain
+the same complete bytes with their result or diagnostic and invocation metadata.
+The `deepeval_record.v1` outcomes and exits 0/2/3 distinguish result saved,
+diagnostic saved, and storage failed. Complete malformed input is retained;
+failed acquisition stores no partial source. A diagnostic still consumes the ID.
+Use `records read-json` with `analysis/accounting.json` or `analysis/error.json`
+for later reuse. Raw TestRun content is not redacted. See
+[the DeepEval workflow](AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors).
+
 For two supported Langfuse exports, use
 `records audit-langfuse --observations FILE --scores FILE --root ROOT --id NEW_ID --json`.
 It analyzes and retains the same complete input buffers, the result or diagnostic,
