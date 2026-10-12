@@ -395,39 +395,31 @@ def _validate_references(root: Path, spec: dict[str, object]) -> None:
             raise RecordError("INVALID_SPEC", "/spec")
 
 
+@contextmanager
 def _open_sources(
     spec: dict[str, object], source_base: Path
-) -> list[tuple[dict[str, object], int, int]]:
+) -> Generator[list[tuple[dict[str, object], int, int]]]:
     _, file_flags = _platform_flags()
     opened: list[tuple[dict[str, object], int, int]] = []
     total = 0
-    try:
+    with ExitStack() as acquisition:
         for item in cast(list[dict[str, object]], spec["files"]):
             source = source_base / cast(str, item["path"])
-            descriptor: int | None = None
             try:
                 descriptor = os.open(source, file_flags)
+                acquisition.callback(os.close, descriptor)
                 info = os.fstat(descriptor)
             except OSError:
-                if descriptor is not None:
-                    os.close(descriptor)
                 raise RecordError("SOURCE_READ_FAILED", "/spec/files") from None
             if not stat.S_ISREG(info.st_mode):
-                os.close(descriptor)
                 raise RecordError("SOURCE_READ_FAILED", "/spec/files")
             if info.st_size > MAX_FILE_BYTES:
-                os.close(descriptor)
                 raise RecordError("INPUT_LIMIT_EXCEEDED", "/spec/files")
             total += info.st_size
             if total > MAX_TOTAL_BYTES:
-                os.close(descriptor)
                 raise RecordError("INPUT_LIMIT_EXCEEDED", "/spec/files")
             opened.append((item, descriptor, info.st_size))
-        return opened
-    except Exception:
-        for _, descriptor, _ in opened:
-            os.close(descriptor)
-        raise
+        yield opened
 
 
 def _reserve(records: Path, identifier: str) -> Path:
@@ -824,18 +816,14 @@ def _save_checked(
 def save_record(root: Path, spec: object, source_base: Path) -> RecordSnapshot:
     """Capture selected files once and publish an immutable manifest create-only."""
     checked = _checked_spec(spec, root)
-    sources = _open_sources(checked, source_base)
+    with _open_sources(checked, source_base) as sources:
 
-    def capture(
-        record_dir: Path, owned_files: list[Path], owned_dirs: list[Path]
-    ) -> list[dict[str, object]]:
-        return _capture_files(record_dir, sources, owned_files, owned_dirs)
+        def capture(
+            record_dir: Path, owned_files: list[Path], owned_dirs: list[Path]
+        ) -> list[dict[str, object]]:
+            return _capture_files(record_dir, sources, owned_files, owned_dirs)
 
-    try:
         return _save_checked(root, checked, capture)
-    finally:
-        for _, descriptor, _ in sources:
-            os.close(descriptor)
 
 
 def save_captured_record(root: Path, spec: CapturedRecordSpec) -> RecordSnapshot:
