@@ -7,7 +7,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from _inspection_cases import case, update
@@ -229,7 +229,10 @@ def test_untrusted_or_ambiguous_inspection_diagnostic_fails_closed(
     diagnostics: list[dict[str, str]],
 ) -> None:
     def inspected(
-        path: Path, *, required_source: tuple[str, str] | None = None
+        path: Path,
+        *,
+        required_source: tuple[str, str] | None = None,
+        allowed_sources: frozenset[tuple[str, str]] | None = None,
     ) -> tuple[dict[str, object], None]:
         return {"expected_hash_check": "not_supplied", "diagnostics": diagnostics}, None
 
@@ -379,3 +382,123 @@ def test_integral_counter_spellings_keep_audit_coherent_with_original_projection
         assert reports[0][key] == reports[1][key]
     assert reports[0]["raw_hash"] != reports[1]["raw_hash"]
     assert reports[0]["observation_digest"] != reports[1]["observation_digest"]
+
+
+@pytest.mark.parametrize("version", ["0.123.0", "0.124.1"])
+@pytest.mark.parametrize("explicit_identity", [False, True])
+def test_hash_bound_manifest_profiles_preserve_inspected_identity(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], version: str, explicit_identity: bool
+) -> None:
+    folder = "promptfoo" if version == "0.123.0" else "promptfoo-0.124.1"
+    raw = (ROOT / "fixtures/golden/external" / folder / "results.json").read_bytes()
+    path = case(tmp_path, raw)
+    source: dict[str, object] = {"format": SOURCE["format"], "format_version": version}
+    if explicit_identity:
+        source.update(ref="synthetic:manifest:ref", locator="synthetic:manifest:locator")
+    update(path, "source", source)
+    update(path, "artifact", {"expected_hash": digest_bytes(raw)})
+    inspected = inspection.inspect_artifact(path)
+    assert inspected["expected_hash_check"] == "matched"
+    code, report, _, stderr = _invoke(path, capsys)
+    assert code == 0 and not stderr
+    assert report["source"] == {"format": SOURCE["format"], "format_version": version}
+    assert report["raw_hash"] == inspected["raw_hash"] == digest_bytes(raw)
+    assert (
+        report["observation_digest"] == cast(dict[str, object], inspected["observation"])["digest"]
+    )
+    assert report["findings"] == []
+    if version == "0.124.1":
+        assert report["row_tallies"] == {"successes": 3, "failures": 1, "errors": 3, "total": 7}
+
+
+@pytest.mark.parametrize("version", ["0.123.0", "0.124.1"])
+def test_wrong_expected_hash_prevents_counting(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    version: str,
+) -> None:
+    folder = "promptfoo" if version == "0.123.0" else "promptfoo-0.124.1"
+    path = case(
+        tmp_path, (ROOT / "fixtures/golden/external" / folder / "results.json").read_bytes()
+    )
+    update(path, "source", {"format": SOURCE["format"], "format_version": version})
+    update(path, "artifact", {"expected_hash": "sha256:" + "0" * 64})
+
+    def forbidden(*_: object) -> dict[str, object]:
+        pytest.fail("counted mismatched buffer")
+
+    monkeypatch.setattr(accounting_adapter, "audit_promptfoo", forbidden)
+    code, report, stdout, _ = _invoke(path, capsys)
+    assert code == ERROR_EXIT and not stdout
+    assert report["code"] == "EXPECTED_HASH_MISMATCH"
+
+
+@pytest.mark.parametrize(
+    "selector", [("promptfoo.eval-output", "unknown"), ("deepeval.test-run", "4.2.8")]
+)
+def test_unsupported_count_source_never_opens_artifact(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    selector: tuple[str, str],
+) -> None:
+    path = _case(tmp_path)
+    update(path, "source", {"format": selector[0], "format_version": selector[1]})
+    original = inspection.read_at
+
+    def read(parent: int, parts: list[str], limit: int, flags: tuple[int, int]) -> bytes:
+        assert parts == [path.name]
+        return original(parent, parts, limit, flags)
+
+    monkeypatch.setattr(inspection, "read_at", read)
+    code, report, stdout, _ = _invoke(path, capsys)
+    assert code == ERROR_EXIT and not stdout
+    assert report["code"] == "UNSUPPORTED_PROFILE"
+
+
+def test_counting_uses_one_inspected_buffer_after_artifact_replacement(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    raw = (ROOT / "fixtures/golden/external/promptfoo-0.124.1/results.json").read_bytes()
+    path = case(tmp_path, raw)
+    update(
+        path,
+        "source",
+        {
+            "format": SOURCE["format"],
+            "format_version": "0.124.1",
+            "ref": "synthetic:ref",
+            "locator": "synthetic:locator",
+        },
+    )
+    update(path, "artifact", {"expected_hash": digest_bytes(raw)})
+    expected = audit_case(path)
+    original_inspect = accounting_adapter.inspect_artifact_with_projection
+    original_read = inspection.read_at
+    seen: list[list[str]] = []
+    inspected_calls: list[Path] = []
+
+    def read(parent: int, parts: list[str], limit: int, flags: tuple[int, int]) -> bytes:
+        seen.append(parts)
+        return original_read(parent, parts, limit, flags)
+
+    def replaced(
+        manifest: Path,
+        *,
+        required_source: tuple[str, str] | None = None,
+        allowed_sources: frozenset[tuple[str, str]] | None = None,
+    ) -> tuple[dict[str, object], Any]:
+        inspected_calls.append(manifest)
+        result = original_inspect(
+            manifest, required_source=required_source, allowed_sources=allowed_sources
+        )
+        (tmp_path / "artifact.json").write_bytes(b"replacement private data")
+        return result
+
+    monkeypatch.setattr(inspection, "read_at", read)
+    monkeypatch.setattr(accounting_adapter, "inspect_artifact_with_projection", replaced)
+    code, report, _, _ = _invoke(path, capsys)
+    assert code == 0 and report == expected
+    assert inspected_calls == [path]
+    assert seen == [["case.json"], ["artifact.json"]]

@@ -87,7 +87,7 @@ is ready; obtain the completed producer artifact and its version context first.
 | goppi | `project-baseline` accepts the exact baseline exchange manifest v2 described below; P7 paired handoffs and older grounded-pilot exchanges have separate routes. No generic ingest profile. A CLI summary is insufficient; do not manufacture rows from counts. |
 | Langfuse | The supported `4.35.0` denotes the **server export profile**, not the SDK version. Supply the worker's `observations_v2` or `scores` blob-export file as an uncompressed JSON array with the complete field groups. A REST response, Parquet file, or partially selected export is a different shape. Wait for a completed export manifest; SDK flush alone is insufficient. |
 | DeepEval | Supply the ordinary `4.1.1` or `4.2.8` TestRun JSON written by the tool, with the producer version recorded separately. Select `--version 4.2.8` explicitly for that profile; the default remains `4.1.1`. A failed test run can still write a valid artifact. Zero, evaluator errors, and absent verdicts remain distinct. |
-| Promptfoo | Supply the `0.123.0` or `0.124.1` eval output JSON (summary version 3). An assertion-failure exit can accompany a valid export. Direct `audit-promptfoo FILE --json` defaults to 0.123.0; select `--version 0.124.1` explicitly for that producer. The supplied-manifest `audit-counts` route remains pinned to 0.123.0. |
+| Promptfoo | Supply the `0.123.0` or `0.124.1` eval output JSON (summary version 3). An assertion-failure exit can accompany a valid export. Direct `audit-promptfoo FILE --json` defaults to 0.123.0; select `--version 0.124.1` explicitly for that producer. With a supplied manifest, `audit-counts` uses its explicit source version and expected hash. |
 
 The [producer checks](EVIDENCE_REVIEW.md) distinguish fresh tool-generated
 synthetic evaluations, archived captures, and constructed examples. They test
@@ -404,7 +404,8 @@ underwrite records audit-promptfoo results.json --version 0.124.1 \
 
 Generic `ingest`/`project` also accept `--format promptfoo.eval-output --version
 0.124.1`. The selected version must match `metadata.promptfooVersion`; no detection,
-rewriting or fallback occurs. `audit-counts` remains a 0.123.0-only manifest route.
+rewriting or fallback occurs. `audit-counts` accepts both versions when explicitly
+selected by the supplied manifest; there is no CLI version override for that route.
 Both direct profiles retain `promptfoo_accounting.v1` and `promptfoo_record.v1`:
 only the allowed source-version metadata expands. Older installed schemas pinned
 to 0.123.0 reject new-profile reports; old/default result bytes remain unchanged.
@@ -417,7 +418,12 @@ cost and exported row cost zero are distinct; count auditing uses the producer's
 success/failureReason fields and does not infer cost from either value.
 
 `audit-counts` reads an `artifact_case.v1` manifest. Its artifact path is relative
-to the manifest, with the same bounded, no-follow reads as `inspect`. This example
+to the manifest, with the same bounded, no-follow reads as `inspect`. It checks a
+supplied expected hash before counting the same captured bytes, preserving the
+manifest's explicit source ref/locator in the observation identity. Unsupported
+source selections and hash mismatches produce no count report. The ordinary
+inspection report remains available when its separate manifest/hash-check fields
+are needed. This example
 uses a **constructed synthetic fixture**, not an unchanged Promptfoo export or an
 observed upstream bug. No model or producer executable is called.
 

@@ -254,7 +254,10 @@ def _report(manifest: bytes, raw: bytes, source: Source, expected: object) -> di
 
 
 def _read_case(
-    path: Path, *, required_source: tuple[str, str] | None = None
+    path: Path,
+    *,
+    required_source: tuple[str, str] | None = None,
+    allowed_sources: frozenset[tuple[str, str]] | None = None,
 ) -> tuple[bytes, bytes, Source, object]:
     """Read the manifest and artifact once under one caller-trusted directory anchor."""
     flags = constrained_flags()
@@ -278,6 +281,11 @@ def _read_case(
                 and (source.format, source.format_version) != required_source
             ):
                 raise UnsupportedFormat("UNSUPPORTED_FORMAT")
+            if (
+                allowed_sources is not None
+                and (source.format, source.format_version) not in allowed_sources
+            ):
+                raise UnsupportedFormat("UNSUPPORTED_FORMAT")
             artifact = cast(dict[str, object], case["artifact"])
             location = "/artifact/path"
             parts = cast(str, artifact["path"]).split("/")
@@ -299,10 +307,15 @@ def _read_case(
 
 
 def inspect_artifact_with_projection(
-    path: Path, *, required_source: tuple[str, str] | None = None
+    path: Path,
+    *,
+    required_source: tuple[str, str] | None = None,
+    allowed_sources: frozenset[tuple[str, str]] | None = None,
 ) -> tuple[dict[str, object], Projection | None]:
-    """Expose the validated projection from the same bounded artifact buffer."""
-    return _report_with_projection(*_read_case(path, required_source=required_source))
+    """Expose one buffered projection; optional source constraints intersect before artifact I/O."""
+    return _report_with_projection(
+        *_read_case(path, required_source=required_source, allowed_sources=allowed_sources)
+    )
 
 
 def inspect_artifact(path: Path) -> dict[str, object]:

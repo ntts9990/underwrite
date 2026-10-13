@@ -323,6 +323,45 @@ def _promptfoo_record_pilot(
         )
 
 
+def _promptfoo_manifest_pilot(cli: Path, directory: Path, raw: bytes) -> None:
+    source = directory / "manifest-source.json"
+    source.write_bytes(raw)
+    expected_hash = "sha256:" + hashlib.sha256(raw).hexdigest()
+    artifact = {"path": source.name, "expected_hash": expected_hash}
+    manifest = {
+        "schema": "artifact_case.v1",
+        "artifact": artifact,
+        "source": {
+            "format": "promptfoo.eval-output",
+            "format_version": "0.124.1",
+            "ref": "synthetic:manifest-export",
+            "locator": "synthetic:manifest-locator",
+        },
+    }
+    case = directory / "case.json"
+    case.write_text(json.dumps(manifest), encoding="utf-8")
+    inspected = _cli_json(cli, ["inspect", str(case)], directory / "inspection.json", directory)
+    counted = _cli_json(
+        cli, ["audit-counts", str(case)], directory / "manifest-audit.json", directory
+    )
+    _require(
+        counted["raw_hash"] == expected_hash
+        and counted["observation_digest"]
+        == cast(dict[str, object], inspected["observation"])["digest"]
+        and counted["row_tallies"] == {"successes": 3, "failures": 1, "errors": 3, "total": 7},
+        "manifest audit lost hash binding, explicit source identity or counts",
+    )
+    artifact["expected_hash"] = "sha256:" + "0" * 64
+    case.write_text(json.dumps(manifest), encoding="utf-8")
+    refused = _command([str(cli), "audit-counts", str(case), "--json"], directory)
+    _require(
+        refused.returncode == EVIDENCE_ERROR_EXIT
+        and refused.stdout == ""
+        and json.loads(refused.stderr)["code"] == "EXPECTED_HASH_MISMATCH",
+        "manifest count audit accepted mismatching artifact bytes",
+    )
+
+
 def _promptfoo_current_pilot(cli: Path, work: Path) -> None:
     directory = work / "promptfoo-current"
     directory.mkdir()
@@ -356,6 +395,7 @@ def _promptfoo_current_pilot(cli: Path, work: Path) -> None:
         "current Promptfoo capture changed declared category meaning",
     )
     _promptfoo_record_pilot(cli, source, directory, report, version="0.124.1")
+    _promptfoo_manifest_pilot(cli, directory, source.read_bytes())
     refused = _command(
         [
             str(cli),

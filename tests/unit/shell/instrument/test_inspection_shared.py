@@ -8,6 +8,7 @@ from typing import Any
 from unittest.mock import Mock
 
 import pytest
+from _inspection_cases import case, update
 from _inspection_cases import inspection_contracts as inspection_contracts
 from _repo_paths import repo_root
 from underwrite_core.canonical import content_digest, digest_bytes
@@ -174,3 +175,72 @@ def test_failure_marker_separates_open_from_attempt_and_closes_descriptors(
         real_fstat(parent)
     finally:
         os.close(parent)
+
+
+NATIVE_SOURCE = ("underwrite.evidence-bundle", "v1")
+OTHER_SOURCE = ("promptfoo.eval-output", "0.123.0")
+
+
+@pytest.mark.parametrize(
+    ("required", "allowed", "accepted"),
+    [
+        (None, None, True),
+        (NATIVE_SOURCE, None, True),
+        (OTHER_SOURCE, None, False),
+        (None, frozenset({NATIVE_SOURCE, OTHER_SOURCE}), True),
+        (None, frozenset[tuple[str, str]](), False),
+        (None, frozenset({OTHER_SOURCE}), False),
+        (NATIVE_SOURCE, frozenset({NATIVE_SOURCE, OTHER_SOURCE}), True),
+        (NATIVE_SOURCE, frozenset({OTHER_SOURCE}), False),
+        (OTHER_SOURCE, frozenset({NATIVE_SOURCE}), False),
+    ],
+)
+def test_source_constraints_intersect_before_artifact_access(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    required: tuple[str, str] | None,
+    allowed: frozenset[tuple[str, str]] | None,
+    accepted: bool,
+) -> None:
+    path = case(tmp_path)
+    seen: list[list[str]] = []
+    original = inspection.read_at
+
+    def read(parent: int, parts: list[str], limit: int, flags: tuple[int, int]) -> bytes:
+        seen.append(parts)
+        if parts != [path.name] and not accepted:
+            pytest.fail("artifact access before source admission")
+        return original(parent, parts, limit, flags)
+
+    monkeypatch.setattr(inspection, "read_at", read)
+    if accepted:
+        report, projection = inspection.inspect_artifact_with_projection(
+            path, required_source=required, allowed_sources=allowed
+        )
+        assert projection is not None and report["projection"] == "created"
+        assert seen == [[path.name], ["artifact.json"]]
+    else:
+        with pytest.raises(inspection.InspectionError) as caught:
+            inspection.inspect_artifact_with_projection(
+                path, required_source=required, allowed_sources=allowed
+            )
+        assert caught.value.payload["code"] == "UNSUPPORTED_FORMAT"
+        assert seen == [[path.name]]
+
+
+def test_caller_allowlist_does_not_admit_untrusted_codec(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = case(tmp_path)
+    selected = ("promptfoo.eval-output", "unregistered")
+    update(path, "source", {"format": selected[0], "format_version": selected[1]})
+    original = inspection.read_at
+
+    def read(parent: int, parts: list[str], limit: int, flags: tuple[int, int]) -> bytes:
+        assert parts == [path.name]
+        return original(parent, parts, limit, flags)
+
+    monkeypatch.setattr(inspection, "read_at", read)
+    with pytest.raises(inspection.InspectionError) as caught:
+        inspection.inspect_artifact_with_projection(path, allowed_sources=frozenset({selected}))
+    assert caught.value.payload["code"] == "UNSUPPORTED_FORMAT"

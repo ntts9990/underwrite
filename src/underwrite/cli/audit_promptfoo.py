@@ -30,7 +30,7 @@ def configure(parser: argparse.ArgumentParser) -> None:
         "Compare the selected Promptfoo export's declared counts with its exclusive row tallies. "
         "No manifest or producer execution is needed. An inconsistent report still exits 0. "
         "The profile is selected, not detected; counts provide no approval authority. "
-        "The audit-counts CASE.json manifest route remains pinned to 0.123.0; it adds "
+        "The audit-counts CASE.json route uses the manifest's explicit supported version; it adds "
         "expected-hash verification and contained manifest paths."
     )
 

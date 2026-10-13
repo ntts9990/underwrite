@@ -240,13 +240,14 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
         "audit-counts",
         "Audit declared counts in one supported artifact.",
         audit_counts.configure,
-        (
+        tuple(
             profile(
-                "promptfoo-0.123.0",
+                f"promptfoo-{version}",
                 ("case",),
                 ("artifact_case.v1",),
                 ("promptfoo_accounting.v1",),
-            ),
+            )
+            for version in PROMPTFOO_VERSIONS
         ),
         _standalone(audit_counts.main),
     ),

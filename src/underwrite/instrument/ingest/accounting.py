@@ -103,9 +103,11 @@ def _trusted_artifact_diagnostic(report: dict[str, object]) -> tuple[str, str] |
 
 
 def audit_case(path: Path) -> dict[str, object]:
-    """Audit only what one pinned artifact declares, retaining its original identity."""
+    """Audit an admitted Promptfoo manifest from its hash-checked projection and identity."""
     try:
-        report, projection = inspect_artifact_with_projection(path, required_source=SOURCE)
+        report, projection = inspect_artifact_with_projection(
+            path, allowed_sources=frozenset((SOURCE[0], version) for version in SUPPORTED_VERSIONS)
+        )
     except InspectionError as exc:
         raise _inspection_error(exc) from exc
     if projection is None:
@@ -122,7 +124,14 @@ def audit_case(path: Path) -> dict[str, object]:
     if not isinstance(observation, dict):
         raise AccountingCaseError("INTERNAL_ERROR", "INTERNAL_ERROR")
     observation_digest = cast(dict[str, object], observation).get("digest")
-    return _account_projection(projection, report["raw_hash"], observation_digest, "/artifact")
+    source = cast(dict[str, str], report["source"])
+    return _account_projection(
+        projection,
+        report["raw_hash"],
+        observation_digest,
+        "/artifact",
+        version=source["format_version"],
+    )
 
 
 def _account_projection(

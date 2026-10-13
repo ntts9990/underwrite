@@ -149,12 +149,12 @@ def test_saved_diagnostic_version_recovered_from_metadata_and_invocation(
     assert output(capsys)["content"]["arguments"]["format_version"] == "0.124.1"
 
 
-def test_new_profile_does_not_widen_advanced_manifest_route(
+def test_unknown_profile_does_not_widen_advanced_manifest_route(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     raw = (FIXTURES / "promptfoo-0.124.1/results.json").read_bytes()
     manifest = case(tmp_path, raw)
-    update(manifest, "source", {"format": adapter.SOURCE[0], "format_version": "0.124.1"})
+    update(manifest, "source", {"format": adapter.SOURCE[0], "format_version": "unsupported"})
     assert main(["audit-counts", str(manifest), "--json"]) == ERROR_EXIT
     assert output(capsys)["code"] == "UNSUPPORTED_PROFILE"
     assert main(["audit-promptfoo", str(tmp_path / "artifact.json"), "--json"]) == ERROR_EXIT
