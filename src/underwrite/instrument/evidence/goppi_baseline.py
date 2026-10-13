@@ -15,6 +15,8 @@ from underwrite_core.canonical import CanonicalizationError, canonical_bytes
 
 from underwrite.instrument.evidence.goppi_identity import length_prefixed_digest
 from underwrite.measurement_contract.semantics import (
+    ContractError,
+    MeasurementSemantics,
     parse_semantics,
     project_semantics,
     semantic_digest,
@@ -552,3 +554,57 @@ def project_baseline_bundle(documents: BaselineDocuments, *, direction: str) -> 
         "readings": [{**selector, "rows": rows}],
         "availability": availability,
     }
+
+
+def baseline_policy_inputs(observation: object) -> tuple[MeasurementSemantics, tuple[str, ...]]:
+    """Extract a baseline declaration, without authenticating it or validating rows."""
+    location = "/observation"
+    _require(type(observation) is dict, "BASELINE_SHAPE_INVALID", location)
+    obs = cast(dict[str, Any], observation)
+    _literal(
+        obs.get("source"),
+        {"format": "underwrite.evidence-bundle", "format_version": "v1"},
+        location,
+    )
+    _literal(obs.get("kind"), "eval_run", location)
+    payload = obs.get("payload")
+    _require(type(payload) is dict, "BASELINE_SHAPE_INVALID", location)
+    payload = cast(dict[str, Any], payload)
+    _literal(payload.get("schema_version"), "underwrite.evidence-bundle.v1", location)
+    sources = payload.get("sources")
+    _require(type(sources) is list and len(sources) == 1, "BASELINE_SHAPE_INVALID", location)
+    source = cast(list[object], sources)[0]
+    _require(type(source) is dict, "BASELINE_SHAPE_INVALID", location)
+    source = cast(dict[str, Any], source)
+    _literal(source.get("format"), "goppi.baseline_case_exchange", location)
+    _literal(source.get("format_version"), "v2", location)
+    roster_location = "/observation/payload/sources/0/expected_case_ids"
+    _require("expected_case_ids" in source, "BASELINE_EXPECTED_CASES_REQUIRED", roster_location)
+    ids = source["expected_case_ids"]
+    _require(
+        type(ids) is list and 0 < len(ids) <= MAX_CASES,
+        "BASELINE_EXPECTED_CASES_INVALID",
+        roster_location,
+    )
+    try:
+        roster = tuple(_text(item, roster_location) for item in cast(list[object], ids))
+    except BaselineProjectionError:
+        raise BaselineProjectionError(
+            "INVALID_INPUT", "BASELINE_EXPECTED_CASES_INVALID", roster_location
+        ) from None
+    _require(len(set(roster)) == len(roster), "BASELINE_EXPECTED_CASES_INVALID", roster_location)
+    counts = source.get("counts")
+    _require(type(counts) is dict, "BASELINE_SHAPE_INVALID", location)
+    planned = _integer(cast(dict[str, Any], counts).get("planned"), location, MAX_CASES)
+    _require(planned == len(roster), "BASELINE_COUNTS_MISMATCH", location)
+    scope_digest = _digest(source.get("scope_digest"), location)
+    try:
+        semantics = parse_semantics(payload.get("measurement_semantics"))
+    except ContractError:
+        raise BaselineProjectionError("INVALID_INPUT", "BASELINE_VALUE_INVALID", location) from None
+    declaration = project_semantics(semantics)
+    _literal(declaration["population"]["frame_id"], scope_digest, location)
+    _literal(declaration["outcome"]["instrument"], INSTRUMENT, location)
+    _literal(declaration["outcome"]["metric_id"], METRIC, location)
+    _literal(declaration["prediction"], {"status": "unavailable"}, location)
+    return semantics, roster

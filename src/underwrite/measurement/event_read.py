@@ -5,12 +5,13 @@ Compose declared event evidence without turning calibration into a quality vote.
 
 from __future__ import annotations
 
-from typing import Any, Literal, cast, get_args
+from typing import Any, Literal, get_args
 
 from underwrite_core.canonical import canonical_bytes, tagged_digest
 
 from underwrite.measurement import calibration, eprocess, read_input
 from underwrite.measurement.directional import run_directional
+from underwrite.measurement.event_policy import EventPolicyError, validate_event_policy
 from underwrite.measurement_contract import semantics as contract
 from underwrite.measurement_contract.read import crossing_status, validate_event_read
 
@@ -38,45 +39,10 @@ class EventReadError(ValueError):
 
 
 def _policy(value: read_input.JSON) -> dict[str, Any]:
-    if value.get("schema") in (
-        "measurement_policy.v1",
-        "measurement_policy.v2",
-    ):
-        raise EventReadError("INVALID_POLICY", "LEGACY_POLICY_REQUIRES_MIGRATION", "/policy")
-    if value.get("schema") != "measurement_policy.v3" or value.get("profile") != contract.PROFILE:
-        raise EventReadError("UNSUPPORTED_PROFILE", "UNSUPPORTED_POLICY_PROFILE", "/policy")
     try:
-        p = contract.closed(
-            value,
-            "schema profile semantic_digest subject scope expected_case_ids "
-            "eprocess assumptions diagnostics",
-        )
-        contract.digest(p["semantic_digest"])
-        subject = contract.closed(p["subject"], "subject_id conditions")
-        contract.text(subject["subject_id"])
-        contract.require(subject["conditions"] == {} and p["scope"] == "aggregate")
-        ids = p["expected_case_ids"]
-        contract.require(isinstance(ids, list))
-        ids = cast(list[object], ids)
-        contract.require(0 < len(ids) <= contract.MAX_CASES)
-        checked = [contract.text(item) for item in ids]
-        contract.require(len(set(checked)) == len(checked))
-        ep = contract.closed(p["eprocess"], "p0 alpha_total prior_a prior_b max_observations")
-        contract.require(0 < contract.number(ep["p0"], 0, 1) < 1)
-        contract.require(contract.number(ep["alpha_total"]) == contract.ALPHA_TOTAL)
-        contract.integer(ep["prior_a"], 1, 1)
-        contract.integer(ep["prior_b"], 1, 1)
-        if ep["max_observations"] is not None:
-            contract.integer(ep["max_observations"], 1, 2**53 - 1)
-        assumptions = contract.closed(p["assumptions"], " ".join(contract.ASSUMPTIONS))
-        contract.require(all(v in ("declared", "unknown") for v in assumptions.values()))
-        diagnostics = contract.closed(p["diagnostics"], "ece_bins min_bin_n all_k")
-        contract.integer(diagnostics["ece_bins"], 1, 128)
-        contract.integer(diagnostics["min_bin_n"], 1, 2**53 - 1)
-        contract.integer(diagnostics["all_k"], 1, contract.MAX_CASES)
-        return p
-    except contract.ContractError:
-        raise EventReadError("INVALID_POLICY", "INVALID_POLICY_FIELDS", "/policy") from None
+        return validate_event_policy(value)
+    except EventPolicyError as exc:
+        raise EventReadError(exc.code, exc.reason, exc.location) from None
 
 
 def _role_slot(row: read_input.JSON, state: str | None, *, prediction: bool) -> read_input.Slot:

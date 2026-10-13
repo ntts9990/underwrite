@@ -23,6 +23,7 @@ from underwrite.cli import (
     instrument,
     measure,
     pair_binary,
+    prepare_event_policy,
     project_baseline,
     records,
     release,
@@ -121,6 +122,20 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
             ),
         ),
         _standalone(project_baseline.main),
+    ),
+    CommandDescriptor(
+        "prepare-event-policy",
+        "Prepare a draft event policy with explicit choices and unknown assumptions.",
+        prepare_event_policy.configure,
+        (
+            profile(
+                "goppi-baseline-exchange-v2",
+                ("observation", "subject_id", "p0", "ece_bins", "min_bin_n", "all_k"),
+                ("observation.v1",),
+                ("measurement_policy.v3",),
+            ),
+        ),
+        _standalone(prepare_event_policy.main),
     ),
     CommandDescriptor(
         "records",

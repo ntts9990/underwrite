@@ -285,3 +285,102 @@ def test_malformed_case_verifier_digest_refuses_even_with_rebound_scope() -> Non
     fixture.scope["cases"][0]["verifier_digest"] = "not-a-digest"
     with pytest.raises(BaselineProjectionError, match="BASELINE_DIGEST_INVALID"):
         _bundle(fixture)
+
+
+def _policy_observation() -> dict[str, Any]:
+    return {
+        "source": {"format": "underwrite.evidence-bundle", "format_version": "v1"},
+        "kind": "eval_run",
+        "payload": _bundle(),
+    }
+
+
+def test_policy_inputs_copy_declared_inventory_ignore_rows_and_digest_hint() -> None:
+    from copy import deepcopy
+
+    from underwrite.instrument.evidence.goppi_baseline import baseline_policy_inputs
+
+    observation = _policy_observation()
+    payload = observation["payload"]
+    ids = tuple(payload["sources"][0]["expected_case_ids"])
+    payload["readings"] = []
+    payload["availability"] = []
+    payload["semantic_digest"] = "untrusted hint"
+    before = deepcopy(observation)
+    semantics, roster = baseline_policy_inputs(observation)
+    assert roster == ids
+    assert observation == before
+    assert semantic_digest(semantics) != payload["semantic_digest"]
+    payload["sources"][0]["expected_case_ids"].clear()
+    assert roster == ids
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        (("payload", "sources", 0, "format_version"), "v1"),
+        (("payload", "sources", 0, "counts", "planned"), 1),
+        (("payload", "sources", 0, "counts", "planned"), True),
+        (("payload", "sources", 0, "scope_digest"), "sha256:" + "0" * 64),
+        (("payload", "measurement_semantics", "outcome", "instrument"), "other"),
+        (("payload", "measurement_semantics"), {}),
+        (("kind",), "other"),
+        (("source",), {}),
+        (("payload", "schema_version"), "other"),
+        (("payload", "sources"), []),
+        (("payload", "sources"), cast(list[dict[str, Any]], [{}, {}])),
+    ],
+)
+def test_policy_declaration_invalid_inputs_refused(path: tuple[str | int, ...], value: Any) -> None:
+    from underwrite.instrument.evidence.goppi_baseline import baseline_policy_inputs
+
+    observation = _policy_observation()
+    target: Any = observation
+    for key in path[:-1]:
+        target = target[key]
+    target[path[-1]] = value
+    with pytest.raises(BaselineProjectionError) as caught:
+        baseline_policy_inputs(observation)
+    assert caught.value.code == "INVALID_INPUT"
+    assert caught.value.location == "/observation"
+
+
+@pytest.mark.parametrize(
+    ("missing", "value"),
+    [(True, None)]
+    + [
+        (False, value)
+        for value in [
+            None,
+            [],
+            ["x", "x"],
+            "abc",
+            b"abc",
+            [True],
+            [""],
+            ["private\nsource"],
+            ["x" * 129],
+            [f"case-{i}" for i in range(201)],
+        ]
+    ],
+)
+def test_policy_roster_diagnostics_identify_missing_or_invalid_declaration(
+    missing: bool, value: Any
+) -> None:
+    from underwrite.instrument.evidence.goppi_baseline import baseline_policy_inputs
+
+    observation = _policy_observation()
+    source = observation["payload"]["sources"][0]
+    if missing:
+        source.pop("expected_case_ids")
+    else:
+        source["expected_case_ids"] = value
+    reason = "BASELINE_EXPECTED_CASES_REQUIRED" if missing else "BASELINE_EXPECTED_CASES_INVALID"
+    with pytest.raises(BaselineProjectionError) as caught:
+        baseline_policy_inputs(observation)
+    assert (caught.value.code, caught.value.reason, caught.value.location) == (
+        "INVALID_INPUT",
+        reason,
+        "/observation/payload/sources/0/expected_case_ids",
+    )
+    assert str(caught.value) == reason
