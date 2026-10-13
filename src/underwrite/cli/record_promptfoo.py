@@ -30,7 +30,9 @@ from underwrite.instrument.ingest.accounting import (
     AccountingCaseError,
     audit_promptfoo_bytes,
     read_promptfoo_file,
+    validate_version,
 )
+from underwrite.instrument.ingest.codecs.promptfoo import SUPPORTED_VERSIONS
 from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
 from underwrite.service._record_format import FormatError, record_id
 from underwrite.service.records import (
@@ -45,6 +47,7 @@ COMMAND = "records audit-promptfoo"
 
 @dataclass(frozen=True)
 class _Contracts:
+    version: str
     aggregate: Validator
     storage: Validator
     accounting: Validator
@@ -53,12 +56,13 @@ class _Contracts:
     verification: Validator
 
 
-def _contracts() -> _Contracts:
+def _contracts(version: str) -> _Contracts:
     aggregate = packaged_validator("promptfoo_record.v1")
     schema = cast(dict[str, Any], aggregate.schema)
     storage = Draft202012Validator({"$defs": schema["$defs"], "$ref": "#/$defs/storage"})
     packaged_validator("observation.v1")
     return _Contracts(
+        version,
         cast(Validator, aggregate),
         cast(Validator, storage),
         cast(Validator, packaged_validator("promptfoo_accounting.v1")),
@@ -81,7 +85,16 @@ def _identifier(value: str) -> str:
 
 def configure(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
-        "file", type=Path, metavar="FILE", help="Entire Promptfoo 0.123.0 export to retain."
+        "file",
+        type=Path,
+        metavar="FILE",
+        help="Entire Promptfoo export for the selected version to retain.",
+    )
+    parser.add_argument(
+        "--version",
+        choices=SUPPORTED_VERSIONS,
+        default=SOURCE[1],
+        help="Explicit source version; no detection or fallback.",
     )
     parser.add_argument("--root", type=Path, required=True, help="Explicit private record root.")
     parser.add_argument("--id", type=_identifier, required=True, help="New immutable record ID.")
@@ -94,13 +107,13 @@ def configure(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _analyze(path: Path) -> tuple[bytes | None, dict[str, object], dict[str, Any]]:
+def _analyze(path: Path, version: str) -> tuple[bytes | None, dict[str, object], dict[str, Any]]:
     raw: bytes | None = None
     source: dict[str, object] = {"state": "unavailable"}
     try:
         raw = read_promptfoo_file(path)
         source = {"state": "captured", "raw_hash": digest_bytes(raw), "bytes": len(raw)}
-        report = audit_promptfoo_bytes(raw)
+        report = audit_promptfoo_bytes(raw, version=version)
         if report["raw_hash"] != source["raw_hash"]:
             raise EvidenceError("INTERNAL_ERROR", "RAW_IDENTITY_MISMATCH")
         analysis: dict[str, Any] = {"state": "result", "report": report}
@@ -137,14 +150,17 @@ def _files(
     encoded = canonical_bytes(document) + b"\n"
     if len(encoded) > REPORT_MAX_BYTES:
         raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
+    arguments = {
+        "source_path_display": unicodedata.normalize("NFC", str(path)),
+        "root_display": unicodedata.normalize("NFC", str(root)),
+        "record_id": identifier,
+    }
+    if contracts.version != SOURCE[1]:
+        arguments["format_version"] = contracts.version
     invocation = {
         "command": COMMAND,
         "execution_mode": "in_process",
-        "arguments": {
-            "source_path_display": unicodedata.normalize("NFC", str(path)),
-            "root_display": unicodedata.normalize("NFC", str(root)),
-            "record_id": identifier,
-        },
+        "arguments": arguments,
         "analysis_state": analysis["state"],
         "analysis_exit_code": 0 if result else 2,
         "analysis_exit_code_scope": "component_contract_not_os_process",
@@ -185,14 +201,18 @@ def render_human(report: dict[str, object]) -> str:
 
 
 def run_record_promptfoo(
-    path: Path, root: Path, identifier: str, *, as_json: bool = True
+    path: Path, root: Path, identifier: str, *, as_json: bool = True, version: str = SOURCE[1]
 ) -> dict[str, object]:
     try:
         record_id(identifier)
     except FormatError:
         raise EvidenceError("USAGE_ERROR", "INVALID_ARGUMENTS_SEE_HELP") from None
-    contracts = _contracts()
-    raw, source, analysis = _analyze(path)
+    try:
+        validate_version(version)
+    except AccountingCaseError as exc:
+        raise EvidenceError(exc.code, exc.reason, exc.location) from None
+    contracts = _contracts(version)
+    raw, source, analysis = _analyze(path, version)
     envelope: dict[str, Any] = {
         "schema": SCHEMA,
         "command": COMMAND,
@@ -236,7 +256,7 @@ def run_record_promptfoo(
         label="Promptfoo accounting capture",
         metadata={
             "format": SOURCE[0],
-            "format_version": SOURCE[1],
+            "format_version": version,
             "analysis_state": analysis["state"],
         },
         links=(),
@@ -259,6 +279,7 @@ def produce(args: argparse.Namespace) -> dict[str, object]:
         cast(Path, args.root),
         cast(str, args.id),
         as_json=cast(bool, args.json),
+        version=cast(str, args.version),
     )
 
 

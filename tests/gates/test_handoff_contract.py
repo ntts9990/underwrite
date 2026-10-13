@@ -14,6 +14,34 @@ from jsonschema import Draft202012Validator
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def test_promptfoo_source_versions_match_codec_and_composed_contract() -> None:
+    from jsonschema.exceptions import ValidationError
+
+    from underwrite.cli.local_json import Validator
+    from underwrite.instrument.ingest.accounting import audit_promptfoo_file
+    from underwrite.instrument.ingest.codecs.promptfoo import SUPPORTED_VERSIONS
+
+    schema = json.loads((ROOT / "contracts/promptfoo_accounting.v1.schema.json").read_bytes())
+    record = json.loads((ROOT / "contracts/promptfoo_record.v1.schema.json").read_bytes())
+    selector = schema["properties"]["source"]["properties"]["format_version"]
+    assert selector == {"enum": list(SUPPORTED_VERSIONS)}
+    embedded = record["$defs"]["promptfoo_accounting"]
+    assert embedded["properties"]["source"]["properties"]["format_version"] == selector
+    validator = cast(Validator, Draft202012Validator(schema))
+    for version, directory in (("0.123.0", "promptfoo"), ("0.124.1", "promptfoo-0.124.1")):
+        report = audit_promptfoo_file(
+            ROOT / "fixtures/golden/external" / directory / "results.json", version=version
+        )
+        validator.validate(report)
+        with pytest.raises(ValidationError):
+            validator.validate(
+                {
+                    **report,
+                    "source": {"format": "promptfoo.eval-output", "format_version": "0.124.2"},
+                }
+            )
+
+
 @pytest.mark.parametrize(
     "name",
     [

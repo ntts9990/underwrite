@@ -157,9 +157,9 @@ def test_matrix_cannot_pass_with_a_missing_or_altered_capture(tmp_path: Path, fa
     problems = external_manifest.check(external, repo)
     assert len(problems) == 1 and expected in problems[0], (fault, problems)
     if fault == "drop_vendor":
-        # The derivation still succeeds on five vendors: only the committed manifest and the
-        # registry comparison expose the loss, which is why both are gates.
+        # Another version may still cover the same namespace. Compare exact selectors to
+        # expose the removed capture rather than only comparing producer names.
         derived = external_manifest.derive(external, repo)
-        assert {entry["format"] for entry in derived} != {
-            sel[0] for sel in formats.external_codecs()
-        }
+        assert {(entry["format"], entry["version"]) for entry in derived} != set(
+            formats.external_codecs()
+        )

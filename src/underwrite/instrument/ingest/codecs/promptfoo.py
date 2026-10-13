@@ -1,4 +1,4 @@
-"""Read an explicitly selected promptfoo 0.123.0 eval output file; scores stay source claims.
+"""Read explicitly selected promptfoo eval output files; scores stay source claims.
 
 The file is what ``promptfoo eval -o <path>.json`` writes: ``JSON.stringify(OutputFile)``
 where ``results`` is the ``EvaluateSummaryV3`` (``version: 3`` lives there, not at the
@@ -20,7 +20,7 @@ class PromptfooPayloadError(ValueError):
     """A selected promptfoo output file lacks the pinned minimal consumable structure."""
 
 
-_VERSION = "0.123.0"
+SUPPORTED_VERSIONS = ("0.123.0", "0.124.1")
 _SUMMARY_VERSION = 3
 
 # Field sets of promptfoo 0.123.0 (tag 0.123.0, commit
@@ -193,13 +193,12 @@ def _prompt(value: object, index: int) -> None:
             _SHAPE.count(metrics, key, _field(owner, key))
 
 
-def read_eval_output(value: object) -> Projection:
-    """Preserve one pinned promptfoo output file; rows, grading and config stay as written."""
+def _read_eval_output(value: object, selected_version: str) -> Projection:
     payload = _SHAPE.as_closed_object(value, _OUTPUT_KEYS, "output")
     _SHAPE.text_or_null(payload, "evalId")
     _SHAPE.text_or_null(payload, "shareableUrl")
     metadata = _SHAPE.as_closed_object(payload.get("metadata"), _METADATA_KEYS, "metadata")
-    if metadata.get("promptfooVersion") != _VERSION:
+    if metadata.get("promptfooVersion") != selected_version:
         raise PromptfooPayloadError("PROMPTFOO_PRODUCER_VERSION_MISMATCH")
     _SHAPE.as_object(payload.get("config"), "config")
     # The version is checked before the key set so a real V2 summary (which carries
@@ -221,6 +220,19 @@ def read_eval_output(value: object) -> Projection:
     return Projection("eval_run", payload)
 
 
+def read_eval_output(value: object) -> Projection:
+    """Preserve the explicitly selected 0.123.0 profile without detecting another version."""
+    return _read_eval_output(value, SUPPORTED_VERSIONS[0])
+
+
+def read_eval_output_v0_124_1(value: object) -> Projection:
+    """Preserve the explicitly selected 0.124.1 profile through the same closed traversal."""
+    return _read_eval_output(value, SUPPORTED_VERSIONS[1])
+
+
 CODECS: Mapping[tuple[str, str], Codec] = MappingProxyType(
-    {("promptfoo.eval-output", _VERSION): read_eval_output}
+    {
+        ("promptfoo.eval-output", SUPPORTED_VERSIONS[0]): read_eval_output,
+        ("promptfoo.eval-output", SUPPORTED_VERSIONS[1]): read_eval_output_v0_124_1,
+    }
 )

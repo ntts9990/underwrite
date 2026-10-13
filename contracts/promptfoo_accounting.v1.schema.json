@@ -25,7 +25,7 @@
       "required": ["format", "format_version"],
       "properties": {
         "format": {"const": "promptfoo.eval-output"},
-        "format_version": {"const": "0.123.0"}
+        "format_version": {"enum": ["0.123.0", "0.124.1"]}
       }
     },
     "raw_hash": {"$ref": "#/$defs/hash"},

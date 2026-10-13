@@ -12,8 +12,10 @@ from _repo_paths import repo_root
 
 from underwrite.instrument.ingest.codecs.promptfoo import (
     CODECS,
+    SUPPORTED_VERSIONS,
     PromptfooPayloadError,
     read_eval_output,
+    read_eval_output_v0_124_1,
 )
 from underwrite.instrument.ingest.project import Source
 from underwrite.instrument.ingest.transport import Ingestor, UnsupportedFormat
@@ -80,8 +82,12 @@ def _metrics_output(**overrides: object) -> dict[str, object]:
     return _prompt_output(metrics={**METRICS, **overrides})
 
 
-def test_registry_pins_exactly_one_profile() -> None:
-    assert dict(CODECS) == {(FORMAT, VERSION): read_eval_output}
+def test_registry_pins_exactly_two_profiles() -> None:
+    assert SUPPORTED_VERSIONS == ("0.123.0", "0.124.1")
+    assert dict(CODECS) == {
+        (FORMAT, VERSION): read_eval_output,
+        (FORMAT, "0.124.1"): read_eval_output_v0_124_1,
+    }
 
 
 def test_fixture_record_binds_the_codec_profile() -> None:
@@ -413,3 +419,38 @@ def test_integral_float_enum_and_version_remain_unsupported() -> None:
         read_eval_output(_row_output(failureReason=0.0))
     with pytest.raises(PromptfooPayloadError, match="PROMPTFOO_SUMMARY_VERSION_UNSUPPORTED"):
         read_eval_output(_summary_output(version=3.0))
+
+
+@pytest.mark.parametrize("version", SUPPORTED_VERSIONS)
+@pytest.mark.parametrize("declared", [None, "0.123.0", "0.124.1", "latest", 3, True])
+def test_each_explicit_profile_requires_its_exact_declared_version(
+    version: str, declared: object
+) -> None:
+    payload = json.loads(OUTPUT.read_bytes())
+    if declared is None:
+        del payload["metadata"]["promptfooVersion"]
+    else:
+        payload["metadata"]["promptfooVersion"] = declared
+    reader = CODECS[(FORMAT, version)]
+    if declared == version:
+        assert reader(payload).payload == payload
+    else:
+        with pytest.raises(PromptfooPayloadError, match="PROMPTFOO_PRODUCER_VERSION_MISMATCH"):
+            reader(payload)
+
+
+@pytest.mark.parametrize("mutation", ["summary", "unknown", "flag", "grading"])
+def test_new_profile_preserves_existing_closed_shape_checks(mutation: str) -> None:
+    payload = json.loads(OUTPUT.read_bytes())
+    payload["metadata"]["promptfooVersion"] = "0.124.1"
+    if mutation == "summary":
+        payload["results"]["version"] = True
+    elif mutation == "unknown":
+        payload["results"]["new_field"] = "private contents"
+    elif mutation == "flag":
+        payload["results"]["results"][0]["success"] = 1
+    else:
+        payload["results"]["results"][0]["gradingResult"]["pass"] = "true"
+    with pytest.raises(PromptfooPayloadError) as error:
+        read_eval_output_v0_124_1(payload)
+    assert "private contents" not in str(error.value)

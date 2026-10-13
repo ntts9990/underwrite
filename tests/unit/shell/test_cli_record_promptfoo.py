@@ -386,8 +386,8 @@ def test_large_analysis_full_scans_do_not_scale_with_error_candidate_count(
     }
     assert len(cast(list[object], large["findings"])) == ROW_LIMIT
 
-    def analyze(raw: bytes) -> dict[str, object]:
-        del raw
+    def analyze(raw: bytes, *, version: str = "0.123.0") -> dict[str, object]:
+        del raw, version
         return large
 
     monkeypatch.setattr(command, "audit_promptfoo_bytes", analyze)

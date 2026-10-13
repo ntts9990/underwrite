@@ -1,4 +1,4 @@
-"""One pinned Promptfoo count audit; a produced report is never approval."""
+"""One explicitly selected Promptfoo manifest count audit; a produced report is never approval."""
 
 from __future__ import annotations
 
@@ -18,7 +18,9 @@ def configure(parser: argparse.ArgumentParser) -> None:
         "--json", action="store_true", help="Canonical accounting report on stdout."
     )
     parser.description = (
-        "Compare Promptfoo 0.123.0 summary counts with exclusive result-row tallies. "
+        "Compare Promptfoo 0.123.0 or 0.124.1 summary counts with exclusive result-row tallies. "
+        "The manifest selects the profile and source identity; any supplied expected hash "
+        "is checked against the same contained bytes that are counted. "
         "A produced inconsistent report still exits 0; this checks source-internal agreement, "
         "not planned inventory, execution truth, measurement, or approval."
     )

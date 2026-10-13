@@ -33,6 +33,7 @@ from underwrite.cli import (
 from underwrite.cli.capabilities import CommandDescriptor, Handler, profile
 from underwrite.instrument.evidence.langfuse_accounting import RULE_PROFILE as LANGFUSE_RULE_PROFILE
 from underwrite.instrument.ingest.accounting import SOURCE as PROMPTFOO_SOURCE
+from underwrite.instrument.ingest.codecs.promptfoo import SUPPORTED_VERSIONS as PROMPTFOO_VERSIONS
 from underwrite.instrument.ingest.deepeval_accounting import PROFILES as DEEPEVAL_PROFILES
 from underwrite.instrument.ingest.deepeval_accounting import SOURCE as DEEPEVAL_SOURCE
 
@@ -224,20 +225,29 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
         "audit-promptfoo",
         "Audit Promptfoo counts directly from a local export.",
         audit_promptfoo.configure,
-        (profile("|".join(PROMPTFOO_SOURCE), ("file",), (), ("promptfoo_accounting.v1",)),),
+        tuple(
+            profile(
+                "|".join((PROMPTFOO_SOURCE[0], version)),
+                ("file",),
+                (),
+                ("promptfoo_accounting.v1",),
+            )
+            for version in PROMPTFOO_VERSIONS
+        ),
         _standalone(audit_promptfoo.main),
     ),
     CommandDescriptor(
         "audit-counts",
         "Audit declared counts in one supported artifact.",
         audit_counts.configure,
-        (
+        tuple(
             profile(
-                "promptfoo-0.123.0",
+                f"promptfoo-{version}",
                 ("case",),
                 ("artifact_case.v1",),
                 ("promptfoo_accounting.v1",),
-            ),
+            )
+            for version in PROMPTFOO_VERSIONS
         ),
         _standalone(audit_counts.main),
     ),

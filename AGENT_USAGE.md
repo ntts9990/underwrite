@@ -22,7 +22,8 @@ enter the native `ingest` → `measure` → `accept` workflow with an explicit p
 and declared claims. A supported external export can be ingested as source claims
 and byte identity; it does not produce a measurable read under the current profile.
 External observations do not enter `measure`. The separate source-checkout
-`audit-promptfoo FILE` pilot can audit a Promptfoo 0.123.0 artifact; it does not create a
+`audit-promptfoo FILE` pilot defaults to Promptfoo 0.123.0; `--version 0.124.1`
+selects the other supported export profile. Neither creates a
 measurement read. The promptfoo example below deliberately calls `measure` to
 show that command's typed refusal.
 
@@ -86,7 +87,7 @@ is ready; obtain the completed producer artifact and its version context first.
 | goppi | `project-baseline` accepts the exact baseline exchange manifest v2 described below; P7 paired handoffs and older grounded-pilot exchanges have separate routes. No generic ingest profile. A CLI summary is insufficient; do not manufacture rows from counts. |
 | Langfuse | The supported `4.35.0` denotes the **server export profile**, not the SDK version. Supply the worker's `observations_v2` or `scores` blob-export file as an uncompressed JSON array with the complete field groups. A REST response, Parquet file, or partially selected export is a different shape. Wait for a completed export manifest; SDK flush alone is insufficient. |
 | DeepEval | Supply the ordinary `4.1.1` or `4.2.8` TestRun JSON written by the tool, with the producer version recorded separately. Select `--version 4.2.8` explicitly for that profile; the default remains `4.1.1`. A failed test run can still write a valid artifact. Zero, evaluator errors, and absent verdicts remain distinct. |
-| Promptfoo | Supply the `0.123.0` eval output JSON (summary version 3). An assertion-failure exit can accompany a valid export. Use `audit-promptfoo FILE --json` for direct count auditing, or `audit-counts CASE.json --json` with a supplied `artifact_case.v1` manifest for expected-hash checks and explicit source metadata. |
+| Promptfoo | Supply the `0.123.0` or `0.124.1` eval output JSON (summary version 3). An assertion-failure exit can accompany a valid export. Direct `audit-promptfoo FILE --json` defaults to 0.123.0; select `--version 0.124.1` explicitly for that producer. With a supplied manifest, `audit-counts` uses its explicit source version and expected hash. |
 
 The [producer checks](EVIDENCE_REVIEW.md) distinguish fresh tool-generated
 synthetic evaluations, archived captures, and constructed examples. They test
@@ -393,8 +394,36 @@ For expected-hash checks, explicit source references/locators, or contained rela
 artifact selection, retain the manifest route below. With default source metadata,
 both routes return the same canonical report for the same bytes.
 
+For a 0.124.1 export, use explicit selection on the direct paths:
+
+```sh
+underwrite audit-promptfoo results.json --version 0.124.1 --json
+underwrite records audit-promptfoo results.json --version 0.124.1 \
+  --root /private/review-store --id promptfoo.review-001 --json
+```
+
+Generic `ingest`/`project` also accept `--format promptfoo.eval-output --version
+0.124.1`. The selected version must match `metadata.promptfooVersion`; no detection,
+rewriting or fallback occurs. `audit-counts` accepts both versions when explicitly
+selected by the supplied manifest; there is no CLI version override for that route.
+Both direct profiles retain `promptfoo_accounting.v1` and `promptfoo_record.v1`:
+only the allowed source-version metadata expands. Older installed schemas pinned
+to 0.123.0 reject new-profile reports; old/default result bytes remain unchanged.
+
+In the supported 0.124.1 capture, a numeric assertion score of 0.3 has a producer
+success flag; it is not an absent verdict. A zero-weight cost component can exceed
+1 without changing the row's quality score. Such values remain source declarations,
+not calibrated probabilities or independently measured spending. Missing response
+cost and exported row cost zero are distinct; count auditing uses the producer's
+success/failureReason fields and does not infer cost from either value.
+
 `audit-counts` reads an `artifact_case.v1` manifest. Its artifact path is relative
-to the manifest, with the same bounded, no-follow reads as `inspect`. This example
+to the manifest, with the same bounded, no-follow reads as `inspect`. It checks a
+supplied expected hash before counting the same captured bytes, preserving the
+manifest's explicit source ref/locator in the observation identity. Unsupported
+source selections and hash mismatches produce no count report. The ordinary
+inspection report remains available when its separate manifest/hash-check fields
+are needed. This example
 uses a **constructed synthetic fixture**, not an unchanged Promptfoo export or an
 observed upstream bug. No model or producer executable is called.
 

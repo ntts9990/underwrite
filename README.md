@@ -117,7 +117,7 @@ Choose the format and exact supported version explicitly.
 | Langfuse | `langfuse.observations-v2` or `langfuse.scores` | `4.35.0` |
 | OpenInference | `openinference.traces` | `0.1.38` |
 | OTLP JSON | `otlp-json.traces` | `0.160.0` |
-| promptfoo | `promptfoo.eval-output` | `0.123.0` |
+| promptfoo | `promptfoo.eval-output` | `0.123.0`, `0.124.1` |
 | Native evidence bundle | `underwrite.evidence-bundle` | `v1` |
 
 These are bounded payload profiles, not compatibility claims for every export or

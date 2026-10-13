@@ -113,7 +113,7 @@ uv run --frozen --no-sync underwrite accept \
 | Langfuse | `langfuse.observations-v2` 또는 `langfuse.scores` | `4.35.0` |
 | OpenInference | `openinference.traces` | `0.1.38` |
 | OTLP JSON | `otlp-json.traces` | `0.160.0` |
-| promptfoo | `promptfoo.eval-output` | `0.123.0` |
+| promptfoo | `promptfoo.eval-output` | `0.123.0`, `0.124.1` |
 | 네이티브 근거 번들 | `underwrite.evidence-bundle` | `v1` |
 
 지원 범위는 위 페이로드 프로필로 한정됩니다. 각 도구의 모든 내보내기 형식이나 버전과의
