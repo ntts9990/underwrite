@@ -586,8 +586,36 @@ does not create a record store.
 Supply a reviewed `measurement_policy.v3` using `payload.semantic_digest` and
 `payload.sources[0].expected_case_ids`. The digest is a generated convenience
 field; `measure` recomputes the semantic binding rather than trusting that hint.
-Statistical reference rate and assumptions are consumer
-choices; the adapter never invents them. Ordered export cases do not establish
+To avoid manually copying these bindings, prepare a policy draft with explicit
+consumer choices:
+
+```sh
+underwrite prepare-event-policy --observation baseline-observation.json \
+  --subject-id baseline.primary-status --p0 0.5 \
+  --ece-bins 2 --min-bin-n 2 --all-k 2 --json > baseline-policy.json
+underwrite measure --observation baseline-observation.json \
+  --policy baseline-policy.json --json > baseline-read.json
+```
+
+The values shown are illustrative choices, not recommended thresholds. The
+subject, reference rate and diagnostic settings are required; optional
+`--max-observations` limits the directional prefix. Preparation returns the
+existing `measurement_policy.v3` with all four assumptions `unknown` and no option
+to promote them. It does not measure, store results or run a producer. Review the
+meaning, population and settings before relying on the resulting diagnostics.
+
+This preparation route currently accepts only the baseline-v2 population
+declaration described above. It recomputes the semantic digest from the meaning
+declaration, ignoring the convenience hint, and copies the declared ordered
+expected cases. It never builds an expected population from observed rows. An
+absent or ambiguous roster is an error even when readings look complete; cases
+absent from every reading remain expected when the declaration includes them.
+Preparation checks declaration consistency, not source authentication or row
+validity. The existing `measure` command still validates and computes the rows.
+The output is bounded to the size that `measure --policy` can read.
+
+Statistical reference rate and assumptions are consumer choices; the adapter
+never invents them. Ordered export cases do not establish
 prespecified statistical order or representativeness. Preserve `unknown` where
 assumptions are unestablished: the read can describe event counts while withholding
 directional inference. A policy omitting or reordering emitted cases is rejected;
@@ -601,9 +629,13 @@ all unknown:
 uv run --frozen --no-sync underwrite project-baseline \
   --exchange fixtures/examples/baseline-event/exchange --direction higher --json \
   > output/baseline-observation.json
+uv run --frozen --no-sync underwrite prepare-event-policy \
+  --observation output/baseline-observation.json \
+  --subject-id synthetic.baseline.primary-status --p0 0.5 \
+  --ece-bins 2 --min-bin-n 2 --all-k 2 --json > output/baseline-policy.json
 uv run --frozen --no-sync underwrite measure \
   --observation output/baseline-observation.json \
-  --policy fixtures/examples/baseline-event/policy.json --json
+  --policy output/baseline-policy.json --json
 ```
 
 This example deliberately includes true, verifier-false, endpoint-false and missing

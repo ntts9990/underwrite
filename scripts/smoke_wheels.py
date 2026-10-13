@@ -916,6 +916,38 @@ def _baseline_event_pilot(cli: Path, fixtures: Path, work: Path) -> None:
     _require(observation.get("schema") == "observation.v1", "baseline projection schema")
     _require("SYNTHETIC_ANSWER_NOT_FOR_PROJECTION" not in encoded, "baseline answer leaked")
     _require("indeterminate:agent_budget" not in encoded, "baseline private reason leaked")
+    choices = json.loads((source / "policy.json").read_bytes())
+    policy_options = [
+        "--subject-id",
+        choices["subject"]["subject_id"],
+        "--p0",
+        str(choices["eprocess"]["p0"]),
+        "--ece-bins",
+        str(choices["diagnostics"]["ece_bins"]),
+        "--min-bin-n",
+        str(choices["diagnostics"]["min_bin_n"]),
+        "--all-k",
+        str(choices["diagnostics"]["all_k"]),
+    ]
+    policy_path = work / "baseline-prepared-policy.json"
+    policy = _cli_json(
+        cli,
+        ["prepare-event-policy", "--observation", str(observation_path), *policy_options],
+        policy_path,
+        work,
+    )
+    _require(policy == choices, "prepared policy changed explicit choices or declared bindings")
+    missing_inventory = json.loads(observation_path.read_bytes())
+    del missing_inventory["payload"]["sources"][0]["expected_case_ids"]
+    missing_path = work / "baseline-without-inventory.json"
+    missing_path.write_text(json.dumps(missing_inventory), encoding="utf-8")
+    _native_refusal(
+        cli,
+        ["prepare-event-policy", "--observation", str(missing_path), *policy_options],
+        work,
+        "INVALID_INPUT",
+        "BASELINE_EXPECTED_CASES_REQUIRED",
+    )
     read = _cli_json(
         cli,
         [
@@ -923,7 +955,7 @@ def _baseline_event_pilot(cli: Path, fixtures: Path, work: Path) -> None:
             "--observation",
             str(observation_path),
             "--policy",
-            str(source / "policy.json"),
+            str(policy_path),
         ],
         work / "baseline-read.json",
         work,

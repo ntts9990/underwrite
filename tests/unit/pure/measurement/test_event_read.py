@@ -176,3 +176,35 @@ def test_inventory_must_be_nonempty_and_unique() -> None:
         policy["expected_case_ids"] = inventory
         with pytest.raises(EventReadError, match="INVALID_POLICY_FIELDS"):
             measure(obs, policy)
+
+
+@pytest.mark.parametrize(
+    ("schema", "profile", "code", "reason"),
+    [
+        ("measurement_policy.v1", "wrong", "INVALID_POLICY", "LEGACY_POLICY_REQUIRES_MIGRATION"),
+        ("measurement_policy.v2", "wrong", "INVALID_POLICY", "LEGACY_POLICY_REQUIRES_MIGRATION"),
+        ("measurement_policy.v3", "wrong", "UNSUPPORTED_PROFILE", "UNSUPPORTED_POLICY_PROFILE"),
+        (
+            "measurement_policy.v3",
+            "binary-event-directional.v1",
+            "INVALID_POLICY",
+            "INVALID_POLICY_FIELDS",
+        ),
+    ],
+)
+def test_policy_validation_preserves_error_surface(
+    schema: str, profile: str, code: str, reason: str
+) -> None:
+    observation, _ = inputs([1])
+    with pytest.raises(EventReadError) as caught:
+        assemble_event_read(
+            observation,
+            {"schema": schema, "profile": profile},
+            observation_digest="sha256:" + "0" * 64,
+            policy_digest="sha256:" + "1" * 64,
+        )
+    assert (caught.value.code, caught.value.reason, caught.value.location) == (
+        code,
+        reason,
+        "/policy",
+    )
