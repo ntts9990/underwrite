@@ -1,8 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -21,17 +19,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-          # PR merge + parents normally includes the base; uncertainty runs full checks.
+          # Include the tested merge and its parents; remote checks always run full.
           fetch-depth: 2
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - run: uv python install 3.12
       - name: Run the shared local preflight
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          if [ "$EVENT_NAME" = pull_request ]; then
-            uv run --frozen --no-sync python scripts/preflight.py --base "$BASE_SHA"
-          else
-            uv run --frozen --no-sync python scripts/preflight.py --mode full
-          fi
+        run: uv run --frozen --no-sync python scripts/preflight.py --mode full
