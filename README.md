@@ -2,79 +2,105 @@
 
 <h1><img src="assets/brand/underwrite-logo.png" alt="underwrite" width="640"></h1>
 
-**Turn evaluation artifacts into evidence you can inspect.**
+### From eval files to evidence your agent can use.
 
-Inspect supported local artifacts, measure native evidence bundles under explicit
-policies, and classify change candidates from declared reads.
+Inspect results. Keep the evidence. Make missing information visible.
+
+**Local CLI & Python library · Structured JSON · No server or model calls**
 
 [![CI](https://github.com/ntts9990/underwrite/actions/workflows/ci.yml/badge.svg)](https://github.com/ntts9990/underwrite/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/underwrite)](https://pypi.org/project/underwrite/)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue)](https://pypi.org/project/underwrite/)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-**English** · [한국어](README.ko.md)
+**[Try it](#quickstart)** · [Use with an agent](#agent-use) · [Supported formats](#supported-formats) · [Docs](#documentation)
 
-[Install](#install) · [Quickstart](#quickstart) · [Agent use](AGENT_USAGE.md) · [Local records](STORAGE.md) · [Supported formats](#supported-formats) · [CLI](#cli) · [Contributing](CONTRIBUTING.md)
+**English** · [한국어](README.ko.md)
 
 </div>
 
+underwrite turns supported local evaluation exports into structured results you
+and your coding agent can inspect, save, and reuse. Bring results from **goppi,
+Langfuse, DeepEval, or Promptfoo**; use the route for that artifact to check what
+was supplied and what remains unknown.
+
+It fits into your terminal and agent workflow. Read existing files, get JSON,
+and let the calling agent write the explanation. No Docker, dashboard, provider
+credentials, or evaluation rerun is needed to inspect those files.
+
+> [!NOTE]
+> **This README describes the development checkout.** The workflows below are
+> newer than the published PyPI `0.0.1`. Use the source quickstart to try them;
+> both builds still have the same version number. [Published installation](#install).
+
 ## Why underwrite?
 
-An evaluation result needs context before it can support a change. underwrite is a
-Python CLI and library that connects local evidence to explicit measurement and
-acceptance policies, while keeping missing evidence visible.
+- **Catch the mismatch behind the summary.** Compare Promptfoo's declared counts
+  with its supplied rows; inspect DeepEval evaluator errors and Langfuse score
+  associations through dedicated accounting commands.
+- **Give your agent a usable result.** Typed JSON includes input identities,
+  findings, and interpretation limits. `capabilities --json` describes the
+  commands and input profiles of the executable in use.
+- **Keep the bytes behind the answer.** Capture selected inputs and their analysis
+  in immutable local records. Verify and retrieve them later without the original
+  paths; recalculate saved native measurements with the current engine.
+- **Make the measurement explicit.** Measure native binary-event evidence under
+  a supplied policy. Missing evidence and undeclared assumptions remain visible
+  instead of becoming a successful verdict.
 
-- **One observation contract.** Normalize supported payload profiles without turning source claims into measured conclusions.
-- **Explicit measurement.** Bind a binary event, direction, expected population, and statistical assumptions to a policy.
-- **Visible uncertainty.** Keep `not_measured`, `indeterminate`, and `abstained` distinct; inspect the result before acting.
-
-```text
-Native evidence bundle → ingest → observation → measure + policy → read
-Candidate + claims + supplied reads → accept → classification
-
-Supported external export → ingest → observation (source claims and byte identity only)
+```mermaid
+flowchart LR
+    A[Supported local eval files] --> B[Inspect and account]
+    B --> C[Structured JSON for your agent]
+    B --> D[Optional local records]
+    E[Native evidence + explicit policy] --> F[Measure]
+    F --> C
+    D --> G[Verify and retrieve]
 ```
-
-A supported external observation does not enter the current measurement path.
-With a valid policy, `measure` returns `UNSUPPORTED_PROFILE` and produces no read. See
-[Agent use](AGENT_USAGE.md) for an explicit example.
-
-A content hash identifies bytes; it does not establish independent provenance.
-Exit `0` means a command produced its result, not that a change is approved.
-
-## Install
-
-Requires Python **3.12+** and [uv](https://docs.astral.sh/uv/).
-
-For current measurement, accounting, records, and handoff workflows, use the [source checkout
-quickstart](#quickstart). The command below installs the older published `0.0.1`,
-which does not include those commands or `capabilities`. Development packages
-still carry `0.0.1`; equal version numbers do not establish equal capabilities.
-
-```sh
-uv tool install 'underwrite==0.0.1'
-underwrite --help
-```
-
-Both [underwrite](https://pypi.org/project/underwrite/0.0.1/) and
-[underwrite-core](https://pypi.org/project/underwrite-core/0.0.1/) are available on
-PyPI as wheels and source distributions. The core package uses only the Python
-standard library; application adapters handle local I/O and schema validation.
 
 ## Quickstart
 
-Run the complete native path with the included synthetic example from a source
-checkout. No adjacent repository checkout is needed. `uv sync` uses the matching
-local `underwrite-core` workspace package. If installing development wheels, use
-app and core wheels built from the same checkout; do not mix the development app
-with the published core merely because their versions match.
+Requires **Python 3.12+** and [uv](https://docs.astral.sh/uv/).
+Run a bundled synthetic example—no API key or adjacent repository required:
 
 ```sh
 git clone https://github.com/ntts9990/underwrite.git
 cd underwrite
 uv sync --frozen --all-groups
-mkdir -p output
 
+uv run --frozen --no-sync underwrite audit-promptfoo \
+  fixtures/examples/evidence/synthetic-promptfoo-count-mismatch.json --json
+```
+
+The source summary declares **3 results**; the file contains **2 rows**.
+The command reports the inconsistency. Actual output, with other fields omitted:
+
+```json
+{
+  "schema": "promptfoo_accounting.v1",
+  "declared_relation": "inconsistent",
+  "producer_stats": {"errors": 1, "failures": 1, "successes": 1, "total": 3},
+  "row_tallies": {"errors": 1, "failures": 0, "successes": 1, "total": 2},
+  "limitations": [
+    "PLANNED_DENOMINATOR_UNKNOWN",
+    "CAUSE_UNKNOWN",
+    "SOURCE_CLAIMS_UNVERIFIED",
+    "NO_APPROVAL_AUTHORITY"
+  ]
+}
+```
+
+You get a concrete finding without guessing why a row is absent or treating the
+source's verdict as independently verified. Exit `0` means the report was
+produced; inspect its fields to interpret the result.
+
+<details>
+<summary><strong>Try the native measurement → acceptance workflow</strong></summary>
+
+From the same checkout, run the included synthetic binary-event example:
+
+```sh
+mkdir -p output
 uv run --frozen --no-sync underwrite ingest \
   --format underwrite.evidence-bundle --version v1 \
   --file fixtures/examples/event-measurement/bundle.json --json \
@@ -91,126 +117,155 @@ uv run --frozen --no-sync underwrite accept \
   --read output/read-event.json --json
 ```
 
-This constructed example measures a synthetic binary event proportion, not general
-quality or latency. The `read.v2` is computed from the bundle and
-`measurement_policy.v3`; calibration diagnostics do not vote on its verdict.
-See [measurement meaning and migration](AGENT_USAGE.md#measurement-meaning-and-migration). The final result is
-`screened`, requires human review, and keeps `merge_authorized` false. Repeat
-`--read` for each required claim. A successful classification does not authorize a
-merge or deployment.
+This measures a synthetic binary-event proportion, not general quality or latency.
+The `read.v2` uses an explicit `measurement_policy.v3`; calibration diagnostics do
+not vote on its verdict. The final classification is `screened`, requires human
+review, and keeps `merge_authorized` false. Repeat `--read` for each required claim.
+See [measurement meaning](AGENT_USAGE.md#measurement-meaning-and-migration).
 
-For a coding agent working with local exports, see [Agent use](AGENT_USAGE.md) for
-commands, result handling, and a reusable task prompt. The external formats below
-can be ingested, but `measure` currently accepts only native evidence-bundle
-observations; ingestion alone does not make an external source claim measurable.
+</details>
 
-Completed goppi baseline exchange v2 files can use [`project-baseline`](AGENT_USAGE.md#project-a-completed-goppi-baseline-into-event-observations) to produce native event observations without rewriting rows. `prepare-event-policy` can bind that observation to an explicit consumer configuration without manually copying case IDs or digests; assumptions remain unknown. Source primary outcomes, missingness, and statistical assumptions remain distinct.
+## Agent use
+
+Give your coding agent the prepared checkout and an exported artifact. It can
+discover the available routes, execute them, and use the JSON in its response:
+
+```sh
+uv run --frozen --no-sync underwrite --help
+uv run --frozen --no-sync underwrite capabilities --json
+```
+
+Example task for an agent with terminal access:
+
+> Read `skills/underwrite-review/SKILL.md` in this checkout. Review
+> `fixtures/examples/evidence/synthetic-promptfoo-count-mismatch.json` as a
+> Promptfoo 0.123.0 export. Explain the count discrepancy, identify the source
+> bytes, and say what the result cannot establish.
+
+The optional [underwrite-review skill](skills/underwrite-review/SKILL.md) provides
+reusable guidance for Codex and Claude Code. [Setup and usage](AGENT_USAGE.md#optional-artifact-review-skill)
+are explicit: the skill does not install the CLI or add a background service.
+The same CLI and importable Python APIs are available to your own automation.
 
 ## Supported formats
 
-Choose the format and exact supported version explicitly.
+Support is for the **specific local payload profiles below**, not every API,
+export, or version offered by each producer. Select the version explicitly.
 
-| Producer | `--format` | `--version` |
+| Your input | Supported profile | Start here |
 | --- | --- | --- |
-| DeepEval | `deepeval.test-run` | `4.1.1`, `4.2.8` (bounded ordinary TestRun profiles) |
-| Inspect AI | `inspect.eval-log` | `0.3.263` |
-| Langfuse | `langfuse.observations-v2` or `langfuse.scores` | `4.35.0` |
-| OpenInference | `openinference.traces` | `0.1.38` |
-| OTLP JSON | `otlp-json.traces` | `0.160.0` |
-| promptfoo | `promptfoo.eval-output` | `0.123.0`, `0.124.1` |
-| Native evidence bundle | `underwrite.evidence-bundle` | `v1` |
+| **goppi** | Completed baseline exchange manifest v2; separate paired-handoff route | [`project-baseline`](AGENT_USAGE.md#project-a-completed-goppi-baseline-into-event-observations) · [`review-handoff`](AGENT_USAGE.md#review-a-completed-paired-handoff-in-one-call) |
+| **Langfuse** | `4.35.0` server blob exports: observations-v2 and scores JSON arrays | [`audit-langfuse`](AGENT_USAGE.md#account-for-langfuse-score-kinds-and-associations) |
+| **DeepEval** | Ordinary TestRun JSON, `4.1.1` or `4.2.8` | [`audit-deepeval`](AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors) |
+| **Promptfoo** | Eval output JSON, `0.123.0` or `0.124.1` | [`audit-promptfoo`](AGENT_USAGE.md#source-checkout-pilot-audit-promptfoo-counts) |
+| **Native evidence** | `underwrite.evidence-bundle` / `v1` | `ingest` → `measure` → `accept` |
+| **Inspect AI** | `inspect.eval-log` / `0.3.263` | `ingest` |
+| **OpenInference** | `openinference.traces` / `0.1.38` | `ingest` |
+| **OTLP JSON** | `otlp-json.traces` / `0.160.0` | `ingest` |
 
-These are bounded payload profiles, not compatibility claims for every export or
-version of a producer. The native bundle declares
-`schema_version: underwrite.evidence-bundle.v1` and carries readings, source claims,
-and availability records. The observation retains source claims separately from
-measurement.
+DeepEval accounting defaults to `4.1.1`; select `--version 4.2.8` for that
+profile. Promptfoo accounting defaults to `0.123.0`; select `--version 0.124.1`
+for that profile. Langfuse's version identifies the server export, not its SDK.
+See [artifact requirements](AGENT_USAGE.md#get-the-right-producer-artifact) and
+[producer checks](EVIDENCE_REVIEW.md) for the tested scope and fixture origins.
 
-`project` is an explicit alias of `ingest`. `--http-body-file FILE` reads an already
-captured HTTP body from a local file; it does not fetch a URL. Optional
-`--source-ref` and `--source-locator` describe the supplied source. Without a source
-reference, byte identity supplies a content hash. See `ingest --help` for input
-size and depth limits.
+Generic `ingest` / `project` normalizes supported exports to an observation;
+external observations do not enter the current `measure` path. goppi uses its
+explicit exchange adapters: `project-baseline` can produce native event
+observations, and `prepare-event-policy` binds a consumer configuration while
+leaving statistical assumptions unknown.
 
-<details>
-<summary>Try malformed input: typed error, empty stdout</summary>
+## Keep results you can return to
 
-An empty run identifier is invalid. This example captures the error without
-producing an observation:
+Use `records` when you want the analysis and its selected source bytes retained
+together. For example, after the source quickstart:
 
 ```sh
 mkdir -p output
-printf '%s\n' '{"schema_version":"underwrite.evidence-bundle.v1","run_id":"","sources":[],"readings":[],"availability":[]}' \
-  > output/malformed-bundle.json
-if uv run --frozen --no-sync underwrite ingest \
-  --format underwrite.evidence-bundle --version v1 \
-  --file output/malformed-bundle.json --json \
-  > output/malformed.stdout 2> output/malformed.stderr; then
-  ingest_exit=0
-else
-  ingest_exit=$?
-fi
-printf 'exit: %s\n' "$ingest_exit"
-wc -c < output/malformed.stdout
-cat output/malformed.stderr
+uv run --frozen --no-sync underwrite records audit-promptfoo \
+  fixtures/examples/evidence/synthetic-promptfoo-count-mismatch.json \
+  --root output/review-store --id demo-001 --json
+
+uv run --frozen --no-sync underwrite records read-json \
+  --root output/review-store --id demo-001 \
+  --name analysis/accounting.json --json
 ```
 
-Expected: exit `1`, stdout size `0`, and this JSON on stderr:
+Use a fresh ID for each capture; existing records are never overwritten.
+`records verify` checks stored integrity. `records measure` captures a native
+measurement, and `records replay-measure` recalculates it from verified saved
+inputs using the current engine, without executing the original producer.
 
-```json
-{"schema":"instrument_error.v1","command":"ingest","code":"INVALID_INPUT","reason":"MALFORMED_EVIDENCE_BUNDLE_PAYLOAD","exit_code":1}
+Records retain raw inputs, which may contain private content. Choose a private
+local POSIX filesystem and a backup strategy; this checkout's ignored `output/`
+is a demo location, not a backup. [Storage contracts and recovery](STORAGE.md).
+
+## What the result means
+
+underwrite keeps different kinds of evidence distinct:
+
+| Result | What it establishes |
+| --- | --- |
+| Source accounting | Relationships among the supplied rows, scores, and declared summaries |
+| Byte hashes and record verification | Identity and integrity of selected bytes, not independent provenance |
+| Native measurement | A result under the supplied event definition, population, and statistical assumptions |
+| Acceptance classification | A policy result from declared claims and reads; no merge or deployment authority |
+
+`not_measured`, `indeterminate`, and `abstained` remain different states. Missing
+information is explicit. A source score is not automatically a calibrated
+probability, and a successful command is not approval to ship.
+
+## Install
+
+For the workflows on this page, use the [source quickstart](#quickstart).
+`uv sync` selects the matching workspace `underwrite-core`. Development wheels
+must also pair app and core built from the same checkout.
+
+<details>
+<summary>Install the older published PyPI 0.0.1</summary>
+
+```sh
+uv tool install 'underwrite==0.0.1'
+underwrite --help
 ```
+
+The published [app](https://pypi.org/project/underwrite/0.0.1/) and
+[core](https://pypi.org/project/underwrite-core/0.0.1/) have not been re-released.
+They do not include the development measurement, accounting, records, handoff, or
+`capabilities` workflows. Discover installed commands with `--help`; the shared
+version number does not establish equal functionality. Do not mix development
+app wheels with the published core.
 
 </details>
 
 ## CLI
 
-The table describes the current checkout. Discover an installed build with
-`underwrite --help`; use `capabilities --json` only when listed. Use
-`underwrite <command> --help` for options. The quickstart
-uses `ingest`, `measure`, and `accept`; these commands provide additional checks:
+Use `underwrite <command> --help` for options. Alongside the workflows above,
+`inspect` checks artifact manifests, `audit-counts` checks Promptfoo counts through
+a manifest with an expected hash, `check` examines release evidence linkage,
+`absence` checks population presence, `boundary scan` checks configured verdict
+vocabulary, and `drift check` / `pins refresh` work with supplied pin registries.
+[JSON contracts](contracts/) define each command family's results and errors.
 
-| Command | Purpose |
+<a id="development-checkout-evidence-pilots"></a>
+
+## Documentation
+
+| Explore | Guide |
 | --- | --- |
-| `audit-promptfoo FILE --json` | Compare Promptfoo 0.123.0 declared counts with supplied result rows. |
-| `audit-langfuse --observations FILE --scores FILE --json` | Account for Langfuse 4.35.0 score kinds and supplied-row associations. |
-| `audit-deepeval FILE --json` | Account for DeepEval 4.1.1 case flags, scores, evaluator errors, and unscored metrics. |
-| `inspect CASE.json --json` | Inspect a local artifact manifest and its projection. |
-| `check RELEASE.json --json` | Check a release manifest's declared evidence linkage and record presence. |
-| `absence --root DIR --glob '*.json' --min 1 --json` | Require a nonempty population. |
-| `boundary scan DIR --json` | Scan JSON/JSONL strings for configured verdict vocabulary. |
-| `drift check --pins-root PINS --siblings-root SOURCES --json` | Compare a supplied pin registry with local source checkouts. |
-| `pins refresh --repo NAME --pins-root PINS --siblings-root SOURCES` | Refresh a configured repository's pins from local bytes. |
-
-Artifact and release checks do not establish independent provenance or grant
-deployment permission. Pin commands are generic utilities; no preconfigured
-source registry is included. Allowlist and exemption evaluation requires explicit
-`--now` when applicable. Malformed inputs and missing paths remain configuration
-errors rather than passes.
-
-[JSON contracts](contracts/) define each command family's output and errors.
-
-The optional [underwrite-review skill](skills/underwrite-review/SKILL.md) helps a
-coding agent select the existing CLI route for your artifact and explain its
-limits. See [manual setup](AGENT_USAGE.md#optional-artifact-review-skill); it does
-not install a CLI, hook, or background service.
-
-## Development-checkout evidence pilots
-
-This checkout adds producer accounting, immutable records and selected-file
-retrieval, declaration comparison, and paired evidence workflows.
-`review-pair` adds digest-bound intended changes, declared evaluation history, and
-exclusive case-group accounting while preserving the original paired evidence.
-They run locally with JSON output and no service. See the reproducible examples
-and limitations in [Agent use](AGENT_USAGE.md#source-checkout-pilot-audit-promptfoo-counts).
-These are unreleased changes; published PyPI `0.0.1` artifacts are unchanged.
-The reports do not grant approval or enter the existing `accept` flow.
+| Run from an agent, choose inputs, interpret JSON | [Agent usage](AGENT_USAGE.md) |
+| Compare declarations, paired evidence, and goppi handoffs | [Evidence workflows](AGENT_USAGE.md#source-checkout-pilot-compare-declarations) |
+| Save, verify, retrieve, and recalculate | [Local records](STORAGE.md) |
+| Understand producer fixtures and tested boundaries | [Producer evidence](EVIDENCE_REVIEW.md) |
+| Extend the CLI and pure calculation core | [Contributing](CONTRIBUTING.md) · [Architecture rules](AGENTS.md) |
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development checks and the contribution
-process, [SECURITY.md](SECURITY.md) for private vulnerability reporting, and
-[AGENTS.md](AGENTS.md) for technical boundaries.
+Bring a reproducible artifact, a concrete workflow, or a fix.
+[Open an issue](https://github.com/ntts9990/underwrite/issues) with the producer
+version and expected result; share only sanitized examples. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for local preflight and PR checks, and
+[SECURITY.md](SECURITY.md) for private vulnerability reports.
 
 <details>
 <summary>Maintainers: future PyPI releases</summary>
