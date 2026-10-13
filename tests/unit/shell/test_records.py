@@ -843,13 +843,20 @@ def test_selected_read_refuses_invalid_names(tmp_path: Path, name: str) -> None:
     _assert_error("INVALID_SPEC", lambda: records.read_record_file(root, "capture.001", name))
 
 
-@pytest.mark.parametrize("limit", [True, 0, -1, records.RECORD_READ_MAX_BYTES + 1])
-def test_selected_read_refuses_invalid_budget(tmp_path: Path, limit: int) -> None:
+@pytest.mark.parametrize("limit", [True, False, 0, -1, 1.0, records.MAX_FILE_BYTES + 1])
+def test_selected_read_refuses_invalid_budget(
+    tmp_path: Path, limit: int | float, monkeypatch: pytest.MonkeyPatch
+) -> None:
     root, _ = _save(tmp_path)
+
+    def forbidden(*args: object, **kwargs: object) -> int:
+        pytest.fail("invalid byte budget must refuse before filesystem access")
+
+    monkeypatch.setattr(os, "open", forbidden)
     _assert_error(
         "INVALID_SPEC",
         lambda: records.read_record_file(
-            root, "capture.001", "source/result.json", max_bytes=limit
+            root, "capture.001", "source/result.json", max_bytes=cast(int, limit)
         ),
     )
 
@@ -1448,3 +1455,40 @@ def test_interruption_after_source_acquisition_closes_all_descriptors(
         with pytest.raises(OSError):
             os.fstat(descriptor)
     assert not root.exists()
+
+
+@pytest.mark.parametrize("size", [records.RECORD_READ_MAX_BYTES + 1, 4 * 1024 * 1024])
+def test_selected_explicit_byte_budget_exceeds_default_without_relaxing_integrity(
+    tmp_path: Path,
+    size: int,
+) -> None:
+    raw = b"x" * size
+    root, _ = _save(tmp_path, raw)
+    _assert_error(
+        "INPUT_LIMIT_EXCEEDED",
+        lambda: records.read_record_file(root, "capture.001", "source/result.json"),
+    )
+    result = records.read_record_file(root, "capture.001", "source/result.json", max_bytes=size)
+    assert result.data == raw and result.sha256 == digest_bytes(raw)
+    assert result.manifest_digest == records.read_record(root, "capture.001").digest
+    # The storage ceiling is admitted as a requested budget, not a required file size.
+    assert (
+        records.read_record_file(
+            root,
+            "capture.001",
+            "source/result.json",
+            max_bytes=records.MAX_FILE_BYTES,
+        ).data
+        == raw
+    )
+    _assert_error(
+        "INPUT_LIMIT_EXCEEDED",
+        lambda: records.read_record_file(
+            root, "capture.001", "source/result.json", max_bytes=size - 1
+        ),
+    )
+    (root / "records/capture.001/files/source/result.json").write_bytes(b"y" + raw[1:])
+    _assert_error(
+        "RECORD_FILE_INTEGRITY_MISMATCH",
+        lambda: records.read_record_file(root, "capture.001", "source/result.json", max_bytes=size),
+    )

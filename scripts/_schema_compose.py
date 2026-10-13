@@ -56,11 +56,14 @@ def rewrite(value: Any, prefix: str) -> Any:
     return result
 
 
-def embed_contracts(root: Path, names: tuple[str, ...]) -> tuple[dict[str, Any], dict[str, Any]]:
+def embed_contracts(
+    root: Path, names: tuple[str, ...], *, versions: dict[str, str] | None = None
+) -> tuple[dict[str, Any], dict[str, Any]]:
     definitions: dict[str, Any] = {}
     owners: dict[str, Any] = {}
     for name in names:
-        source = json.loads((root / f"contracts/{name}.v1.schema.json").read_bytes())
+        version = (versions or {}).get(name, "v1")
+        source = json.loads((root / f"contracts/{name}.{version}.schema.json").read_bytes())
         owners[name] = source
         body = {k: v for k, v in source.items() if k not in {"$id", "$schema", "$defs"}}
         definitions[name] = rewrite(body, name)

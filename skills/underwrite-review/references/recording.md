@@ -3,6 +3,29 @@
 Use this procedure only for an explicitly selected local review and store.
 It composes existing commands; it adds no background process or producer run.
 
+For native measurement with an observation and reviewed policy, prefer the
+capabilities-listed `records measure --observation FILE --policy FILE --root ROOT
+--id NEW_ID --json` when the caller requests retention. It computes and retains
+the same selected input buffers, read or diagnostic, and invocation. Inspect
+analysis and storage separately: exits 0/2/3 mean read saved, diagnostic saved,
+or storage failed. A `not_measured` read is still a produced result. Complete
+malformed inputs are retained whole; failed acquisition retains no partial input.
+The 0/2/3 meanings apply to `measurement_record.v1` stdout. `evidence_error.v1`
+stderr with exit 2 is a pre-storage argument/configuration/admission failure;
+never infer a saved diagnostic or consumed ID from the exit code alone.
+Recover `analysis/read.json` or `analysis/error.json` through `records read-json`.
+The explicit inputs may contain private content; source pointers are not followed,
+so a generated observation is not a backup of the original producer exchange.
+Storage verification is not measurement replay or source authentication.
+When recalculation is requested for a native measurement record, use
+capabilities-listed `records replay-measure --root ROOT --id ID --json`.
+It ignores invocation commands and original paths. A `measurement_replay.v1`
+match/mismatch compares current canonical outcomes, including reproducible
+refusals; it does not approve a change or authenticate historical execution.
+Missing captured inputs are not replayed from remembered errors. Exit 2 uses
+typed stderr (`record_error.v1` or `evidence_error.v1`) and no comparison stdout.
+The record's original reproduction claim is never rewritten.
+
 For a supported completed goppi P7 handoff, prefer the `review-handoff` command's
 explicit `--record-root` and `--record-id` options. It captures the same bytes
 used for analysis and returns independent analysis/storage outcomes. Use the

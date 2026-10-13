@@ -30,6 +30,15 @@ Keep package versions unchanged during development. Only bump versions after the
 user explicitly requests a version increase; completing work, passing checks, or
 opening or merging a PR does not authorize a version bump.
 
+For an explicitly requested continuous development goal, a verified commit or
+merged PR is a checkpoint, not completion of the goal. Keep the program active,
+record the next evidence-backed bounded outcome, and continue its planning and
+implementation without requiring another "next" message. Preserve the original
+loop start time and checkpoint evidence in the existing continuity record.
+Do not invent features or repeat checks merely to keep the loop busy; stop only
+on user direction, a genuine external blocker, or an evidence-backed finding that
+no meaningful authorized next task remains.
+
 - `packages/underwrite-core/src/underwrite_core`: dependency-free integrity primitives.
 - `src/underwrite/instrument/evidence`, `measurement`, `acceptance`, and `adjudication`:
   pure logic using the standard library, `underwrite_core`, and the shared pure

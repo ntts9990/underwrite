@@ -35,6 +35,8 @@ source-include = [
     "contracts/read.v1.schema.json",
     "contracts/measurement_policy.v2.schema.json",
     "contracts/measurement_error.v1.schema.json",
+    "contracts/measurement_record.v1.schema.json",
+    "contracts/measurement_replay.v1.schema.json",
     "contracts/statistical_seed.v1.schema.json",
     "contracts/observation.v1.schema.json",
     "contracts/artifact_case.v1.schema.json",

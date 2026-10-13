@@ -727,6 +727,31 @@ callers can use `run_goppi_p7_handoff(HandoffRequest(...))` from
 
 ## Keep selected evidence in local records
 
+For native measurement with a supplied observation and reviewed policy, use
+`records measure --observation FILE --policy FILE --root ROOT --id NEW_ID --json`
+to calculate and retain the exact selected bytes in one invocation. This replaces
+the loose-result plus handwritten record-spec steps. Read `analysis/read.json`,
+or `analysis/error.json` for a diagnostic, using the existing selected-file reader.
+The `measurement_record.v1` envelope separates analysis from storage: exits 0/2/3
+mean read saved, diagnostic saved, or storage failed. `not_measured` is a produced
+read, not an invocation failure. A diagnostic consumes the ID; never overwrite it.
+These are the aggregate envelope exits. An `evidence_error.v1` on stderr with
+exit 2 instead indicates an argument/configuration/admission failure before storage.
+Only the explicit observation and policy are retained whole. Source pointers in
+the observation are not followed, so this does not back up a producer exchange.
+See [native measurement capture](STORAGE.md) for byte identities, privacy, limits
+and post-publication failure semantics.
+
+For a saved native measurement, `records replay-measure --root ROOT --id ID --json`
+recalculates from verified retained inputs without reopening original paths.
+`measurement_replay.v1` reports complete canonical outcome `match` (exit 0) or
+`mismatch` (exit 1). A matching error reproduces a refusal, and a matching
+`not_measured` read still withholds inference. Incomplete captures and integrity,
+unsupported-content or configuration failures produce typed stderr with exit 2,
+not a comparison. Invocation metadata is never executed. This is current-code
+agreement, not historical-environment reproduction, provenance or approval;
+the immutable record remains unchanged. See [replay limits and states](STORAGE.md).
+
 For an existing record, use `records show --root ROOT --id ID --json` to select an
 exact logical name, then `records read-json --root ROOT --id ID --name NAME` to
 retrieve its verified JSON without assembling a filesystem path. Inspect `content`

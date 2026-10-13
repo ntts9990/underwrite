@@ -47,16 +47,16 @@ class LocalJsonError(ValueError):
         self.code = CODES.get(reason)
 
 
-def read_object(path: Path, max_bytes: int, max_depth: int) -> tuple[dict[str, Any], str]:
-    """Return one strictly decoded JSON object and its canonical content digest."""
+def decode_object(raw: bytes, max_bytes: int, max_depth: int) -> tuple[dict[str, Any], str]:
+    """Decode a complete bounded buffer and return its canonical content digest."""
+    if len(raw) > max_bytes:
+        raise LocalJsonError("BYTE_LIMIT_EXCEEDED")
     try:
-        decoded = decode_json(read_local_file(path, max_bytes), max_depth)
+        decoded = decode_json(raw, max_depth)
         if not isinstance(decoded, dict):
             raise LocalJsonError("OBJECT_REQUIRED")
         document = cast("dict[str, Any]", decoded)
         return document, content_digest(document)
-    except TransportError as exc:
-        raise LocalJsonError(str(exc)) from None
     except DecodeError as exc:
         if exc.args == ("DEPTH_LIMIT_EXCEEDED",):
             raise LocalJsonError("DEPTH_LIMIT_EXCEEDED") from None
@@ -65,15 +65,53 @@ def read_object(path: Path, max_bytes: int, max_depth: int) -> tuple[dict[str, A
         raise LocalJsonError("NONCANONICAL_INPUT") from None
 
 
+def _read_source(path: Path, max_bytes: int) -> bytes:
+    try:
+        return read_local_file(path, max_bytes)
+    except TransportError as exc:
+        raise LocalJsonError(str(exc)) from None
+
+
+def read_object(path: Path, max_bytes: int, max_depth: int) -> tuple[dict[str, Any], str]:
+    """Return one strictly decoded JSON object and its canonical content digest."""
+    return decode_object(_read_source(path, max_bytes), max_bytes, max_depth)
+
+
+def _command_error(
+    exc: LocalJsonError, location: str, invalid: str, error: CommandError
+) -> Exception:
+    where = "" if exc.code == "UNSUPPORTED_PLATFORM" else location
+    return error(exc.code or invalid, exc.reason, where)
+
+
+def read_source(
+    path: Path, max_bytes: int, location: str, invalid: str, error: CommandError
+) -> bytes:
+    """Acquire complete bounded bytes, translating transport failures for the command."""
+    try:
+        return _read_source(path, max_bytes)
+    except LocalJsonError as exc:
+        raise _command_error(exc, location, invalid, error) from None
+
+
+def decode_document(
+    raw: bytes, max_bytes: int, max_depth: int, location: str, invalid: str, error: CommandError
+) -> tuple[dict[str, Any], str]:
+    """Decode retained bytes using the same bounds and command errors as a path input."""
+    try:
+        return decode_object(raw, max_bytes, max_depth)
+    except LocalJsonError as exc:
+        raise _command_error(exc, location, invalid, error) from None
+
+
 def read_document(
     path: Path, max_bytes: int, max_depth: int, location: str, invalid: str, error: CommandError
 ) -> tuple[dict[str, Any], str]:
-    """``read_object``, failing as ``error``; an unsupported platform has no location."""
+    """Read and decode once; an unsupported platform has no error location."""
     try:
         return read_object(path, max_bytes, max_depth)
     except LocalJsonError as exc:
-        where = "" if exc.code == "UNSUPPORTED_PLATFORM" else location
-        raise error(exc.code or invalid, exc.reason, where) from None
+        raise _command_error(exc, location, invalid, error) from None
 
 
 def validate(
