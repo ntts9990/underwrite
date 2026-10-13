@@ -96,8 +96,9 @@ implicitly a calibrated probability or a permission to merge.
 
 ## Complete native workflow
 
-The [README quickstart](README.md#quickstart) runs `ingest` → `measure` → `accept`
-with the included synthetic native evidence bundle, an explicit event policy, and declared
+The [README quickstart](README.md#quickstart) first audits a synthetic Promptfoo
+export. Expand its native measurement example to run `ingest` → `measure` → `accept`
+with the included synthetic evidence bundle, an explicit event policy, and declared
 candidate claims. Keep each JSON result as an artifact. `measure` produces a
 `read.v2`; supply a `--read` for each required claim you intend to evaluate.
 Missing required claims remain explicit in the acceptance decision. A command

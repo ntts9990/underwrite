@@ -33,31 +33,6 @@ credentials, or evaluation rerun is needed to inspect those files.
 > newer than the published PyPI `0.0.1`. Use the source quickstart to try them;
 > both builds still have the same version number. [Published installation](#install).
 
-## Why underwrite?
-
-- **Catch the mismatch behind the summary.** Compare Promptfoo's declared counts
-  with its supplied rows; inspect DeepEval evaluator errors and Langfuse score
-  associations through dedicated accounting commands.
-- **Give your agent a usable result.** Typed JSON includes input identities,
-  findings, and interpretation limits. `capabilities --json` describes the
-  commands and input profiles of the executable in use.
-- **Keep the bytes behind the answer.** Capture selected inputs and their analysis
-  in immutable local records. Verify and retrieve them later without the original
-  paths; recalculate saved native measurements with the current engine.
-- **Make the measurement explicit.** Measure native binary-event evidence under
-  a supplied policy. Missing evidence and undeclared assumptions remain visible
-  instead of becoming a successful verdict.
-
-```mermaid
-flowchart LR
-    A[Supported local eval files] --> B[Inspect and account]
-    B --> C[Structured JSON for your agent]
-    B --> D[Optional local records]
-    E[Native evidence + explicit policy] --> F[Measure]
-    F --> C
-    D --> G[Verify and retrieve]
-```
-
 ## Quickstart
 
 Requires **Python 3.12+** and [uv](https://docs.astral.sh/uv/).
@@ -92,7 +67,8 @@ The command reports the inconsistency. Actual output, with other fields omitted:
 
 You get a concrete finding without guessing why a row is absent or treating the
 source's verdict as independently verified. Exit `0` means the report was
-produced; inspect its fields to interpret the result.
+produced; inspect its fields to interpret the result. To keep the input and
+analysis together, [save them in a local record](#keep-results-you-can-return-to).
 
 <details>
 <summary><strong>Try the native measurement → acceptance workflow</strong></summary>
@@ -125,6 +101,39 @@ See [measurement meaning](AGENT_USAGE.md#measurement-meaning-and-migration).
 
 </details>
 
+## Why underwrite?
+
+- **Catch the mismatch behind the summary.** Compare Promptfoo's declared counts
+  with its supplied rows; inspect DeepEval evaluator errors and Langfuse score
+  associations through dedicated accounting commands.
+- **Give your agent a usable result.** Typed JSON includes input identities,
+  findings, and interpretation limits. `capabilities --json` describes the
+  commands and input profiles of the executable in use.
+- **Keep the bytes behind the answer.** Capture selected inputs and their analysis
+  in immutable local records. Verify and retrieve them later without the original
+  paths; recalculate saved native measurements with the current engine.
+- **Make the measurement explicit.** Measure native binary-event evidence under
+  a supplied policy. Missing evidence and undeclared assumptions remain visible
+  instead of becoming a successful verdict.
+
+## How it works
+
+```mermaid
+flowchart LR
+    A[Supported local eval files] --> B[Inspect and account]
+    B --> C[Structured JSON result]
+    C --> D[You or your agent review limits]
+    D --> E[Human reviews change decisions]
+    B --> F[Optional local records]
+    F --> G[Verify and retrieve]
+    H[Native evidence + explicit policy] --> I[Measure]
+    I --> C
+```
+
+These review steps produce evidence for inspection. They do not apply a proposed
+change or grant merge authority. Local records keep selected inputs and results
+for later review.
+
 ## Agent use
 
 Give your coding agent the prepared checkout and an exported artifact. It can
@@ -139,8 +148,10 @@ Example task for an agent with terminal access:
 
 > Read `skills/underwrite-review/SKILL.md` in this checkout. Review
 > `fixtures/examples/evidence/synthetic-promptfoo-count-mismatch.json` as a
-> Promptfoo 0.123.0 export. Explain the count discrepancy, identify the source
-> bytes, and say what the result cannot establish.
+> Promptfoo 0.123.0 export. Use `capabilities --json` and `audit-promptfoo`.
+> Report `declared_relation`, `producer_stats`, `row_tallies`, `raw_hash`,
+> `limitations`, and the next useful action. Do not rerun the producer or treat
+> exit `0` as agreement or approval.
 
 The optional [underwrite-review skill](skills/underwrite-review/SKILL.md) provides
 reusable guidance for Codex and Claude Code. [Setup and usage](AGENT_USAGE.md#optional-artifact-review-skill)
