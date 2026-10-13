@@ -33,9 +33,9 @@ an acquisition failure retains no partial file. Analysis preserves ordinary
 failure. Raw file hashes and canonical input digests have different meanings.
 Two file reads do not establish an atomic producer snapshot.
 Input limits remain 4 MiB/depth 64 for the observation and 64 KiB/depth 16 for the
-policy. Generated analysis is bounded to 1 MiB including its newline. The current
-selected-file reader also limits reads to 1 MiB: a larger captured observation
-can be retained without being readable through `records read-json`.
+policy. Generated analysis is bounded to 1 MiB including its newline.
+`records read-json` retains its 1 MiB input limit; measurement replay uses an
+explicit bounded byte read for larger admitted observations.
 
 The selected observation and policy are retained whole and may contain private
 content. Payload source pointers are never followed: capturing a generated
@@ -44,6 +44,41 @@ network request or arbitrary command runs. Output/schema admission precedes
 store mutation, IDs are never overwritten, and post-publication failures retain
 the known identity in `storage.published_record`. Stored-byte verification is not
 measurement reproduction, source authentication or approval.
+
+To recalculate a saved measurement without its original input paths:
+
+```sh
+underwrite records replay-measure --root PRIVATE_STORE --id measurement-001 --json
+```
+
+This read-only command verifies the fixed saved observation, policy and outcome
+against one manifest identity, then uses the current installed measurement code.
+It ignores invocation commands/paths and does not run a producer. The
+`measurement_replay.v1` report compares complete canonical tagged outcomes:
+exit 0 means `match`, exit 1 means `mismatch`. A matching `not_measured` read or
+matching deterministic error remains exactly that; matching a diagnostic means
+the refusal was reproduced, not that a measurement succeeded.
+
+Complete captured malformed inputs can reproduce analysis diagnostics. Missing
+saved inputs cannot recreate an earlier filesystem failure; those captures are
+refused as incomplete. Unsupported record/outcome kinds, ambiguous outcomes,
+internal/configuration diagnostics and invalid stored reads are also refused.
+An internally consistent saved read with different source digests is a comparison
+mismatch, not a separate assertion that the source was authenticated.
+
+Refusals emit no comparison stdout and exit 2: `record_error.v1` describes stored
+byte retrieval/integrity failures, while `evidence_error.v1` describes replay
+interpretation/configuration failures. Inspect both streams and the schema.
+Source reads use the measurement limits above, the saved outcome is limited to
+1 MiB, and the full response is limited to 2 MiB. Every selected read must report
+the initial manifest identity before calculation proceeds. Unrelated files and
+direct links are outside this selected-file check; use `records verify` for them.
+
+Agreement establishes only current in-process outcome agreement. It does not
+establish the historical code/dependency environment, producer execution, label
+truth, statistical assumptions or approval. Floating-point differences across
+runtimes can produce a reported mismatch; no hidden tolerance changes agreement.
+The command never changes the original record or its `rerun_verification` claim.
 
 For a supported DeepEval TestRun, use
 `records audit-deepeval FILE --root ROOT --id NEW_ID --json` to analyze and retain
@@ -183,8 +218,11 @@ decimal spelling, and stored strings are not NFC-rewritten.
 Unknown logical names, byte mismatches and unsupported content have separate
 bounded errors. Reading creates no files and never reopens a producer source path.
 
-Python callers can obtain verified bytes, including non-JSON content within the
-same fixed input cap, without knowing the physical store layout:
+Python callers can obtain verified bytes, including non-JSON content, without
+knowing the physical store layout. The default is still 1 MiB; an explicit
+`max_bytes` may select a larger bound up to the storage-owned 128 MiB file limit.
+Callers must choose a bound appropriate to their input contract. This does not
+widen the `read-json` command's input or output limits:
 
 ```python
 from pathlib import Path

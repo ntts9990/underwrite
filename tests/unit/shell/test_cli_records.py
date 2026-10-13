@@ -507,3 +507,23 @@ def test_show_preserves_abbreviated_json_option(
     )
     assert code == 0 and other == ""
     _validator("record_view.v1").validate(shown)
+
+
+def test_read_json_keeps_one_mib_bound_despite_larger_explicit_byte_reads(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from underwrite.service.records import RECORD_READ_MAX_BYTES, read_record_file
+
+    raw = b'"' + b"x" * RECORD_READ_MAX_BYTES + b'"'
+    args, root = _read_json_args(tmp_path, raw)
+    assert (
+        read_record_file(
+            root,
+            "synthetic.capture-001",
+            args[-1],
+            max_bytes=len(raw),
+        ).data
+        == raw
+    )
+    _error(capsys, args, "INPUT_LIMIT_EXCEEDED")

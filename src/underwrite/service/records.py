@@ -311,6 +311,8 @@ def read_record_file(
     The caller selects root through normal ancestor resolution. Root itself and
     all descendants are opened no-follow and checked for private permissions.
     Unrelated files/links and original sources are not read or verified.
+    The default budget is 1 MiB; explicit budgets may reach the storage-owned
+    MAX_FILE_BYTES ceiling without changing JSON document read limits.
     """
     try:
         checked_id = record_id(identifier)
@@ -320,7 +322,7 @@ def read_record_file(
         checked_name = logical_name(name)
     except FormatError:
         raise RecordError("INVALID_SPEC", "/spec/files") from None
-    if type(max_bytes) is not int or not 0 < max_bytes <= RECORD_READ_MAX_BYTES:
+    if type(max_bytes) is not int or not 0 < max_bytes <= MAX_FILE_BYTES:
         raise RecordError("INVALID_SPEC", "/spec/files")
     with ExitStack() as opened:
         root_fd = opened.enter_context(

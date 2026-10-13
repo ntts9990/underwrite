@@ -17,6 +17,14 @@ Recover `analysis/read.json` or `analysis/error.json` through `records read-json
 The explicit inputs may contain private content; source pointers are not followed,
 so a generated observation is not a backup of the original producer exchange.
 Storage verification is not measurement replay or source authentication.
+When recalculation is requested for a native measurement record, use
+capabilities-listed `records replay-measure --root ROOT --id ID --json`.
+It ignores invocation commands and original paths. A `measurement_replay.v1`
+match/mismatch compares current canonical outcomes, including reproducible
+refusals; it does not approve a change or authenticate historical execution.
+Missing captured inputs are not replayed from remembered errors. Exit 2 uses
+typed stderr (`record_error.v1` or `evidence_error.v1`) and no comparison stdout.
+The record's original reproduction claim is never rewritten.
 
 For a supported completed goppi P7 handoff, prefer the `review-handoff` command's
 explicit `--record-root` and `--record-id` options. It captures the same bytes

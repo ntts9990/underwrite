@@ -1092,6 +1092,117 @@ def _measurement_record_pilot(cli: Path, work: Path) -> None:
     )
 
 
+def _measurement_replay_pilot(cli: Path, work: Path) -> None:
+    store = work / "measurement-records"
+    observation = work / "measurement-input.json"
+    policy = work / "baseline-prepared-policy.json"
+    source_bytes, policy_bytes = observation.read_bytes(), policy.read_bytes()
+    observation.unlink()
+    policy.unlink()
+    replay = _cli_json(
+        cli,
+        ["records", "replay-measure", "--root", str(store), "--id", "measurement-001"],
+        work / "measurement-replay.json",
+        work,
+    )
+    _require(replay.get("schema") == "measurement_replay.v1", "replay schema mismatch")
+    _require(
+        replay["comparison"]
+        == {"state": "match", "scope": "canonical_outcome_kind_and_full_document"},
+        "saved measurement did not recalculate after originals disappeared",
+    )
+    _native_refusal(
+        cli,
+        ["records", "replay-measure", "--root", str(store), "--id", "measurement-diagnostic"],
+        work,
+        "INVALID_INPUT",
+        "INCOMPLETE_MEASUREMENT_RECORD",
+    )
+    policy.write_bytes(policy_bytes)
+    malformed = work / "malformed-measurement.json"
+    diagnostic = _command(
+        [
+            str(cli),
+            "records",
+            "measure",
+            "--observation",
+            str(malformed),
+            "--policy",
+            str(policy),
+            "--root",
+            str(store),
+            "--id",
+            "complete-diagnostic",
+            "--json",
+        ],
+        work,
+    )
+    _require(diagnostic.returncode == EVIDENCE_ERROR_EXIT, "diagnostic was not captured")
+    error_replay = _cli_json(
+        cli,
+        ["records", "replay-measure", "--root", str(store), "--id", "complete-diagnostic"],
+        work / "diagnostic-replay.json",
+        work,
+    )
+    recomputed = cast(dict[str, object], error_replay["recomputed"])
+    outcome = cast(dict[str, object], recomputed["outcome"])
+    _require(
+        error_replay["comparison"] == replay["comparison"] and outcome["state"] == "error",
+        "matching refusal became a successful measurement",
+    )
+    large = work / "large-measurement-input.json"
+    large.write_bytes(source_bytes + b" " * (1024 * 1024))
+    _cli_json(
+        cli,
+        [
+            "records",
+            "measure",
+            "--observation",
+            str(large),
+            "--policy",
+            str(policy),
+            "--root",
+            str(store),
+            "--id",
+            "large-measurement",
+        ],
+        work / "large-measurement-record.json",
+        work,
+    )
+    large.unlink()
+    policy.unlink()
+    large_replay = _cli_json(
+        cli,
+        ["records", "replay-measure", "--root", str(store), "--id", "large-measurement"],
+        work / "large-measurement-replay.json",
+        work,
+    )
+    _require(large_replay["comparison"] == replay["comparison"], "large input replay failed")
+    refused = _command(
+        [
+            str(cli),
+            "records",
+            "read-json",
+            "--root",
+            str(store),
+            "--id",
+            "large-measurement",
+            "--name",
+            "source/observation.bin",
+            "--json",
+        ],
+        work,
+    )
+    failure = json.loads(refused.stderr)
+    _require(
+        refused.returncode == EVIDENCE_ERROR_EXIT
+        and refused.stdout == ""
+        and failure["schema"] == "record_error.v1"
+        and failure["code"] == "INPUT_LIMIT_EXCEEDED",
+        "replay widened the JSON viewer limit",
+    )
+
+
 def _smoke(dist: Path) -> None:
     core_wheel, app_wheel = _wheels(dist)
     fixtures = ROOT / "fixtures/examples"
@@ -1112,6 +1223,7 @@ def _smoke(dist: Path) -> None:
         _native_measurement_pilot(cli, fixtures, work)
         _baseline_event_pilot(cli, fixtures, work)
         _measurement_record_pilot(cli, work)
+        _measurement_replay_pilot(cli, work)
 
         malformed = work / "malformed-bundle.json"
         malformed.write_text(

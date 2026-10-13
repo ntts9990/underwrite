@@ -113,6 +113,12 @@ def configure(parser: argparse.ArgumentParser) -> None:
         "measure", help="Measure and retain native evidence and policy."
     )
     record_measure.configure(measurement)
+    from underwrite.cli import replay_measure
+
+    replay = commands.add_parser(
+        "replay-measure", help="Compare retained measurement with current calculation."
+    )
+    replay_measure.configure(replay)
 
 
 def _input_error(code: str, reason: str, location: str) -> Exception:
@@ -249,6 +255,10 @@ def _emit_error(error: _CliError, *, as_json: bool) -> int:
 
 
 def _capture_command(argv: list[str]) -> int | None:
+    if argv and argv[0] == "replay-measure":
+        from underwrite.cli import replay_measure
+
+        return replay_measure.main(argv[1:])
     if argv and argv[0] == "measure":
         from underwrite.cli import record_measure
 

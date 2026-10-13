@@ -742,6 +742,16 @@ the observation are not followed, so this does not back up a producer exchange.
 See [native measurement capture](STORAGE.md) for byte identities, privacy, limits
 and post-publication failure semantics.
 
+For a saved native measurement, `records replay-measure --root ROOT --id ID --json`
+recalculates from verified retained inputs without reopening original paths.
+`measurement_replay.v1` reports complete canonical outcome `match` (exit 0) or
+`mismatch` (exit 1). A matching error reproduces a refusal, and a matching
+`not_measured` read still withholds inference. Incomplete captures and integrity,
+unsupported-content or configuration failures produce typed stderr with exit 2,
+not a comparison. Invocation metadata is never executed. This is current-code
+agreement, not historical-environment reproduction, provenance or approval;
+the immutable record remains unchanged. See [replay limits and states](STORAGE.md).
+
 For an existing record, use `records show --root ROOT --id ID --json` to select an
 exact logical name, then `records read-json --root ROOT --id ID --name NAME` to
 retrieve its verified JSON without assembling a filesystem path. Inspect `content`
