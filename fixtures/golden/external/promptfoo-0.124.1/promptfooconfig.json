@@ -1,0 +1,110 @@
+{
+  "description": "C35 deterministic local compatibility capture; synthetic costs not money spent",
+  "prompts": [
+    "{{mode}}"
+  ],
+  "providers": [
+    "./provider.cjs"
+  ],
+  "tests": [
+    {
+      "description": "pass",
+      "vars": {
+        "mode": "pass"
+      },
+      "assert": [
+        {
+          "type": "equals",
+          "value": "expected"
+        }
+      ]
+    },
+    {
+      "description": "assertion_fail",
+      "vars": {
+        "mode": "assertion_fail"
+      },
+      "assert": [
+        {
+          "type": "equals",
+          "value": "expected"
+        }
+      ]
+    },
+    {
+      "description": "provider_error",
+      "vars": {
+        "mode": "provider_error"
+      },
+      "assert": [
+        {
+          "type": "equals",
+          "value": "expected"
+        }
+      ]
+    },
+    {
+      "description": "missing_output",
+      "vars": {
+        "mode": "missing_output"
+      },
+      "assert": [
+        {
+          "type": "equals",
+          "value": "expected"
+        }
+      ]
+    },
+    {
+      "description": "cost_high",
+      "vars": {
+        "mode": "cost_high"
+      },
+      "assert": [
+        {
+          "type": "equals",
+          "value": "expected"
+        },
+        {
+          "type": "cost",
+          "metric": "synthetic_cost",
+          "weight": 0
+        }
+      ]
+    },
+    {
+      "description": "missing_cost",
+      "vars": {
+        "mode": "missing_cost"
+      },
+      "assert": [
+        {
+          "type": "equals",
+          "value": "expected"
+        },
+        {
+          "type": "cost",
+          "metric": "synthetic_cost",
+          "weight": 0
+        }
+      ]
+    },
+    {
+      "description": "numeric_score_without_threshold",
+      "vars": {
+        "mode": "pass"
+      },
+      "assert": [
+        {
+          "type": "javascript",
+          "value": "0.3",
+          "metric": "synthetic_numeric"
+        }
+      ]
+    }
+  ],
+  "sharing": false,
+  "evaluateOptions": {
+    "maxConcurrency": 1
+  }
+}

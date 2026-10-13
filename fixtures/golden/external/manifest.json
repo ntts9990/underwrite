@@ -62,6 +62,12 @@
     },
     {
       "format": "promptfoo.eval-output",
+      "path": "fixtures/golden/external/promptfoo-0.124.1/results.json",
+      "raw_sha256": "17348c05994cdef96e90c7bd24b8ab46f0f5cd5629ad27a6f5203c51205152c7",
+      "version": "0.124.1"
+    },
+    {
+      "format": "promptfoo.eval-output",
       "path": "fixtures/golden/external/promptfoo/results.json",
       "raw_sha256": "5ca8a83c6af55b1ee254519e9983c1122cf3356e5b3054522b2cc1c824047ca8",
       "version": "0.123.0"

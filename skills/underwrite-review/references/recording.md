@@ -56,7 +56,11 @@ are not an atomic producer snapshot. Use the manual path for selective omission.
 
 For a supported Promptfoo export, when the caller explicitly selects a private
 store and new ID and capabilities includes the records audit-promptfoo profile,
-use `records audit-promptfoo FILE --root ROOT --id NEW_ID --json`. This stores the
+use `records audit-promptfoo FILE --root ROOT --id NEW_ID --json`. The default
+profile is 0.123.0; select `--version 0.124.1` explicitly for that supported export.
+Both use the v1 record/report family. Saved diagnostics identify the selection in
+record metadata and the new-profile invocation, not in `analysis/error.json`
+alone. Recover those only when storage succeeded. This stores the
 entire captured source, result or diagnostic, and actual in-process invocation
 metadata. A malformed captured source is retained; unreadable input produces a
 diagnostic-only record. Inspect both analysis and storage on exits 0/2/3. A null

@@ -1,0 +1,998 @@
+{
+  "evalId": "eval-Js3-2026-10-13T03:00:21",
+  "results": {
+    "version": 3,
+    "timestamp": "2026-10-13T03:00:21.536Z",
+    "prompts": [
+      {
+        "id": "52d921b010adb48b9b6e77b9c60acdc0fff7a82a37fb7fdebf6590a9cfc7b894",
+        "raw": "{{mode}}",
+        "label": "{{mode}}",
+        "provider": "local-synthetic-c35",
+        "metrics": {
+          "score": 2.3,
+          "testPassCount": 3,
+          "testFailCount": 1,
+          "testErrorCount": 3,
+          "assertPassCount": 4,
+          "assertFailCount": 1,
+          "totalLatencyMs": 3,
+          "tokenUsage": {
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "total": 0,
+            "numRequests": 6,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            },
+            "assertions": {
+              "total": 0,
+              "prompt": 0,
+              "completion": 0,
+              "cached": 0,
+              "numRequests": 0,
+              "completionDetails": {
+                "reasoning": 0,
+                "acceptedPrediction": 0,
+                "rejectedPrediction": 0,
+                "cacheReadInputTokens": 0,
+                "cacheCreationInputTokens": 0
+              }
+            }
+          },
+          "namedScores": {
+            "synthetic_cost": 2.5,
+            "synthetic_numeric": 0.3
+          },
+          "namedScoresCount": {
+            "synthetic_cost": 1,
+            "synthetic_numeric": 1
+          },
+          "namedScoreWeights": {
+            "synthetic_cost": 1,
+            "synthetic_numeric": 1
+          },
+          "cost": 2.5
+        }
+      }
+    ],
+    "results": [
+      {
+        "cost": 0,
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "All assertions passed",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "equals",
+                "value": "expected"
+              }
+            }
+          ]
+        },
+        "id": "e0c2110f-ebab-46f8-b8af-4cb1628d6461",
+        "latencyMs": 1,
+        "namedScores": {},
+        "prompt": {
+          "raw": "pass",
+          "label": "{{mode}}",
+          "config": {}
+        },
+        "promptId": "52d921b010adb48b9b6e77b9c60acdc0fff7a82a37fb7fdebf6590a9cfc7b894",
+        "promptIdx": 0,
+        "provider": {
+          "id": "local-synthetic-c35",
+          "label": ""
+        },
+        "response": {
+          "output": "expected",
+          "cost": 0,
+          "tokenUsage": {
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "total": 0,
+            "numRequests": 1,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            },
+            "assertions": {
+              "total": 0,
+              "prompt": 0,
+              "completion": 0,
+              "cached": 0,
+              "numRequests": 0,
+              "completionDetails": {
+                "reasoning": 0,
+                "acceptedPrediction": 0,
+                "rejectedPrediction": 0,
+                "cacheReadInputTokens": 0,
+                "cacheCreationInputTokens": 0
+              }
+            }
+          }
+        },
+        "score": 1,
+        "success": true,
+        "testCase": {
+          "description": "pass",
+          "vars": {
+            "mode": "pass"
+          },
+          "assert": [
+            {
+              "type": "equals",
+              "value": "expected"
+            }
+          ],
+          "options": {},
+          "metadata": {}
+        },
+        "testIdx": 0,
+        "tokenUsage": {
+          "prompt": 0,
+          "completion": 0,
+          "cached": 0,
+          "total": 0,
+          "numRequests": 1,
+          "completionDetails": {
+            "reasoning": 0,
+            "acceptedPrediction": 0,
+            "rejectedPrediction": 0,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0
+          },
+          "assertions": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            }
+          }
+        },
+        "vars": {
+          "mode": "pass"
+        },
+        "metadata": {
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      },
+      {
+        "cost": 0,
+        "error": "Expected output \"wrong\" to equal \"expected\"",
+        "gradingResult": {
+          "pass": false,
+          "score": 0,
+          "reason": "Expected output \"wrong\" to equal \"expected\"",
+          "namedScores": {},
+          "tokensUsed": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": false,
+              "score": 0,
+              "reason": "Expected output \"wrong\" to equal \"expected\"",
+              "assertion": {
+                "type": "equals",
+                "value": "expected"
+              }
+            }
+          ]
+        },
+        "id": "bf92f323-6fea-4604-809b-4708e5e15306",
+        "latencyMs": 0,
+        "namedScores": {},
+        "prompt": {
+          "raw": "assertion_fail",
+          "label": "{{mode}}",
+          "config": {}
+        },
+        "promptId": "52d921b010adb48b9b6e77b9c60acdc0fff7a82a37fb7fdebf6590a9cfc7b894",
+        "promptIdx": 0,
+        "provider": {
+          "id": "local-synthetic-c35",
+          "label": ""
+        },
+        "response": {
+          "output": "wrong",
+          "cost": 0,
+          "tokenUsage": {
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "total": 0,
+            "numRequests": 1,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            },
+            "assertions": {
+              "total": 0,
+              "prompt": 0,
+              "completion": 0,
+              "cached": 0,
+              "numRequests": 0,
+              "completionDetails": {
+                "reasoning": 0,
+                "acceptedPrediction": 0,
+                "rejectedPrediction": 0,
+                "cacheReadInputTokens": 0,
+                "cacheCreationInputTokens": 0
+              }
+            }
+          }
+        },
+        "score": 0,
+        "success": false,
+        "testCase": {
+          "description": "assertion_fail",
+          "vars": {
+            "mode": "assertion_fail"
+          },
+          "assert": [
+            {
+              "type": "equals",
+              "value": "expected"
+            }
+          ],
+          "options": {},
+          "metadata": {}
+        },
+        "testIdx": 1,
+        "tokenUsage": {
+          "prompt": 0,
+          "completion": 0,
+          "cached": 0,
+          "total": 0,
+          "numRequests": 1,
+          "completionDetails": {
+            "reasoning": 0,
+            "acceptedPrediction": 0,
+            "rejectedPrediction": 0,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0
+          },
+          "assertions": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            }
+          }
+        },
+        "vars": {
+          "mode": "assertion_fail"
+        },
+        "metadata": {
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 1
+      },
+      {
+        "cost": 0,
+        "error": "Synthetic local provider error",
+        "gradingResult": null,
+        "id": "bc15628f-bc76-4a6f-9c2a-cc46ba2e8ad0",
+        "latencyMs": 0,
+        "namedScores": {},
+        "prompt": {
+          "raw": "provider_error",
+          "label": "{{mode}}",
+          "config": {}
+        },
+        "promptId": "52d921b010adb48b9b6e77b9c60acdc0fff7a82a37fb7fdebf6590a9cfc7b894",
+        "promptIdx": 0,
+        "provider": {
+          "id": "local-synthetic-c35",
+          "label": ""
+        },
+        "response": {
+          "error": "Synthetic local provider error"
+        },
+        "score": 0,
+        "success": false,
+        "testCase": {
+          "description": "provider_error",
+          "vars": {
+            "mode": "provider_error"
+          },
+          "assert": [
+            {
+              "type": "equals",
+              "value": "expected"
+            }
+          ],
+          "options": {},
+          "metadata": {}
+        },
+        "testIdx": 2,
+        "tokenUsage": {
+          "prompt": 0,
+          "completion": 0,
+          "cached": 0,
+          "total": 0,
+          "numRequests": 1,
+          "completionDetails": {
+            "reasoning": 0,
+            "acceptedPrediction": 0,
+            "rejectedPrediction": 0,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0
+          },
+          "assertions": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            }
+          }
+        },
+        "vars": {
+          "mode": "provider_error"
+        },
+        "metadata": {
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 2
+      },
+      {
+        "cost": 0,
+        "error": "No output",
+        "gradingResult": null,
+        "id": "e29f1306-b75f-4c2d-a2e3-8980a8d67ba3",
+        "latencyMs": 1,
+        "namedScores": {},
+        "prompt": {
+          "raw": "missing_output",
+          "label": "{{mode}}",
+          "config": {}
+        },
+        "promptId": "52d921b010adb48b9b6e77b9c60acdc0fff7a82a37fb7fdebf6590a9cfc7b894",
+        "promptIdx": 0,
+        "provider": {
+          "id": "local-synthetic-c35",
+          "label": ""
+        },
+        "response": {
+          "cost": 0
+        },
+        "score": 0,
+        "success": false,
+        "testCase": {
+          "description": "missing_output",
+          "vars": {
+            "mode": "missing_output"
+          },
+          "assert": [
+            {
+              "type": "equals",
+              "value": "expected"
+            }
+          ],
+          "options": {},
+          "metadata": {}
+        },
+        "testIdx": 3,
+        "tokenUsage": {
+          "prompt": 0,
+          "completion": 0,
+          "cached": 0,
+          "total": 0,
+          "numRequests": 1,
+          "completionDetails": {
+            "reasoning": 0,
+            "acceptedPrediction": 0,
+            "rejectedPrediction": 0,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0
+          },
+          "assertions": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            }
+          }
+        },
+        "vars": {
+          "mode": "missing_output"
+        },
+        "metadata": {
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 2
+      },
+      {
+        "cost": 2.5,
+        "gradingResult": {
+          "pass": true,
+          "score": 1,
+          "reason": "All assertions passed",
+          "namedScores": {
+            "synthetic_cost": 2.5
+          },
+          "namedScoreWeights": {
+            "synthetic_cost": 1
+          },
+          "tokensUsed": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 1,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "equals",
+                "value": "expected"
+              }
+            },
+            {
+              "pass": true,
+              "score": 2.5,
+              "reason": "Cost: $2.5",
+              "assertion": {
+                "type": "cost",
+                "metric": "synthetic_cost",
+                "weight": 0
+              }
+            }
+          ]
+        },
+        "id": "dec8f783-e35b-498b-a362-660f2ca76e4a",
+        "latencyMs": 0,
+        "namedScores": {
+          "synthetic_cost": 2.5
+        },
+        "prompt": {
+          "raw": "cost_high",
+          "label": "{{mode}}",
+          "config": {}
+        },
+        "promptId": "52d921b010adb48b9b6e77b9c60acdc0fff7a82a37fb7fdebf6590a9cfc7b894",
+        "promptIdx": 0,
+        "provider": {
+          "id": "local-synthetic-c35",
+          "label": ""
+        },
+        "response": {
+          "output": "expected",
+          "cost": 2.5,
+          "tokenUsage": {
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "total": 0,
+            "numRequests": 1,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            },
+            "assertions": {
+              "total": 0,
+              "prompt": 0,
+              "completion": 0,
+              "cached": 0,
+              "numRequests": 0,
+              "completionDetails": {
+                "reasoning": 0,
+                "acceptedPrediction": 0,
+                "rejectedPrediction": 0,
+                "cacheReadInputTokens": 0,
+                "cacheCreationInputTokens": 0
+              }
+            }
+          }
+        },
+        "score": 1,
+        "success": true,
+        "testCase": {
+          "description": "cost_high",
+          "vars": {
+            "mode": "cost_high"
+          },
+          "assert": [
+            {
+              "type": "equals",
+              "value": "expected"
+            },
+            {
+              "type": "cost",
+              "metric": "synthetic_cost",
+              "weight": 0
+            }
+          ],
+          "options": {},
+          "metadata": {}
+        },
+        "testIdx": 4,
+        "tokenUsage": {
+          "prompt": 0,
+          "completion": 0,
+          "cached": 0,
+          "total": 0,
+          "numRequests": 1,
+          "completionDetails": {
+            "reasoning": 0,
+            "acceptedPrediction": 0,
+            "rejectedPrediction": 0,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0
+          },
+          "assertions": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            }
+          }
+        },
+        "vars": {
+          "mode": "cost_high"
+        },
+        "metadata": {
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      },
+      {
+        "cost": 0,
+        "error": "Error: Cost metric requires a finite, non-negative provider cost\n    at handleCost (file:///synthetic/promptfoo-install/node_modules/promptfoo/dist/src/evaluator-Cjf-gFDb.js:2034:69)\n    at runAssertionInternal (file:///synthetic/promptfoo-install/node_modules/promptfoo/dist/src/evaluator-Cjf-gFDb.js:5937:24)\n    at runAssertion (file:///synthetic/promptfoo-install/node_modules/promptfoo/dist/src/evaluator-Cjf-gFDb.js:5951:31)\n    at runAndRecordAssertion (file:///synthetic/promptfoo-install/node_modules/promptfoo/dist/src/evaluator-Cjf-gFDb.js:6052:24)\n    at file:///synthetic/promptfoo-install/node_modules/promptfoo/dist/src/evaluator-Cjf-gFDb.js:6075:20\n    at /synthetic/promptfoo-install/node_modules/async/dist/async.js:151:38\n    at replenish (/synthetic/promptfoo-install/node_modules/async/dist/async.js:447:21)\n    at /synthetic/promptfoo-install/node_modules/async/dist/async.js:452:13\n    at Object.eachOfLimit (/synthetic/promptfoo-install/node_modules/async/dist/async.js:478:36)\n    at /synthetic/promptfoo-install/node_modules/async/dist/async.js:220:25",
+        "gradingResult": null,
+        "id": "f1329d33-b838-4187-9e30-c9e8fca95861",
+        "latencyMs": 1,
+        "namedScores": {},
+        "prompt": {
+          "raw": "missing_cost",
+          "label": "{{mode}}",
+          "config": {}
+        },
+        "promptId": "52d921b010adb48b9b6e77b9c60acdc0fff7a82a37fb7fdebf6590a9cfc7b894",
+        "promptIdx": 0,
+        "provider": {
+          "id": "local-synthetic-c35",
+          "label": ""
+        },
+        "score": 0,
+        "success": false,
+        "testCase": {
+          "description": "missing_cost",
+          "vars": {
+            "mode": "missing_cost"
+          },
+          "assert": [
+            {
+              "type": "equals",
+              "value": "expected"
+            },
+            {
+              "type": "cost",
+              "metric": "synthetic_cost",
+              "weight": 0
+            }
+          ],
+          "options": {},
+          "metadata": {}
+        },
+        "testIdx": 5,
+        "tokenUsage": {
+          "prompt": 0,
+          "completion": 0,
+          "cached": 0,
+          "total": 0,
+          "numRequests": 0,
+          "completionDetails": {
+            "reasoning": 0,
+            "acceptedPrediction": 0,
+            "rejectedPrediction": 0,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0
+          },
+          "assertions": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            }
+          }
+        },
+        "vars": {
+          "mode": "missing_cost"
+        },
+        "metadata": {
+          "errorContext": {
+            "providerId": "local-synthetic-c35",
+            "providerLabel": ""
+          }
+        },
+        "failureReason": 2
+      },
+      {
+        "cost": 0,
+        "gradingResult": {
+          "pass": true,
+          "score": 0.3,
+          "reason": "All assertions passed",
+          "namedScores": {
+            "synthetic_numeric": 0.3
+          },
+          "namedScoreWeights": {
+            "synthetic_numeric": 1
+          },
+          "tokensUsed": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0
+          },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 0.3,
+              "reason": "Assertion passed",
+              "assertion": {
+                "type": "javascript",
+                "value": "0.3",
+                "metric": "synthetic_numeric"
+              }
+            }
+          ]
+        },
+        "id": "7a19a473-8236-4fea-b97a-31f2cb126ea7",
+        "latencyMs": 0,
+        "namedScores": {
+          "synthetic_numeric": 0.3
+        },
+        "prompt": {
+          "raw": "pass",
+          "label": "{{mode}}",
+          "config": {}
+        },
+        "promptId": "52d921b010adb48b9b6e77b9c60acdc0fff7a82a37fb7fdebf6590a9cfc7b894",
+        "promptIdx": 0,
+        "provider": {
+          "id": "local-synthetic-c35",
+          "label": ""
+        },
+        "response": {
+          "output": "expected",
+          "cost": 0,
+          "tokenUsage": {
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "total": 0,
+            "numRequests": 1,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            },
+            "assertions": {
+              "total": 0,
+              "prompt": 0,
+              "completion": 0,
+              "cached": 0,
+              "numRequests": 0,
+              "completionDetails": {
+                "reasoning": 0,
+                "acceptedPrediction": 0,
+                "rejectedPrediction": 0,
+                "cacheReadInputTokens": 0,
+                "cacheCreationInputTokens": 0
+              }
+            }
+          }
+        },
+        "score": 0.3,
+        "success": true,
+        "testCase": {
+          "description": "numeric_score_without_threshold",
+          "vars": {
+            "mode": "pass"
+          },
+          "assert": [
+            {
+              "type": "javascript",
+              "value": "0.3",
+              "metric": "synthetic_numeric"
+            }
+          ],
+          "options": {},
+          "metadata": {}
+        },
+        "testIdx": 6,
+        "tokenUsage": {
+          "prompt": 0,
+          "completion": 0,
+          "cached": 0,
+          "total": 0,
+          "numRequests": 1,
+          "completionDetails": {
+            "reasoning": 0,
+            "acceptedPrediction": 0,
+            "rejectedPrediction": 0,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0
+          },
+          "assertions": {
+            "total": 0,
+            "prompt": 0,
+            "completion": 0,
+            "cached": 0,
+            "numRequests": 0,
+            "completionDetails": {
+              "reasoning": 0,
+              "acceptedPrediction": 0,
+              "rejectedPrediction": 0,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0
+            }
+          }
+        },
+        "vars": {
+          "mode": "pass"
+        },
+        "metadata": {
+          "_promptfooFileMetadata": {}
+        },
+        "failureReason": 0
+      }
+    ],
+    "stats": {
+      "successes": 3,
+      "failures": 1,
+      "errors": 3,
+      "tokenUsage": {
+        "prompt": 0,
+        "completion": 0,
+        "cached": 0,
+        "total": 0,
+        "numRequests": 6,
+        "completionDetails": {
+          "reasoning": 0,
+          "acceptedPrediction": 0,
+          "rejectedPrediction": 0,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0
+        },
+        "assertions": {
+          "total": 0,
+          "prompt": 0,
+          "completion": 0,
+          "cached": 0,
+          "numRequests": 0,
+          "completionDetails": {
+            "reasoning": 0,
+            "acceptedPrediction": 0,
+            "rejectedPrediction": 0,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0
+          }
+        }
+      },
+      "durationMs": 19,
+      "evaluationDurationMs": 19
+    }
+  },
+  "config": {
+    "tags": {},
+    "description": "C35 deterministic local compatibility capture; synthetic costs not money spent",
+    "prompts": [
+      "{{mode}}"
+    ],
+    "providers": [
+      "./provider.cjs"
+    ],
+    "tests": [
+      {
+        "description": "pass",
+        "vars": {
+          "mode": "pass"
+        },
+        "assert": [
+          {
+            "type": "equals",
+            "value": "expected"
+          }
+        ]
+      },
+      {
+        "description": "assertion_fail",
+        "vars": {
+          "mode": "assertion_fail"
+        },
+        "assert": [
+          {
+            "type": "equals",
+            "value": "expected"
+          }
+        ]
+      },
+      {
+        "description": "provider_error",
+        "vars": {
+          "mode": "provider_error"
+        },
+        "assert": [
+          {
+            "type": "equals",
+            "value": "expected"
+          }
+        ]
+      },
+      {
+        "description": "missing_output",
+        "vars": {
+          "mode": "missing_output"
+        },
+        "assert": [
+          {
+            "type": "equals",
+            "value": "expected"
+          }
+        ]
+      },
+      {
+        "description": "cost_high",
+        "vars": {
+          "mode": "cost_high"
+        },
+        "assert": [
+          {
+            "type": "equals",
+            "value": "expected"
+          },
+          {
+            "type": "cost",
+            "metric": "synthetic_cost",
+            "weight": 0
+          }
+        ]
+      },
+      {
+        "description": "missing_cost",
+        "vars": {
+          "mode": "missing_cost"
+        },
+        "assert": [
+          {
+            "type": "equals",
+            "value": "expected"
+          },
+          {
+            "type": "cost",
+            "metric": "synthetic_cost",
+            "weight": 0
+          }
+        ]
+      },
+      {
+        "description": "numeric_score_without_threshold",
+        "vars": {
+          "mode": "pass"
+        },
+        "assert": [
+          {
+            "type": "javascript",
+            "value": "0.3",
+            "metric": "synthetic_numeric"
+          }
+        ]
+      }
+    ],
+    "env": {},
+    "sharing": false,
+    "outputPath": [
+      "./synthetic-results.json"
+    ],
+    "extensions": [],
+    "metadata": {},
+    "evaluateOptions": {
+      "maxConcurrency": 1
+    },
+    "basePath": "."
+  },
+  "shareableUrl": null,
+  "metadata": {
+    "promptfooVersion": "0.124.1",
+    "nodeVersion": "v26.7.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "exportedAt": "2026-10-13T03:00:21.582Z",
+    "evaluationCreatedAt": "2026-10-13T03:00:21.536Z"
+  },
+  "vars": [
+    "mode"
+  ],
+  "runtimeOptions": {
+    "eventSource": "cli",
+    "maxConcurrency": 1,
+    "showProgressBar": false,
+    "repeat": 1,
+    "cache": false
+  }
+}

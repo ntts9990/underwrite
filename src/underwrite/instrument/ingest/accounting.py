@@ -15,6 +15,7 @@ from underwrite.instrument.ingest.application import (
     instrument_diagnostic,
     packaged_ingestor,
 )
+from underwrite.instrument.ingest.codecs.promptfoo import SUPPORTED_VERSIONS
 from underwrite.instrument.ingest.inspection import (
     InspectionError,
     inspect_artifact_with_projection,
@@ -125,7 +126,12 @@ def audit_case(path: Path) -> dict[str, object]:
 
 
 def _account_projection(
-    projection: Projection, raw_hash: object, observation_digest: object, location: str
+    projection: Projection,
+    raw_hash: object,
+    observation_digest: object,
+    location: str,
+    *,
+    version: str = SOURCE[1],
 ) -> dict[str, object]:
     summary = projection.payload.get("results")
     if not isinstance(summary, dict):
@@ -143,7 +149,7 @@ def _account_projection(
         raise AccountingCaseError("INTERNAL_ERROR", "INTERNAL_ERROR")
     return {
         "schema": "promptfoo_accounting.v1",
-        "source": {"format": SOURCE[0], "format_version": SOURCE[1]},
+        "source": {"format": SOURCE[0], "format_version": version},
         "raw_hash": raw_hash,
         "observation_digest": observation_digest,
         **counted,
@@ -169,12 +175,19 @@ def read_promptfoo_file(path: Path) -> bytes:
     return raw
 
 
-def audit_promptfoo_bytes(raw: bytes) -> dict[str, object]:
+def validate_version(version: str) -> None:
+    """Reject unregistered producer selection before acquisition or storage."""
+    if type(version) is not str or version not in SUPPORTED_VERSIONS:
+        raise AccountingCaseError("UNSUPPORTED_FORMAT", "UNSUPPORTED_PROMPTFOO_VERSION")
+
+
+def audit_promptfoo_bytes(raw: bytes, *, version: str = SOURCE[1]) -> dict[str, object]:
     """Audit the supplied buffer, retaining the original projection and byte bounds."""
+    validate_version(version)
     try:
         observed, projection = packaged_ingestor(
             max_bytes=DEFAULT_MAX_BYTES, max_depth=DEFAULT_MAX_DEPTH
-        ).buffered_projection(raw, "promptfoo-file", Source(*SOURCE, None))
+        ).buffered_projection(raw, "promptfoo-file", Source(SOURCE[0], version, None))
     except tuple(DIAGNOSTICS) as exc:
         diagnostic = instrument_diagnostic(exc, "ingest")
         code = cast(str, diagnostic["code"])
@@ -193,9 +206,11 @@ def audit_promptfoo_bytes(raw: bytes) -> dict[str, object]:
         cast(dict[str, object], observation["raw"])["hash"],
         content_digest(observation),
         "/file",
+        version=version,
     )
 
 
-def audit_promptfoo_file(path: Path) -> dict[str, object]:
+def audit_promptfoo_file(path: Path, *, version: str = SOURCE[1]) -> dict[str, object]:
     """Audit a pinned raw export once; expected-hash checks remain in audit_case."""
-    return audit_promptfoo_bytes(read_promptfoo_file(path))
+    validate_version(version)
+    return audit_promptfoo_bytes(read_promptfoo_file(path), version=version)

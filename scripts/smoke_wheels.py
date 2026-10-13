@@ -195,13 +195,25 @@ def _promptfoo_numeric_pilot(
 
 
 def _promptfoo_record_pilot(
-    cli: Path, evidence: Path, work: Path, expected: dict[str, object]
+    cli: Path, original: Path, work: Path, expected: dict[str, object], *, version: str = "0.123.0"
 ) -> None:
-    source = evidence / "synthetic-promptfoo-category-mismatch.json"
+    raw = original.read_bytes()
+    source = work / "selected-promptfoo.json"
+    source.write_bytes(raw)
+    selection = [] if version == "0.123.0" else ["--version", version]
     store = work / "promptfoo-records"
     report = _cli_json(
         cli,
-        ["records", "audit-promptfoo", str(source), "--root", str(store), "--id", "captured"],
+        [
+            "records",
+            "audit-promptfoo",
+            str(source),
+            "--root",
+            str(store),
+            "--id",
+            "captured",
+            *selection,
+        ],
         work / "promptfoo-record.json",
         work,
     )
@@ -214,9 +226,10 @@ def _promptfoo_record_pilot(
         "record capture did not verify",
     )
     _require(
-        (store / "records/captured/files/source/promptfoo.bin").read_bytes() == source.read_bytes(),
+        (store / "records/captured/files/source/promptfoo.bin").read_bytes() == raw,
         "captured source differs from the selected bytes",
     )
+    source.unlink()
     recovered = _cli_json(
         cli,
         [
@@ -250,6 +263,7 @@ def _promptfoo_record_pilot(
             str(store),
             "--id",
             "diagnostic",
+            *selection,
             "--json",
         ],
         work,
@@ -286,6 +300,80 @@ def _promptfoo_record_pilot(
         recovered_error["content"] == diagnostic["analysis"]["error"],
         "selected read replaced the saved diagnostic",
     )
+    if selection:
+        invocation = _cli_json(
+            cli,
+            [
+                "records",
+                "read-json",
+                "--root",
+                str(store),
+                "--id",
+                "diagnostic",
+                "--name",
+                "invocation.json",
+            ],
+            work / "recovered-invocation.json",
+            work,
+        )
+        content = cast(dict[str, object], invocation["content"])
+        _require(
+            cast(dict[str, object], content["arguments"])["format_version"] == version,
+            "saved Promptfoo diagnostic lost its selected version",
+        )
+
+
+def _promptfoo_current_pilot(cli: Path, work: Path) -> None:
+    directory = work / "promptfoo-current"
+    directory.mkdir()
+    source = ROOT / "fixtures/golden/external/promptfoo-0.124.1/results.json"
+    observation = directory / "observation.json"
+    projected = _cli_json(
+        cli,
+        [
+            "ingest",
+            "--format",
+            "promptfoo.eval-output",
+            "--version",
+            "0.124.1",
+            "--file",
+            str(source),
+        ],
+        observation,
+        directory,
+    )
+    _require(projected["payload"] == json.loads(source.read_bytes()), "new profile changed source")
+    report = _cli_json(
+        cli,
+        ["audit-promptfoo", str(source), "--version", "0.124.1"],
+        directory / "accounting.json",
+        directory,
+    )
+    expected = {"successes": 3, "failures": 1, "errors": 3, "total": 7}
+    _require(
+        report["row_tallies"] == report["producer_stats"] == expected
+        and report["declared_relation"] == "consistent",
+        "current Promptfoo capture changed declared category meaning",
+    )
+    _promptfoo_record_pilot(cli, source, directory, report, version="0.124.1")
+    refused = _command(
+        [
+            str(cli),
+            "measure",
+            "--observation",
+            str(observation),
+            "--policy",
+            str(ROOT / "fixtures/examples/event-acceptance/policy.json"),
+            "--json",
+        ],
+        directory,
+    )
+    _require(
+        refused.returncode == EVIDENCE_ERROR_EXIT
+        and refused.stdout == ""
+        and json.loads(refused.stderr)["code"] == "UNSUPPORTED_PROFILE",
+        "Promptfoo version admission bypassed native measurement boundary",
+    )
 
 
 def _evidence_pilots(cli: Path, fixtures: Path, work: Path) -> None:
@@ -298,7 +386,10 @@ def _evidence_pilots(cli: Path, fixtures: Path, work: Path) -> None:
     )
     _require(audit.get("declared_relation") == "inconsistent", "count mismatch was hidden")
     _promptfoo_numeric_pilot(cli, evidence, work, audit)
-    _promptfoo_record_pilot(cli, evidence, work, audit)
+    _promptfoo_record_pilot(
+        cli, evidence / "synthetic-promptfoo-category-mismatch.json", work, audit
+    )
+    _promptfoo_current_pilot(cli, work)
     comparison = _cli_json(
         cli,
         [

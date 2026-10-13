@@ -71,7 +71,10 @@
               "const": "promptfoo.eval-output"
             },
             "format_version": {
-              "const": "0.123.0"
+              "enum": [
+                "0.123.0",
+                "0.124.1"
+              ]
             }
           }
         },

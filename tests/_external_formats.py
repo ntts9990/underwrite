@@ -24,6 +24,7 @@ EXTERNAL_CAPTURES = {
     "deepeval-4.2.8": ("deepeval", "deepeval", "unchanged_synthetic_tool_export"),
     "inspect": ("inspect_ai", "inspect", "sanitized_tool_payload_example"),
     "promptfoo": ("promptfoo", "promptfoo", "sanitized_tool_payload_example"),
+    "promptfoo-0.124.1": ("promptfoo", "promptfoo", "sanitized_tool_payload_example"),
 }
 EXTERNAL_DIRECTORIES = frozenset(EXTERNAL_CAPTURES)
 OBSERVATION_SCHEMA = repo_root(Path(__file__)) / "contracts/observation.v1.schema.json"

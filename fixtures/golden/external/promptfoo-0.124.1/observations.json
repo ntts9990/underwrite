@@ -1,0 +1,33 @@
+{
+  "source_record": "SOURCE.md",
+  "capture_kind": "sanitized_tool_payload_example",
+  "tool": {
+    "name": "promptfoo",
+    "version": "0.124.1",
+    "license": "MIT",
+    "provider": "local-synthetic-c35",
+    "tarball_integrity": "sha512-Y6fq/WGTL7lPvDsirNSmmmcPLhURwRao03iv8fCoLbFq6H1eqg5VVTmXiap5Jl+fiRaQQZXYMHb2N1gQm1tGyQ=="
+  },
+  "files": {
+    "results.json": {
+      "source": {
+        "format": "promptfoo.eval-output",
+        "format_version": "0.124.1"
+      },
+      "ref": "sha256:17348c05994cdef96e90c7bd24b8ab46f0f5cd5629ad27a6f5203c51205152c7",
+      "raw_hash": "sha256:17348c05994cdef96e90c7bd24b8ab46f0f5cd5629ad27a6f5203c51205152c7",
+      "observation_digest": "sha256:470b0ddab06d8c1f82ce7668174f850684e274a47d6579bd8493cb1ae949efa6"
+    }
+  },
+  "recipe": {
+    "provider.cjs": {
+      "sha256": "9fafb8ed3fc0a000642ecc0a41fe0f333e7f0682e84461aebf7dbf9ad39f81e3"
+    },
+    "promptfooconfig.json": {
+      "sha256": "8ebe430df1eca7c5a37ad067ab4da373f6c38a44fba913a7a532d0dfb54ed5f0"
+    },
+    "no-network.cjs": {
+      "sha256": "6006617fab837e241e21503a44ac638235847d77b92f86509d637a4ea97eb2b3"
+    }
+  }
+}

@@ -126,12 +126,21 @@ A larger supported handoff may be analyzed without fitting a single record; in
 that case requested storage fails before serialization or store mutation, while
 the CLI retains the complete analysis. Sources are never silently omitted.
 
-For a selected Promptfoo 0.123.0 export, account and retain it without a handwritten
+For a selected Promptfoo export, account and retain it without a handwritten
 record specification:
 
 ```sh
 underwrite records audit-promptfoo FILE --root PRIVATE_STORE --id NEW_ID --json
 ```
+
+The default is 0.123.0; select `--version 0.124.1` explicitly for that profile.
+Both emit `promptfoo_record.v1`. Updated packaged schemas admit both source
+versions; older schemas pinned to 0.123.0 reject new-profile reports.
+For a saved diagnostic, recover the selected version from record metadata using
+`records show` or from `arguments.format_version` in the new-profile invocation
+using `records read-json --name invocation.json`. The saved error alone does not
+identify that selection. If storage fails, such recovery is not promised; retain
+the explicit invocation and returned analysis/storage outcomes.
 
 This explicitly stores the **entire selected file**, the accounting result or
 diagnostic, and structured invocation metadata. It analyzes and saves the same
