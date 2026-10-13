@@ -37,8 +37,22 @@ The runner stops on failure and writes local diagnostics to the ignored
 submit it as proof that CI can be skipped. Correct failures before pushing; an
 unchanged, verified tree does not need another run merely to create its commit.
 
-GitHub runs the same checks in the stable `checks` job. PRs use automatic selection;
-pushes to `main`, manual CI runs, and release preparation use the full lane.
+GitHub runs full preflight in the stable `checks` job for every PR and manual CI
+run; release preparation also uses the full lane. Local preflight retains its
+automatic selection. The upstream repository protects `main` with a PR rule,
+zero required human approvals, and strict required checks from the GitHub Actions
+and GitGuardian apps. Keep branches current with `main`; normal merges require
+both `checks` and `GitGuardian Security Checks` to succeed. There are no routine
+bypasses, direct pushes, force pushes or deletions of `main`.
+
+Automatic CI runs on PRs, without a duplicate full run after merge. A documentation
+PR also receives full remote validation; abandoned PRs and stale-branch refreshes
+can therefore use more checks than the former selected PR lane. Fork maintainers
+must configure their own protection. If removing protection, first restore the
+`push` trigger for `main` through a checked PR and verify the restored main check.
+Never remove protection first to work around an unavailable required check.
+Manual runs remain diagnostic coverage, not a substitute for a successful PR run.
+
 Superseded PR runs are cancelled. There are no scheduled workflows, additional
 runner matrices, or routine artifact uploads. The existing uv download cache is
 reused. Standard GitHub-hosted runner compute for public repositories is currently
