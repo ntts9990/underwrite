@@ -28,9 +28,12 @@ from underwrite.cli.record_capture import (
 )
 from underwrite.cli.records import OUTPUT_MAX_BYTES, record_error_payload
 from underwrite.instrument.ingest.deepeval_accounting import (
+    PROFILES,
     SOURCE,
     DeepevalFileError,
+    DeepevalProfile,
     audit_deepeval_bytes,
+    profile_for,
     read_deepeval_file,
 )
 from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
@@ -48,6 +51,7 @@ COMMAND = "records audit-deepeval"
 
 @dataclass(frozen=True)
 class _Contracts:
+    profile: DeepevalProfile
     aggregate: Validator
     storage: Validator
     accounting: Validator
@@ -56,15 +60,16 @@ class _Contracts:
     verification: Validator
 
 
-def _contracts() -> _Contracts:
-    aggregate = packaged_validator("deepeval_record.v1")
+def _contracts(profile: DeepevalProfile) -> _Contracts:
+    aggregate = packaged_validator(profile.record_schema)
     schema = cast(dict[str, Any], aggregate.schema)
     storage = Draft202012Validator({"$defs": schema["$defs"], "$ref": "#/$defs/storage"})
     packaged_validator("observation.v1")
     return _Contracts(
+        profile,
         cast(Validator, aggregate),
         cast(Validator, storage),
-        cast(Validator, packaged_validator("deepeval_accounting.v1")),
+        cast(Validator, packaged_validator(profile.accounting_schema)),
         cast(Validator, packaged_validator("evidence_error.v1")),
         cast(Validator, packaged_validator("record_error.v1")),
         cast(Validator, packaged_validator("record_verification.v1")),
@@ -84,11 +89,22 @@ def _identifier(value: str) -> str:
 
 def configure(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
-        "file", type=Path, metavar="FILE", help="Entire DeepEval 4.1.1 export to retain."
+        "file",
+        type=Path,
+        metavar="FILE",
+        help="Entire DeepEval export for the selected version to retain.",
+    )
+    parser.add_argument(
+        "--version",
+        choices=tuple(PROFILES),
+        default=SOURCE[1],
+        help="Explicit source version; no detection or fallback.",
     )
     parser.add_argument("--root", type=Path, required=True, help="Explicit private record root.")
     parser.add_argument("--id", type=_identifier, required=True, help="New immutable record ID.")
-    parser.add_argument("--json", action="store_true", help="Emit deepeval_record.v1 JSON.")
+    parser.add_argument(
+        "--json", action="store_true", help="Emit the selected deepeval_record JSON contract."
+    )
     parser.description = (
         "Audit one local DeepEval export in process and retain the exact complete input, "
         "result or diagnostic, and effective invocation. Malformed complete input is retained "
@@ -97,13 +113,15 @@ def configure(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _analyze(path: Path) -> tuple[bytes | None, dict[str, object], dict[str, Any]]:
+def _analyze(
+    path: Path, profile: DeepevalProfile
+) -> tuple[bytes | None, dict[str, object], dict[str, Any]]:
     raw: bytes | None = None
     source: dict[str, object] = {"state": "unavailable"}
     try:
         raw = read_deepeval_file(path)
         source = {"state": "captured", "raw_hash": digest_bytes(raw), "bytes": len(raw)}
-        report = audit_deepeval_bytes(raw)
+        report = audit_deepeval_bytes(raw, version=profile.format_version)
         if report["raw_hash"] != source["raw_hash"]:
             raise EvidenceError("INTERNAL_ERROR", "RAW_IDENTITY_MISMATCH")
         analysis: dict[str, Any] = {"state": "result", "report": report}
@@ -140,14 +158,17 @@ def _files(
     encoded = canonical_bytes(document) + b"\n"
     if len(encoded) > RECORD_READ_MAX_BYTES:
         raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
+    arguments = {
+        "source_path_display": unicodedata.normalize("NFC", str(path)),
+        "root_display": unicodedata.normalize("NFC", str(root)),
+        "record_id": identifier,
+    }
+    if contracts.profile.format_version != SOURCE[1]:
+        arguments["format_version"] = contracts.profile.format_version
     invocation = {
         "command": COMMAND,
         "execution_mode": "in_process",
-        "arguments": {
-            "source_path_display": unicodedata.normalize("NFC", str(path)),
-            "root_display": unicodedata.normalize("NFC", str(root)),
-            "record_id": identifier,
-        },
+        "arguments": arguments,
         "analysis_state": analysis["state"],
         "analysis_exit_code": 0 if result else 2,
         "analysis_exit_code_scope": "component_contract_not_os_process",
@@ -190,21 +211,27 @@ def render_human(report: dict[str, object]) -> str:
 
 
 def run_record_deepeval(
-    path: Path, root: Path, identifier: str, *, as_json: bool = True
+    path: Path, root: Path, identifier: str, *, as_json: bool = True, version: str = SOURCE[1]
 ) -> dict[str, object]:
     try:
         record_id(identifier)
     except FormatError:
         raise EvidenceError("USAGE_ERROR", "INVALID_ARGUMENTS_SEE_HELP") from None
-    contracts = _contracts()
-    raw, source, analysis = _analyze(path)
+    try:
+        profile = profile_for(version)
+    except DeepevalFileError as exc:
+        raise EvidenceError(exc.code, exc.reason, exc.location) from None
+    contracts = _contracts(profile)
+    raw, source, analysis = _analyze(path, profile)
     envelope: dict[str, Any] = {
-        "schema": SCHEMA,
+        "schema": profile.record_schema,
         "command": COMMAND,
         "source": source,
         "analysis": analysis,
         "exit_code": 0 if analysis["state"] == "result" else 2,
     }
+    if profile.format_version != SOURCE[1]:
+        envelope["source_format_version"] = profile.format_version
     try:
         files = _files(path, root, identifier, raw, analysis, contracts)
     except CanonicalizationError:
@@ -241,7 +268,7 @@ def run_record_deepeval(
         label="DeepEval accounting capture",
         metadata={
             "format": SOURCE[0],
-            "format_version": SOURCE[1],
+            "format_version": profile.format_version,
             "analysis_state": analysis["state"],
         },
         links=(),
@@ -264,6 +291,7 @@ def produce(args: argparse.Namespace) -> dict[str, object]:
         cast(Path, args.root),
         cast(str, args.id),
         as_json=cast(bool, args.json),
+        version=cast(str, args.version),
     )
 
 
@@ -274,7 +302,7 @@ def main(argv: list[str]) -> int:
         configure,
         produce,
         ReportOutput(
-            SCHEMA,
+            lambda args: profile_for(cast(str, args.version)).record_schema,
             max_bytes=OUTPUT_MAX_BYTES,
             human=render_human,
             exit_status=lambda report: cast(int, report["exit_code"]),

@@ -26,9 +26,10 @@ def build_record_schema(
     schema_name: str,
     command: str,
     description: str,
+    accounting_version: str = "v1",
 ) -> dict[str, Any]:
     owners = (accounting_owner, "evidence_error", "record_error", "record_verification")
-    definitions, _ = embed_contracts(root, owners)
+    definitions, _ = embed_contracts(root, owners, versions={accounting_owner: accounting_version})
     identity = object_schema(
         {
             "record_id": reference("record_verification__record_id"),

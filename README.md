@@ -112,7 +112,7 @@ Choose the format and exact supported version explicitly.
 
 | Producer | `--format` | `--version` |
 | --- | --- | --- |
-| DeepEval | `deepeval.test-run` | `4.1.1` |
+| DeepEval | `deepeval.test-run` | `4.1.1`, `4.2.8` (bounded ordinary TestRun profiles) |
 | Inspect AI | `inspect.eval-log` | `0.3.263` |
 | Langfuse | `langfuse.observations-v2` or `langfuse.scores` | `4.35.0` |
 | OpenInference | `openinference.traces` | `0.1.38` |

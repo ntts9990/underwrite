@@ -9,10 +9,14 @@ import pytest
 from underwrite_core.canonical import SAFE_INT_MAX
 
 from underwrite.instrument.evidence.deepeval_accounting import (
+    LIMITATIONS,
+    LIMITATIONS_V2,
     MAX_CASES,
     MAX_ERROR_LENGTH,
     MAX_METRICS,
     MAX_NAME_LENGTH,
+    RULE_PROFILE,
+    RULE_PROFILE_V2,
     RULES,
     DeepevalAccountingError,
     account_deepeval,
@@ -314,3 +318,191 @@ def test_each_known_trace_group_only_admits_an_empty_mapping(group: str) -> None
     assert caught.value.code == "UNSUPPORTED_PROFILE"
     assert caught.value.reason == "DEEPEVAL_SCOPE_UNSUPPORTED"
     assert caught.value.location == "/traceMetricsScores/" + group
+
+
+def test_default_v1_canonical_output_is_unchanged() -> None:
+    from underwrite_core.canonical import content_digest
+
+    payload = {
+        "testCases": [
+            {
+                "name": "case",
+                "success": False,
+                "metricsData": [
+                    {"name": "zero", "threshold": 0.5, "success": False, "score": 0},
+                    {
+                        "name": "error",
+                        "threshold": 0.5,
+                        "success": False,
+                        "error": "evaluation failed",
+                    },
+                    {"name": "pending", "threshold": 0.5, "success": True},
+                ],
+            }
+        ],
+        "testPassed": 0,
+        "testFailed": 1,
+    }
+    assert content_digest(account_deepeval(payload)) == (
+        "sha256:e162c3defd6d05bff7815b23fc5616596cf23c56e8773e608101599c5a2bf5b7"
+    )
+
+
+def v2_source(metrics: list[Any] | None = None) -> dict[str, Any]:
+    payload = source([metric(flaky=False)] if metrics is None else metrics)
+    payload["testCases"][0]["flaky"] = False
+    return payload
+
+
+def v2_run(payload: object) -> dict[str, Any]:
+    return account_deepeval(payload, rule_profile=RULE_PROFILE_V2)
+
+
+@pytest.mark.parametrize("omit_success", [False, True])
+@pytest.mark.parametrize("omit_threshold", [False, True])
+@pytest.mark.parametrize("state", ["scored", "error", "unscored"])
+def test_v2_absent_verdict_threshold_and_metric_state_are_independent(
+    omit_success: bool,
+    omit_threshold: bool,
+    state: str,
+) -> None:
+    row = metric(flaky=True, score=0, success=False)
+    if state != "scored":
+        del row["score"]
+    if state == "error":
+        row["error"] = "evaluation failed"
+    if omit_success:
+        del row["success"]
+    if omit_threshold:
+        del row["threshold"]
+    result = v2_run(v2_source([row]))
+    observed = result["cases"][0]["metrics"][0]
+    assert observed["state"] == state
+    assert observed["source_success"] is (None if omit_success else False)
+    assert observed["threshold"] == (None if omit_threshold else 0.5)
+    assert observed["source_flaky"] is True
+    counts = result["counts"]["metrics"]
+    assert counts["scored_source_success_absent"] == int(state == "scored" and omit_success)
+    assert counts["scored_source_false"] == int(state == "scored" and not omit_success)
+    assert counts["observed_zero"] == int(state == "scored")
+    assert counts["source_flaky_true"] == 1
+
+
+@pytest.mark.parametrize("level", ["case", "metric"])
+@pytest.mark.parametrize("value", ["missing", None, 0, 1, "false"])
+def test_v2_flaky_is_required_exact_boolean(level: str, value: object) -> None:
+    payload = v2_source()
+    case = payload["testCases"][0]
+    row = case if level == "case" else case["metricsData"][0]
+    if value == "missing":
+        del row["flaky"]
+    else:
+        row["flaky"] = value
+    with pytest.raises(DeepevalAccountingError, match="DEEPEVAL_BOOLEAN_REQUIRED"):
+        v2_run(payload)
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("success", None),
+        ("success", 0),
+        ("threshold", None),
+        ("threshold", True),
+        ("threshold", float("nan")),
+        ("threshold", SAFE_INT_MAX + 1),
+    ],
+)
+def test_v2_present_optional_fields_are_not_absence(key: str, value: object) -> None:
+    with pytest.raises(DeepevalAccountingError):
+        v2_run(v2_source([metric(flaky=False, **{key: value})]))
+
+
+def test_v2_flaky_and_missing_verdict_counts_preserve_partitions_and_source_case_flags() -> None:
+    payload = v2_source(
+        [
+            metric(flaky=True, score=0, success=False),
+            metric(flaky=False),
+            {"name": "same", "score": 0.3, "flaky": False},
+            {"name": "same", "error": "failure", "flaky": False},
+            {"name": "same", "flaky": True},
+        ]
+    )
+    payload["testCases"].append({"name": "case", "success": False, "flaky": True})
+    payload.update(testPassed=1, testFailed=1, metricsScores=[{"errors": 999}])
+    result = v2_run(payload)
+    assert result["counts"] == {
+        "cases": {
+            "total": 2,
+            "source_true": 1,
+            "source_false": 1,
+            "source_success_absent": 0,
+            "source_flaky_true": 1,
+        },
+        "metrics": {
+            "total": 5,
+            "scored": 3,
+            "error": 1,
+            "unscored": 1,
+            "observed_zero": 1,
+            "scored_source_true": 1,
+            "scored_source_false": 1,
+            "scored_source_success_absent": 1,
+            "source_flaky_true": 2,
+        },
+    }
+    assert result["declared_case_counts"]["comparison"] == {
+        "passed": "matches",
+        "failed": "matches",
+    }
+    assert result["cases"][0]["source_success"] is True
+    assert result["cases"][1]["source_success"] is False
+    assert [row["metric_index"] for row in result["cases"][0]["metrics"]] == list(range(5))
+    assert result["limitations"] == list(LIMITATIONS_V2)
+    assert LIMITATIONS_V2 == (*LIMITATIONS, "FLAKY_DECLARATIONS_NOT_CI_OUTCOMES")
+    assert result["scope"]["metric_aggregates"] == "not_checked"
+
+
+def test_v2_empty_population_and_absent_case_flag_remain_unknown() -> None:
+    assert v2_run({"testCases": []})["counts"]["metrics"]["total"] == 0
+    result = v2_run({"testCases": [{"name": "case", "flaky": False}], "testPassed": 0})
+    assert result["counts"]["cases"]["source_success_absent"] == 1
+    assert result["declared_case_counts"]["comparison"]["passed"] == "not_comparable"
+
+
+def test_pure_rule_profile_selection_is_explicit_and_unknown_is_sanitized() -> None:
+    payload = source()
+    assert account_deepeval(payload) == account_deepeval(payload, rule_profile=RULE_PROFILE)
+    with pytest.raises(DeepevalAccountingError) as caught:
+        account_deepeval(None, rule_profile="secret")
+    assert (caught.value.code, caught.value.reason, caught.value.location) == (
+        "INVALID_INPUT",
+        "DEEPEVAL_RULE_PROFILE_UNSUPPORTED",
+        "/rule_profile",
+    )
+    assert "secret" not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "fault", ["score_error", "case_null", "trace", "conversation", "population"]
+)
+def test_v2_retains_shared_refusals(fault: str) -> None:
+    payload = v2_source()
+    expected = "INVALID_INPUT"
+    if fault == "score_error":
+        payload["testCases"][0]["metricsData"][0]["error"] = "secret"
+    elif fault == "case_null":
+        payload["testCases"][0]["success"] = None
+    elif fault == "trace":
+        payload["testCases"][0]["trace"] = {"spans": []}
+        expected = "UNSUPPORTED_PROFILE"
+    elif fault == "conversation":
+        payload["conversationalTestCases"] = [{}]
+        expected = "UNSUPPORTED_PROFILE"
+    else:
+        payload["testCases"][0]["metricsData"] = [object()] * (MAX_METRICS + 1)
+        expected = "INPUT_LIMIT_EXCEEDED"
+    with pytest.raises(DeepevalAccountingError) as caught:
+        v2_run(payload)
+    assert caught.value.code == expected
+    assert "secret" not in str(caught.value)

@@ -2,6 +2,30 @@
   "formats": [
     {
       "format": "deepeval.test-run",
+      "path": "fixtures/golden/external/deepeval-4.2.8/flaky_case.json",
+      "raw_sha256": "a01b2ad5f9d5c1c79d073ff0fec02db586d4628025e928d23ecfe7adf0bef530",
+      "version": "4.2.8"
+    },
+    {
+      "format": "deepeval.test-run",
+      "path": "fixtures/golden/external/deepeval-4.2.8/flaky_metric.json",
+      "raw_sha256": "485474aca59f15a099a031f08eba4bf35ad9dbdfc9578577b5964a649c992d78",
+      "version": "4.2.8"
+    },
+    {
+      "format": "deepeval.test-run",
+      "path": "fixtures/golden/external/deepeval-4.2.8/ordinary.json",
+      "raw_sha256": "5050efd8a89c8ee841237341383f73af590b778643f96da4e971ad534e23abbd",
+      "version": "4.2.8"
+    },
+    {
+      "format": "deepeval.test-run",
+      "path": "fixtures/golden/external/deepeval-4.2.8/score_without_verdict.json",
+      "raw_sha256": "72b826c8b95f2a33ca87b5dd401f07b6bb5dbbb458857e393b579926098d7308",
+      "version": "4.2.8"
+    },
+    {
+      "format": "deepeval.test-run",
       "path": "fixtures/golden/external/deepeval/test_run_20260914_132634.json",
       "raw_sha256": "acf917784efd482e4af90dde180bf1e88dda0017afa8a73747b5ebeec939ae9c",
       "version": "4.1.1"

@@ -11,9 +11,21 @@ from _repo_paths import repo_root
 from underwrite.instrument.ingest.project import Source
 from underwrite.instrument.ingest.transport import Codec, Ingestor
 
-EXTERNAL_DIRECTORIES = frozenset(
-    {"otlp-json", "openinference", "langfuse", "deepeval", "inspect", "promptfoo"}
-)
+# Directory -> (producer distribution, format namespace, capture origin).
+EXTERNAL_CAPTURES = {
+    "otlp-json": ("otelcol-contrib", "otlp-json", "sanitized_tool_payload_example"),
+    "openinference": (
+        "openinference-semantic-conventions",
+        "openinference",
+        "sanitized_tool_payload_example",
+    ),
+    "langfuse": ("langfuse", "langfuse", "sanitized_tool_payload_example"),
+    "deepeval": ("deepeval", "deepeval", "sanitized_tool_payload_example"),
+    "deepeval-4.2.8": ("deepeval", "deepeval", "unchanged_synthetic_tool_export"),
+    "inspect": ("inspect_ai", "inspect", "sanitized_tool_payload_example"),
+    "promptfoo": ("promptfoo", "promptfoo", "sanitized_tool_payload_example"),
+}
+EXTERNAL_DIRECTORIES = frozenset(EXTERNAL_CAPTURES)
 OBSERVATION_SCHEMA = repo_root(Path(__file__)) / "contracts/observation.v1.schema.json"
 
 

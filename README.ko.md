@@ -108,7 +108,7 @@ uv run --frozen --no-sync underwrite accept \
 
 | 생성 도구 | `--format` | `--version` |
 | --- | --- | --- |
-| DeepEval | `deepeval.test-run` | `4.1.1` |
+| DeepEval | `deepeval.test-run` | `4.1.1`, `4.2.8` (일반 TestRun의 명시된 범위) |
 | Inspect AI | `inspect.eval-log` | `0.3.263` |
 | Langfuse | `langfuse.observations-v2` 또는 `langfuse.scores` | `4.35.0` |
 | OpenInference | `openinference.traces` | `0.1.38` |

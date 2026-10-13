@@ -429,8 +429,10 @@ def test_unexpected_errors_are_finite_and_interrupts_propagate(
     path = source(tmp_path)
     for exception in (RuntimeError, KeyboardInterrupt):
 
-        def fail(value: object, error: type[BaseException] = exception) -> Any:
-            del value
+        def fail(
+            value: object, error: type[BaseException] = exception, *, version: str = "4.1.1"
+        ) -> Any:
+            del value, version
             raise error("private source text")
 
         monkeypatch.setattr(
@@ -458,8 +460,8 @@ def test_identity_mismatch_refuses_publication(
     path, store = source(tmp_path), tmp_path / "store"
     original = command.audit_deepeval_bytes
 
-    def audit(raw: bytes) -> dict[str, object]:
-        return {**original(raw), "raw_hash": "sha256:" + "0" * 64}
+    def audit(raw: bytes, *, version: str = "4.1.1") -> dict[str, object]:
+        return {**original(raw, version=version), "raw_hash": "sha256:" + "0" * 64}
 
     monkeypatch.setattr(command, "audit_deepeval_bytes", audit)
     with pytest.raises(command.EvidenceError) as caught:

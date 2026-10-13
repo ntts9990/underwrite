@@ -33,6 +33,7 @@ from underwrite.cli import (
 from underwrite.cli.capabilities import CommandDescriptor, Handler, profile
 from underwrite.instrument.evidence.langfuse_accounting import RULE_PROFILE as LANGFUSE_RULE_PROFILE
 from underwrite.instrument.ingest.accounting import SOURCE as PROMPTFOO_SOURCE
+from underwrite.instrument.ingest.deepeval_accounting import PROFILES as DEEPEVAL_PROFILES
 from underwrite.instrument.ingest.deepeval_accounting import SOURCE as DEEPEVAL_SOURCE
 
 Standalone = Callable[[list[str]], int]
@@ -144,7 +145,12 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
         (
             profile("save", ("root", "spec"), ("record_spec.v1",), ("record_view.v1",)),
             profile("audit-promptfoo", ("file", "root", "id"), (), ("promptfoo_record.v1",)),
-            profile("audit-deepeval", ("file", "root", "id"), (), ("deepeval_record.v1",)),
+            profile(
+                "audit-deepeval",
+                ("file", "root", "id"),
+                (),
+                tuple(selected.record_schema for selected in DEEPEVAL_PROFILES.values()),
+            ),
             profile(
                 "audit-langfuse",
                 ("observations", "scores", "root", "id"),
@@ -203,7 +209,15 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
         "audit-deepeval",
         "Distinguish scores, evaluator errors, and unscored DeepEval metrics.",
         audit_deepeval.configure,
-        (profile("|".join(DEEPEVAL_SOURCE), ("file",), (), ("deepeval_accounting.v1",)),),
+        tuple(
+            profile(
+                "|".join((DEEPEVAL_SOURCE[0], version)),
+                ("file",),
+                (),
+                (selected.accounting_schema,),
+            )
+            for version, selected in DEEPEVAL_PROFILES.items()
+        ),
         _standalone(audit_deepeval.main),
     ),
     CommandDescriptor(

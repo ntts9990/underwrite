@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from _external_formats import EXTERNAL_DIRECTORIES, ingestor
+from _external_formats import EXTERNAL_CAPTURES, EXTERNAL_DIRECTORIES, ingestor
 from _script_loader import load_module_from_path
 from underwrite_core.canonical import content_digest
 
@@ -50,7 +50,7 @@ def _ingestor() -> Ingestor:
     return ingestor(formats.external_codecs(), max_bytes=DEFAULT_MAX_BYTES)
 
 
-def test_every_external_format_has_exactly_one_captured_directory() -> None:
+def test_every_declared_capture_directory_has_a_record() -> None:
     present = {path.name for path in EXTERNAL.iterdir() if path.is_dir()}
     assert present == EXTERNAL_DIRECTORIES
     for name in sorted(present):
@@ -63,21 +63,12 @@ def test_every_capture_record_is_complete_and_matches_its_bytes() -> None:
     for vendor, record in _records().items():
         assert RECORD_KEYS <= record.keys(), vendor
         assert record["source_record"] == "SOURCE.md"
-        assert record["capture_kind"] == "sanitized_tool_payload_example"
+        tool_name, _, capture_kind = EXTERNAL_CAPTURES[vendor]
+        assert record["capture_kind"] == capture_kind
         tool = cast(dict[str, str], record["tool"])
         version = tool.get("version", tool.get("server_version"))
         assert version, vendor
-        assert (
-            tool["name"]
-            == {
-                "deepeval": "deepeval",
-                "inspect": "inspect_ai",
-                "langfuse": "langfuse",
-                "openinference": "openinference-semantic-conventions",
-                "otlp-json": "otelcol-contrib",
-                "promptfoo": "promptfoo",
-            }[vendor]
-        )
+        assert tool["name"] == tool_name
         files = _files(record)
         assert files, vendor
         for name, entry in files.items():
@@ -100,7 +91,7 @@ def test_readers_and_captures_cover_each_other_exactly() -> None:
     for vendor, record in _records().items():
         for entry in _files(record).values():
             fmt, version = _selector(entry)
-            assert fmt.startswith(vendor + "."), (vendor, fmt)
+            assert fmt.startswith(EXTERNAL_CAPTURES[vendor][1] + "."), (vendor, fmt)
             captured.add((fmt, version))
     assert captured == set(formats.external_codecs())
 

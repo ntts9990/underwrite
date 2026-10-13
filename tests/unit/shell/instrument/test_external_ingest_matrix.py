@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from _external_formats import EXTERNAL_DIRECTORIES, ingestor
+from _external_formats import EXTERNAL_CAPTURES, ingestor
 from _repo_paths import repo_root
 from underwrite_core.canonical import digest_bytes
 
@@ -37,7 +37,9 @@ def test_manifest_is_the_whole_external_registry_and_nothing_else() -> None:
     assert all(trusted[key] is codec for key, codec in formats.external_codecs().items())
 
     # contract set the provenance gate pins, owned once.
-    assert {sel[0].split(".")[0] for sel in selectors} == EXTERNAL_DIRECTORIES
+    assert {sel[0].split(".")[0] for sel in selectors} == {
+        namespace for _, namespace, _ in EXTERNAL_CAPTURES.values()
+    }
 
 
 def _ident(path: str) -> str:

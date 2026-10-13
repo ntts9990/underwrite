@@ -15,6 +15,7 @@ from underwrite.instrument.ingest.codecs.deepeval import (
     CODECS,
     DeepevalPayloadError,
     read_test_run,
+    read_test_run_v4_2_8,
 )
 from underwrite.instrument.ingest.project import Source
 from underwrite.instrument.ingest.transport import Ingestor, UnsupportedFormat
@@ -63,8 +64,11 @@ def _run(**overrides: object) -> dict[str, object]:
     return run
 
 
-def test_registry_contains_only_the_pinned_profile() -> None:
-    assert dict(CODECS) == {(FORMAT, VERSION): read_test_run}
+def test_registry_contains_only_the_pinned_profiles() -> None:
+    assert dict(CODECS) == {
+        (FORMAT, VERSION): read_test_run,
+        (FORMAT, "4.2.8"): read_test_run_v4_2_8,
+    }
 
 
 def test_registered_profile_cannot_be_replaced() -> None:
@@ -283,3 +287,69 @@ def test_numeric_spellings_preserve_meaning_and_bind_distinct_raw_bytes(
     if type(number) is int:
         assert observations[0]["raw"] != observations[1]["raw"]
         assert content_digest(observations[0]) != content_digest(observations[1])
+
+
+@pytest.mark.parametrize(
+    "name", ["ordinary", "flaky_metric", "flaky_case", "score_without_verdict"]
+)
+def test_actual_v4_2_8_capture_requires_explicit_profile_and_preserves_whole_payload(
+    name: str,
+) -> None:
+    path = ROOT / "fixtures/golden/external/deepeval-4.2.8" / (name + ".json")
+    raw = json.loads(path.read_bytes())
+    result = _ingestor().file(path, Source(FORMAT, "4.2.8", "urn:test:deepeval"))
+    assert result.observation["payload"] == raw
+    with pytest.raises(DeepevalPayloadError, match="DEEPEVAL_UNKNOWN_FIELD"):
+        read_test_run(raw)
+
+
+def _v2_run() -> dict[str, object]:
+    return _run(testCases=[_case(flaky=False, metricsData=[_metric(flaky=False)])])
+
+
+@pytest.mark.parametrize("level", ["case", "metric"])
+@pytest.mark.parametrize("value", ["missing", None, 0, 1, "false"])
+def test_v4_2_8_requires_boolean_flaky(level: str, value: object) -> None:
+    payload = _v2_run()
+    case = cast(list[dict[str, object]], payload["testCases"])[0]
+    row = case if level == "case" else cast(list[dict[str, object]], case["metricsData"])[0]
+    if value == "missing":
+        del row["flaky"]
+    else:
+        row["flaky"] = value
+    with pytest.raises(DeepevalPayloadError, match="DEEPEVAL_FLAG_REQUIRED: flaky"):
+        read_test_run_v4_2_8(payload)
+
+
+@pytest.mark.parametrize("omit_success", [False, True])
+@pytest.mark.parametrize("omit_threshold", [False, True])
+def test_v4_2_8_metric_verdict_and_threshold_are_independently_optional(
+    omit_success: bool,
+    omit_threshold: bool,
+) -> None:
+    row = _metric(flaky=True, score=0)
+    for key, omit in (("success", omit_success), ("threshold", omit_threshold)):
+        if omit:
+            del row[key]
+    payload = _run(testCases=[_case(flaky=False, metricsData=[row])])
+    assert read_test_run_v4_2_8(payload).payload == payload
+
+
+@pytest.mark.parametrize(
+    "key,value", [("success", None), ("success", 0), ("threshold", None), ("threshold", True)]
+)
+def test_v4_2_8_present_optional_metric_values_are_validated(key: str, value: object) -> None:
+    payload = _run(
+        testCases=[_case(flaky=False, metricsData=[_metric(flaky=False, **{key: value})])]
+    )
+    with pytest.raises(DeepevalPayloadError):
+        read_test_run_v4_2_8(payload)
+
+
+@pytest.mark.parametrize(
+    "key", ["inputTokenCount", "outputTokenCount", "expectations", "classifiers"]
+)
+def test_v4_2_8_uncaptured_case_fields_remain_closed(key: str) -> None:
+    payload = _run(testCases=[_case(flaky=False, **{key: cast(list[object], [])})])
+    with pytest.raises(DeepevalPayloadError, match="DEEPEVAL_UNKNOWN_FIELD: test case"):
+        read_test_run_v4_2_8(payload)
