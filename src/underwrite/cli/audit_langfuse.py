@@ -33,7 +33,10 @@ def configure(parser: argparse.ArgumentParser) -> None:
         "Account for score kinds and exact project/trace/observation associations in two "
         "supplied Langfuse 4.35.0 exports. Unresolved references remain descriptive results. "
         "No producer execution, export-completeness claim, task success, or approval. "
-        "The source profile is explicitly selected, not detected."
+        "The source profile is explicitly selected, not detected. "
+        "If missing-execution accounting is required, the inventory next action asks for "
+        "external planned evidence from the evaluation owner. This command has no inventory "
+        "input; planned and missing-execution counts remain unknown."
     )
 
 
@@ -59,6 +62,10 @@ def render_human(report: dict[str, object]) -> str:
             "Planned evaluations and export completeness unknown; source claims unverified.",
             "Stored score values are not task verdicts; no statistical or approval authority.",
             "Next: " + "; ".join(cast(list[str], report["next_actions"])),
+            "SUPPLY_PLANNED_INVENTORY_FOR_MISSINGNESS applies only when missing-execution "
+            "accounting is needed: obtain explicit planned evidence from the evaluation owner. "
+            "This command cannot ingest it; planned and missing-execution counts remain unknown. "
+            "Descriptive accounting needs no additional collection.",
         ]
     )
 

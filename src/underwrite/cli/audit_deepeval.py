@@ -22,7 +22,10 @@ def configure(parser: argparse.ArgumentParser) -> None:
         "Account for case flags, observed metric scores, evaluator errors, and unscored metrics "
         "in a DeepEval 4.1.1 file. No manifest or evaluator execution is needed. "
         "A report exits 0 even when source counts disagree or metrics contain errors. "
-        "The profile is explicitly selected, not detected from the file."
+        "The profile is explicitly selected, not detected from the file. "
+        "If missing-execution accounting is required, the inventory next action asks for "
+        "external planned evidence from the evaluation owner. This command has no inventory "
+        "input; planned and missing-execution counts remain unknown."
     )
 
 
@@ -49,6 +52,10 @@ def render_human(report: dict[str, object]) -> str:
             "Planned evaluations unknown; metric aggregates not checked; source claims unverified.",
             "No causal failure attribution, statistical effect, or approval authority.",
             "Next: " + "; ".join(cast(list[str], report["next_actions"])),
+            "SUPPLY_PLANNED_INVENTORY_FOR_MISSINGNESS applies only when missing-execution "
+            "accounting is needed: obtain explicit planned evidence from the evaluation owner. "
+            "This command cannot ingest it; planned and missing-execution counts remain unknown. "
+            "Descriptive accounting needs no additional collection.",
         ]
     )
 

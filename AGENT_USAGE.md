@@ -212,6 +212,21 @@ promptfoo grading score is not a calibrated probability; do not copy it into a
 native bundle's prediction field or report a measured pass. Ask for a suitable
 native evidence bundle and an explicit policy when measurement is needed.
 
+## Planned inventory next action
+
+For DeepEval and Langfuse accounting, `SUPPLY_PLANNED_INVENTORY_FOR_MISSINGNESS`
+is an external evidence requirement only when the task needs missing-execution
+accounting. Obtain an explicit planned case/evaluation inventory from the evaluation
+owner for that task. These audit commands and their retained variants have no
+inventory input: planned and missing-execution counts remain unknown. Descriptive
+accounting can finish without collecting more evidence.
+
+Receiving another file does not establish completeness or make it joinable. Any
+further missingness analysis needs explicit unit identities, intended evaluation
+slots, and matching semantics; no such analysis is provided by these two routes.
+Do not infer planned units from observed rows or duplicate names, or treat DeepEval
+unscored metrics or Langfuse observations without scores as unexecuted planned units.
+
 ## Account for Langfuse score kinds and associations
 
 Use the complete-field, uncompressed JSON exports from the supported Langfuse
@@ -231,7 +246,9 @@ An exact `(project_id, trace_id, observation_id)` match identifies a supplied
 observation. A null observation ID is trace-level and never attaches to a root
 span. A non-null unmatched ID is an unresolved reference in these supplied files.
 Observations without local scores are counted separately; planned evaluations,
-missing execution counts, and export completeness remain unknown.
+missing execution counts, and export completeness remain unknown. See the
+[planned inventory next action](#planned-inventory-next-action) for its conditional
+evidence requirement and current input boundary.
 
 Original IDs are checked before joining. Non-NFC opaque IDs and ambiguous duplicate
 observation keys are explicitly refused rather than merged or rewritten. Repeated
@@ -297,6 +314,8 @@ is not automatically a task failure; an evaluator error has no invented score.
 Mixed cases retain both scored and errored metrics. Absent case flags and declared
 counts remain explicit; passed/failed declarations are compared independently.
 Metric aggregate summaries are not checked, and planned inventory stays unknown.
+See the [planned inventory next action](#planned-inventory-next-action); it does not
+add an inventory input to this command.
 The report does not infer why a case failed, a measured effect, or approval.
 
 Exit 0 means descriptive accounting completed, even when evaluator errors or
