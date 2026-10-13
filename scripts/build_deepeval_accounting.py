@@ -10,16 +10,16 @@ from underwrite_core.canonical import SAFE_INT_MAX
 
 from underwrite.instrument.evidence.deepeval_accounting import (
     LIMITATIONS,
+    LIMITATIONS_V2,
     MAX_CASES,
     MAX_ERROR_LENGTH,
     MAX_METRICS,
     MAX_NAME_LENGTH,
     NEXT_ACTIONS,
-    RULE_PROFILE,
     RULES,
     SCOPE,
 )
-from underwrite.instrument.ingest.deepeval_accounting import SOURCE
+from underwrite.instrument.ingest.deepeval_accounting import PROFILES, SOURCE
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -46,7 +46,10 @@ def _presence() -> dict[str, object]:
     }
 
 
-def build_schema() -> dict[str, object]:
+def build_schema(*, format_version: str = "4.1.1") -> dict[str, object]:
+    profile = PROFILES[format_version]
+    v2 = format_version == "4.2.8"
+    limitations = LIMITATIONS_V2 if v2 else LIMITATIONS
     name = {"type": "string", "minLength": 1, "maxLength": MAX_NAME_LENGTH}
     metric_branches: list[dict[str, object]] = []
     for state, rule in RULES.items():
@@ -58,40 +61,69 @@ def build_schema() -> dict[str, object]:
             "source_success": {"type": "boolean"},
             "threshold": {"type": "number"},
         }
+        if v2:
+            fields["source_success"] = {
+                "type": ["boolean", "null"],
+                "description": "null denotes an absent source success key, not a false verdict.",
+            }
+            fields["threshold"] = {
+                "type": ["number", "null"],
+                "description": "null denotes an absent source threshold key, not a zero threshold.",
+            }
+            fields["source_flaky"] = {
+                "type": "boolean",
+                "description": "Producer gating declaration, not measured nondeterminism.",
+            }
         if state == "scored":
             fields["score"] = {"type": "number"}
         elif state == "error":
             fields["error"] = {"type": "string", "maxLength": MAX_ERROR_LENGTH}
         metric_branches.append(_object(fields))
-    case = _object(
-        {
-            "case_index": _count(MAX_CASES - 1),
-            "name": name,
-            "order": _presence(),
-            "source_success": {
-                "type": ["boolean", "null"],
-                "description": (
-                    "null denotes an absent source success key; "
-                    "a present null source flag is rejected."
-                ),
-            },
-            "metrics": {
-                "type": "array",
-                "maxItems": MAX_METRICS,
-                "items": {"oneOf": metric_branches},
-            },
+    case_fields: dict[str, object] = {
+        "case_index": _count(MAX_CASES - 1),
+        "name": name,
+        "order": _presence(),
+        "source_success": {
+            "type": ["boolean", "null"],
+            "description": (
+                "null denotes an absent source success key; a present null source flag is rejected."
+            ),
+        },
+        "metrics": {
+            "type": "array",
+            "maxItems": MAX_METRICS,
+            "items": {"oneOf": metric_branches},
+        },
+    }
+    if v2:
+        case_fields["source_flaky"] = {
+            "type": "boolean",
+            "description": "Producer gating declaration, not measured nondeterminism.",
         }
+    case = _object(case_fields)
+    case_counts = ("total", "source_true", "source_false", "source_success_absent")
+    metric_counts = (
+        "total",
+        "scored",
+        "error",
+        "unscored",
+        "observed_zero",
+        "scored_source_true",
+        "scored_source_false",
     )
+    if v2:
+        case_counts += ("source_flaky_true",)
+        metric_counts += ("scored_source_success_absent", "source_flaky_true")
     digest = {"type": "string", "pattern": "^sha256:[a-f0-9]{64}(?![\\s\\S])"}
     relation = {"enum": ["matches", "differs", "not_declared", "not_comparable"]}
     schema = _object(
         {
-            "schema": {"const": "deepeval_accounting.v1"},
-            "rule_profile": {"const": RULE_PROFILE},
+            "schema": {"const": profile.accounting_schema},
+            "rule_profile": {"const": profile.rule_profile},
             "source": _object(
                 {
                     "format": {"const": SOURCE[0]},
-                    "format_version": {"const": SOURCE[1]},
+                    "format_version": {"const": profile.format_version},
                     "claims_verified": {"const": False},
                 }
             ),
@@ -101,31 +133,8 @@ def build_schema() -> dict[str, object]:
             "cases": {"type": "array", "maxItems": MAX_CASES, "items": case},
             "counts": _object(
                 {
-                    "cases": _object(
-                        {
-                            key: _count(MAX_CASES)
-                            for key in (
-                                "total",
-                                "source_true",
-                                "source_false",
-                                "source_success_absent",
-                            )
-                        }
-                    ),
-                    "metrics": _object(
-                        {
-                            key: _count(MAX_METRICS)
-                            for key in (
-                                "total",
-                                "scored",
-                                "error",
-                                "unscored",
-                                "observed_zero",
-                                "scored_source_true",
-                                "scored_source_false",
-                            )
-                        }
-                    ),
+                    "cases": _object({key: _count(MAX_CASES) for key in case_counts}),
+                    "metrics": _object({key: _count(MAX_METRICS) for key in metric_counts}),
                 }
             ),
             "declared_case_counts": _object(
@@ -137,9 +146,9 @@ def build_schema() -> dict[str, object]:
             ),
             "limitations": {
                 "type": "array",
-                "const": list(LIMITATIONS),
-                "maxItems": len(LIMITATIONS),
-                "items": {"enum": list(LIMITATIONS)},
+                "const": list(limitations),
+                "maxItems": len(limitations),
+                "items": {"enum": list(limitations)},
             },
             "next_actions": {
                 "type": "array",
@@ -151,8 +160,8 @@ def build_schema() -> dict[str, object]:
     )
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "urn:underwrite:contract:deepeval_accounting.v1",
-        "title": "deepeval_accounting.v1",
+        "$id": "urn:underwrite:contract:" + profile.accounting_schema,
+        "title": profile.accounting_schema,
         "description": "Descriptive source accounting; no measurement or approval authority.",
         **schema,
     }

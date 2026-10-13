@@ -59,3 +59,49 @@ def test_capture_read_reason_is_finite(
     assert caught.value.code == code
     assert caught.value.reason == (code if reason == "private unknown reason" else reason)
     assert caught.value.location == "/file"
+
+
+def test_default_and_explicit_old_profile_are_identical() -> None:
+    raw = GOLDEN.read_bytes()
+    assert adapter.audit_deepeval_file(GOLDEN) == adapter.audit_deepeval_file(
+        GOLDEN, version="4.1.1"
+    )
+    assert adapter.audit_deepeval_bytes(raw) == adapter.audit_deepeval_bytes(raw, version="4.1.1")
+
+
+@pytest.mark.parametrize("version", ["4.2.7", "latest", "private/version"])
+def test_unknown_version_refuses_before_ingestion(
+    version: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def forbidden(**kwargs: object) -> object:
+        del kwargs
+        pytest.fail("ingestion configured before profile refusal")
+
+    monkeypatch.setattr(adapter, "packaged_ingestor", forbidden)
+    for action in (
+        lambda: adapter.audit_deepeval_file(GOLDEN, version=version),
+        lambda: adapter.audit_deepeval_bytes(b"{}", version=version),
+    ):
+        with pytest.raises(adapter.DeepevalFileError) as caught:
+            action()
+        assert caught.value.code == "UNSUPPORTED_FORMAT"
+        assert caught.value.reason == "UNSUPPORTED_DEEPEVAL_VERSION"
+        assert version not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "name", ["ordinary", "flaky_metric", "flaky_case", "score_without_verdict"]
+)
+def test_actual_new_profile_file_and_bytes_parity(name: str) -> None:
+    path = GOLDEN.parent.parent / "deepeval-4.2.8" / (name + ".json")
+    raw = path.read_bytes()
+    expected = adapter.audit_deepeval_file(path, version="4.2.8")
+    assert adapter.audit_deepeval_bytes(raw, version="4.2.8") == expected
+    assert expected["schema"] == "deepeval_accounting.v2"
+    assert expected["source"] == {
+        "format": "deepeval.test-run",
+        "format_version": "4.2.8",
+        "claims_verified": False,
+    }
+    with pytest.raises(adapter.DeepevalFileError):
+        adapter.audit_deepeval_file(path)

@@ -15,7 +15,14 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.mark.parametrize(
-    "name", ["paired_handoff_review", "promptfoo_record", "langfuse_record", "deepeval_record"]
+    "name",
+    [
+        "paired_handoff_review",
+        "promptfoo_record",
+        "langfuse_record",
+        "deepeval_record",
+        "deepeval_record_v2",
+    ],
 )
 def test_generated_handoff_contract_matches_owners(name: str) -> None:
     result = subprocess.run(
@@ -29,10 +36,17 @@ def test_generated_handoff_contract_matches_owners(name: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "name", ["paired_handoff_review", "promptfoo_record", "langfuse_record", "deepeval_record"]
+    "name,version",
+    [
+        ("paired_handoff_review", "v1"),
+        ("promptfoo_record", "v1"),
+        ("langfuse_record", "v1"),
+        ("deepeval_record", "v1"),
+        ("deepeval_record", "v2"),
+    ],
 )
-def test_composite_contract_has_only_resolvable_local_references(name: str) -> None:
-    document = json.loads((ROOT / f"contracts/{name}.v1.schema.json").read_bytes())
+def test_composite_contract_has_only_resolvable_local_references(name: str, version: str) -> None:
+    document = json.loads((ROOT / f"contracts/{name}.{version}.schema.json").read_bytes())
     Draft202012Validator.check_schema(document)
 
     def walk(value: Any) -> None:
@@ -53,11 +67,14 @@ def test_composite_contract_has_only_resolvable_local_references(name: str) -> N
     walk(document)
 
 
-@pytest.mark.parametrize("producer", ["promptfoo", "deepeval"])
+@pytest.mark.parametrize(
+    "producer,version", [("promptfoo", "v1"), ("deepeval", "v1"), ("deepeval", "v2")]
+)
 @pytest.mark.parametrize("analysis_error", [False, True])
 @pytest.mark.parametrize("storage_error", [False, True])
 def test_single_source_record_exit_and_capture_states_are_bound(
     producer: str,
+    version: str,
     analysis_error: bool,
     storage_error: bool,
 ) -> None:
@@ -68,7 +85,7 @@ def test_single_source_record_exit_and_capture_states_are_bound(
     from underwrite.cli.records import record_error_payload
     from underwrite.service.records import RecordError
 
-    schema = json.loads((ROOT / f"contracts/{producer}_record.v1.schema.json").read_bytes())
+    schema = json.loads((ROOT / f"contracts/{producer}_record.{version}.schema.json").read_bytes())
     validator = cast(Validator, Draft202012Validator(schema))
     if producer == "promptfoo":
         report = json.loads(
@@ -78,7 +95,14 @@ def test_single_source_record_exit_and_capture_states_are_bound(
         from underwrite.instrument.ingest.deepeval_accounting import audit_deepeval_file
 
         report = audit_deepeval_file(
-            ROOT / "fixtures/golden/external/deepeval/test_run_20260914_132634.json"
+            ROOT
+            / "fixtures/golden/external"
+            / (
+                "deepeval-4.2.8/score_without_verdict.json"
+                if version == "v2"
+                else "deepeval/test_run_20260914_132634.json"
+            ),
+            version="4.2.8" if version == "v2" else "4.1.1",
         )
     identity = {"record_id": "capture", "manifest_digest": "sha256:" + "0" * 64}
     storage: dict[str, Any] = (
@@ -113,14 +137,24 @@ def test_single_source_record_exit_and_capture_states_are_bound(
     )
     exit_code = 3 if storage_error else 2 if analysis_error else 0
     envelope: dict[str, Any] = {
-        "schema": f"{producer}_record.v1",
+        "schema": f"{producer}_record.{version}",
         "command": f"records audit-{producer}",
         "source": {"state": "captured", "raw_hash": report["raw_hash"], "bytes": 1},
         "analysis": analysis,
         "storage": storage,
         "exit_code": exit_code,
     }
+    if version == "v2":
+        envelope["source_format_version"] = "4.2.8"
     validator.validate(envelope)
+    if version == "v2":
+        with pytest.raises(ValidationError):
+            validator.validate({**envelope, "source_format_version": "4.1.1"})
+        without_version = {
+            key: value for key, value in envelope.items() if key != "source_format_version"
+        }
+        with pytest.raises(ValidationError):
+            validator.validate(without_version)
     with pytest.raises(ValidationError):
         validator.validate({**envelope, "unexpected": True})
     with pytest.raises(ValidationError):

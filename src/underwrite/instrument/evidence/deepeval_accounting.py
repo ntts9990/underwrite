@@ -14,6 +14,7 @@ MAX_NAME_LENGTH = 256
 MAX_ERROR_LENGTH = 1024
 TRACE_METRIC_GROUPS = frozenset({"agent", "tool", "retriever", "llm", "base"})
 RULE_PROFILE = "deepeval.metric-accounting.v1"
+RULE_PROFILE_V2 = "deepeval.metric-accounting.v2"
 RULES = MappingProxyType(
     {
         "scored": "SCORE_PRESENT",
@@ -28,6 +29,7 @@ LIMITATIONS = (
     "NO_CAUSAL_FAILURE_ATTRIBUTION",
     "NO_STATISTICAL_OR_APPROVAL_AUTHORITY",
 )
+LIMITATIONS_V2 = (*LIMITATIONS, "FLAKY_DECLARATIONS_NOT_CI_OUTCOMES")
 NEXT_ACTIONS = (
     "INSPECT_EVALUATOR_ERRORS",
     "SUPPLY_PLANNED_INVENTORY_FOR_MISSINGNESS",
@@ -148,7 +150,7 @@ def _case_trace(case: dict[str, object], location: str) -> None:
         raise _error("DEEPEVAL_SCOPE_UNSUPPORTED", location + "/trace", "UNSUPPORTED_PROFILE")
 
 
-def _metric(value: object, index: int, location: str) -> dict[str, object]:
+def _metric(value: object, index: int, location: str, rule_profile: str) -> dict[str, object]:
     metric = _object(value, location)
     scored, errored = "score" in metric, "error" in metric
     if scored and errored:
@@ -159,9 +161,19 @@ def _metric(value: object, index: int, location: str) -> dict[str, object]:
         "name": _text(metric.get("name"), MAX_NAME_LENGTH, location + "/name"),
         "state": state,
         "applied_rule": RULES[state],
-        "source_success": _flag(metric.get("success"), location + "/success"),
-        "threshold": _number(metric.get("threshold"), location + "/threshold"),
+        "source_success": (
+            _flag(metric.get("success"), location + "/success")
+            if rule_profile == RULE_PROFILE or "success" in metric
+            else None
+        ),
+        "threshold": (
+            _number(metric.get("threshold"), location + "/threshold")
+            if rule_profile == RULE_PROFILE or "threshold" in metric
+            else None
+        ),
     }
+    if rule_profile == RULE_PROFILE_V2:
+        result["source_flaky"] = _flag(metric.get("flaky"), location + "/flaky")
     if scored:
         result["score"] = _number(metric["score"], location + "/score")
     elif errored:
@@ -186,8 +198,10 @@ def _declared_counts(payload: dict[str, object], cases: dict[str, int]) -> dict[
     return {"passed": passed, "failed": failed, "comparison": comparison}
 
 
-def account_deepeval(payload: object) -> dict[str, object]:
+def account_deepeval(payload: object, *, rule_profile: str = RULE_PROFILE) -> dict[str, object]:
     """Apply presence rules to ordinary test cases in a normalized observation payload."""
+    if rule_profile not in (RULE_PROFILE, RULE_PROFILE_V2):
+        raise _error("DEEPEVAL_RULE_PROFILE_UNSUPPORTED", "/rule_profile")
     source = _object(payload, "/")
     rows = _array(source.get("testCases"), MAX_CASES, "/testCases")
     _scope(source)
@@ -207,6 +221,10 @@ def account_deepeval(payload: object) -> dict[str, object]:
         "scored_source_true": 0,
         "scored_source_false": 0,
     }
+    if rule_profile == RULE_PROFILE_V2:
+        case_counts["source_flaky_true"] = 0
+        metric_counts["source_flaky_true"] = 0
+        metric_counts["scored_source_success_absent"] = 0
     for index, raw in enumerate(rows):
         location = f"/testCases/{index}"
         case = _object(raw, location)
@@ -221,25 +239,34 @@ def account_deepeval(payload: object) -> dict[str, object]:
             "source_success_absent" if flag is None else "source_true" if flag else "source_false"
         ] += 1
         normalized = [
-            _metric(item, n, f"{location}/metricsData/{n}") for n, item in enumerate(metrics)
+            _metric(item, n, f"{location}/metricsData/{n}", rule_profile)
+            for n, item in enumerate(metrics)
         ]
         for metric in normalized:
             metric_counts["total"] += 1
             metric_counts[cast(str, metric["state"])] += 1
+            if rule_profile == RULE_PROFILE_V2:
+                metric_counts["source_flaky_true"] += int(cast(bool, metric["source_flaky"]))
             if metric["state"] == "scored":
                 metric_counts["observed_zero"] += int(metric["score"] == 0)
                 metric_counts[
-                    "scored_source_true" if metric["source_success"] else "scored_source_false"
+                    "scored_source_success_absent"
+                    if metric["source_success"] is None
+                    else "scored_source_true"
+                    if metric["source_success"]
+                    else "scored_source_false"
                 ] += 1
-        cases.append(
-            {
-                "case_index": index,
-                "name": _text(case.get("name"), MAX_NAME_LENGTH, location + "/name"),
-                "order": _presence(case, "order", location + "/order"),
-                "source_success": flag,
-                "metrics": normalized,
-            }
-        )
+        result: dict[str, object] = {
+            "case_index": index,
+            "name": _text(case.get("name"), MAX_NAME_LENGTH, location + "/name"),
+            "order": _presence(case, "order", location + "/order"),
+            "source_success": flag,
+            "metrics": normalized,
+        }
+        if rule_profile == RULE_PROFILE_V2:
+            result["source_flaky"] = _flag(case.get("flaky"), location + "/flaky")
+            case_counts["source_flaky_true"] += int(result["source_flaky"])
+        cases.append(result)
     declared = _declared_counts(source, case_counts)
     actions = ["SUPPLY_PLANNED_INVENTORY_FOR_MISSINGNESS"]
     if metric_counts["error"]:
@@ -247,11 +274,11 @@ def account_deepeval(payload: object) -> dict[str, object]:
     if "differs" in cast(dict[str, str], declared["comparison"]).values():
         actions.append("CHECK_PRODUCER_CASE_COUNTS")
     return {
-        "rule_profile": RULE_PROFILE,
+        "rule_profile": rule_profile,
         "scope": dict(SCOPE),
         "cases": cases,
         "counts": {"cases": case_counts, "metrics": metric_counts},
         "declared_case_counts": declared,
-        "limitations": list(LIMITATIONS),
+        "limitations": list(LIMITATIONS if rule_profile == RULE_PROFILE else LIMITATIONS_V2),
         "next_actions": actions,
     }

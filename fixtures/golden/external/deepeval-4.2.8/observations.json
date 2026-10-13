@@ -1,0 +1,52 @@
+{
+  "source_record": "SOURCE.md",
+  "capture_kind": "unchanged_synthetic_tool_export",
+  "tool": {
+    "name": "deepeval",
+    "version": "4.2.8",
+    "upstream_tag": "python-v4.2.8"
+  },
+  "files": {
+    "ordinary.json": {
+      "source": {
+        "format": "deepeval.test-run",
+        "format_version": "4.2.8"
+      },
+      "ref": "sha256:5050efd8a89c8ee841237341383f73af590b778643f96da4e971ad534e23abbd",
+      "raw_hash": "sha256:5050efd8a89c8ee841237341383f73af590b778643f96da4e971ad534e23abbd",
+      "observation_digest": "sha256:ab516641b6ca2d16d3e2b2ec75ba2c349b857e2deba3858e58cd028d30fb2682"
+    },
+    "flaky_metric.json": {
+      "source": {
+        "format": "deepeval.test-run",
+        "format_version": "4.2.8"
+      },
+      "ref": "sha256:485474aca59f15a099a031f08eba4bf35ad9dbdfc9578577b5964a649c992d78",
+      "raw_hash": "sha256:485474aca59f15a099a031f08eba4bf35ad9dbdfc9578577b5964a649c992d78",
+      "observation_digest": "sha256:a4a2d782b324059264cd3519d0ee3eaa3868bde6656fa850a1935908611ab20c"
+    },
+    "flaky_case.json": {
+      "source": {
+        "format": "deepeval.test-run",
+        "format_version": "4.2.8"
+      },
+      "ref": "sha256:a01b2ad5f9d5c1c79d073ff0fec02db586d4628025e928d23ecfe7adf0bef530",
+      "raw_hash": "sha256:a01b2ad5f9d5c1c79d073ff0fec02db586d4628025e928d23ecfe7adf0bef530",
+      "observation_digest": "sha256:52c812d9971f2d0bd664a46eeec536e7ad65ee6dcb7b8ea6809df40c458a32d9"
+    },
+    "score_without_verdict.json": {
+      "source": {
+        "format": "deepeval.test-run",
+        "format_version": "4.2.8"
+      },
+      "ref": "sha256:72b826c8b95f2a33ca87b5dd401f07b6bb5dbbb458857e393b579926098d7308",
+      "raw_hash": "sha256:72b826c8b95f2a33ca87b5dd401f07b6bb5dbbb458857e393b579926098d7308",
+      "observation_digest": "sha256:ff20dbc10401b4229f043c895730c8b5458c6ffafe518a2df3763e09af4d2667"
+    }
+  },
+  "recipe": {
+    "sample_eval.py": {
+      "sha256": "6bdc55473e92c057d1307234d06fdeff6e94f8f61cb5762b43adf5388ba8b7ac"
+    }
+  }
+}

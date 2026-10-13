@@ -23,7 +23,7 @@ REPORT_MAX_BYTES = 1024 * 1024
 class ReportOutput:
     """Output contract and presentation for a composed CLI report."""
 
-    schema: str
+    schema: str | Callable[[argparse.Namespace], str]
     max_bytes: int = REPORT_MAX_BYTES
     exit_status: Callable[[dict[str, object]], int] | None = None
     human: Callable[[dict[str, object]], str] | None = None
@@ -108,8 +108,11 @@ def run_cli(
     try:
         configure(parser)
         args = parser.parse_args(argv)
+        schema = (
+            specification.schema(args) if callable(specification.schema) else specification.schema
+        )
         report = produce(args)
-        validate(packaged_validator(specification.schema), report, EvidenceError, "INTERNAL_ERROR")
+        validate(packaged_validator(schema), report, EvidenceError, "INTERNAL_ERROR")
         output = (
             canonical_bytes(report).decode("utf-8")
             if args.json

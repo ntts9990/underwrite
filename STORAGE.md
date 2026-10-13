@@ -90,6 +90,13 @@ Use `records read-json` with `analysis/accounting.json` or `analysis/error.json`
 for later reuse. Raw TestRun content is not redacted. See
 [the DeepEval workflow](AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors).
 
+The default producer profile remains 4.1.1. With `--version 4.2.8`, the same
+command emits `deepeval_record.v2` containing `deepeval_accounting.v2`; saved
+invocation metadata and `source_format_version` identify the selection even when
+acquisition fails. Missing metric verdicts and source flaky declarations retain
+their distinct meanings. The logical file names and retrieval commands stay the
+same; never relabel a saved v1 report as v2.
+
 For two supported Langfuse exports, use
 `records audit-langfuse --observations FILE --scores FILE --root ROOT --id NEW_ID --json`.
 It analyzes and retains the same complete input buffers, the result or diagnostic,

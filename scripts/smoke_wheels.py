@@ -509,13 +509,15 @@ def _handoff_pilot(cli: Path, work: Path) -> None:
 
 
 def _deepeval_record_pilot(
-    cli: Path, work: Path, source: Path, expected: dict[str, object]
+    cli: Path, work: Path, source: Path, expected: dict[str, object], *, version: str = "4.1.1"
 ) -> None:
     selected = work / "deepeval-selected.json"
     raw = source.read_bytes()
     selected.write_bytes(raw)
     store = work / "deepeval-records"
     arguments = ["records", "audit-deepeval", str(selected), "--root", str(store)]
+    if version != "4.1.1":
+        arguments.extend(["--version", version])
     report = _cli_json(cli, [*arguments, "--id", "captured"], work / "deepeval-record.json", work)
     analysis = cast(dict[str, object], report["analysis"])
     storage = cast(dict[str, object], report["storage"])
@@ -552,6 +554,11 @@ def _deepeval_record_pilot(
         "DeepEval diagnostic capture used the wrong channel or exit",
     )
     diagnostic = json.loads(failed.stdout)
+    if version != "4.1.1":
+        _require(
+            diagnostic["source_format_version"] == version,
+            "DeepEval diagnostic lost selected producer version",
+        )
     _require(
         diagnostic["source"]["state"] == "unavailable"
         and diagnostic["analysis"]["phase"] == "acquisition"
@@ -649,6 +656,87 @@ def _deepeval_pilot(cli: Path, work: Path) -> None:
         error_metric["state"] == "error" and "score" not in error_metric,
         "installed accounting invented a score for an error",
     )
+
+
+def _deepeval_v2_pilot(cli: Path, work: Path) -> None:
+    golden = ROOT / "fixtures/golden/external/deepeval-4.2.8"
+    for scenario in ("ordinary", "flaky_metric", "flaky_case", "score_without_verdict"):
+        directory = work / f"deepeval-v2-{scenario}"
+        directory.mkdir()
+        source = directory / "source.json"
+        source.write_bytes((golden / f"{scenario}.json").read_bytes())
+        observation = directory / "observation.json"
+        _cli_json(
+            cli,
+            [
+                "ingest",
+                "--format",
+                "deepeval.test-run",
+                "--version",
+                "4.2.8",
+                "--file",
+                str(source),
+            ],
+            observation,
+            directory,
+        )
+        report = _cli_json(
+            cli,
+            ["audit-deepeval", str(source), "--version", "4.2.8"],
+            directory / "accounting.json",
+            directory,
+        )
+        _require(report["schema"] == "deepeval_accounting.v2", "wrong selected DeepEval schema")
+        case = cast(list[dict[str, object]], report["cases"])[0]
+        metrics = cast(list[dict[str, object]], case["metrics"])
+        if scenario == "ordinary":
+            _require(
+                metrics[1]["score"] == 0
+                and metrics[2]["state"] == "error"
+                and "score" not in metrics[2],
+                "DeepEval v2 collapsed zero and evaluator error",
+            )
+        elif scenario == "flaky_metric":
+            _require(
+                case["source_success"] is True
+                and metrics[1]["source_flaky"] is True
+                and metrics[1]["source_success"] is False,
+                "DeepEval flaky metric changed independent case verdict",
+            )
+        elif scenario == "flaky_case":
+            _require(
+                case["source_flaky"] is True and case["source_success"] is False,
+                "DeepEval flaky case was promoted to pass",
+            )
+        else:
+            expected_score = 0.3
+            _require(
+                metrics[1]["state"] == "scored"
+                and metrics[1]["score"] == expected_score
+                and metrics[1]["source_success"] is None
+                and metrics[1]["threshold"] is None,
+                "DeepEval score-only metric acquired a verdict or lost its score",
+            )
+            refused = _command(
+                [
+                    str(cli),
+                    "measure",
+                    "--observation",
+                    str(observation),
+                    "--policy",
+                    str(ROOT / "fixtures/examples/event-acceptance/policy.json"),
+                    "--json",
+                ],
+                directory,
+            )
+            _require(
+                refused.returncode == EVIDENCE_ERROR_EXIT
+                and refused.stdout == ""
+                and json.loads(refused.stderr)["code"] == "UNSUPPORTED_PROFILE",
+                "DeepEval v2 ingestion bypassed native measurement boundary",
+            )
+        if scenario in {"flaky_case", "score_without_verdict"}:
+            _deepeval_record_pilot(cli, directory, source, report, version="4.2.8")
 
 
 def _langfuse_record_pilot(
@@ -1218,6 +1306,7 @@ def _smoke(dist: Path) -> None:
         _record_pilots(cli, fixtures, work)
         _handoff_pilot(cli, work)
         _deepeval_pilot(cli, work)
+        _deepeval_v2_pilot(cli, work)
         _langfuse_pilot(cli, work)
 
         _native_measurement_pilot(cli, fixtures, work)

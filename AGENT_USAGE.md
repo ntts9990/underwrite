@@ -85,7 +85,7 @@ is ready; obtain the completed producer artifact and its version context first.
 | --- | --- |
 | goppi | `project-baseline` accepts the exact baseline exchange manifest v2 described below; P7 paired handoffs and older grounded-pilot exchanges have separate routes. No generic ingest profile. A CLI summary is insufficient; do not manufacture rows from counts. |
 | Langfuse | The supported `4.35.0` denotes the **server export profile**, not the SDK version. Supply the worker's `observations_v2` or `scores` blob-export file as an uncompressed JSON array with the complete field groups. A REST response, Parquet file, or partially selected export is a different shape. Wait for a completed export manifest; SDK flush alone is insufficient. |
-| DeepEval | Supply the `4.1.1` TestRun JSON written by the tool, with the producer version recorded separately. A deliberately failed test run can still write a valid artifact. An observed score of zero is distinct from an errored metric without a score. |
+| DeepEval | Supply the ordinary `4.1.1` or `4.2.8` TestRun JSON written by the tool, with the producer version recorded separately. Select `--version 4.2.8` explicitly for that profile; the default remains `4.1.1`. A failed test run can still write a valid artifact. Zero, evaluator errors, and absent verdicts remain distinct. |
 | Promptfoo | Supply the `0.123.0` eval output JSON (summary version 3). An assertion-failure exit can accompany a valid export. Use `audit-promptfoo FILE --json` for direct count auditing, or `audit-counts CASE.json --json` with a supplied `artifact_case.v1` manifest for expected-hash checks and explicit source metadata. |
 
 The [producer checks](EVIDENCE_REVIEW.md) distinguish fresh tool-generated
@@ -344,6 +344,34 @@ metadata in `invocation.json`. Null `published_record` does not prove that no ID
 reserved. The saved result retains the existing zero/error/sibling and unknown
 population meanings; storage verification grants no producer or approval authority.
 Use analysis-only `audit-deepeval` when storage is not requested.
+
+For the ordinary **4.2.8** profile, select the producer version explicitly:
+
+```sh
+underwrite audit-deepeval test_run.json --version 4.2.8 --json
+underwrite records audit-deepeval test_run.json --version 4.2.8 \
+  --root /private/review-store --id deepeval.review-002 --json
+```
+
+These return `deepeval_accounting.v2` and `deepeval_record.v2`, respectively.
+The same selection works with `ingest --format deepeval.test-run --version 4.2.8`.
+No version is detected from this unversioned file; selecting a profile does not
+authenticate its producer. The default and explicit 4.1.1 results stay v1.
+
+In v2, `source_flaky` is the producer's boolean declaration at case and metric
+level, not measured instability or a computed CI outcome. A failed flaky case
+stays source-false; a failed flaky metric can coexist with a passing case.
+Scores with no source verdict remain scored, with `source_success: null` and a
+separate `scored_source_success_absent` count. An absent threshold is also null;
+neither missing value is inferred from the score. Present null input fields are
+refused, and the profile requires explicit boolean `flaky` fields.
+
+Producer aggregate summaries remain unchecked, even when they label a score-only
+row as an aggregate error. New case token metadata, expectations and classifiers
+are outside this bounded profile; nonempty conversational/trace accounting remains
+unsupported. Do not delete fields to force acceptance. V2 retention preserves the
+selected version even for acquisition diagnostics; its storage and exit meanings
+are the same as v1.
 
 ## Source-checkout pilot: audit Promptfoo counts
 

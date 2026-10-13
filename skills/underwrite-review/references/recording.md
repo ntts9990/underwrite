@@ -33,8 +33,11 @@ manual composition below for other existing command paths.
 
 For a supported DeepEval TestRun, prefer the capabilities-listed
 `records audit-deepeval FILE --root ROOT --id NEW_ID --json` when the caller requests
-whole-file retention in an explicit private store. Inspect analysis and storage
-separately on exits 0/2/3. Complete malformed input is retained; acquisition failure
+whole-file retention in an explicit private store. The default is producer 4.1.1
+with `deepeval_record.v1`; select
+`--version 4.2.8` explicitly for its v2 accounting and `deepeval_record.v2` envelope.
+Keep absent metric verdicts and producer flaky declarations distinct. Inspect analysis
+and storage separately on exits 0/2/3. Complete malformed input is retained; acquisition failure
 stores only the actual diagnostic and invocation, and consumes the ID. Recover
 `analysis/accounting.json` or `analysis/error.json` with `records read-json`.
 The TestRun is not redacted, and a stored evaluator error remains an error without
