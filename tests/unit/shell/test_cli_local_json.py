@@ -148,3 +148,41 @@ def test_validate_refuses_as_the_command_and_a_broken_validator_is_configuration
     broken = Draft202012Validator({"$ref": "#/$defs/absent"})
     with pytest.raises(SchemaConfigurationError, match="SCHEMA_EVALUATION_FAILED"):
         validate(broken, {}, CommandError, "INVALID_X", "/x")
+
+
+@pytest.mark.parametrize(
+    ("raw", "max_bytes", "max_depth"),
+    [
+        (b'{"b":2, "a":[1]}', LIMIT, DEPTH),
+        (b"{}", 2, DEPTH),
+        (b"{}", 1, DEPTH),
+        (b'{"a":[{}]}', LIMIT, 2),
+        (b'{"secret":', LIMIT, DEPTH),
+        (b'{"a":1,"a":2}', LIMIT, DEPTH),
+        (b'{"a":9007199254740993}', LIMIT, DEPTH),
+        (b"[]", LIMIT, DEPTH),
+    ],
+)
+def test_buffer_and_path_decoding_have_identical_results_and_errors(
+    raw: bytes, max_bytes: int, max_depth: int, tmp_path: Path
+) -> None:
+    from underwrite.cli.local_json import decode_document, decode_object
+
+    path = tmp_path / "input.json"
+    path.write_bytes(raw)
+    try:
+        expected = read_object(path, max_bytes, max_depth)
+    except LocalJsonError as error:
+        with pytest.raises(LocalJsonError) as caught:
+            decode_object(raw, max_bytes, max_depth)
+        assert (caught.value.reason, caught.value.code) == (error.reason, error.code)
+        with pytest.raises(CommandError) as path_error:
+            read_document(path, max_bytes, max_depth, "/x", "INVALID_X", CommandError)
+        with pytest.raises(CommandError) as buffer_error:
+            decode_document(raw, max_bytes, max_depth, "/x", "INVALID_X", CommandError)
+        assert path_error.value.args == buffer_error.value.args
+    else:
+        assert decode_object(raw, max_bytes, max_depth) == expected
+        assert (
+            decode_document(raw, max_bytes, max_depth, "/x", "INVALID_X", CommandError) == expected
+        )

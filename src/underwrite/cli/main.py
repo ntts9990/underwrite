@@ -151,6 +151,12 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 (),
                 ("langfuse_record.v1",),
             ),
+            profile(
+                "measure",
+                ("observation", "policy", "root", "id"),
+                ("observation.v1", "measurement_policy.v3"),
+                ("measurement_record.v1",),
+            ),
             profile("list", ("root",), (), ("record_catalog.v1",)),
             profile("show", ("root", "id"), (), ("record_view.v1",)),
             profile("read-json", ("root", "id", "name"), (), ("record_document.v1",)),

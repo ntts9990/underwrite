@@ -107,6 +107,12 @@ def configure(parser: argparse.ArgumentParser) -> None:
         "audit-deepeval", help="Audit and retain one entire DeepEval TestRun file."
     )
     record_deepeval.configure(deepeval)
+    from underwrite.cli import record_measure
+
+    measurement = commands.add_parser(
+        "measure", help="Measure and retain native evidence and policy."
+    )
+    record_measure.configure(measurement)
 
 
 def _input_error(code: str, reason: str, location: str) -> Exception:
@@ -242,7 +248,11 @@ def _emit_error(error: _CliError, *, as_json: bool) -> int:
     return 2
 
 
-def main(argv: list[str]) -> int:
+def _capture_command(argv: list[str]) -> int | None:
+    if argv and argv[0] == "measure":
+        from underwrite.cli import record_measure
+
+        return record_measure.main(argv[1:])
     if argv and argv[0] == "audit-deepeval":
         from underwrite.cli import record_deepeval
 
@@ -255,6 +265,13 @@ def main(argv: list[str]) -> int:
         from underwrite.cli import record_promptfoo
 
         return record_promptfoo.main(argv[1:])
+    return None
+
+
+def main(argv: list[str]) -> int:
+    captured = _capture_command(argv)
+    if captured is not None:
+        return captured
     parser = _Parser(prog="underwrite records", allow_abbrev=False)
     configure(parser)
     as_json = "--json" in argv or bool(argv and argv[0] == "read-json")

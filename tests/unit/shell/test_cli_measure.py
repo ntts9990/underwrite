@@ -598,3 +598,113 @@ def test_all_failures_with_perfect_forecasts_do_not_pass(
     assert output["decision"]["status"] == "unfavorable"
     assert output["diagnostics"]["brier"]["value"] == 0
     assert output["diagnostics"]["ece"]["value"] == 0
+
+
+@pytest.mark.parametrize(
+    ("observation_raw", "policy_raw", "expected"),
+    [
+        (
+            b"{",
+            None,
+            ("INVALID_OBSERVATION", "INVALID_JSON_INPUT", "/observation", ["observation"]),
+        ),
+        (
+            b"{}",
+            None,
+            ("SOURCE_READ_FAILED", "SOURCE_READ_FAILED", "/policy", ["observation", "policy"]),
+        ),
+        (None, b"{", ("SOURCE_READ_FAILED", "SOURCE_READ_FAILED", "/observation", ["observation"])),
+        (None, None, ("SOURCE_READ_FAILED", "SOURCE_READ_FAILED", "/observation", ["observation"])),
+        (
+            b"{}",
+            b"{}",
+            (
+                "INVALID_OBSERVATION",
+                "SCHEMA_VALIDATION_FAILED",
+                "/observation",
+                ["observation", "policy"],
+            ),
+        ),
+    ],
+)
+def test_measure_lazy_input_failure_precedence(
+    observation_raw: bytes | None,
+    policy_raw: bytes | None,
+    expected: tuple[str, str, str, list[str]],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code, reason, location, roles = expected
+    observation, policy = tmp_path / "observation", tmp_path / "policy"
+    for path, raw in ((observation, observation_raw), (policy, policy_raw)):
+        if raw is not None:
+            path.write_bytes(raw)
+    consumed: list[str] = []
+    original = measure.read_document
+
+    def tracked(
+        path: Path,
+        max_bytes: int,
+        max_depth: int,
+        location: str,
+        invalid: str,
+        error: Any,
+    ) -> tuple[dict[str, Any], str]:
+        consumed.append(path.name)
+        return original(path, max_bytes, max_depth, location, invalid, error)
+
+    monkeypatch.setattr(measure, "read_document", tracked)
+    assert main(_args(observation, policy)) == ERROR_EXIT
+    payload = _error(capsys, code)
+    assert (payload["reason"], payload["location"]) == (reason, location)
+    assert consumed == roles
+
+
+def test_buffer_measurement_matches_cli_and_consumes_each_role_once(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from underwrite.cli.local_json import decode_document
+
+    consumed: list[measure.InputRole] = []
+
+    def reader(role: measure.InputRole) -> tuple[dict[str, Any], str]:
+        consumed.append(role)
+        filename = "read-input.json" if role == "observation" else "policy.json"
+        return decode_document(
+            (FIXTURES / filename).read_bytes(),
+            *measure.input_limits(role),
+            "/" + role,
+            "INVALID_" + role.upper(),
+            measure.MeasurementError,
+        )
+
+    result = measure.read_measurement(reader)
+    assert consumed == ["observation", "policy"]
+    assert main(_args()) == 0
+    assert result == json.loads(capsys.readouterr().out)
+
+
+@pytest.mark.parametrize("stage", ["construction", "evaluation"])
+def test_shared_measurement_preserves_configuration_faults(
+    stage: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    consumed: list[measure.InputRole] = []
+
+    def reader(role: measure.InputRole) -> tuple[dict[str, Any], str]:
+        consumed.append(role)
+        document = _load("read-input.json" if role == "observation" else "policy.json")
+        return document, content_digest(document)
+
+    def broken(*args: object, **kwargs: object) -> Any:
+        raise measure.SchemaConfigurationError("SCHEMA_EVALUATION_FAILED")
+
+    monkeypatch.setattr(
+        measure,
+        "measurement_validators" if stage == "construction" else "validate",
+        broken,
+    )
+    with pytest.raises(measure.SchemaConfigurationError):
+        measure.read_measurement(reader)
+    assert consumed == ["observation", "policy"]

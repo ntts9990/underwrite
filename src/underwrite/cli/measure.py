@@ -6,9 +6,10 @@ import argparse
 import copy
 import json
 import sys
+from collections.abc import Callable
 from importlib.resources import files
 from pathlib import Path
-from typing import Any, NoReturn, cast
+from typing import Any, Literal, NoReturn, cast
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
@@ -186,23 +187,36 @@ def measurement_validators() -> tuple[Validator, Validator]:
     return packaged_validator("read.v2"), packaged_validator("measurement_policy.v3")
 
 
+InputRole = Literal["observation", "policy"]
+InputReader = Callable[[InputRole], tuple[dict[str, Any], str]]
+
+
+def input_limits(role: InputRole) -> tuple[int, int]:
+    """The measurement input role owns its byte and JSON depth bounds."""
+    if role == "observation":
+        return OBSERVATION_MAX_BYTES, OBSERVATION_MAX_DEPTH
+    return POLICY_MAX_BYTES, POLICY_MAX_DEPTH
+
+
 def _read(args: argparse.Namespace) -> dict[str, Any]:
-    observation, observation_digest = read_document(
-        args.observation,
-        OBSERVATION_MAX_BYTES,
-        OBSERVATION_MAX_DEPTH,
-        "/observation",
-        "INVALID_OBSERVATION",
-        MeasurementError,
-    )
-    policy, policy_digest = read_document(
-        args.policy,
-        POLICY_MAX_BYTES,
-        POLICY_MAX_DEPTH,
-        "/policy",
-        "INVALID_POLICY",
-        MeasurementError,
-    )
+    def reader(role: InputRole) -> tuple[dict[str, Any], str]:
+        max_bytes, max_depth = input_limits(role)
+        return read_document(
+            getattr(args, role),
+            max_bytes,
+            max_depth,
+            "/" + role,
+            "INVALID_" + role.upper(),
+            MeasurementError,
+        )
+
+    return read_measurement(reader)
+
+
+def read_measurement(reader: InputReader) -> dict[str, Any]:
+    """Consume inputs lazily in measurement order; configuration faults stay distinct."""
+    observation, observation_digest = reader("observation")
+    policy, policy_digest = reader("policy")
     read_validator, policy_validator = measurement_validators()
     validate(
         packaged_validator("observation.v1"),
@@ -247,16 +261,12 @@ def _human(read: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def main(argv: list[str]) -> int:
-    parser = _Parser(prog="underwrite measure", allow_abbrev=False)
-    configure(parser)
-    try:
-        args = parser.parse_args(argv)
-        read = _read(args)
-        output = (canonical_bytes(read).decode() if args.json else _human(read)) + "\n"
-        if len(output.encode()) > OUTPUT_MAX_BYTES:
-            raise MeasurementError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
-    except (ReadInputError, EventReadError) as exc:
+def measurement_error(exc: Exception) -> MeasurementError:
+    """Translate only finite domain reasons; retain the ordinary CLI error contract.
+
+    Recording callers must propagate schema configuration faults before translation.
+    """
+    if isinstance(exc, (ReadInputError, EventReadError)):
         if (
             exc.code
             in {
@@ -272,12 +282,26 @@ def main(argv: list[str]) -> int:
             error = MeasurementError(exc.code, exc.reason, exc.location)
         else:
             error = MeasurementError("INTERNAL_ERROR", "INTERNAL_ERROR")
-    except MeasurementError as exc:
+    elif isinstance(exc, MeasurementError):
         error = exc
-    except SchemaConfigurationError:
+    elif isinstance(exc, SchemaConfigurationError):
         error = MeasurementError("SCHEMA_CONFIGURATION_ERROR", "INVALID_MEASUREMENT_SCHEMA")
-    except Exception:
+    else:
         error = MeasurementError("INTERNAL_ERROR", "INTERNAL_ERROR")
+    return error
+
+
+def main(argv: list[str]) -> int:
+    parser = _Parser(prog="underwrite measure", allow_abbrev=False)
+    configure(parser)
+    try:
+        args = parser.parse_args(argv)
+        read = _read(args)
+        output = (canonical_bytes(read).decode() if args.json else _human(read)) + "\n"
+        if len(output.encode()) > OUTPUT_MAX_BYTES:
+            raise MeasurementError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
+    except Exception as exc:
+        error = measurement_error(exc)
     else:
         sys.stdout.write(output)
         return 0

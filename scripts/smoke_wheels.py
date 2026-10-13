@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -991,6 +992,106 @@ def _baseline_event_pilot(cli: Path, fixtures: Path, work: Path) -> None:
     )
 
 
+def _measurement_record_pilot(cli: Path, work: Path) -> None:
+    observation = work / "measurement-input.json"
+    raw = (work / "baseline-observation.json").read_bytes() + b"\n"
+    observation.write_bytes(raw)
+    policy = work / "baseline-prepared-policy.json"
+    store = work / "measurement-records"
+    args = [
+        "records",
+        "measure",
+        "--observation",
+        str(observation),
+        "--policy",
+        str(policy),
+        "--root",
+        str(store),
+        "--id",
+        "measurement-001",
+    ]
+    result = _cli_json(cli, args, work / "measurement-record.json", work)
+    analysis = cast(dict[str, object], result["analysis"])
+    storage = cast(dict[str, object], result["storage"])
+    expected = json.loads((work / "baseline-read.json").read_bytes())
+    _require(result.get("schema") == "measurement_record.v1", "measurement capture schema")
+    _require(analysis.get("report") == expected, "capture changed measurement")
+    _require(storage.get("state") == "saved", "measurement was not retained")
+    source = _cli_json(
+        cli,
+        [
+            "records",
+            "read-json",
+            "--root",
+            str(store),
+            "--id",
+            "measurement-001",
+            "--name",
+            "source/observation.bin",
+        ],
+        work / "measurement-source.json",
+        work,
+    )
+    _require(
+        source.get("sha256") == "sha256:" + hashlib.sha256(raw).hexdigest()
+        and source.get("bytes") == len(raw),
+        "capture did not preserve exact source bytes",
+    )
+    recovered = _cli_json(
+        cli,
+        [
+            "records",
+            "read-json",
+            "--root",
+            str(store),
+            "--id",
+            "measurement-001",
+            "--name",
+            "analysis/read.json",
+        ],
+        work / "measurement-recovered.json",
+        work,
+    )
+    _require(recovered.get("content") == expected, "stored read changed")
+    conflict = _command([str(cli), *args, "--json"], work)
+    conflict_report = json.loads(conflict.stdout)
+    _require(
+        conflict.returncode == STORAGE_ERROR_EXIT
+        and conflict.stderr == ""
+        and conflict_report["storage"]["error"]["code"] == "RECORD_EXISTS"
+        and conflict_report["analysis"]["report"] == expected,
+        "record conflict lost analysis or overwrote the record",
+    )
+    malformed = work / "malformed-measurement.json"
+    malformed.write_bytes(b"{broken")
+    failure = _command(
+        [
+            str(cli),
+            "records",
+            "measure",
+            "--observation",
+            str(malformed),
+            "--policy",
+            str(work / "absent-policy.json"),
+            "--root",
+            str(store),
+            "--id",
+            "measurement-diagnostic",
+            "--json",
+        ],
+        work,
+    )
+    report = json.loads(failure.stdout)
+    _require(
+        failure.returncode == EVIDENCE_ERROR_EXIT
+        and failure.stderr == ""
+        and report["storage"]["state"] == "saved"
+        and report["analysis"]["phase"] == "analysis"
+        and report["analysis"]["error"]["code"] == "INVALID_OBSERVATION",
+        "diagnostic capture changed measurement error precedence",
+    )
+
+
 def _smoke(dist: Path) -> None:
     core_wheel, app_wheel = _wheels(dist)
     fixtures = ROOT / "fixtures/examples"
@@ -1010,6 +1111,7 @@ def _smoke(dist: Path) -> None:
 
         _native_measurement_pilot(cli, fixtures, work)
         _baseline_event_pilot(cli, fixtures, work)
+        _measurement_record_pilot(cli, work)
 
         malformed = work / "malformed-bundle.json"
         malformed.write_text(

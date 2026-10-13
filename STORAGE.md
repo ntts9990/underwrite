@@ -5,6 +5,46 @@ It does not discover inputs, execute an evaluation, or certify provenance.
 Commands are available in this checkout and wheels built from it; the package
 version alone does not establish availability.
 
+For native measurement, retain the exact observation and policy used by the
+calculation together with its read or diagnostic:
+
+```sh
+underwrite records measure --observation observation.json --policy policy.json \
+  --root PRIVATE_STORE --id measurement-001 --json
+underwrite records read-json --root PRIVATE_STORE --id measurement-001 \
+  --name analysis/read.json --json
+```
+
+`measurement_record.v1` keeps analysis and storage independent: exit 0 means a
+read was produced and saved (including `not_measured`), 2 means a diagnostic was
+saved, and 3 means storage failed while preserving the analysis result or error.
+A diagnostic record consumes its ID. Use `analysis/error.json` for an analysis
+failure. `invocation.json` records effective display arguments and acquisition
+states; it is not an executable recipe or an attestation of a subprocess.
+These exits describe the `measurement_record.v1` stdout envelope. Argument,
+configuration and response-admission failures instead emit `evidence_error.v1`
+on stderr with exit 2 before storing. Inspect the schema and both streams; exit 2
+alone does not establish that a diagnostic record exists.
+
+Both explicitly selected files are attempted once. Complete bytes, including
+malformed JSON, are retained as `source/observation.bin` and `source/policy.bin`;
+an acquisition failure retains no partial file. Analysis preserves ordinary
+`measure` error precedence even when the other input also has an acquisition
+failure. Raw file hashes and canonical input digests have different meanings.
+Two file reads do not establish an atomic producer snapshot.
+Input limits remain 4 MiB/depth 64 for the observation and 64 KiB/depth 16 for the
+policy. Generated analysis is bounded to 1 MiB including its newline. The current
+selected-file reader also limits reads to 1 MiB: a larger captured observation
+can be retained without being readable through `records read-json`.
+
+The selected observation and policy are retained whole and may contain private
+content. Payload source pointers are never followed: capturing a generated
+baseline observation does not back up the original goppi exchange. No producer,
+network request or arbitrary command runs. Output/schema admission precedes
+store mutation, IDs are never overwritten, and post-publication failures retain
+the known identity in `storage.published_record`. Stored-byte verification is not
+measurement reproduction, source authentication or approval.
+
 For a supported DeepEval TestRun, use
 `records audit-deepeval FILE --root ROOT --id NEW_ID --json` to analyze and retain
 the same complete bytes with their result or diagnostic and invocation metadata.
