@@ -2,77 +2,104 @@
 
 <h1><img src="assets/brand/underwrite-logo.png" alt="underwrite" width="640"></h1>
 
-**평가 아티팩트를 검토 가능한 근거로 연결합니다.**
+### 평가 파일을 에이전트가 활용할 근거로.
 
-지원되는 로컬 아티팩트를 검사하고, 네이티브 근거 번들을 명시적 정책으로 측정하며,
-선언된 측정 결과를 바탕으로 변경 후보를 분류합니다.
+결과를 살펴보고, 근거를 보관하고, 빠진 정보를 드러냅니다.
+
+**로컬 CLI와 Python 라이브러리 · 구조화된 JSON · 서버나 모델 호출 없이**
 
 [![CI](https://github.com/ntts9990/underwrite/actions/workflows/ci.yml/badge.svg)](https://github.com/ntts9990/underwrite/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/underwrite)](https://pypi.org/project/underwrite/)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue)](https://pypi.org/project/underwrite/)
 [![라이선스: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-[English](README.md) · **한국어**
+**[직접 실행하기](#빠른-시작)** · [에이전트와 사용하기](#에이전트-사용) · [지원 형식](#지원-형식) · [문서](#문서)
 
-[설치](#설치) · [빠른 시작](#빠른-시작) · [에이전트 사용](AGENT_USAGE.md) · [로컬 기록 저장](STORAGE.md) · [지원 형식](#지원-형식) · [CLI](#cli) · [기여 안내](CONTRIBUTING.md)
+[English](README.md) · **한국어**
 
 </div>
 
+underwrite는 지원되는 로컬 평가 내보내기 파일을 사람과 코딩 에이전트가 살펴보고,
+저장하고, 다시 사용할 수 있는 구조화된 결과로 바꿉니다. **goppi, Langfuse,
+DeepEval, Promptfoo**의 결과를 가져와 해당 아티팩트에 맞는 경로로 처리하면,
+무엇이 제공되었고 무엇이 아직 알려지지 않았는지 확인할 수 있습니다.
+
+터미널과 에이전트 작업 흐름에서 기존 파일을 읽고 JSON을 받은 뒤, 호출한 에이전트가
+설명을 작성하도록 하세요. 파일을 검사하는 데 Docker, 대시보드, 제공자 인증 정보나
+평가 재실행은 필요하지 않습니다.
+
+> [!NOTE]
+> **이 README는 개발 체크아웃을 설명합니다.** 아래 작업 흐름은 PyPI에 공개된
+> `0.0.1`보다 이후에 추가되었습니다. 직접 사용하려면 소스 빠른 시작을 따르세요.
+> 두 빌드는 여전히 같은 버전 번호를 사용합니다. [공개판 설치](#설치).
+
 ## 왜 underwrite인가요?
 
-평가 결과가 변경을 뒷받침하려면 그 결과의 맥락부터 확인해야 합니다. underwrite는
-로컬 근거를 명시적 측정·수락 정책에 연결하는 Python CLI이자 라이브러리입니다.
-근거가 빠진 경우도 결과에 그대로 드러냅니다.
+- **요약 뒤에 숨은 불일치를 찾습니다.** Promptfoo의 선언 집계와 실제 제공된 행을
+  비교하고, 전용 집계 검사 명령으로 DeepEval의 평가기 오류와 Langfuse 점수의
+  연결 관계를 확인합니다.
+- **에이전트가 바로 활용할 결과를 제공합니다.** 타입이 명시된 JSON에 입력 식별 정보,
+  발견 사항, 해석의 한계를 담습니다. `capabilities --json`은 현재 실행 파일의
+  명령과 입력 프로필을 알려줍니다.
+- **답변의 근거가 된 바이트를 보관합니다.** 선택한 입력과 분석을 불변 로컬 기록으로
+  저장합니다. 원래 경로 없이도 나중에 검증하고 조회하며, 저장된 네이티브 측정은
+  현재 엔진으로 다시 계산할 수 있습니다.
+- **측정 기준을 명시합니다.** 제공된 정책에 따라 네이티브 이진 사건 근거를 측정합니다.
+  누락된 근거나 선언되지 않은 가정을 성공 판정으로 바꾸지 않고 결과에 드러냅니다.
 
-- **하나의 관측 계약.** 지원하는 페이로드를 정규화하면서 원천 주장을 측정 결론과 구분합니다.
-- **명시적 측정.** 이진 사건, 바람직한 방향, 기대 모집단, 통계 가정을 정책에 결합합니다.
-- **드러나는 불확실성.** `not_measured`, `indeterminate`, `abstained`를 구분합니다. 행동에 옮기기 전에 결과를 확인하세요.
-
-```text
-네이티브 근거 번들 → ingest → observation → measure + 정책 → read
-후보 + 주장 + 제공된 reads → accept → 분류 결과
-
-지원되는 외부 export → ingest → observation (원천 주장과 바이트 동일성만 기록)
+```mermaid
+flowchart LR
+    A[지원되는 로컬 평가 파일] --> B[검사와 집계 확인]
+    B --> C[에이전트가 활용할 구조화된 JSON]
+    B --> D[선택적 로컬 기록]
+    E[네이티브 근거 + 명시적 정책] --> F[측정]
+    F --> C
+    D --> G[검증과 조회]
 ```
-
-지원되는 외부 관측은 현재 측정 경로로 이어지지 않습니다. 유효한 정책을 제공해도
-`measure`는 `UNSUPPORTED_PROFILE`을 반환하며 read를 만들지 않습니다. 구체적인 예시는
-[에이전트 사용 안내](AGENT_USAGE.md)를 참고하세요.
-
-콘텐츠 해시는 바이트의 동일성을 식별하며, 독립적인 출처 증명은 아닙니다.
-종료 코드 `0`은 명령이 결과를 생성했다는 뜻이지, 변경이 승인되었다는 뜻이 아닙니다.
-
-## 설치
-
-Python **3.12 이상**과 [uv](https://docs.astral.sh/uv/)가 필요합니다.
-
-현재 측정·집계 검사·기록·handoff 기능을 사용하려면 [소스 체크아웃 빠른 시작](#빠른-시작)을
-따르세요. 아래 명령은 이전 공개판 `0.0.1`을 설치하며, 해당 기능과 `capabilities`는
-포함하지 않습니다. 개발판도 `0.0.1`을 유지하므로 버전 번호가 같아도 기능은 다릅니다.
-
-```sh
-uv tool install 'underwrite==0.0.1'
-underwrite --help
-```
-
-[underwrite](https://pypi.org/project/underwrite/0.0.1/)와
-[underwrite-core](https://pypi.org/project/underwrite-core/0.0.1/) 모두 PyPI에서 wheel과
-소스 배포본으로 제공됩니다. 코어 패키지는 Python 표준 라이브러리만 사용하며,
-애플리케이션 어댑터가 로컬 입출력과 스키마 검증을 담당합니다.
 
 ## 빠른 시작
 
-소스 체크아웃에서 포함된 합성 예제로 네이티브 전체 경로를 실행합니다. 인접한
-다른 저장소를 체크아웃할 필요는 없습니다. `uv sync`는 같은 워크스페이스의
-`underwrite-core`를 사용합니다. 개발 wheel을 설치할 때도 같은 체크아웃에서 만든 앱과
-core를 함께 사용하세요. 버전 번호만 보고 개발판 앱과 공개판 core를 섞지 마세요.
+**Python 3.12 이상**과 [uv](https://docs.astral.sh/uv/)가 필요합니다.
+포함된 합성 예제를 실행해 보세요. API 키나 인접한 다른 저장소는 필요하지 않습니다.
 
 ```sh
 git clone https://github.com/ntts9990/underwrite.git
 cd underwrite
 uv sync --frozen --all-groups
-mkdir -p output
 
+uv run --frozen --no-sync underwrite audit-promptfoo \
+  fixtures/examples/evidence/synthetic-promptfoo-count-mismatch.json --json
+```
+
+원본 요약은 **결과 3개**를 선언하지만, 파일에는 **행 2개**가 있습니다.
+명령은 이 불일치를 보고합니다. 다음은 다른 필드를 생략한 실제 출력입니다.
+
+```json
+{
+  "schema": "promptfoo_accounting.v1",
+  "declared_relation": "inconsistent",
+  "producer_stats": {"errors": 1, "failures": 1, "successes": 1, "total": 3},
+  "row_tallies": {"errors": 1, "failures": 0, "successes": 1, "total": 2},
+  "limitations": [
+    "PLANNED_DENOMINATOR_UNKNOWN",
+    "CAUSE_UNKNOWN",
+    "SOURCE_CLAIMS_UNVERIFIED",
+    "NO_APPROVAL_AUTHORITY"
+  ]
+}
+```
+
+행이 없는 이유를 추측하거나 원천의 판정을 독립적으로 검증된 사실로 취급하지 않고도
+구체적인 불일치를 확인할 수 있습니다. 종료 코드 `0`은 보고서가 생성되었다는 뜻입니다.
+결과를 해석하려면 보고서의 필드를 확인하세요.
+
+<details>
+<summary><strong>네이티브 측정 → 수락 분류 흐름 실행하기</strong></summary>
+
+같은 체크아웃에서 포함된 합성 이진 사건 예제를 실행합니다.
+
+```sh
+mkdir -p output
 uv run --frozen --no-sync underwrite ingest \
   --format underwrite.evidence-bundle --version v1 \
   --file fixtures/examples/event-measurement/bundle.json --json \
@@ -89,117 +116,155 @@ uv run --frozen --no-sync underwrite accept \
   --read output/read-event.json --json
 ```
 
-이 예제는 합성 이진 사건의 비율을 측정합니다. 일반 품질이나 지연 시간을 측정하지
-않습니다. `read.v2`는 번들과 `measurement_policy.v3`으로 계산하며, 보정 진단값은
-판정에 투표하지 않습니다. [측정 의미와 마이그레이션](AGENT_USAGE.md#measurement-meaning-and-migration)을 참고하세요. 최종 결과는 `screened`이며,
-사람의 검토가 필요하고 `merge_authorized`는 false로 유지됩니다. 필요한 주장마다
-`--read`를 반복해 전달합니다. 분류에 성공했다고 병합이나 배포가 허가되는 것은 아닙니다.
+이 예제는 합성 이진 사건의 비율을 측정하며, 일반 품질이나 지연 시간을 측정하지 않습니다.
+`read.v2`는 명시적인 `measurement_policy.v3`을 사용하고, 보정 진단값은 판정에
+투표하지 않습니다. 최종 분류는 `screened`이며, 사람의 검토가 필요하고
+`merge_authorized`는 false로 유지됩니다. 필요한 주장마다 `--read`를 반복해 전달하세요.
+[측정의 의미](AGENT_USAGE.md#measurement-meaning-and-migration)를 참고하세요.
 
-로컬 내보내기를 다루는 코딩 에이전트라면 [에이전트 사용 안내](AGENT_USAGE.md)의 명령,
-결과 해석, 재사용 가능한 작업 지시문을 참고하세요. 아래 외부 형식은 ingest할 수 있지만
-현재 `measure`는 네이티브 근거 번들 관측만 받습니다. ingest 성공만으로 외부 원천
-주장을 측정할 수 있게 되는 것은 아닙니다.
+</details>
 
-완료된 goppi baseline exchange v2는 [`project-baseline`](AGENT_USAGE.md#project-a-completed-goppi-baseline-into-event-observations)으로 행을 직접 재작성하지 않고 사건 관측에 연결할 수 있습니다. `prepare-event-policy`는 명시한 소비자 설정에 사례 목록과 의미 다이제스트를 결합하고 통계 가정은 `unknown`으로 유지합니다. 원천 primary 상태·누락·통계 가정을 구분해 보존합니다.
+## 에이전트 사용
+
+코딩 에이전트에 준비된 체크아웃과 내보낸 아티팩트를 제공하세요. 에이전트는 사용 가능한
+경로를 찾고 실행한 뒤 JSON을 답변에 활용할 수 있습니다.
+
+```sh
+uv run --frozen --no-sync underwrite --help
+uv run --frozen --no-sync underwrite capabilities --json
+```
+
+터미널을 사용할 수 있는 에이전트에게 다음과 같이 요청할 수 있습니다.
+
+> 이 체크아웃의 `skills/underwrite-review/SKILL.md`를 읽으세요.
+> `fixtures/examples/evidence/synthetic-promptfoo-count-mismatch.json`을
+> Promptfoo 0.123.0 내보내기 파일로 검토하세요. 집계 불일치를 설명하고,
+> 원본 바이트를 식별하며, 결과만으로 알 수 없는 점을 밝혀주세요.
+
+선택 설치형 [underwrite-review 스킬](skills/underwrite-review/SKILL.md)은 Codex와
+Claude Code에서 재사용할 수 있는 지침을 제공합니다.
+[설정과 사용 안내](AGENT_USAGE.md#optional-artifact-review-skill)에 따라 사용하며,
+스킬이 CLI를 설치하거나 백그라운드 서비스를 추가하지는 않습니다.
+직접 만든 자동화에서도 같은 CLI와 가져와 사용할 수 있는 Python API를 이용할 수 있습니다.
 
 ## 지원 형식
 
-형식과 정확한 지원 버전을 명시적으로 선택합니다.
+지원 범위는 **아래의 구체적인 로컬 페이로드 프로필**입니다. 각 도구가 제공하는 모든
+API, 내보내기 형식, 버전을 지원한다는 뜻은 아닙니다. 버전을 명시적으로 선택하세요.
 
-| 생성 도구 | `--format` | `--version` |
+| 입력 | 지원 프로필 | 시작 경로 |
 | --- | --- | --- |
-| DeepEval | `deepeval.test-run` | `4.1.1`, `4.2.8` (일반 TestRun의 명시된 범위) |
-| Inspect AI | `inspect.eval-log` | `0.3.263` |
-| Langfuse | `langfuse.observations-v2` 또는 `langfuse.scores` | `4.35.0` |
-| OpenInference | `openinference.traces` | `0.1.38` |
-| OTLP JSON | `otlp-json.traces` | `0.160.0` |
-| promptfoo | `promptfoo.eval-output` | `0.123.0`, `0.124.1` |
-| 네이티브 근거 번들 | `underwrite.evidence-bundle` | `v1` |
+| **goppi** | 완료된 baseline exchange manifest v2; paired handoff는 별도 경로 | [`project-baseline`](AGENT_USAGE.md#project-a-completed-goppi-baseline-into-event-observations) · [`review-handoff`](AGENT_USAGE.md#review-a-completed-paired-handoff-in-one-call) |
+| **Langfuse** | `4.35.0` 서버 blob export: observations-v2와 scores JSON 배열 | [`audit-langfuse`](AGENT_USAGE.md#account-for-langfuse-score-kinds-and-associations) |
+| **DeepEval** | 일반 TestRun JSON, `4.1.1` 또는 `4.2.8` | [`audit-deepeval`](AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors) |
+| **Promptfoo** | Eval output JSON, `0.123.0` 또는 `0.124.1` | [`audit-promptfoo`](AGENT_USAGE.md#source-checkout-pilot-audit-promptfoo-counts) |
+| **네이티브 근거** | `underwrite.evidence-bundle` / `v1` | `ingest` → `measure` → `accept` |
+| **Inspect AI** | `inspect.eval-log` / `0.3.263` | `ingest` |
+| **OpenInference** | `openinference.traces` / `0.1.38` | `ingest` |
+| **OTLP JSON** | `otlp-json.traces` / `0.160.0` | `ingest` |
 
-지원 범위는 위 페이로드 프로필로 한정됩니다. 각 도구의 모든 내보내기 형식이나 버전과의
-호환성을 뜻하지 않습니다. 네이티브 번들은
-`schema_version: underwrite.evidence-bundle.v1`을 선언하고, readings·원천 주장·가용성
-기록을 담습니다. 관측(observation)은 원천 주장을 측정과 구분해 보존합니다.
+DeepEval 집계 검사의 기본값은 `4.1.1`입니다. `4.2.8` 프로필을 쓰려면
+`--version 4.2.8`을 지정하세요. Promptfoo 집계 검사의 기본값은 `0.123.0`이며,
+`0.124.1` 프로필에는 `--version 0.124.1`을 지정합니다. Langfuse의 버전은 SDK가 아니라
+서버 내보내기를 가리킵니다. 검사한 범위와 fixture의 출처는
+[아티팩트 요구사항](AGENT_USAGE.md#get-the-right-producer-artifact)과
+[생성 도구 검증](EVIDENCE_REVIEW.md)을 참고하세요.
 
-`project`는 `ingest`의 명시적 별칭입니다. `--http-body-file FILE`은 이미 캡처된 HTTP
-본문을 로컬 파일에서 읽으며 URL을 호출하지 않습니다. 선택 인자 `--source-ref`와
-`--source-locator`는 제공된 원본을 기술합니다. 원본 참조가 없으면 바이트의 동일성으로
-콘텐츠 해시를 사용합니다. 입력 크기와 깊이 제한은 `ingest --help`에서 확인하세요.
+범용 `ingest` / `project`는 지원되는 내보내기를 관측으로 정규화합니다.
+외부 관측은 현재 `measure` 경로로 이어지지 않습니다. goppi는 명시적인 exchange
+어댑터를 사용합니다. `project-baseline`은 네이티브 사건 관측을 만들 수 있고,
+`prepare-event-policy`는 소비자 설정을 결합하면서 통계 가정은 알 수 없는 상태로 둡니다.
 
-<details>
-<summary>잘못된 입력 실행하기: 타입이 명시된 오류와 빈 stdout</summary>
+## 다시 찾아볼 수 있는 결과 보관
 
-빈 실행 식별자는 유효하지 않습니다. 다음 예제는 관측을 생성하지 않고 오류를 캡처합니다.
+분석과 선택한 원본 바이트를 함께 보관하려면 `records`를 사용하세요.
+예를 들어 소스 빠른 시작을 실행한 뒤 다음 명령을 사용할 수 있습니다.
 
 ```sh
 mkdir -p output
-printf '%s\n' '{"schema_version":"underwrite.evidence-bundle.v1","run_id":"","sources":[],"readings":[],"availability":[]}' \
-  > output/malformed-bundle.json
-if uv run --frozen --no-sync underwrite ingest \
-  --format underwrite.evidence-bundle --version v1 \
-  --file output/malformed-bundle.json --json \
-  > output/malformed.stdout 2> output/malformed.stderr; then
-  ingest_exit=0
-else
-  ingest_exit=$?
-fi
-printf 'exit: %s\n' "$ingest_exit"
-wc -c < output/malformed.stdout
-cat output/malformed.stderr
+uv run --frozen --no-sync underwrite records audit-promptfoo \
+  fixtures/examples/evidence/synthetic-promptfoo-count-mismatch.json \
+  --root output/review-store --id demo-001 --json
+
+uv run --frozen --no-sync underwrite records read-json \
+  --root output/review-store --id demo-001 \
+  --name analysis/accounting.json --json
 ```
 
-예상 결과는 종료 코드 `1`, stdout 크기 `0`, 그리고 stderr의 다음 JSON입니다.
+캡처할 때마다 새 ID를 사용하세요. 기존 기록은 덮어쓰지 않습니다.
+`records verify`는 저장된 데이터의 무결성을 검사합니다. `records measure`는
+네이티브 측정을 캡처하고, `records replay-measure`는 검증된 저장 입력을 현재 엔진으로
+다시 계산합니다. 원래 생성 도구를 실행하지 않습니다.
 
-```json
-{"schema":"instrument_error.v1","command":"ingest","code":"INVALID_INPUT","reason":"MALFORMED_EVIDENCE_BUNDLE_PAYLOAD","exit_code":1}
+기록에는 비공개 내용이 담길 수 있는 원본 입력이 보관됩니다. 비공개 로컬 POSIX
+파일시스템과 백업 전략을 선택하세요. Git에서 제외된 이 체크아웃의 `output/`은
+시연용 위치이며 백업이 아닙니다. [저장 계약과 복구](STORAGE.md)를 참고하세요.
+
+## 결과가 의미하는 것
+
+underwrite는 서로 다른 종류의 근거를 구분합니다.
+
+| 결과 | 확인할 수 있는 것 |
+| --- | --- |
+| 원천 집계 검사 | 제공된 행, 점수, 선언 요약 사이의 관계 |
+| 바이트 해시와 기록 검증 | 선택한 바이트의 동일성과 무결성. 독립적인 출처 증명은 아님 |
+| 네이티브 측정 | 제공된 사건 정의, 모집단, 통계 가정 아래의 결과 |
+| 수락 분류 | 선언된 주장과 read에 따른 정책 결과. 병합이나 배포 권한은 없음 |
+
+`not_measured`, `indeterminate`, `abstained`는 서로 다른 상태로 유지됩니다.
+빠진 정보는 명시적으로 드러납니다. 원천 점수가 자동으로 보정된 확률이 되는 것은 아니며,
+명령 실행에 성공했다고 배포가 승인되는 것도 아닙니다.
+
+## 설치
+
+이 페이지의 작업 흐름을 사용하려면 [소스 빠른 시작](#빠른-시작)을 따르세요.
+`uv sync`는 같은 워크스페이스의 `underwrite-core`를 선택합니다. 개발 wheel도
+같은 체크아웃에서 빌드한 앱과 코어를 함께 사용해야 합니다.
+
+<details>
+<summary>이전 PyPI 공개판 0.0.1 설치</summary>
+
+```sh
+uv tool install 'underwrite==0.0.1'
+underwrite --help
 ```
+
+공개된 [앱](https://pypi.org/project/underwrite/0.0.1/)과
+[코어](https://pypi.org/project/underwrite-core/0.0.1/)는 다시 릴리스되지 않았습니다.
+이 배포물에는 개발판의 측정, 집계 검사, 기록, handoff, `capabilities` 작업 흐름이
+포함되어 있지 않습니다. 설치된 명령은 `--help`로 확인하세요. 버전 번호가 같다고
+기능도 같은 것은 아닙니다. 개발판 앱 wheel과 공개판 코어를 섞지 마세요.
 
 </details>
 
 ## CLI
 
-아래 표는 현재 체크아웃 기준입니다. 설치된 기능은 `underwrite --help`로 확인하고,
-목록에 있을 때만 `capabilities --json`을 사용하세요. 각 옵션은
-`underwrite <command> --help`로 확인할 수 있습니다. 빠른 시작의
-`ingest`, `measure`, `accept` 외에 다음 검사 명령을 제공합니다.
+각 옵션은 `underwrite <command> --help`로 확인하세요. 위 작업 흐름 외에도
+`inspect`는 아티팩트 매니페스트를 검사하고, `audit-counts`는 기대 해시가 담긴
+매니페스트를 기준으로 Promptfoo 집계를 검사합니다. `check`는 릴리스 근거의 연결을,
+`absence`는 모집단의 존재 여부를, `boundary scan`은 설정된 판정 어휘를 검사합니다.
+`drift check` / `pins refresh`는 제공된 핀 등록부를 다룹니다.
+각 명령 계열의 결과와 오류는 [JSON 계약](contracts/)에 정의되어 있습니다.
 
-| 명령 | 용도 |
+<a id="개발-체크아웃의-근거-검사-파일럿"></a>
+
+## 문서
+
+| 알아볼 내용 | 안내 |
 | --- | --- |
-| `audit-promptfoo FILE --json` | Promptfoo 0.123.0 원본 파일의 선언 집계와 결과 행을 비교합니다. |
-| `inspect CASE.json --json` | 로컬 아티팩트 매니페스트와 투영 결과를 검사합니다. |
-| `check RELEASE.json --json` | 릴리스 매니페스트에 선언된 근거 연결과 기록 존재 여부를 검사합니다. |
-| `absence --root DIR --glob '*.json' --min 1 --json` | 모집단이 비어 있지 않은지 검사합니다. |
-| `boundary scan DIR --json` | JSON/JSONL 문자열에서 설정된 판정 어휘를 검사합니다. |
-| `drift check --pins-root PINS --siblings-root SOURCES --json` | 제공된 핀 등록부를 로컬 원본 체크아웃과 비교합니다. |
-| `pins refresh --repo NAME --pins-root PINS --siblings-root SOURCES` | 설정된 저장소의 핀을 로컬 바이트로 갱신합니다. |
-
-아티팩트·릴리스 검사는 독립적인 출처 증명이나 배포 허가를 제공하지 않습니다.
-핀 명령은 범용 유틸리티이며, 미리 설정된 원본 등록부는 포함하지 않습니다. 허용 목록이나
-면제를 평가할 때는 해당되는 경우 `--now`를 명시해야 합니다. 잘못된 입력과 없는 경로는
-통과로 처리하지 않고 구성 오류로 남깁니다.
-
-각 명령 계열의 출력과 오류는 [JSON 계약](contracts/)에 정의되어 있습니다.
-
-선택 설치형 [underwrite-review 스킬](skills/underwrite-review/SKILL.md)은 에이전트가
-제공된 자료에 맞는 CLI 경로를 선택하고 결과와 한계를 설명하도록 돕습니다.
-[수동 설정 안내](AGENT_USAGE.md#optional-artifact-review-skill)를 참고하세요.
-CLI·hook·백그라운드 서비스는 자동으로 설치하지 않습니다.
-
-## 개발 체크아웃의 근거 검사 파일럿
-
-이 체크아웃에는 producer별 집계 검사, 불변 기록과 선택 파일 조회, 선언 비교용
-`compare-declarations`, 쌍대 이진 근거 계산용 `pair-binary`가 추가되어 있습니다.
-`review-pair`는 입력·정책 digest에 결속된 의도한 변경, 선언된 평가 이력,
-배타적인 사례 유형별 집계를 제공하며 기존 쌍대 근거를 유지합니다.
-서버 없이 로컬에서 JSON으로 실행합니다. 재현 명령과 한계는
-[에이전트 사용 안내](AGENT_USAGE.md#source-checkout-pilot-audit-promptfoo-counts)에 있습니다.
-아직 릴리스하지 않은 변경이며, 기존 PyPI `0.0.1` 배포물은 그대로입니다.
-이 보고서는 승인을 부여하지 않으며 기존 `accept` 흐름의 입력이 아닙니다.
+| 에이전트 실행, 입력 선택, JSON 해석 | [에이전트 사용](AGENT_USAGE.md) |
+| 선언, 쌍대 근거, goppi handoff 비교 | [근거 작업 흐름](AGENT_USAGE.md#source-checkout-pilot-compare-declarations) |
+| 저장, 검증, 조회, 재계산 | [로컬 기록](STORAGE.md) |
+| 생성 도구 fixture와 검증 범위 | [생성 도구 근거](EVIDENCE_REVIEW.md) |
+| CLI와 순수 계산 코어 확장 | [기여 안내](CONTRIBUTING.md) · [아키텍처 규칙](AGENTS.md) |
 
 ## 기여
 
-개발 검사와 기여 절차는 [CONTRIBUTING.md](CONTRIBUTING.md), 비공개 취약점 신고는
-[SECURITY.md](SECURITY.md), 기술적 경계는 [AGENTS.md](AGENTS.md)를 참고하세요.
+재현 가능한 아티팩트, 구체적인 작업 흐름, 수정안을 제안해 주세요.
+[이슈](https://github.com/ntts9990/underwrite/issues)에 생성 도구의 버전과 기대하는
+결과를 적고, 예제는 민감한 정보를 제거한 것만 공유하세요. 로컬 preflight와 PR 검사는
+[CONTRIBUTING.md](CONTRIBUTING.md), 비공개 취약점 신고는
+[SECURITY.md](SECURITY.md)를 참고하세요.
 
 <details>
 <summary>유지관리자 안내: 향후 PyPI 릴리스</summary>
