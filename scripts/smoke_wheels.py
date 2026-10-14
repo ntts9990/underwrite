@@ -1202,6 +1202,51 @@ def _baseline_evidence_pilot(cli: Path, exchange: Path, work: Path) -> None:
     )
 
 
+def _common_result_inspection_pilot(cli: Path, fixtures: Path, work: Path) -> None:
+    selected = fixtures / "evidence/common-result-c55.json"
+    inspection = _cli_json(
+        cli,
+        ["inspect-result", str(selected)],
+        work / "common-result-inspection.json",
+        work,
+    )
+    _require(inspection.get("schema") == "common_result_inspection.v1", "result inspection schema")
+    _require(
+        inspection.get("selected_result") == {
+            "format": "evidence_result.v1",
+            "raw_hash": "sha256:" + hashlib.sha256(selected.read_bytes()).hexdigest(),
+        },
+        "result inspection raw-byte identity",
+    )
+    _require(
+        inspection.get("availability_counts")
+        == {"observed": 2, "missing": 2, "error": 1, "abstained": 2, "total": 7},
+        "result inspection availability",
+    )
+    api_code = (
+        "import json,sys; from pathlib import Path; "
+        "from underwrite.cli.inspect_result import inspect_result_file; "
+        "print(json.dumps(inspect_result_file(Path(sys.argv[1])),sort_keys=True))"
+    )
+    api = _success([str(cli.parent / "python"), "-c", api_code, str(selected)], work)
+    _require(json.loads(api.stdout) == inspection, "installed result inspection API differs")
+    _require(
+        str(selected) not in json.dumps(inspection)
+        and "goppi.operator_answer_assessment" not in json.dumps(inspection),
+        "result inspection leaked input content",
+    )
+    invalid = work / "private-invalid-result.json"
+    invalid.write_bytes(b'{"schema":"private","schema":"private"}')
+    refused = _command([str(cli), "inspect-result", str(invalid), "--json"], work)
+    _require(
+        refused.returncode == EVIDENCE_ERROR_EXIT
+        and refused.stdout == ""
+        and str(invalid) not in refused.stderr
+        and json.loads(refused.stderr)["reason"] == "INVALID_JSON_INPUT",
+        "installed result inspection refusal",
+    )
+
+
 def _baseline_event_pilot(cli: Path, fixtures: Path, work: Path) -> None:
     source = fixtures / "baseline-event"
     exchange = source / "exchange"
@@ -1626,6 +1671,7 @@ def _smoke(dist: Path) -> None:
 
         _native_measurement_pilot(cli, fixtures, work)
         _baseline_event_pilot(cli, fixtures, work)
+        _common_result_inspection_pilot(cli, fixtures, work)
         _baseline_record_pilot(cli, fixtures, work)
         _measurement_record_pilot(cli, work)
         _measurement_replay_pilot(cli, work)

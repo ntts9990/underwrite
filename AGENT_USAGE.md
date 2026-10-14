@@ -729,6 +729,42 @@ claim; a future producer must explicitly satisfy the versioned input contract.
 See the [local comparison study](EVIDENCE_REVIEW.md) for the jq baseline,
 aggregate-count counterexample, measured command cost, and unmeasured user value.
 
+## Inspect an external common result
+
+To screen a local `evidence_result.v1` file from any producer against this
+installation's contract and analyzed-item invariants, use:
+
+```sh
+underwrite inspect-result /path/to/evidence-result.json --json
+```
+
+The importable equivalent is
+`underwrite.cli.inspect_result.inspect_result_file(Path("/path/to/evidence-result.json"))`.
+Both return `common_result_inspection.v1`: the selected file's raw-byte hash,
+source-declared processing and population, computed availability counts for
+analyzed items, and explicit unchecked claims. The selected file is read once,
+with a 4 MiB byte limit and 64-level JSON depth limit. Output omits item values,
+metric identities, evidence references, source identities, and the input path.
+The hash and count pattern can still link outputs to known inputs.
+
+Exit 0 means the file was inspected. A valid source-declared `insufficient` or
+`unsupported` result also exits 0 and has null availability counts. Invalid JSON,
+schema failures, and count or coordinate invariant failures exit 2 with a typed
+`evidence_error.v1` on stderr and empty stdout. The item invariant check covers
+analyzed item count and unique structural coordinates only; it does not establish
+contiguous order, a source roster, or source-specific mapping. The command does
+not read claimed source bytes or a bundle, authenticate a producer, reperform
+embedded verification references, or grant measurement or acceptance authority.
+
+The [public synthetic C55 example](fixtures/examples/evidence/common-result-c55.json)
+was copied byte-for-byte from goppi commit
+`b53fa730056142e532f7fef1417f60d5927d8bec`, file
+`fixtures/conformance/operator-answer-exchange/evidence-result.json`, with raw
+SHA-256 `5475c11c8e5ca0d6eb7f2134383fbffa3e47a6b4c96e952354c47a81a6bff16f`.
+It is a test input from a feature branch, not an authenticated production result
+or a claim that the feature is on goppi main. The runtime command has no goppi
+dependency.
+
 ## Audit a completed goppi baseline as common evidence
 
 For the exact completed baseline exchange v2 directory, get a descriptive
