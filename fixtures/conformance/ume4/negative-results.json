@@ -1,0 +1,90 @@
+{
+  "schema": "ume4.pinned_negative_probes.v1",
+  "scope": "temporary copies of the retained synthetic five-file exchange; no mutated fixture published",
+  "goppi_commit": "77a0a72f2cb545212c0f79a7c696c6837ae4eb6a",
+  "underwrite_base_commit": "1fb05456f4fd77c2d72744e128a03979f9b12b73",
+  "base_manifest_sha256": "sha256:de7610e1a672ed3c601dff7ec9a7569b47e1044570b81eb17851870ffdb5387f",
+  "probes": [
+    {
+      "id": "negative-member-byte",
+      "mutation": "Changed one byte of first synthetic case ID in rows.jsonl; retained original manifest byte/hash claims.",
+      "first_validation_layer": {
+        "goppi": "member_byte_identity",
+        "underwrite": "member_byte_identity"
+      },
+      "member_sha256": {
+        "manifest.json": "sha256:de7610e1a672ed3c601dff7ec9a7569b47e1044570b81eb17851870ffdb5387f",
+        "export.json": "sha256:e21c2276befcb62ecacaabc3a872a7cd5ce5bc26ea8651b551c9eacf990000a1",
+        "rows.jsonl": "sha256:c7a7ad580fb90c24412697d800de6679c0a1c1f087274ac244d28acf2b0af215",
+        "schema.json": "sha256:8a01b00f7cb698e8cc2d16528a0a52c960a93108d7a0339edf79b63a456e7b10",
+        "scope.json": "sha256:88ca8648b936346c98ddf55b27ed9aea84d9cb1cab8c43ae16a239e0a846e45c"
+      },
+      "goppi_neutral": {
+        "exit_code": 2,
+        "stderr_code": "NEUTRAL_EXCHANGE_FILE_IDENTITY_INVALID",
+        "stdout_empty": true
+      },
+      "underwrite_installed": {
+        "exit_code": 2,
+        "code": "INVALID_INPUT",
+        "reason": "BASELINE_FILE_IDENTITY_MISMATCH",
+        "location": "/manifest",
+        "stdout_empty": true
+      }
+    },
+    {
+      "id": "negative-row-removal",
+      "mutation": "Removed the second complete JSONL row, then recomputed rows.jsonl byte count and SHA-256 in manifest.files and recomputed manifest.content_digest with pinned goppi canonicalJson and length-prefixed digest.",
+      "first_validation_layer": {
+        "goppi": "scope_roster_count",
+        "underwrite": "row_population"
+      },
+      "member_sha256": {
+        "manifest.json": "sha256:ddb3cc51525eab6b872c246c0873b53bb6728153fcb453a933013410ffa2531e",
+        "export.json": "sha256:e21c2276befcb62ecacaabc3a872a7cd5ce5bc26ea8651b551c9eacf990000a1",
+        "rows.jsonl": "sha256:6a12baf49b5912d422d765e469315089d2a1e0587bbfd0cd3498885933c23e1b",
+        "schema.json": "sha256:8a01b00f7cb698e8cc2d16528a0a52c960a93108d7a0339edf79b63a456e7b10",
+        "scope.json": "sha256:88ca8648b936346c98ddf55b27ed9aea84d9cb1cab8c43ae16a239e0a846e45c"
+      },
+      "goppi_neutral": {
+        "exit_code": 2,
+        "stderr_code": "NEUTRAL_EXCHANGE_SCOPE_INVALID",
+        "stdout_empty": true
+      },
+      "underwrite_installed": {
+        "exit_code": 2,
+        "code": "INVALID_INPUT",
+        "reason": "BASELINE_POPULATION_INVALID",
+        "location": "/rows",
+        "stdout_empty": true
+      }
+    },
+    {
+      "id": "negative-version",
+      "mutation": "Changed manifest.schema from v2 to v3 and recomputed manifest.content_digest with pinned goppi canonicalJson and length-prefixed digest.",
+      "first_validation_layer": {
+        "goppi": "manifest_schema_version",
+        "underwrite": "manifest_profile"
+      },
+      "member_sha256": {
+        "manifest.json": "sha256:451b92c1c10de0a6ad995b96c813d66ac4e1a937dc6623bfed992b447e11af60",
+        "export.json": "sha256:e21c2276befcb62ecacaabc3a872a7cd5ce5bc26ea8651b551c9eacf990000a1",
+        "rows.jsonl": "sha256:11b9baa73e230209d1d66c3a68814cd5baab3945e8b0468f755ed118388e909a",
+        "schema.json": "sha256:8a01b00f7cb698e8cc2d16528a0a52c960a93108d7a0339edf79b63a456e7b10",
+        "scope.json": "sha256:88ca8648b936346c98ddf55b27ed9aea84d9cb1cab8c43ae16a239e0a846e45c"
+      },
+      "goppi_neutral": {
+        "exit_code": 2,
+        "stderr_code": "NEUTRAL_EXCHANGE_MANIFEST_INVALID",
+        "stdout_empty": true
+      },
+      "underwrite_installed": {
+        "exit_code": 2,
+        "code": "INVALID_INPUT",
+        "reason": "BASELINE_PROFILE_INVALID",
+        "location": "/manifest",
+        "stdout_empty": true
+      }
+    }
+  ]
+}
