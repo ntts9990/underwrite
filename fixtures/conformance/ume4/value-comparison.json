@@ -1,0 +1,214 @@
+{
+  "conditions": {
+    "A": {
+      "commands_on_admitted_input": 1,
+      "facts": "aggregate counts/groups and explicit no-authority claims; no case items",
+      "inputs": "same five bytes plus pinned goppi experimental neutral consumer",
+      "stdout_schema": "goppi.product_baseline_neutral_interpretation.v1"
+    },
+    "B0": {
+      "commands_on_admitted_input": 2,
+      "facts": "A plus standardized ordinal case items, five byte hashes, population and source-claim/effect states",
+      "inputs": "A inputs plus installed pinned Underwrite audit-baseline",
+      "stdout_schema": "evidence_result.v1"
+    },
+    "C": {
+      "commands_on_admitted_input": 2,
+      "control_source_lines": 197,
+      "control_source_sha256": "sha256:5e273345fa2b6f01c1a0d366ce202ef4f3d65aca6b4efa44f1781fc2f16beaa1",
+      "facts": "A plus selected ordinal values/availability and hashes; not the full evidence_result contract",
+      "inputs": "A inputs plus independent stdlib projection control",
+      "stdout_schema": "ume4.stdlib_control.v1",
+      "third_party_runtime_dependencies": 0,
+      "trust_dependency": "A neutral admission must succeed first; C does not independently enforce every Underwrite profile rule or atomic capture"
+    }
+  },
+  "goppi_commit": "77a0a72f2cb545212c0f79a7c696c6837ae4eb6a",
+  "input_pins_sha256": "sha256:616181fa80ea7fdd95b3b373a370f9fdd48115f77426b58083b5017054a17eb2",
+  "interpretation": {
+    "A_already_answers_prespecified_aggregate_question": true,
+    "B0_C_full_trust_or_schema_equivalence_established": false,
+    "B0_adds_standardized_case_json_without_handwritten_transform": true,
+    "C_negative_refusal_in_pipeline_inherited_from_A": true,
+    "C_recovers_selected_case_fields_with_authored_code": true
+  },
+  "limits": "synthetic contract-validity and output-assembly comparison; no measured safer deployment recommendation, human benefit, or superiority claim",
+  "negative_cases": [
+    {
+      "A": {
+        "exit_code": 2,
+        "reason": "NEUTRAL_EXCHANGE_FILE_IDENTITY_INVALID"
+      },
+      "B0_separate_diagnostic": {
+        "code": "INVALID_INPUT",
+        "exit_code": 2,
+        "location": "/manifest",
+        "reason": "BASELINE_FILE_IDENTITY_MISMATCH"
+      },
+      "B0_trial_pipeline": {
+        "after_A": "reject_without_additional_command"
+      },
+      "C_standalone_diagnostic": "not_run_on_this_probe",
+      "C_trial_pipeline": {
+        "after_A": "reject_without_control_command"
+      },
+      "probe_id": "negative-member-byte",
+      "source_identity_ref": "negative-results.json#/probes/0"
+    },
+    {
+      "A": {
+        "exit_code": 2,
+        "reason": "NEUTRAL_EXCHANGE_SCOPE_INVALID"
+      },
+      "B0_separate_diagnostic": {
+        "code": "INVALID_INPUT",
+        "exit_code": 2,
+        "location": "/rows",
+        "reason": "BASELINE_POPULATION_INVALID"
+      },
+      "B0_trial_pipeline": {
+        "after_A": "reject_without_additional_command"
+      },
+      "C_standalone_diagnostic": "not_run_on_this_probe",
+      "C_trial_pipeline": {
+        "after_A": "reject_without_control_command"
+      },
+      "probe_id": "negative-row-removal",
+      "source_identity_ref": "negative-results.json#/probes/1"
+    },
+    {
+      "A": {
+        "exit_code": 2,
+        "reason": "NEUTRAL_EXCHANGE_MANIFEST_INVALID"
+      },
+      "B0_separate_diagnostic": {
+        "code": "INVALID_INPUT",
+        "exit_code": 2,
+        "location": "/manifest",
+        "reason": "BASELINE_PROFILE_INVALID"
+      },
+      "B0_trial_pipeline": {
+        "after_A": "reject_without_additional_command"
+      },
+      "C_standalone_diagnostic": "not_run_on_this_probe",
+      "C_trial_pipeline": {
+        "after_A": "reject_without_control_command"
+      },
+      "probe_id": "negative-version",
+      "source_identity_ref": "negative-results.json#/probes/2"
+    }
+  ],
+  "observed": {
+    "A_planted_defect_refusals": 3,
+    "A_valid_admissions": 2,
+    "B0_C_selected_case_value_and_availability_matches": 2,
+    "B0_separate_planted_defect_refusals": 3,
+    "B0_valid_admissions": 2,
+    "C_standalone_negative_runs_in_this_trial": 0,
+    "C_valid_projections": 2,
+    "additional_admission_or_refusal_difference_from_A": 0
+  },
+  "positive_cases": [
+    {
+      "A": {
+        "case_items_present": false,
+        "counts": {
+          "missing": 0,
+          "observed_false": 0,
+          "observed_true": 2,
+          "planned": 2
+        },
+        "exit_code": 0,
+        "stdout_schema": "goppi.product_baseline_neutral_interpretation.v1"
+      },
+      "B0": {
+        "availability": [
+          "observed",
+          "observed"
+        ],
+        "case_items_present": true,
+        "exit_code": 0,
+        "origin_and_effect": "source_claim/descriptive",
+        "stdout_schema": "evidence_result.v1",
+        "values": [
+          true,
+          true
+        ],
+        "verification": []
+      },
+      "C": {
+        "availability": [
+          "observed",
+          "observed"
+        ],
+        "case_items_present": true,
+        "exit_code": 0,
+        "stdout_schema": "ume4.stdlib_control.v1",
+        "values": [
+          true,
+          true
+        ],
+        "verification": []
+      },
+      "capture_key": "all_true",
+      "observed_selected_fields_equal_B0_C": true,
+      "source_identity_ref": "pins.json#/captures/all_true"
+    },
+    {
+      "A": {
+        "case_items_present": false,
+        "counts": {
+          "missing": 1,
+          "observed_false": 1,
+          "observed_true": 0,
+          "planned": 2
+        },
+        "exit_code": 0,
+        "stdout_schema": "goppi.product_baseline_neutral_interpretation.v1"
+      },
+      "B0": {
+        "availability": [
+          "observed",
+          "missing"
+        ],
+        "case_items_present": true,
+        "exit_code": 0,
+        "origin_and_effect": "source_claim/descriptive",
+        "stdout_schema": "evidence_result.v1",
+        "values": [
+          false,
+          null
+        ],
+        "verification": []
+      },
+      "C": {
+        "availability": [
+          "observed",
+          "missing"
+        ],
+        "case_items_present": true,
+        "exit_code": 0,
+        "stdout_schema": "ume4.stdlib_control.v1",
+        "values": [
+          false,
+          null
+        ],
+        "verification": []
+      },
+      "capture_key": "false_missing",
+      "observed_selected_fields_equal_B0_C": true,
+      "source_identity_ref": "pins.json#/captures/false_missing"
+    }
+  ],
+  "question": "May the exchange counts and tri-state outcomes be used as descriptive source-claim evidence for its declared run/population?",
+  "schema": "ume4.same_input_value_comparison.v1",
+  "underwrite_base_commit": "1fb05456f4fd77c2d72744e128a03979f9b12b73",
+  "unmeasured": {
+    "agent_recommendations": true,
+    "agent_tokens": true,
+    "human_recommendations": true,
+    "monetary_cost": true,
+    "real_outcome_labels": true,
+    "review_time": true
+  }
+}
