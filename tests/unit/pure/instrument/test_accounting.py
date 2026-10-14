@@ -11,6 +11,7 @@ from underwrite.instrument.evidence.accounting import (
     ROW_LIMIT,
     AccountingError,
     audit_promptfoo,
+    audit_promptfoo_with_rows,
 )
 
 
@@ -113,3 +114,29 @@ def test_integral_float_counters_are_normalized_for_original_projection_consumer
     )
     assert result["declared_relation"] == "consistent"
     assert all(type(value) is int for value in result["producer_stats"].values())
+
+
+def test_row_index_preserves_source_flags_and_one_classification() -> None:
+    rows = [
+        {"success": True, "failureReason": 2, "score": 0},
+        {"success": True, "failureReason": 0, "score": 0.3},
+        {"success": False, "failureReason": 1, "gradingResult": {"pass": True}},
+        {"success": False, "failureReason": 0, "gradingResult": None},
+        {"success": False, "failureReason": 2},
+    ]
+    stats = {"successes": 2, "failures": 2, "errors": 1}
+    accounting, indexed = audit_promptfoo_with_rows(stats, rows)
+    assert accounting == audit_promptfoo(stats, rows)
+    assert indexed == [
+        {"row_index": 0, "category": "successes", "source_success": True,
+         "source_failure_reason": 2, "grading_pass": None},
+        {"row_index": 1, "category": "successes", "source_success": True,
+         "source_failure_reason": 0, "grading_pass": None},
+        {"row_index": 2, "category": "failures", "source_success": False,
+         "source_failure_reason": 1, "grading_pass": True},
+        {"row_index": 3, "category": "failures", "source_success": False,
+         "source_failure_reason": 0, "grading_pass": None},
+        {"row_index": 4, "category": "errors", "source_success": False,
+         "source_failure_reason": 2, "grading_pass": None},
+    ]
+    assert [item["row_index"] for item in accounting["findings"]] == [0, 2]

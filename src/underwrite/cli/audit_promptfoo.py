@@ -6,11 +6,12 @@ import argparse
 from pathlib import Path
 from typing import cast
 
-from underwrite.cli.evidence import EvidenceError, run_cli
+from underwrite.cli.evidence import EvidenceError, ReportOutput, run_cli
 from underwrite.instrument.ingest.accounting import (
     SOURCE,
     AccountingCaseError,
     audit_promptfoo_file,
+    audit_promptfoo_row_index_file,
 )
 from underwrite.instrument.ingest.codecs.promptfoo import SUPPORTED_VERSIONS
 
@@ -25,7 +26,11 @@ def configure(parser: argparse.ArgumentParser) -> None:
         default=SOURCE[1],
         help="Explicit source version; no detection or fallback.",
     )
-    parser.add_argument("--json", action="store_true", help="Emit promptfoo_accounting.v1 JSON.")
+    parser.add_argument(
+        "--view", choices=("accounting", "row-index"), default="accounting",
+        help="Select count accounting or a content-minimized ordinal row index.",
+    )
+    parser.add_argument("--json", action="store_true", help="Emit the selected view as JSON.")
     parser.description = (
         "Compare the selected Promptfoo export's declared counts with its exclusive row tallies. "
         "No manifest or producer execution is needed. An inconsistent report still exits 0. "
@@ -37,10 +42,21 @@ def configure(parser: argparse.ArgumentParser) -> None:
 
 def produce(args: argparse.Namespace) -> dict[str, object]:
     try:
-        return audit_promptfoo_file(cast(Path, args.file), version=cast(str, args.version))
+        audit = audit_promptfoo_row_index_file if args.view == "row-index" else audit_promptfoo_file
+        return audit(cast(Path, args.file), version=cast(str, args.version))
     except AccountingCaseError as exc:
         raise EvidenceError(exc.code, exc.reason, exc.location) from None
 
 
 def main(argv: list[str]) -> int:
-    return run_cli("audit-promptfoo", argv, configure, produce, "promptfoo_accounting.v1")
+    return run_cli(
+        "audit-promptfoo",
+        argv,
+        configure,
+        produce,
+        ReportOutput(
+            lambda args: "promptfoo_row_index.v1"
+            if args.view == "row-index"
+            else "promptfoo_accounting.v1"
+        ),
+    )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from types import MappingProxyType
 from typing import Literal, TypedDict, cast
 
 from underwrite_core.canonical import SAFE_INT_MAX, CanonicalizationError, safe_integer_value
@@ -12,6 +13,23 @@ CATEGORIES = ("successes", "failures", "errors")
 REASON_NONE = 0
 REASON_ASSERT = 1
 REASON_ERROR = 2
+ROW_INDEX_SCOPE = MappingProxyType(
+    {
+        "population": "supplied_rows",
+        "planned_evaluations": "unknown",
+        "export_completeness": "unknown",
+        "values": "withheld",
+    }
+)
+ROW_INDEX_LIMITATIONS = (
+    "SOURCE_CLAIMS_UNVERIFIED",
+    "ERROR_CAUSE_UNKNOWN",
+    "PLANNED_EVALUATIONS_UNKNOWN",
+    "EXPORT_COMPLETENESS_UNKNOWN",
+    "SOURCE_CONTENT_WITHHELD",
+    "SOURCE_HASH_AND_ROW_PATTERN_LINKABLE",
+    "NO_TASK_VERDICT_OR_APPROVAL_AUTHORITY",
+)
 
 
 class AccountingError(ValueError):
@@ -42,6 +60,14 @@ class AccountingResult(TypedDict):
 Category = Literal["successes", "failures", "errors"]
 
 
+class RowIndex(TypedDict):
+    row_index: int
+    category: Category
+    source_success: bool
+    source_failure_reason: Literal[0, 1, 2]
+    grading_pass: bool | None
+
+
 def _count(value: object) -> int:
     try:
         count = safe_integer_value(value)
@@ -59,7 +85,7 @@ def _counts(successes: int, failures: int, errors: int) -> Counts:
     return {"successes": successes, "failures": failures, "errors": errors, "total": total}
 
 
-def _classify_row(row: object, index: int) -> tuple[Category, Finding | None]:
+def _classify_row(row: object, index: int) -> tuple[RowIndex, Finding | None]:
     if not isinstance(row, Mapping):
         raise AccountingError("INVALID_ROW")
     fields = cast(Mapping[str, object], row)
@@ -92,10 +118,18 @@ def _classify_row(row: object, index: int) -> tuple[Category, Finding | None]:
         if location is None
         else {"code": "SOURCE_FLAGS_DISAGREE", "row_index": index, "location": location}
     )
-    return category, finding
+    return {
+        "row_index": index,
+        "category": category,
+        "source_success": success,
+        "source_failure_reason": reason,
+        "grading_pass": grading_pass,
+    }, finding
 
 
-def audit_promptfoo(stats: object, rows: object) -> AccountingResult:
+def _audit_promptfoo(
+    stats: object, rows: object, *, include_rows: bool
+) -> tuple[AccountingResult, list[RowIndex]]:
     """Compare declared counters with exclusive row classes, not execution truth.
 
     A successful row counts as success. Otherwise Promptfoo's ERROR reason counts
@@ -115,9 +149,12 @@ def audit_promptfoo(stats: object, rows: object) -> AccountingResult:
     )
     tallies = {key: 0 for key in CATEGORIES}
     findings: list[Finding] = []
+    row_index: list[RowIndex] = []
     for index, row in enumerate(source_rows):
-        category, finding = _classify_row(row, index)
-        tallies[category] += 1
+        classified, finding = _classify_row(row, index)
+        tallies[classified["category"]] += 1
+        if include_rows:
+            row_index.append(classified)
         if finding is not None:
             findings.append(finding)
     observed = _counts(tallies["successes"], tallies["failures"], tallies["errors"])
@@ -142,4 +179,16 @@ def audit_promptfoo(stats: object, rows: object) -> AccountingResult:
         "deltas": deltas,
         "declared_relation": "inconsistent" if findings else "consistent",
         "findings": findings,
-    }
+    }, row_index
+
+
+def audit_promptfoo(stats: object, rows: object) -> AccountingResult:
+    """Compare declared counters with exclusive row classes, not execution truth."""
+    return _audit_promptfoo(stats, rows, include_rows=False)[0]
+
+
+def audit_promptfoo_with_rows(
+    stats: object, rows: object
+) -> tuple[AccountingResult, list[RowIndex]]:
+    """Return accounting and source row classifications from one traversal."""
+    return _audit_promptfoo(stats, rows, include_rows=True)

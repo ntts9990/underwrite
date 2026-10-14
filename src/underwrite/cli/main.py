@@ -268,6 +268,15 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 ("promptfoo_accounting.v1",),
             )
             for version in PROMPTFOO_VERSIONS
+        )
+        + tuple(
+            profile(
+                "|".join((PROMPTFOO_SOURCE[0], version, "row-index")),
+                ("file", "version", "view"),
+                (),
+                ("promptfoo_row_index.v1",),
+            )
+            for version in PROMPTFOO_VERSIONS
         ),
         _standalone(audit_promptfoo.main),
     ),
