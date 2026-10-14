@@ -1,0 +1,92 @@
+{
+  "captures": {
+    "all_true": {
+      "directory": "goppi-v2-exchange",
+      "members": {
+        "export.json": {
+          "bytes": 2030,
+          "sha256": "sha256:e21c2276befcb62ecacaabc3a872a7cd5ce5bc26ea8651b551c9eacf990000a1"
+        },
+        "manifest.json": {
+          "bytes": 968,
+          "sha256": "sha256:de7610e1a672ed3c601dff7ec9a7569b47e1044570b81eb17851870ffdb5387f"
+        },
+        "rows.jsonl": {
+          "bytes": 3409,
+          "sha256": "sha256:11b9baa73e230209d1d66c3a68814cd5baab3945e8b0468f755ed118388e909a"
+        },
+        "schema.json": {
+          "bytes": 14766,
+          "sha256": "sha256:8a01b00f7cb698e8cc2d16528a0a52c960a93108d7a0339edf79b63a456e7b10"
+        },
+        "scope.json": {
+          "bytes": 1635,
+          "sha256": "sha256:88ca8648b936346c98ddf55b27ed9aea84d9cb1cab8c43ae16a239e0a846e45c"
+        }
+      },
+      "neutral_result": "neutral-result.json",
+      "neutral_sha256": "sha256:2fd7d1e18300901b811548aaf5bfe57ccf881925767a8fe95b6f72538d82bd11"
+    },
+    "false_missing": {
+      "directory": "goppi-v2-false-missing",
+      "members": {
+        "export.json": {
+          "bytes": 2025,
+          "sha256": "sha256:ec08884efc2e9b1393a62e8420cce1503a6beb22b69740b6ee7f435d238797b7"
+        },
+        "manifest.json": {
+          "bytes": 968,
+          "sha256": "sha256:9480ec772cf042ca4fe4a9a161ff198bbfe994446607c952cbbc2d6053baf7b1"
+        },
+        "rows.jsonl": {
+          "bytes": 3409,
+          "sha256": "sha256:92c41e8bed78aef1c5176d04524f063e4dd1818e0dab6aaf7645c16ccee2b79c"
+        },
+        "schema.json": {
+          "bytes": 14766,
+          "sha256": "sha256:8a01b00f7cb698e8cc2d16528a0a52c960a93108d7a0339edf79b63a456e7b10"
+        },
+        "scope.json": {
+          "bytes": 1635,
+          "sha256": "sha256:88ca8648b936346c98ddf55b27ed9aea84d9cb1cab8c43ae16a239e0a846e45c"
+        }
+      },
+      "neutral_result": "neutral-result-false-missing.json",
+      "neutral_sha256": "sha256:165e255a0afb79133cf2addc88353b2ee2ab681576f97ebd61c1f204eec4961a"
+    }
+  },
+  "first_capture_generator_sha256": "sha256:e203deb0a8beb1ca497cefdfcb309d5f33d176ba23974b81d473851e08b083ac",
+  "generator_sha256": "sha256:a29b082267a8d03513775fe70b022dda4c1e40c8d33286e464ac36975892cfdc",
+  "goppi_commit": "77a0a72f2cb545212c0f79a7c696c6837ae4eb6a",
+  "negative_probe_driver_sha256": "sha256:2a5144293743c03553c33fe1b5268f6b1f875dc689ed04f4cf1e4b26f1eb1ef2",
+  "negative_results_sha256": "sha256:066e30434ddea9b0ae21bd5e5688a901add6f63401ba70b8afa5e02a5eb17513",
+  "schema": "ume4.pinned_cross_conformance.v1",
+  "scope": "two public synthetic binary homogeneous baseline v2 exchanges, two cases each; no scalar or larger-population claim",
+  "source_hashes": {
+    "goppi/experiments/product-baseline-exchange/neutral-consumer.mjs": "sha256:75333b1a2bc1818b3e55f0b8e887a268bfdb71450deacc8bdbd114d42cd6a80a",
+    "goppi/package.json": "sha256:b048e1a7c9a987c93eeec2a953456f13d7369f30a9cd0a28018894b2c534927d",
+    "goppi/pnpm-lock.yaml": "sha256:1239e059f93471f5754e360f736a532c57d71e9f21879e5ca4501c73588e1faa",
+    "goppi/src/application/baseline-discovery/export-manifest-contract.ts": "sha256:7cf7e2b28b8213f43a7c0bfc9fa5eb230eb98f14d3ba444adf0b99d185824ef8",
+    "goppi/src/application/baseline-discovery/export-v2.ts": "sha256:9533f253579c215a0113b1021b2299284271c8abf5290195a4ac800c7ab868d0",
+    "goppi/src/application/baseline-discovery/scope.ts": "sha256:4070c9a3d46148b138ad264743eb3753f953979c79877f7fbd0a40e13790cd3a",
+    "goppi/src/application/baseline-discovery/service.ts": "sha256:cc969b0ddf8f128a02563a04f25706d7ca1dfd930a8f10c8368131110844d3f0",
+    "goppi/tests/application/local-aa/native-fixtures.ts": "sha256:9fadde295657886626c5be952e17824fbc17321f5d74aba298e9fda4eca2b0fb",
+    "goppi/tests/application/local-aa/service-fixtures.ts": "sha256:edfd9f3dc3f398d88cb9b3173c06c09c27b45ab9a91d2793113e635082d25cfa",
+    "underwrite/contracts/evidence_result.v1.schema.json": "sha256:d36d9179ffdc28f6be43727dc5ed6ff3c006f100f523c5f3a2e8677c5b019631"
+  },
+  "toolchain": {
+    "node": {
+      "macos_arm64_binary_sha256": "sha256:9d050fd455b56426e25d4d603c7c501cbb2630348e836cf221dcce748e90588a",
+      "version": "24.20.0"
+    },
+    "pnpm_launcher": {
+      "script_sha256": "sha256:ff3224d46b47fbb24a7e9fe15fededef7e00892d07d4e376b6762d4899906bfd",
+      "version": "11.9.0"
+    },
+    "pnpm_managed": {
+      "script_sha256": "sha256:176d919063eba331742f5e522dd2f997b2eb23c137beeac64fd419effcc860ac",
+      "version": "9.15.9"
+    }
+  },
+  "underwrite_base_commit": "1fb05456f4fd77c2d72744e128a03979f9b12b73"
+}
