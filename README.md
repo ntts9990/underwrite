@@ -207,6 +207,9 @@ Use a fresh ID for each capture; existing records are never overwritten.
 `records verify` checks stored integrity. `records measure` captures a native
 measurement, and `records replay-measure` recalculates it from verified saved
 inputs using the current engine, without executing the original producer.
+For an exact completed goppi baseline v2 directory, `records audit-baseline`
+captures its five files and the descriptive result together in one call; see
+[the goppi record workflow](STORAGE.md#retain-a-completed-goppi-baseline).
 
 Records retain raw inputs, which may contain private content. Choose a private
 local POSIX filesystem and a backup strategy; this checkout's ignored `output/`

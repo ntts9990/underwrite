@@ -4,6 +4,7 @@ Bounded read-once acquisition of the exact baseline exchange profile."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
 
@@ -54,10 +55,10 @@ def _rows(captured: CapturedBytes) -> tuple[dict[str, Any], ...]:
     return tuple(rows)
 
 
-def capture_baseline_documents(exchange: Path) -> BaselineDocuments:
-    """Read only five fixed regular files; producer schema stays inert hashed bytes."""
+def capture_baseline_files(exchange: Path) -> dict[str, CapturedBytes]:
+    """Capture all five fixed regular files once before any document decoding."""
     with RootReader.open(exchange, CAPTURE_POLICY) as reader:
-        captured = {
+        return {
             name: reader.capture_relative(
                 name,
                 logical_name=name,
@@ -66,6 +67,10 @@ def capture_baseline_documents(exchange: Path) -> BaselineDocuments:
             )
             for name in FILES
         }
+
+
+def decode_baseline_documents(captured: Mapping[str, CapturedBytes]) -> BaselineDocuments:
+    """Decode the captured buffers; producer schema stays inert hashed bytes."""
     documents = {
         name: decode_captured_object(
             captured[name], max_depth=MAX_DEPTH, location="/exchange/" + name
@@ -79,6 +84,11 @@ def capture_baseline_documents(exchange: Path) -> BaselineDocuments:
         rows=_rows(captured["rows.jsonl"]),
         identities={name: (item.sha256, item.size) for name, item in captured.items()},
     )
+
+
+def capture_baseline_documents(exchange: Path) -> BaselineDocuments:
+    """Read only five fixed regular files and decode their retained bytes."""
+    return decode_baseline_documents(capture_baseline_files(exchange))
 
 
 def audit_baseline_exchange(exchange: Path) -> dict[str, object]:

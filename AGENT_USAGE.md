@@ -664,6 +664,25 @@ into one `evidence_error.v1` on stderr with exit 2 and no partial stdout.
 Use `underwrite capabilities --json` to confirm that the installed executable
 offers this route; PyPI `0.0.1` can differ from this development checkout.
 
+When you explicitly want to retain the same source bytes and result in a
+private immutable record, use the one-call capture path:
+
+```sh
+underwrite records audit-baseline --exchange /path/to/agent-exchange \
+  --root /private/review-store --id baseline.review-001 --json
+underwrite records read-json --root /private/review-store \
+  --id baseline.review-001 --name analysis/evidence_result.json --json
+```
+
+This saves the five files from one bounded capture, including any private
+answers, plus the result and a path-free invocation. It never rereads the
+exchange for storage. A saved analysis diagnostic consumes the ID; an
+incomplete five-file capture saves no record. Exit 0 means result saved, 2
+means a finite input diagnostic was saved, and 3 means storage failed. With
+an ambiguous storage failure, inspect `records show` and `records verify`
+for the requested ID before retrying. Stored-byte integrity is not producer
+authentication. See [storage and recovery](STORAGE.md#retain-a-completed-goppi-baseline).
+
 ## Project a completed goppi baseline into event observations
 
 For `goppi.baseline_case_exchange.manifest.v2`, use the directory containing
