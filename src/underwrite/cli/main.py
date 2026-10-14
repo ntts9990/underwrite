@@ -179,6 +179,12 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 ("observation.v1", "measurement_policy.v3"),
                 ("measurement_record.v1",),
             ),
+            profile(
+                "audit-baseline",
+                ("exchange", "root", "id"),
+                (),
+                ("baseline_record.v1",),
+            ),
             profile("replay-measure", ("root", "id"), (), ("measurement_replay.v1",)),
             profile("list", ("root",), (), ("record_catalog.v1",)),
             profile("show", ("root", "id"), (), ("record_view.v1",)),

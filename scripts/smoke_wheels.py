@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -16,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 COMMAND_TIMEOUT = 120
 EVIDENCE_ERROR_EXIT = 2
 STORAGE_ERROR_EXIT = 3
+BASELINE_RECORD_FILE_COUNT = 7
 
 
 class SmokeFailure(Exception):
@@ -1293,6 +1295,77 @@ def _baseline_event_pilot(cli: Path, fixtures: Path, work: Path) -> None:
     )
 
 
+def _baseline_record_pilot(cli: Path, fixtures: Path, work: Path) -> None:
+    """Retain exact captured baseline bytes and read the result after source removal."""
+    exchange = work / "record-baseline-exchange"
+    exchange.mkdir()
+    source = fixtures / "baseline-event/exchange"
+    for path in source.iterdir():
+        (exchange / path.name).write_bytes(path.read_bytes())
+    record_root = work / "baseline-record-store"
+    identifier = "baseline.smoke-001"
+    report = _cli_json(
+        cli,
+        [
+            "records", "audit-baseline", "--exchange", str(exchange),
+            "--root", str(record_root), "--id", identifier,
+        ],
+        work / "baseline-record.json",
+        work,
+    )
+    _require(report.get("schema") == "baseline_record.v1", "baseline record schema")
+    analysis = cast(dict[str, object], report["analysis"])
+    storage = cast(dict[str, object], report["storage"])
+    _require(analysis["state"] == "result", "baseline record did not save a result")
+    _require(
+        analysis["report"] == json.loads((work / "baseline-evidence.json").read_bytes()),
+        "baseline record changed descriptive result",
+    )
+    verification = cast(dict[str, object], storage["verification"])
+    _require(
+        storage["state"] == "saved"
+        and verification["files_checked"] == BASELINE_RECORD_FILE_COUNT,
+        "baseline record did not verify seven retained files",
+    )
+    encoded = json.dumps(report)
+    _require(
+        str(exchange) not in encoded and "SYNTHETIC_ANSWER_NOT_FOR_PROJECTION" not in encoded,
+        "baseline record aggregate leaked private source",
+    )
+    raw_rows_hash = hashlib.sha256((exchange / "rows.jsonl").read_bytes()).hexdigest()
+    shutil.rmtree(exchange)
+    verified = _cli_json(
+        cli,
+        ["records", "verify", "--root", str(record_root), "--id", identifier],
+        work / "baseline-record-verification.json",
+        work,
+    )
+    _require(
+        verified["valid"] is True
+        and verified["files_checked"] == BASELINE_RECORD_FILE_COUNT,
+        "baseline record verification failed after source removal",
+    )
+    selected = _cli_json(
+        cli,
+        [
+            "records", "read-json", "--root", str(record_root), "--id", identifier,
+            "--name", "analysis/evidence_result.json",
+        ],
+        work / "baseline-record-selected.json",
+        work,
+    )
+    _require(selected["content"] == analysis["report"], "baseline saved result cannot be read back")
+    raw_code = (
+        "import hashlib,sys; from pathlib import Path; "
+        "from underwrite.service.records import read_record_file; "
+        "from underwrite.instrument.ingest.goppi_baseline import ROWS_MAX_BYTES; "
+        "print(hashlib.sha256(read_record_file(Path(sys.argv[1]),sys.argv[2],"
+        "'source/rows.jsonl',max_bytes=ROWS_MAX_BYTES).data).hexdigest())"
+    )
+    raw = _success([str(cli.parent / "python"), "-c", raw_code, str(record_root), identifier], work)
+    _require(raw.stdout.strip() == raw_rows_hash, "baseline raw rows changed in record")
+
+
 def _measurement_record_pilot(cli: Path, work: Path) -> None:
     observation = work / "measurement-input.json"
     raw = (work / "baseline-observation.json").read_bytes() + b"\n"
@@ -1524,6 +1597,7 @@ def _smoke(dist: Path) -> None:
 
         _native_measurement_pilot(cli, fixtures, work)
         _baseline_event_pilot(cli, fixtures, work)
+        _baseline_record_pilot(cli, fixtures, work)
         _measurement_record_pilot(cli, work)
         _measurement_replay_pilot(cli, work)
 

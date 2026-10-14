@@ -113,6 +113,12 @@ def configure(parser: argparse.ArgumentParser) -> None:
         "measure", help="Measure and retain native evidence and policy."
     )
     record_measure.configure(measurement)
+    from underwrite.cli import record_baseline
+
+    baseline = commands.add_parser(
+        "audit-baseline", help="Audit and retain an exact baseline exchange."
+    )
+    record_baseline.configure(baseline)
     from underwrite.cli import replay_measure
 
     replay = commands.add_parser(
@@ -254,7 +260,11 @@ def _emit_error(error: _CliError, *, as_json: bool) -> int:
     return 2
 
 
-def _capture_command(argv: list[str]) -> int | None:
+def _capture_command(argv: list[str]) -> int | None:  # noqa: PLR0911 - lazy command dispatch
+    if argv and argv[0] == "audit-baseline":
+        from underwrite.cli import record_baseline
+
+        return record_baseline.main(argv[1:])
     if argv and argv[0] == "replay-measure":
         from underwrite.cli import replay_measure
 

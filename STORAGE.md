@@ -126,6 +126,64 @@ A larger supported handoff may be analyzed without fitting a single record; in
 that case requested storage fails before serialization or store mutation, while
 the CLI retains the complete analysis. Sources are never silently omitted.
 
+## Retain a completed goppi baseline
+
+For the exact five-file baseline exchange v2 profile, retain the already
+captured source bytes and descriptive `evidence_result.v1` together:
+
+```sh
+underwrite records audit-baseline --exchange /path/to/exchange \
+  --root PRIVATE_STORE --id baseline.review-001 --json
+underwrite records verify --root PRIVATE_STORE --id baseline.review-001 --json
+underwrite records read-json --root PRIVATE_STORE --id baseline.review-001 \
+  --name analysis/evidence_result.json --json
+```
+
+The create-only record contains exactly seven files: all five exchange files
+under `source/`, `analysis/evidence_result.json` or `analysis/error.json`, and
+`invocation.json`. Each source file is the exact buffer used by the analysis;
+the command never reopens a source path to store it. The private invocation
+contains the fixed command/profile, record ID and analysis state, without a
+source/root display path. `baseline_record.v1` keeps analysis and storage
+separate: exit 0 means the result was saved and verified; exit 2 means a
+supported input diagnostic was saved; exit 3 means storage or verification
+failed. `verification.files_checked` is seven for a saved record. These are
+stored-byte claims, not producer authentication, label truth or approval.
+
+The source directory may include private answers and usage data. All five raw
+files are retained **only because the caller supplied `--root` and `--id`**;
+choose a private POSIX store and backup policy. Aggregate stdout/stderr contains
+only bounded hashes, states and finite diagnostics. A capture that fails before
+all five bytes are available stores no partial set and leaves the requested ID
+available. A complete capture with invalid producer input can save all five
+bytes and a finite `analysis/error.json`, consuming the ID. Internal/configuration
+or output-admission failures do not label the input malformed and do not
+publish a diagnostic record. A null `storage.published_record` after a storage
+failure does not prove absence: check `records show` and `records verify` for
+the requested ID before deciding whether to retry with a fresh ID.
+
+`records read-json` can return the analysis or other selected JSON at its
+unchanged 1 MiB cap. A retained `source/rows.jsonl` can be up to 4 MiB and is
+not a `read-json` document. Python callers who need its verified raw bytes can
+request the source profile's bound explicitly:
+
+```python
+from pathlib import Path
+from underwrite.instrument.ingest.goppi_baseline import ROWS_MAX_BYTES
+from underwrite.service.records import read_record_file
+
+selected = read_record_file(
+    Path("PRIVATE_STORE"), "baseline.review-001", "source/rows.jsonl",
+    max_bytes=ROWS_MAX_BYTES,
+)
+raw_rows = selected.data
+```
+
+The selected-file read checks those bytes against their manifest. Use
+`records verify` for the whole seven-file record. Neither operation reruns goppi
+or changes the original record. This route does not accept the separate C55
+operator-answer assessment.
+
 For a selected Promptfoo export, account and retain it without a handwritten
 record specification:
 
