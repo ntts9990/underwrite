@@ -95,6 +95,85 @@ TypeSafe의 [confidence 정의](https://docs.typesafe.ai/confidence)는 분포�
 표의 숫자는 각각의 과제·모델·실험 설계에서만 해석한다. 공개 논문과 공급자 README가 underwrite의 비교 실험을 대신하지 않는다. “Jev가
 빠르다”, “패널이 정확하다”, “순서 회전으로 안전하다” 같은 문장은 사용자 과제에서의 근거가 아니다.
 
+## 경쟁 기능을 넘어설 수 있는 제품 경계
+
+다음 표는 각 제품의 현재 문서에 나온 기능을 비교한다. 이 표만으로 underwrite의
+차별성이나 검토 결과의 개선을 입증할 수는 없다.
+
+| 제품 | 이미 강한 기능 | underwrite가 피할 중복 |
+| --- | --- | --- |
+| [AnyJev](https://github.com/nokia-applied-research/AnyJev) | 제한된 선택지의 확률과 raw/L0·Tacit 실행 | 판단 모델 자체의 훈련·추론 엔진 |
+| [DeepEval JevEval](https://deepeval.com/docs/metrics-jev-eval) | 단일·다중 턴과 에이전트 실행 경로에 대한 질문·적용 여부·분포·가중치·점수 내역 | 새 질문형 채점기나 동일한 가중 합산 |
+| [Promptfoo](https://www.promptfoo.dev/docs/configuration/expected-outputs/model-graded/) | agent-rubric은 작업 공간과 도구 근거를 확인하고, [coding-agent 지침](https://www.promptfoo.dev/docs/red-team/coding-agents/)은 보호된 외부 검증·파일 해시·누락 시 실패와 실행 trace를 다룬다. [OpenAI Decisions 경로](https://www.promptfoo.dev/docs/providers/openai-decisions/)는 확률형 질문과 JSON 내보내기도 지원 | 범용 grader 연결, 단순 해시/sidecar, 확률 결과 생성·내보내기 |
+| [Langfuse](https://langfuse.com/docs/evaluation/scores/data-model) | 실행 기록·점수, [사람 주석에 맞춘 판단기 평가](https://langfuse.com/docs/evaluation/evaluation-methods/annotation-queues), [데이터셋·평가기 버전과 누락 사례를 고려한 실험 비교](https://langfuse.com/docs/evaluation/experiments/compare-experiments), [에이전트용 CLI·skill·MCP](https://langfuse.com/docs/evaluation/agentic-access) | 추적·점수 저장소, 주석 UI, 에이전트 접근 자체 |
+| [JudgeArena](https://github.com/OpenEuroLLM/JudgeArena) | 판단 모델 교체, 실행·사용량 메타데이터, 사람 라벨에 대한 judge 평가와 held-out Elo 추정 | 범용 judge 벤치마크·메타평가 실행기 |
+| [goppi](https://github.com/ntts9990/goppi) | 같은 조건의 하네스 변경 실행·쌍대 비교·근거 보존 | 실험 실행기와 평가 하네스 재구현 |
+
+**제품 명제:** 원천이 특정 에이전트 실행에 대해 성공·점수·확률을 주장할 때,
+사람이나 코딩 에이전트가 그 주장을 변경 검토에 사용할 근거가 있는지 로컬 파일로 확인한다.
+어느 실행·사례·질문·정책의 주장인지, 계획 모집단과 관측이 연결되는지, 질문이 적용됐는지,
+오류·미측정·기권과 독립 정답은 무엇인지를 JSON으로 돌려준다. 근거가 부족하면 필요한
+입력을 밝히고 판단을 보류한다. 일부 검사는 Promptfoo와 Langfuse에도 있다. 차별 가설은
+다중 생산자 자료의 정확한 연결이 후속 검토 오류를 더 줄이는지에 있다. 자동 승인이나 배포 판단은 하지 않는다.
+
+현재 underwrite의 DeepEval·Promptfoo 파일 수용과 원천 집계, goppi 교환 자료 소비,
+저장 기록은 출발점이다. JevEval 질문별 내역이 로컬 TestRun export에 남는지부터 확인해야
+한다. 모델 연결 기능과 검토 오류 감소도 각각 검증해야 한다.
+
+### 확장 가능한 최소 구조
+
+- **파일 경계:** 정확한 생산자·형식·버전별 어댑터는 이미 받은 로컬 바이트만 읽고
+  원천 필드를 보존한다. source success, score, confidence는 각각 원천 주장이다.
+  안정적인 산출물이 확인되기 전에는 AnyJev나 JevEval 전용 수용 형식을 설계하지 않는다.
+- **논리적 소유자:** 동일한 의미가 입증된 바이트 식별·계획 모집단·공통 결측 조건만
+  [기존 순수 근거 영역](../../src/underwrite/instrument/evidence/)의 한 소유자를 재사용한다.
+  JevEval의 None 선택지나 Promptfoo의 오류·점수처럼 공급자별 적용·실패 의미는 해당 순수 프로필에 남긴다.
+  [기존 AB/BA·일치도·기권 계산](../../src/underwrite/instrument/evidence/judge.py)은 실제
+  짝·라벨이 있을 때 재사용한다. 판단 적격성을 현행 네이티브 측정 read의 의미와 섞지 않는다.
+- **호출과 보존:** 필요성이 입증된 한 작업을 기존
+  [CLI](../../src/underwrite/cli/)와
+  [불변 로컬 기록](../../src/underwrite/service/records.py)에 연결한다.
+  구조화된 결과에는 해당 사례·원본 바이트 식별, 확인한 조건, 부족한 근거와
+  다음 입력을 넣는다. 출처 해시는 인증으로, confidence는 정답 확률로 바꾸지 않는다.
+- **다음 생산자:** 같은 판단 의미를 가진 실제 산출물이 나오면 작은 버전별 추출기로
+  확대한다. 점수 척도나 사건 의미가 다르면 구별한다. 공통 조건이 바뀌면 해당 의미 소유자를
+  수정한다. 모델 SDK, 서버, Docker, 범용 플러그인 프레임워크나 증거 그래프는 기본 설치에
+  들어오지 않는다.
+
+이 구조는 후보 아키텍처다. 새 계약·명령 이름·포트의 필요성은 첫 실제 입력에서
+반복 수작업 오류가 재현된 뒤 결정한다. 현행 measurement 계약은 네이티브 이진 사건에
+쓰이므로 외부 판단 점수를 그대로 [측정 read](../../src/underwrite/measurement/event_read.py)나
+[수락 결정](../../src/underwrite/acceptance/decision.py)에 올리지 않는다.
+
+### 경쟁자 대비 가치가 있는지 반증 가능한 시험
+
+아래의 제품 가치 검증 실험은 새 판단 기능의 증분 효과를 묻는다. **경쟁 제품을 넘어선다는
+주장에는 경쟁자의 기존 경로와 작은 스크립트까지 포함한 대조가 필요하다.** 모든 조건에
+같은 실제 원본 파일·manifest·영수증, 대상 실행·질문, 정책, 모집단과 검토 시간을
+제공한다. 독립 정답은 평가자가 미리 동결하고 검토자에게 숨긴 채 모든 조건의 공통 채점에만 쓴다.
+원 생산자의 지원 버전과 native 검토·CI 기능을 합리적으로 설정한다.
+
+| 조건 | 검토자가 받는 것 | 시험하는 차이 |
+| --- | --- | --- |
+| A | 원 생산자 CLI/export와 같은 서면 검토 규칙 | 생산자만으로 가능한 결과 |
+| B0 | A에 현행 underwrite JSON과 선택 기록을 추가 | 현재 제품의 증분 효과 |
+| C | A에 사전 공개한 작은 스크립트로 같은 입력의 해시·모집단·질문 적용 등 후보 기능의 핵심 검사를 추가 | 일반적인 자동화로 설명되는 효과 |
+| B1, 조건부 | A에 실험으로 필요성이 확인된 판단 근거 감사 결과를 추가 | 새 제품 기능의 실제 증분 효과 |
+
+B1은 아직 구현되지 않았다. 먼저 A/B0/C로 오류가 나는 지점을 찾고, B0와 C가 같으면
+새 기능을 추측해 만들지 않는다. 실제 입력과 반복 결함이 B1을 뒷받침하면 기능·1차 끝점·
+정상 수용과 비용의 허용 손실을 미리 고정한다. **탐색에 쓰지 않은 새 사례와 새 검토자**로
+B1을 A·C와 비교한다. 안전 수용 추천 오류를 1차로, 정상 사례 수용·보류·소요 시간·토큰·
+설치비용을 함께 본다. 같은 검토자에게 같은 사례를 다시 보여주지 않고 사례·검토자를
+균형 배치한다. 각 생산자가 지원하는 형식 안에서 비교하며 지원하지 않는 타사 export는
+실패로 세지 않는다. 측정할 수 없는 시간·토큰·비용은 미측정으로 남긴다. B1이 C와 경쟁자의
+기존 경로보다 낫지 않으면 “더 나은 OSS”라는 홍보 주장은 보류한다.
+
+제품 확장의 기준도 기능 개수가 아니다. 첫 과제에서 잘못된 안전 추천이 줄고,
+다음 실제 생산자를 연결할 때 동일한 순수 판단 조건과 저장·CLI 경로를 재사용하며,
+다른 의미의 점수는 분리한 채 에이전트가 한 번의 로컬 결과로 다음 행동을 결정할 수
+있어야 한다. 이 세 조건 중 하나라도 실패하면 범위를 다시 좁힌다.
+
 ## 제품 후보 우선순위
 
 1. **판단 결과 적격성 대조 실험 (우선).** 실제 에이전트 실행·독립 라벨·현재 underwrite 결과를 같은 사례에 연결한다. 가장 직접적인
