@@ -20,6 +20,7 @@ from underwrite.cli import (
     commands,
     compare_declarations,
     handoff_review,
+    inspect_result,
     inspection,
     instrument,
     measure,
@@ -125,6 +126,20 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
             ),
         ),
         _standalone(audit_baseline.main),
+    ),
+    CommandDescriptor(
+        "inspect-result",
+        "Screen one external evidence_result.v1 file with content-minimized output.",
+        inspect_result.configure,
+        (
+            profile(
+                "evidence_result.v1",
+                ("file",),
+                ("evidence_result.v1",),
+                ("common_result_inspection.v1",),
+            ),
+        ),
+        _standalone(inspect_result.main),
     ),
     CommandDescriptor(
         "project-baseline",

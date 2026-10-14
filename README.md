@@ -169,6 +169,7 @@ export, or version offered by each producer. Select the version explicitly.
 | **Langfuse** | `4.35.0` server blob exports: observations-v2 and scores JSON arrays | [`audit-langfuse`](AGENT_USAGE.md#account-for-langfuse-score-kinds-and-associations), with an optional content-minimized row index |
 | **DeepEval** | Ordinary TestRun JSON, `4.1.1` or `4.2.8` | [`audit-deepeval`](AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors) |
 | **Promptfoo** | Eval output JSON, `0.123.0` or `0.124.1` | [`audit-promptfoo`](AGENT_USAGE.md#source-checkout-pilot-audit-promptfoo-counts) |
+| **External common result** | `evidence_result.v1` JSON from a producer | [`inspect-result`](AGENT_USAGE.md#inspect-an-external-common-result) for contract screening and computed availability counts |
 | **Native evidence** | `underwrite.evidence-bundle` / `v1` | `ingest` → `measure` → `accept` |
 | **Inspect AI** | `inspect.eval-log` / `0.3.263` | `ingest` |
 | **OpenInference** | `openinference.traces` / `0.1.38` | `ingest` |
@@ -188,6 +189,9 @@ explicit exchange adapters: `audit-baseline` produces descriptive
 `evidence_result.v1` without a policy or directional verdict, while
 `project-baseline` can produce native event observations. `prepare-event-policy`
 binds a consumer configuration while leaving statistical assumptions unknown.
+For an already produced `evidence_result.v1` file, `inspect-result` checks the
+installed contract and item counts without verifying the producer's source or
+bundle, or admitting that result to measurement or acceptance.
 
 ## Keep results you can return to
 

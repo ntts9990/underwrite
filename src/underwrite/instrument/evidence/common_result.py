@@ -71,3 +71,19 @@ def check_result_invariants(result: Mapping[str, object]) -> None:
         if coordinate in seen:
             raise ResultInvariantError("RESULT_COORDINATE_DUPLICATE", location)
         seen.add(coordinate)
+
+
+def availability_counts(result: Mapping[str, object]) -> dict[str, int] | None:
+    """Count analyzed item states after schema and cross-item validation.
+
+    Non-analyzed results declare no analyzed population, even when their item list
+    is empty. The caller must validate the installed schema first.
+    """
+    processing = cast(Mapping[str, object], result["processing"])
+    if processing["state"] != "analyzed":
+        return None
+    items = cast(list[Mapping[str, object]], result["items"])
+    counts = {"observed": 0, "missing": 0, "error": 0, "abstained": 0}
+    for item in items:
+        counts[cast(str, item["availability"])] += 1
+    return {**counts, "total": len(items)}
