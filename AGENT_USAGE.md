@@ -360,6 +360,71 @@ The same selection works with `ingest --format deepeval.test-run --version 4.2.8
 No version is detected from this unversioned file; selecting a profile does not
 authenticate its producer. The default and explicit 4.1.1 results stay v1.
 
+To return the common descriptive `evidence_result.v1` for DeepEval metric
+occurrences, supply one reusable owner-authored name binding pack:
+
+```sh
+underwrite audit-deepeval /path/to/test_run.json --version 4.2.8 \
+  --bindings /private/path/deepeval-bindings.json --json \
+  > /private/path/deepeval-evidence.json
+```
+
+The pack has this shape. Create a complete `metric_definition.v1` object for
+each selected name using the [definition contract](contracts/metric_definition.v1.schema.json),
+then place it under `definition`; the [pack contract](contracts/deepeval_metric_bindings.v1.schema.json)
+fixes the exact DeepEval profile and authority string:
+
+```python
+import json
+from pathlib import Path
+from underwrite_core.canonical import content_digest
+
+definition = json.loads(Path("/private/path/metric-definition.json").read_text())
+definition["semantic_digest"] = content_digest(definition["semantic"])
+pack = {
+    "schema": "deepeval_metric_bindings.v1",
+    "source": {"format": "deepeval.test-run", "format_version": "4.2.8"},
+    "name_binding_authority": "owner_asserted_stable_name_not_verified",
+    "bindings": [{"source_metric_name": "my_metric", "definition": definition}],
+}
+Path("/private/path/deepeval-bindings.json").write_text(json.dumps(pack))
+```
+
+Each definition must have `method` and `policy` set to null, numeric value
+type, `sampling.unit` of `metric_occurrence`, coordinates
+`["case_index", "metric_index"]`, and a `semantic_digest` recomputed from its
+`semantic` object. The pack contains no per-run values and can be reused across
+runs where the owner asserts that the selected source name has the same meaning.
+The digest checks declared content integrity, not whether that meaning is true.
+Underwrite checks exact names and declaration integrity; it cannot establish
+that two same-named metrics use the same rubric or evaluator configuration.
+Use a separate pack/profile or leave a homonymous name unbound when that owner
+assertion cannot be made. A selected name absent from the source is refused;
+unselected occurrences remain visible as unbound items.
+
+The importable API returns the same validated result and typed refusals:
+
+```python
+from pathlib import Path
+from underwrite.instrument.ingest.deepeval_binding import audit_deepeval_bound_file
+
+result = audit_deepeval_bound_file(
+    Path("/path/to/test_run.json"),
+    Path("/private/path/deepeval-bindings.json"),
+    version="4.2.8",
+)
+```
+
+The result lists ordinal metric occurrences, source-byte hash, score/error/missing
+availability, and any bound namespace, metric ID, version, and semantic digest.
+Source metric names and declaration prose stay in the private pack; bound IDs are
+visible in the result and should be nonsensitive. `planned_count` stays null,
+source values remain `source_claim`, and the result grants no statistical,
+acceptance, or approval authority. JSON output is limited to 1 MiB; a larger
+otherwise valid population returns a typed `OUTPUT_LIMIT_EXCEEDED` error with
+no partial stdout. The unbound accounting command and `records audit-deepeval`
+retain their existing contracts and behavior.
+
 In v2, `source_flaky` is the producer's boolean declaration at case and metric
 level, not measured instability or a computed CI outcome. A failed flaky case
 stays source-false; a failed flaky metric can coexist with a passing case.

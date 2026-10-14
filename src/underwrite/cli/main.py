@@ -239,6 +239,14 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 (selected.accounting_schema,),
             )
             for version, selected in DEEPEVAL_PROFILES.items()
+        )
+        + (
+            profile(
+                "deepeval.test-run|4.2.8|owner-asserted-metric-bindings",
+                ("file", "version", "bindings"),
+                ("deepeval_metric_bindings.v1",),
+                ("evidence_result.v1",),
+            ),
         ),
         _standalone(audit_deepeval.main),
     ),

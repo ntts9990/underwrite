@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from underwrite.cli.evidence import EvidenceError, ReportOutput, run_cli
+from underwrite.instrument.evidence.deepeval_binding import DeepevalBindingError
 from underwrite.instrument.ingest.deepeval_accounting import (
     PROFILES,
     SOURCE,
@@ -14,6 +15,7 @@ from underwrite.instrument.ingest.deepeval_accounting import (
     audit_deepeval_file,
     profile_for,
 )
+from underwrite.instrument.ingest.deepeval_binding import audit_deepeval_bound_file
 
 
 def configure(parser: argparse.ArgumentParser) -> None:
@@ -26,11 +28,19 @@ def configure(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--version",
         choices=tuple(PROFILES),
-        default=SOURCE[1],
+        default=None,
         help="Explicit source version; no detection or fallback.",
     )
     parser.add_argument(
-        "--json", action="store_true", help="Emit the selected deepeval_accounting JSON contract."
+        "--bindings",
+        type=Path,
+        default=None,
+        help="Reusable owner-asserted DeepEval 4.2.8 metric declaration pack.",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the selected deepeval_accounting or evidence_result JSON contract.",
     )
     parser.description = (
         "Account for case flags, observed metric scores, evaluator errors, and unscored metrics "
@@ -46,9 +56,44 @@ def configure(parser: argparse.ArgumentParser) -> None:
 
 def produce(args: argparse.Namespace) -> dict[str, object]:
     try:
-        return audit_deepeval_file(cast(Path, args.file), version=cast(str, args.version))
-    except DeepevalFileError as exc:
+        if args.bindings is not None:
+            if args.version != "4.2.8":
+                raise EvidenceError(
+                    "UNSUPPORTED_FORMAT", "DEEPEVAL_BINDING_EXPLICIT_VERSION_REQUIRED", "/version"
+                )
+            return audit_deepeval_bound_file(
+                cast(Path, args.file), cast(Path, args.bindings), version="4.2.8"
+            )
+        return audit_deepeval_file(cast(Path, args.file), version=args.version or SOURCE[1])
+    except (DeepevalFileError, DeepevalBindingError) as exc:
         raise EvidenceError(exc.code, exc.reason, exc.location) from None
+
+
+def render_bound_human(report: dict[str, object]) -> str:
+    population = cast(dict[str, object], report["population"])
+    items = cast(list[dict[str, object]], report["items"])
+    states = {
+        state: sum(item["availability"] == state for item in items)
+        for state in ("observed", "error", "missing")
+    }
+    bound = sum(
+        cast(dict[str, object], item["metric"])["semantic_binding"] == "bound" for item in items
+    )
+    return (
+        f"Metric occurrences: {population['observed_count']}; bound {bound}; "
+        f"scored {states['observed']}; evaluator errors {states['error']}; "
+        f"unscored {states['missing']}.\n"
+        "Planned evaluations unknown; source claims and owner name meanings unverified. "
+        "No statistical or approval authority."
+    )
+
+
+def _render(report: dict[str, object]) -> str:
+    return (
+        render_bound_human(report)
+        if report["schema"] == "evidence_result.v1"
+        else render_human(report)
+    )
 
 
 def render_human(report: dict[str, object]) -> str:
@@ -92,6 +137,11 @@ def main(argv: list[str]) -> int:
         configure,
         produce,
         ReportOutput(
-            lambda args: profile_for(cast(str, args.version)).accounting_schema, human=render_human
+            lambda args: (
+                "evidence_result.v1"
+                if args.bindings is not None
+                else profile_for(args.version or SOURCE[1]).accounting_schema
+            ),
+            human=_render,
         ),
     )

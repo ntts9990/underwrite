@@ -175,7 +175,9 @@ export, or version offered by each producer. Select the version explicitly.
 | **OTLP JSON** | `otlp-json.traces` / `0.160.0` | `ingest` |
 
 DeepEval accounting defaults to `4.1.1`; select `--version 4.2.8` for that
-profile. Promptfoo accounting defaults to `0.123.0`; select `--version 0.124.1`
+profile. For a reusable owner-asserted metric-name pack and common descriptive
+JSON, see the [DeepEval binding workflow](AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors).
+Promptfoo accounting defaults to `0.123.0`; select `--version 0.124.1`
 for that profile. Langfuse's version identifies the server export, not its SDK.
 See [artifact requirements](AGENT_USAGE.md#get-the-right-producer-artifact) and
 [producer checks](EVIDENCE_REVIEW.md) for the tested scope and fixture origins.
