@@ -475,6 +475,28 @@ uv run --frozen --no-sync underwrite audit-promptfoo \
   fixtures/examples/evidence/synthetic-promptfoo-category-mismatch.json --json
 ```
 
+For agent triage by original 0-based row position without receiving source text,
+select the ordinal row index:
+
+```sh
+underwrite audit-promptfoo results.json --version 0.124.1 --view row-index --json
+```
+
+`promptfoo_row_index.v1` retains the selected format/version, one raw-byte hash,
+declared and observed counts, their deltas/findings, and each row's ordinal,
+accounting category, source `success` flag, finite `failureReason` code, and nullable
+`gradingResult.pass`. A null grading pass covers an absent or explicit-null grading
+result. The category is the existing success-first accounting classification:
+`success=true` with reason `ERROR` remains in `successes` with a disagreement finding;
+`success=false` with reason `NONE` falls in `failures` without claiming an ASSERT
+reason. `ERROR` is a source code, not a verified provider cause. Prompt/response,
+error text, labels, IDs, scores, costs, and paths are withheld. This view cannot
+distinguish a zero score from another score and gives no task verdict or approval.
+Its hash and ordinal pattern remain linkable, so it is content-minimized, not
+anonymous; planned evaluations and export completeness stay unknown, and
+`verification` is empty. The importable file API is
+`underwrite.instrument.ingest.accounting.audit_promptfoo_row_index_file`.
+
 This selects the pinned payload profile; it does not authenticate the producer or
 verify an independently supplied expected hash. It uses bounded local-file reads.
 For expected-hash checks, explicit source references/locators, or contained relative
