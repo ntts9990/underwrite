@@ -10,6 +10,7 @@ from underwrite.cli.evidence import EvidenceError, ReportOutput, run_cli
 from underwrite.instrument.ingest.langfuse_accounting import (
     LangfuseFileError,
     audit_langfuse_files,
+    audit_langfuse_row_index_files,
 )
 
 
@@ -28,7 +29,11 @@ def configure(parser: argparse.ArgumentParser) -> None:
         metavar="FILE",
         help="Langfuse server 4.35.0 scores JSON export.",
     )
-    parser.add_argument("--json", action="store_true", help="Emit langfuse_accounting.v1 JSON.")
+    parser.add_argument(
+        "--view", choices=("accounting", "row-index"), default="accounting",
+        help="Select full accounting or a content-minimized per-score row index.",
+    )
+    parser.add_argument("--json", action="store_true", help="Emit the selected view as JSON.")
     parser.description = (
         "Account for score kinds and exact project/trace/observation associations in two "
         "supplied Langfuse 4.35.0 exports. Unresolved references remain descriptive results. "
@@ -42,7 +47,10 @@ def configure(parser: argparse.ArgumentParser) -> None:
 
 def produce(args: argparse.Namespace) -> dict[str, object]:
     try:
-        return audit_langfuse_files(cast(Path, args.observations), cast(Path, args.scores))
+        audit = (
+            audit_langfuse_row_index_files if args.view == "row-index" else audit_langfuse_files
+        )
+        return audit(cast(Path, args.observations), cast(Path, args.scores))
     except LangfuseFileError as exc:
         raise EvidenceError(exc.code, exc.reason, exc.location) from None
 
@@ -70,11 +78,27 @@ def render_human(report: dict[str, object]) -> str:
     )
 
 
+def render_selected_human(report: dict[str, object]) -> str:
+    if report["schema"] == "langfuse_accounting.v1":
+        return render_human(report)
+    counts = cast(dict[str, Any], report["counts"])
+    return (
+        f"Supplied rows: {counts['observations']} observations; {counts['scores']} scores.\n"
+        "Per-score kinds and association ordinals available in --json; score content withheld.\n"
+        "Selected file hashes and row patterns remain linkable; no task verdict or approval."
+    )
+
+
 def main(argv: list[str]) -> int:
     return run_cli(
         "audit-langfuse",
         argv,
         configure,
         produce,
-        ReportOutput("langfuse_accounting.v1", human=render_human),
+        ReportOutput(
+            lambda args: "langfuse_row_index.v1"
+            if args.view == "row-index"
+            else "langfuse_accounting.v1",
+            human=render_selected_human,
+        ),
     )

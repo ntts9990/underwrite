@@ -12,6 +12,7 @@ from underwrite.instrument.evidence.langfuse_accounting import (
     LangfuseAccountingError,
     account_langfuse,
 )
+from underwrite.instrument.evidence.langfuse_row_index import index_langfuse_accounting
 from underwrite.instrument.ingest.application import (
     DEFAULT_MAX_BYTES,
     DEFAULT_MAX_DEPTH,
@@ -20,6 +21,7 @@ from underwrite.instrument.ingest.application import (
     packaged_ingestor,
 )
 from underwrite.instrument.ingest.project import Source
+from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
 from underwrite.instrument.ingest.transport import Ingestor, TransportError, read_local_file
 
 SOURCES = MappingProxyType(
@@ -104,6 +106,22 @@ def audit_langfuse_files(observations_file: Path, scores_file: Path) -> dict[str
     )
     score_identity, scores = _capture(ingestor, read_langfuse_file(scores_file, "scores"), "scores")
     return _account(observation_identity, observations, score_identity, scores)
+
+
+def audit_langfuse_row_index_files(
+    observations_file: Path, scores_file: Path
+) -> dict[str, object]:
+    """Return the checked content-minimized view of the same two selected files."""
+    accounting = audit_langfuse_files(observations_file, scores_file)
+    try:
+        packaged_validator("langfuse_accounting.v1").validate(accounting)  # pyright: ignore[reportUnknownMemberType]
+        result = index_langfuse_accounting(accounting)
+        packaged_validator("langfuse_row_index.v1").validate(result)  # pyright: ignore[reportUnknownMemberType]
+    except SchemaConfigurationError:
+        raise LangfuseFileError("SCHEMA_CONFIGURATION_ERROR", "INVALID_PACKAGED_CONTRACT") from None
+    except Exception:
+        raise LangfuseFileError("INTERNAL_ERROR", "LANGFUSE_ROW_INDEX_INVALID") from None
+    return result
 
 
 def audit_langfuse_bytes(observations: bytes, scores: bytes) -> dict[str, object]:

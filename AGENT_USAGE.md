@@ -238,6 +238,27 @@ server profile 4.35.0 (not its SDK version):
 underwrite audit-langfuse --observations observations_v2.json --scores scores.json --json
 ```
 
+For an agent that needs per-score structure without score names, values, free text,
+or original IDs in its result, select the content-minimized row index:
+
+```sh
+underwrite audit-langfuse --observations observations_v2.json --scores scores.json \
+  --view row-index --json
+```
+
+`langfuse_row_index.v1` keeps score order, kind, numeric-field presence, nullable
+string-field presence, association, and target observation ordinal. It withholds
+the field contents, so a numeric zero and nonzero look the same. Null, empty, and
+nonempty strings are `null`, `present`, and `present` respectively. The result
+retains each selected file's raw hash, supplied-row counts, unknown planned and
+export-completeness states, and no verification or task verdict. Hashes and row
+patterns can still link artifacts, so this view is content-minimized, not
+anonymized. The two files are independently selected, not an atomic snapshot.
+Python callers can use `audit_langfuse_row_index_files(observations, scores)` from
+`underwrite.instrument.ingest.langfuse_accounting`. Match both role raw hashes
+before relating a separate private record to a row-index result; a hash proves
+byte identity, not provenance. The default `audit-langfuse` output is unchanged.
+
 `langfuse_accounting.v1` preserves score rows in source order, counts them by
 NUMERIC, BOOLEAN, CATEGORICAL, or TEXT kind, and explains each association using
 explicit rules. Numeric value and nullable text remain separate source fields: stored

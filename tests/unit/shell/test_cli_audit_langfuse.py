@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from underwrite_core.canonical import canonical_bytes, content_digest, digest_bytes
 
-from underwrite.cli import audit_langfuse
+from underwrite.cli import audit_langfuse, capabilities, main
 from underwrite.cli.evidence import ReportOutput, run_cli
 from underwrite.instrument.ingest import langfuse_accounting as adapter
 from underwrite.instrument.ingest import transport
@@ -286,3 +287,118 @@ def test_broken_packaged_observation_schema_remains_a_configuration_error(
     assert code == ERROR_EXIT and stdout == ""
     assert error["code"] == "SCHEMA_CONFIGURATION_ERROR"
     assert error["location"] == "" and str(tmp_path) not in stderr
+
+
+def test_default_json_bytes_remain_unchanged(capsys: pytest.CaptureFixture[str]) -> None:
+    paths = {
+        "observations": GOLDEN / "observations_v2-2026-09-14T06-40-00.json",
+        "scores": GOLDEN / "scores-2026-09-14T06-40-00.json",
+    }
+    assert audit_langfuse.main([*argv(paths), "--json"]) == 0
+    streams = capsys.readouterr()
+    assert streams.err == ""
+    assert hashlib.sha256(streams.out.encode()).hexdigest() == (
+        "472f74aee6f2c5aa4b3f104a5aba741254ca99eaa5d93fdcc64ad29373879bc7"
+    )
+
+
+def test_row_index_capability_profile() -> None:
+    registered = capabilities.report(main.COMMAND_DESCRIPTORS)
+    commands = cast(list[dict[str, Any]], registered["commands"])
+    command = next(row for row in commands if row["command"] == "audit-langfuse")
+    profile = next(row for row in command["profiles"] if row["name"] == "langfuse.row-index.v1")
+    assert profile["required_inputs"] == ["observations", "scores", "view"]
+    assert profile["output_schemas"] == ["langfuse_row_index.v1"]
+
+
+def test_row_index_canary_and_entrypoint(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    canary = "PRIVATE_AGENT_CANARY"
+    (tmp_path / canary).mkdir()
+    paths, rows = inputs(tmp_path / canary)
+    observation = rows["observations"][1]
+    original_id = observation["id"]
+    observation["id"] = canary
+    observation["project_id"] = canary
+    observation["trace_id"] = canary
+    observation["input"] = canary
+    for score in rows["scores"]:
+        score["project_id"] = canary
+        score["trace_id"] = canary
+        score["id"] = canary
+        score["name"] = canary
+        score["string_value"] = canary
+        if score["observation_id"] == original_id:
+            score["observation_id"] = canary
+    # Distinguish a local target, an unresolved reference, and trace-level rows.
+    rows["scores"][2]["observation_id"] = canary + "-unresolved"
+    rows["scores"][0]["value"] = 0
+    rows["scores"][0]["string_value"] = None
+    rows["scores"][1]["string_value"] = ""
+    for role, path in paths.items():
+        path.write_text(json.dumps(rows[role]), encoding="utf-8")
+
+    assert main.main(["audit-langfuse", *argv(paths), "--view", "row-index", "--json"]) == 0
+    streams = capsys.readouterr()
+    assert streams.err == "" and canary not in streams.out
+    result = json.loads(streams.out)
+    assert result == adapter.audit_langfuse_row_index_files(paths["observations"], paths["scores"])
+    assert result["schema"] == "langfuse_row_index.v1"
+    assert {
+        role: result["sources"][role]["raw_hash"] for role in paths
+    } == {role: digest_bytes(path.read_bytes()) for role, path in paths.items()}
+    assert result["counts"]["scores"] == len(rows["scores"])
+    assert result["score_rows"][0]["numeric_field_presence"] == "present"
+    assert result["score_rows"][0]["string_field_presence"] == "null"
+    assert result["score_rows"][1]["string_field_presence"] == "present"
+    assert result["score_rows"][0]["target_observation_index"] == 1
+    assert result["score_rows"][2]["association"] == "unresolved_observation_reference"
+    assert result["score_rows"][2]["target_observation_index"] is None
+    assert result["score_rows"][3]["association"] == "trace_level"
+    assert result["score_rows"][3]["target_observation_index"] is None
+    assert result["scope"]["selected_file_binding"] == "independent_selected_files"
+    assert result["verification"] == []
+    assert all("value" not in row and "id" not in row for row in result["score_rows"])
+
+    del rows["scores"][0]["string_value"]
+    paths["scores"].write_text(json.dumps(rows["scores"]), encoding="utf-8")
+    assert (
+        main.main(["audit-langfuse", *argv(paths), "--view", "row-index", "--json"])
+        == ERROR_EXIT
+    )
+    streams = capsys.readouterr()
+    assert streams.out == "" and canary not in streams.err
+    assert json.loads(streams.err)["code"] == "INVALID_INPUT"
+
+
+def test_row_index_reads_each_selected_file_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths, _ = inputs(tmp_path)
+    read = adapter.read_local_file
+    selected: list[Path] = []
+
+    def traced(path: Path, maximum: int) -> bytes:
+        selected.append(path)
+        return read(path, maximum)
+
+    monkeypatch.setattr(adapter, "read_local_file", traced)
+    adapter.audit_langfuse_row_index_files(paths["observations"], paths["scores"])
+    assert selected == [paths["observations"], paths["scores"]]
+
+
+def test_row_index_api_projection_fault_is_finite(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths, _ = inputs(tmp_path)
+
+    def fail(_accounting: dict[str, object]) -> dict[str, object]:
+        raise RuntimeError("PRIVATE_AGENT_CANARY")
+
+    monkeypatch.setattr(adapter, "index_langfuse_accounting", fail)
+    with pytest.raises(adapter.LangfuseFileError) as caught:
+        adapter.audit_langfuse_row_index_files(paths["observations"], paths["scores"])
+    assert caught.value.code == "INTERNAL_ERROR"
+    assert caught.value.reason == "LANGFUSE_ROW_INDEX_INVALID"
+    assert "PRIVATE_AGENT_CANARY" not in str(caught.value)
