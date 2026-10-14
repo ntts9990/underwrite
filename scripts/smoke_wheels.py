@@ -1123,12 +1123,62 @@ def _native_measurement_pilot(cli: Path, fixtures: Path, work: Path) -> None:
     )
 
 
+def _baseline_evidence_pilot(cli: Path, exchange: Path, work: Path) -> None:
+    """Check the installed descriptive CLI and directory API on one exchange."""
+    evidence = _cli_json(
+        cli,
+        ["audit-baseline", "--exchange", str(exchange)],
+        work / "baseline-evidence.json",
+        work,
+    )
+    _require(evidence.get("schema") == "evidence_result.v1", "baseline evidence schema")
+    _require(evidence.get("verification") == [], "baseline invented portable verification")
+    evidence_source = cast(dict[str, object], evidence["source"])
+    identity = cast(dict[str, object], evidence_source["identity"])
+    members = cast(dict[str, str], identity["members"])
+    _require(
+        identity["manifest_raw_hash"]
+        == "sha256:" + hashlib.sha256((exchange / "manifest.json").read_bytes()).hexdigest()
+        and members
+        == {
+            name: "sha256:" + hashlib.sha256((exchange / name).read_bytes()).hexdigest()
+            for name in ("manifest.json", "export.json", "rows.jsonl", "schema.json", "scope.json")
+        },
+        "baseline evidence did not bind each raw source file",
+    )
+    evidence_population = cast(dict[str, object], evidence["population"])
+    _require(
+        evidence_population == {"unit": "case", "observed_count": 4, "planned_count": 4},
+        "baseline evidence source-record population changed",
+    )
+    evidence_items = cast(list[dict[str, object]], evidence["items"])
+    _require(
+        [(item["availability"], item["value"]) for item in evidence_items]
+        == [("observed", True), ("observed", False), ("observed", False), ("missing", None)],
+        "baseline evidence source states changed",
+    )
+    api_code = (
+        "import json,sys; from pathlib import Path; "
+        "from underwrite.instrument.ingest.goppi_baseline import audit_baseline_exchange; "
+        "print(json.dumps(audit_baseline_exchange(Path(sys.argv[1])),sort_keys=True))"
+    )
+    api = _success([str(cli.parent / "python"), "-c", api_code, str(exchange)], work)
+    _require(json.loads(api.stdout) == evidence, "installed baseline Python API differs from CLI")
+    _require(
+        "SYNTHETIC_ANSWER_NOT_FOR_PROJECTION" not in json.dumps(evidence)
+        and "indeterminate:agent_budget" not in json.dumps(evidence),
+        "baseline descriptive result leaked private source content",
+    )
+
+
 def _baseline_event_pilot(cli: Path, fixtures: Path, work: Path) -> None:
     source = fixtures / "baseline-event"
+    exchange = source / "exchange"
+    _baseline_evidence_pilot(cli, exchange, work)
     observation_path = work / "baseline-observation.json"
     observation = _cli_json(
         cli,
-        ["project-baseline", "--exchange", str(source / "exchange"), "--direction", "higher"],
+        ["project-baseline", "--exchange", str(exchange), "--direction", "higher"],
         observation_path,
         work,
     )
@@ -1208,6 +1258,38 @@ def _baseline_event_pilot(cli: Path, fixtures: Path, work: Path) -> None:
         work,
         "INVALID_INPUT",
         "BASELINE_FILE_IDENTITY_MISMATCH",
+    )
+    _native_refusal(
+        cli,
+        ["audit-baseline", "--exchange", str(altered)],
+        work,
+        "INVALID_INPUT",
+        "BASELINE_FILE_IDENTITY_MISMATCH",
+    )
+    api_refusal_code = (
+        "import json,sys\n"
+        "from pathlib import Path\n"
+        "from underwrite.instrument.ingest.goppi_baseline import audit_baseline_exchange\n"
+        "from underwrite.instrument.ingest.local_capture import CaptureError\n"
+        "from underwrite.instrument.evidence.goppi_baseline import BaselineProjectionError\n"
+        "try:\n"
+        "    audit_baseline_exchange(Path(sys.argv[1]))\n"
+        "except (CaptureError, BaselineProjectionError) as exc:\n"
+        "    print(json.dumps({'code': exc.code, 'reason': exc.reason, "
+        "'location': exc.location}))\n"
+        "else:\n"
+        "    raise SystemExit(3)\n"
+    )
+    api_refusal = _success(
+        [str(cli.parent / "python"), "-c", api_refusal_code, str(altered)], work
+    )
+    api_error = json.loads(api_refusal.stdout)
+    _require(
+        api_refusal.stderr == ""
+        and api_error["code"] == "INVALID_INPUT"
+        and api_error["reason"] == "BASELINE_FILE_IDENTITY_MISMATCH"
+        and str(altered) not in api_refusal.stdout,
+        "installed baseline Python API did not refuse tampered bytes finitely",
     )
 
 

@@ -16,6 +16,7 @@ from underwrite.instrument.evidence.goppi_baseline import (
     BaselineDocuments,
     BaselineProjectionError,
     project_baseline_bundle,
+    project_baseline_result,
 )
 from underwrite.instrument.evidence.goppi_identity import length_prefixed_digest
 from underwrite.measurement.event_read import EventReadError, assemble_event_read
@@ -89,6 +90,278 @@ def test_projection_preserves_population_and_withholds_unsupported_measurements(
     assert "outcome_population_incomplete" in result["reason_codes"]
 
 
+def test_common_result_preserves_false_missing_and_exact_file_identities() -> None:
+    fixture = build_baseline_exchange(
+        ("observed_true", "observed_false", "observed_false", "missing")
+    )
+    documents = fixture.documents()
+    result = project_baseline_result(documents)
+    assert result["schema"] == "evidence_result.v1"
+    assert result["processing"] == {"state": "analyzed", "reason": None, "next_action": "none"}
+    assert result["population"] == {"unit": "case", "observed_count": 4, "planned_count": 4}
+    assert result["source"] == {
+        "format": "goppi.baseline_case_exchange",
+        "format_version": "v2",
+        "identity": {
+            "kind": "bound_bundle",
+            "manifest_raw_hash": documents.identities["manifest.json"][0],
+            "members": {name: identity[0] for name, identity in documents.identities.items()},
+        },
+    }
+    items = cast(list[dict[str, object]], result["items"])
+    assert [item["coordinate"] for item in items] == [
+        {"kind": "case", "index": index} for index in range(4)
+    ]
+    assert [(item["availability"], item["value"]) for item in items] == [
+        ("observed", True), ("observed", False), ("observed", False), ("missing", None)
+    ]
+    assert items[-1]["reason"] == "SOURCE_MISSING"
+    assert items[-1]["next_action"] == "inspect_source"
+    assert all(
+        item["metric"] == {"semantic_binding": "unbound", "source_metric_index": 0}
+        and item["origin"] == "source_claim"
+        and item["permitted_effect"] == "descriptive"
+        and item["method"] is None
+        and item["policy"] is None
+        for item in items
+    )
+    assert result["verification"] == []
+
+
+def test_common_result_does_not_expose_private_producer_fields() -> None:
+    fixture = build_baseline_exchange()
+    fixture.export["include_answers"] = True
+    fixture.rows[0]["answer"] = {
+        "included": True, "availability": "included_private", "value": "ANSWER_SENTINEL"
+    }
+    fixture.rows[0]["outcome"]["reason"] = "REASON_SENTINEL"
+    fixture.rows[0]["usage"].update(
+        status="observed",
+        input_tokens=864209,
+        output_tokens=11,
+        total_tokens=864220,
+        reported_cost=12345.25,
+        source="claude_cli_reported",
+    )
+    result = canonical_bytes(project_baseline_result(fixture.documents()))
+    for private in (
+        b"case-0", b"ANSWER_SENTINEL", b"REASON_SENTINEL", b"864209",
+        b"run_id", b"scope.jsonl",
+    ):
+        assert private not in result
+
+
+def test_common_result_uses_same_exchange_validation_without_direction() -> None:
+    documents = build_baseline_exchange().documents()
+    documents.rows[1]["outcome"]["primary_status"] = "PRIVATE_STATUS"
+    with pytest.raises(BaselineProjectionError) as caught:
+        project_baseline_result(documents)
+    assert (caught.value.code, caught.value.reason, caught.value.location) == (
+        "INVALID_INPUT", "BASELINE_OUTCOME_INVALID", "/rows"
+    )
+    assert "PRIVATE_STATUS" not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("status", "measured", "lower_bound"),
+    [
+        ("observed", True, False),
+        ("partial", True, True),
+        ("unknown", False, False),
+        ("not_stored_per_case", False, False),
+    ],
+)
+def test_producer_usage_states_remain_admissible(
+    status: str, measured: bool, lower_bound: bool
+) -> None:
+    fixture = build_baseline_exchange()
+    fixture.rows[0]["usage"].update(
+        status=status,
+        input_tokens=3 if measured else None,
+        output_tokens=2 if measured else None,
+        total_tokens=5 if measured else None,
+        reported_cost=0.25 if measured else None,
+        cache_read_tokens=1 if measured else None,
+        source="claude_cli_reported" if measured else "runner_unknown_cost",
+        lower_bound=lower_bound,
+    )
+    assert project_baseline_result(fixture.documents())["processing"] == {
+        "state": "analyzed", "reason": None, "next_action": "none"
+    }
+
+
+@pytest.mark.parametrize("duration", [None, 0, 1.5])
+def test_available_attempt_allows_nullable_nonnegative_duration(duration: float | None) -> None:
+    fixture = build_baseline_exchange()
+    attempt = fixture.rows[0]["attempt"]
+    attempt.update(
+        status="available",
+        attempt_id="attempt-1",
+        request_digest="sha256:" + "a" * 64,
+        receipt_digest="sha256:" + "b" * 64,
+        termination_reason="completed",
+        duration_ms=duration,
+        local_receipt_content_digest_checked=True,
+    )
+    assert project_baseline_result(fixture.documents())["processing"] == {
+        "state": "analyzed", "reason": None, "next_action": "none"
+    }
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("status", "PRIVATE_STATUS"),
+        ("input_tokens", -1),
+        ("output_tokens", 1.5),
+        ("reported_cost", -0.5),
+        ("provider_authentication_verified", True),
+        ("missing_values_are_zero", True),
+        ("cost_unit", "EUR"),
+        ("source", "PRIVATE_SOURCE"),
+    ],
+)
+def test_malformed_or_overclaimed_usage_refuses_after_rebinding(field: str, value: object) -> None:
+    fixture = build_baseline_exchange()
+    fixture.rows[0]["usage"][field] = value
+    with pytest.raises(BaselineProjectionError) as caught:
+        project_baseline_result(fixture.documents())
+    assert caught.value.code == "INVALID_INPUT"
+    assert caught.value.location == "/rows/usage"
+    assert "PRIVATE" not in str(caught.value)
+
+
+def test_extra_usage_key_refuses_after_rebinding() -> None:
+    fixture = build_baseline_exchange()
+    fixture.rows[0]["usage"]["private"] = "PRIVATE_VALUE"
+    with pytest.raises(BaselineProjectionError) as caught:
+        project_baseline_result(fixture.documents())
+    assert (caught.value.reason, caught.value.location) == ("BASELINE_SHAPE_INVALID", "/rows/usage")
+    assert "PRIVATE" not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("status", "lower_bound", "input_tokens"),
+    [
+        ("observed", False, None),
+        ("observed", True, 3),
+        ("unknown", False, 3),
+        ("not_stored_per_case", False, 3),
+    ],
+)
+def test_usage_state_contradictions_refuse(
+    status: str, lower_bound: bool, input_tokens: int | None
+) -> None:
+    fixture = build_baseline_exchange()
+    fixture.rows[0]["usage"].update(
+        status=status,
+        input_tokens=input_tokens,
+        output_tokens=2 if status == "observed" else None,
+        total_tokens=5 if status == "observed" else None,
+        reported_cost=0.25 if status == "observed" else None,
+        lower_bound=lower_bound,
+    )
+    with pytest.raises(BaselineProjectionError) as caught:
+        project_baseline_result(fixture.documents())
+    assert (caught.value.reason, caught.value.location) == (
+        "BASELINE_USAGE_STATE_MISMATCH", "/rows/usage"
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("status", "PRIVATE_STATUS"),
+        ("value", -1),
+        ("unit", "EUR"),
+        ("source", "PRIVATE_SOURCE"),
+        ("provider_billing_verified", True),
+        ("provider_billing_cap", True),
+        ("missing_values_are_zero", True),
+    ],
+)
+def test_invalid_aggregate_cost_refuses_after_rebinding(field: str, value: object) -> None:
+    fixture = build_baseline_exchange()
+    fixture.export["aggregate_cost"][field] = value
+    with pytest.raises(BaselineProjectionError) as caught:
+        project_baseline_result(fixture.documents())
+    assert caught.value.code == "INVALID_INPUT"
+    assert caught.value.location == "/export/aggregate_cost"
+    assert "PRIVATE" not in str(caught.value)
+
+
+def test_extra_aggregate_cost_key_refuses_after_rebinding() -> None:
+    fixture = build_baseline_exchange()
+    fixture.export["aggregate_cost"]["private"] = "PRIVATE_VALUE"
+    with pytest.raises(BaselineProjectionError) as caught:
+        project_baseline_result(fixture.documents())
+    assert (caught.value.reason, caught.value.location) == (
+        "BASELINE_SHAPE_INVALID", "/export/aggregate_cost"
+    )
+
+
+@pytest.mark.parametrize("duration", [-0.25, True, "PRIVATE_DURATION"])
+def test_invalid_available_duration_refuses_after_rebinding(duration: object) -> None:
+    fixture = build_baseline_exchange()
+    attempt = fixture.rows[0]["attempt"]
+    attempt.update(
+        status="available",
+        attempt_id="attempt-1",
+        request_digest="sha256:" + "a" * 64,
+        receipt_digest="sha256:" + "b" * 64,
+        termination_reason="completed",
+        duration_ms=duration,
+        local_receipt_content_digest_checked=True,
+    )
+    with pytest.raises(BaselineProjectionError) as caught:
+        project_baseline_result(fixture.documents())
+    assert (caught.value.reason, caught.value.location) == (
+        "BASELINE_VALUE_INVALID", "/rows/attempt/duration_ms"
+    )
+    assert "PRIVATE" not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "location"),
+    [
+        ("generated_at", "2026-02-30T00:00:00Z", "/export/generated_at"),
+        ("generated_at", "PRIVATE_TIMESTAMP", "/export/generated_at"),
+        ("alias", "PRIVATE/ALIAS", "/export/source/alias"),
+        ("alias", "-bad", "/export/source/alias"),
+    ],
+)
+def test_invalid_timestamp_or_alias_refuses_after_rebinding(
+    field: str, value: str, location: str
+) -> None:
+    fixture = build_baseline_exchange()
+    target = fixture.export if field == "generated_at" else fixture.export["source"]
+    target[field] = value
+    with pytest.raises(BaselineProjectionError) as caught:
+        project_baseline_result(fixture.documents())
+    assert caught.value.code == "INVALID_INPUT"
+    assert caught.value.location == location
+    assert "PRIVATE" not in str(caught.value)
+
+
+def test_common_result_maps_internal_invariant_failure_to_finite_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import underwrite.instrument.evidence.goppi_baseline as baseline
+
+    def fail(_result: object) -> None:
+        from underwrite.instrument.evidence.common_result import ResultInvariantError
+
+        raise ResultInvariantError("PRIVATE_INTERNAL_DETAIL", "/items/0/coordinate")
+
+    monkeypatch.setattr(baseline, "check_result_invariants", fail)
+    with pytest.raises(BaselineProjectionError) as caught:
+        project_baseline_result(build_baseline_exchange().documents())
+    assert (caught.value.code, caught.value.reason, caught.value.location) == (
+        "INTERNAL_ERROR", "BASELINE_RESULT_INVARIANT_FAILED", "/result"
+    )
+    assert "PRIVATE_INTERNAL_DETAIL" not in str(caught.value)
+
+
 def test_complete_population_is_descriptive_without_assumptions() -> None:
     result = _read(_bundle(build_baseline_exchange(("observed_true", "observed_false"))))
     assert result["population"]["outcomes"]["missing_ids"] == []
@@ -130,12 +403,19 @@ def test_answer_reason_usage_and_authority_flags_never_leave_projection() -> Non
         "value": {"private": "ANSWER_SENTINEL"},
     }
     fixture.rows[0]["outcome"]["reason"] = "REASON_SENTINEL"
-    fixture.rows[0]["usage"]["private"] = "USAGE_SENTINEL"
+    fixture.rows[0]["usage"].update(
+        status="observed",
+        input_tokens=864209,
+        output_tokens=11,
+        total_tokens=864220,
+        reported_cost=12345.25,
+        source="claude_cli_reported",
+    )
     rendered = canonical_bytes(_bundle(fixture))
     for secret in (
         b"ANSWER_SENTINEL",
         b"REASON_SENTINEL",
-        b"USAGE_SENTINEL",
+        b"864209",
         b"local_authenticated_source_checked",
         b"provider_authentication_verified",
         b"generated_at",

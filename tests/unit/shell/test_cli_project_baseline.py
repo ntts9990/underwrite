@@ -42,6 +42,24 @@ def _error(capsys: pytest.CaptureFixture[str], code: str) -> dict[str, Any]:
     return error
 
 
+@pytest.mark.parametrize(
+    ("direction", "stdout_sha256"),
+    [
+        ("higher", "2c099c91fbc2a66faef996e2d1aea22ac1e8aa334667abf6686b16bd1b2fdecc"),
+        ("lower", "8b1a5ee417ca2a5407ec28b1cac375aee5fa77e560d89e905b5061386b85eb7d"),
+    ],
+)
+def test_project_baseline_stdout_remains_byte_compatible(
+    capsys: pytest.CaptureFixture[str], direction: str, stdout_sha256: str
+) -> None:
+    """Lock the published synthetic exchange's exact CLI bytes across projector refactors."""
+    exchange = ROOT / "fixtures/examples/baseline-event/exchange"
+    assert main(_args(exchange, direction)) == 0
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert hashlib.sha256(captured.out.encode("utf-8")).hexdigest() == stdout_sha256
+
+
 def test_generated_bundle_identity_and_private_fields(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

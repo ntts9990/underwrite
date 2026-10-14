@@ -9,6 +9,7 @@ from pathlib import Path
 
 from underwrite.cli import (
     accept,
+    audit_baseline,
     audit_counts,
     audit_deepeval,
     audit_langfuse,
@@ -110,6 +111,20 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
         ),
         _instrument,
         ("project",),
+    ),
+    CommandDescriptor(
+        "audit-baseline",
+        "Audit exact goppi baseline exchange v2 as descriptive common evidence.",
+        audit_baseline.configure,
+        (
+            profile(
+                "goppi-baseline-exchange-v2",
+                ("exchange",),
+                (),
+                ("evidence_result.v1",),
+            ),
+        ),
+        _standalone(audit_baseline.main),
     ),
     CommandDescriptor(
         "project-baseline",
