@@ -368,6 +368,7 @@ def _promptfoo_current_pilot(cli: Path, work: Path) -> None:
     directory = work / "promptfoo-current"
     directory.mkdir()
     source = ROOT / "fixtures/golden/external/promptfoo-0.124.1/results.json"
+    raw = source.read_bytes()
     observation = directory / "observation.json"
     projected = _cli_json(
         cli,
@@ -383,7 +384,7 @@ def _promptfoo_current_pilot(cli: Path, work: Path) -> None:
         observation,
         directory,
     )
-    _require(projected["payload"] == json.loads(source.read_bytes()), "new profile changed source")
+    _require(projected["payload"] == json.loads(raw), "new profile changed source")
     report = _cli_json(
         cli,
         ["audit-promptfoo", str(source), "--version", "0.124.1"],
@@ -396,8 +397,36 @@ def _promptfoo_current_pilot(cli: Path, work: Path) -> None:
         and report["declared_relation"] == "consistent",
         "current Promptfoo capture changed declared category meaning",
     )
+    row_view = _cli_json(
+        cli,
+        ["audit-promptfoo", str(source), "--version", "0.124.1", "--view", "row-index"],
+        directory / "row-index.json",
+        directory,
+    )
+    selected_rows = row_view.get("rows")
+    _require(isinstance(selected_rows, list), "installed Promptfoo row index did not return rows")
+    source_rows = cast(list[object], selected_rows)
+    _require(
+        all(isinstance(row, dict) for row in source_rows),
+        "installed Promptfoo row index contains non-object rows",
+    )
+    rows = cast(list[dict[str, object]], source_rows)
+    _require(
+        row_view.get("schema") == "promptfoo_row_index.v1"
+        and row_view.get("raw_hash") == "sha256:" + hashlib.sha256(raw).hexdigest()
+        and [row.get("row_index") for row in rows] == list(range(expected["total"]))
+        and [row.get("category") for row in rows]
+        == ["successes", "failures", "errors", "errors", "successes", "errors", "successes"]
+        and all(
+            set(row)
+            == {"row_index", "category", "source_success", "source_failure_reason", "grading_pass"}
+            for row in rows
+        )
+        and row_view.get("verification") == [],
+        "installed Promptfoo row index changed selection, identity or content boundary",
+    )
     _promptfoo_record_pilot(cli, source, directory, report, version="0.124.1")
-    _promptfoo_manifest_pilot(cli, directory, source.read_bytes())
+    _promptfoo_manifest_pilot(cli, directory, raw)
     refused = _command(
         [
             str(cli),
