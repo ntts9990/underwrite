@@ -1,10 +1,12 @@
 # UME-1 contract vectors
 
-These JSON files are **hand-authored expected results for contract review**. No
-`underwrite` command emits `evidence_result.v1` or accepts
-`metric_definition.v1` yet. A conforming future adapter must derive each item
-from the referenced source, validate the result, and independently establish
-every check it claims. Schema validation alone is not verification.
+These JSON files are **hand-authored expected results for contract review**.
+`audit-baseline` emits `evidence_result.v1` for the pinned goppi exchange, and
+`audit-deepeval --version 4.2.8 --bindings PACK` emits it for DeepEval metrics
+using a separately supplied, owner-asserted `metric_definition.v1` pack.
+Neither path makes source claims independent truth. A conforming adapter must
+derive each item from its source, validate the result, and independently
+establish every check it claims. Schema validation alone is not verification.
 
 | Vector | Source and fact fixed by the vector |
 | --- | --- |

@@ -46,18 +46,24 @@ def _destinations(parser: argparse.ArgumentParser) -> set[str]:
     }
 
 
-def _required_destinations(parser: argparse.ArgumentParser) -> set[str]:
-    required = {
-        action.dest
-        for action in parser._actions  # pyright: ignore[reportPrivateUsage]
-        if action.dest not in {"help", argparse.SUPPRESS}
-        and (not action.option_strings or action.required)
-    }
+def _required_clauses(parser: argparse.ArgumentParser) -> list[set[str]]:
     groups = parser._mutually_exclusive_groups  # pyright: ignore[reportPrivateUsage]
+    grouped_actions = {
+        action
+        for group in groups
+        for action in group._group_actions  # pyright: ignore[reportPrivateUsage]
+    }
+    required = [
+        {action.dest}
+        for action in parser._actions  # pyright: ignore[reportPrivateUsage]
+        if action not in grouped_actions
+        and action.dest not in {"help", argparse.SUPPRESS}
+        and (not action.option_strings or action.required)
+    ]
     for group in groups:
         if group.required:
             actions = group._group_actions  # pyright: ignore[reportPrivateUsage]
-            required.update(action.dest for action in actions)
+            required.append({action.dest for action in actions})
     return required
 
 
@@ -101,7 +107,7 @@ def test_required_inputs_exist_on_the_registered_parser_profile() -> None:
         for profile in descriptor.profiles:
             owner = children.get(profile.name, parser)
             destinations = _destinations(owner)
-            required_destinations = _required_destinations(owner)
+            required_clauses = _required_clauses(owner)
             for requirement in profile.required_inputs:
                 alternatives = set(requirement.split("|"))
                 assert alternatives & destinations, (
@@ -110,11 +116,17 @@ def test_required_inputs_exist_on_the_registered_parser_profile() -> None:
                     requirement,
                     destinations,
                 )
-                assert alternatives & required_destinations, (
+            covered = {
+                destination
+                for requirement in profile.required_inputs
+                for destination in requirement.split("|")
+            }
+            for required_clause in required_clauses:
+                assert required_clause & covered, (
                     descriptor.command,
                     profile.name,
-                    requirement,
-                    required_destinations,
+                    required_clause,
+                    profile.required_inputs,
                 )
 
 
