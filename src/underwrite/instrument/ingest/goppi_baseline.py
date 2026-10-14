@@ -7,11 +7,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, cast
 
+from jsonschema.exceptions import ValidationError
+
 from underwrite.instrument.evidence.goppi_baseline import (
     FILES,
     MAX_CASES,
     BaselineDocuments,
     BaselineProjectionError,
+    project_baseline_result,
 )
 from underwrite.instrument.ingest.local_capture import (
     CapturedBytes,
@@ -20,6 +23,7 @@ from underwrite.instrument.ingest.local_capture import (
     RootReader,
     decode_captured_object,
 )
+from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
 from underwrite.instrument.ingest.transport import DecodeError, decode_json
 
 DOCUMENT_MAX_BYTES = 1024 * 1024
@@ -75,3 +79,24 @@ def capture_baseline_documents(exchange: Path) -> BaselineDocuments:
         rows=_rows(captured["rows.jsonl"]),
         identities={name: (item.sha256, item.size) for name, item in captured.items()},
     )
+
+
+def audit_baseline_exchange(exchange: Path) -> dict[str, object]:
+    """Capture a completed exchange once and return its validated descriptive result."""
+    result = project_baseline_result(capture_baseline_documents(exchange))
+    try:
+        validator = packaged_validator("evidence_result.v1")
+        validator.validate(result)  # pyright: ignore[reportUnknownMemberType]
+    except ValidationError:
+        raise BaselineProjectionError(
+            "INTERNAL_ERROR", "BASELINE_RESULT_INVALID", "/projection"
+        ) from None
+    except SchemaConfigurationError:
+        raise BaselineProjectionError(
+            "SCHEMA_CONFIGURATION_ERROR", "INVALID_PACKAGED_CONTRACT", "/projection"
+        ) from None
+    except Exception:
+        raise BaselineProjectionError(
+            "SCHEMA_CONFIGURATION_ERROR", "SCHEMA_EVALUATION_FAILED", "/projection"
+        ) from None
+    return result

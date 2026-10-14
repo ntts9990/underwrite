@@ -9,10 +9,16 @@ import re
 import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
+from math import isfinite
 from typing import Any, cast
 
 from underwrite_core.canonical import CanonicalizationError, canonical_bytes
 
+from underwrite.instrument.evidence.common_result import (
+    ResultInvariantError,
+    check_result_invariants,
+)
 from underwrite.instrument.evidence.goppi_identity import length_prefixed_digest
 from underwrite.measurement_contract.semantics import (
     ContractError,
@@ -33,6 +39,8 @@ INSTRUMENT = "goppi.baseline-primary-status.v2"
 METRIC = "producer-primary-observed-true"
 PROTOCOL = "goppi.baseline_case_exchange.v2"
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
+_ALIAS = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
+_ISO_UTC = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\Z")
 _RUNNERS = {
     "deterministic_node_conformance": "deterministic_conformance",
     "pi_0_84_4": "existing_pi",
@@ -54,6 +62,16 @@ class BaselineDocuments:
     scope: dict[str, Any]
     rows: tuple[dict[str, Any], ...]
     identities: Mapping[str, tuple[str, int]]
+
+
+@dataclass(frozen=True)
+class _ValidatedExchange:
+    scope: dict[str, Any]
+    ids: list[str]
+    verifier: str
+    source: dict[str, Any]
+    statuses: list[str]
+    counts: dict[str, int]
 
 
 class BaselineProjectionError(ValueError):
@@ -100,6 +118,25 @@ def _integer(value: object, location: str, maximum: int = 2**53 - 1) -> int:
     _require(type(value) is int and 0 <= value <= maximum, "BASELINE_VALUE_INVALID", location)
     assert isinstance(value, int)
     return value
+
+
+def _nonnegative_number(value: object, location: str) -> None:
+    _require(type(value) in (int, float), "BASELINE_VALUE_INVALID", location)
+    number = cast(int | float, value)
+    try:
+        valid = isfinite(number) and number >= 0
+    except OverflowError:
+        valid = False
+    _require(valid, "BASELINE_VALUE_INVALID", location)
+
+
+def _utc_datetime(value: object, location: str) -> None:
+    timestamp = _text(value, location, 64)
+    _require(_ISO_UTC.fullmatch(timestamp) is not None, "BASELINE_VALUE_INVALID", location)
+    try:
+        datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    except ValueError:
+        raise BaselineProjectionError("INVALID_INPUT", "BASELINE_VALUE_INVALID", location) from None
 
 
 def _literal(value: object, expected: object, location: str) -> None:
@@ -250,6 +287,91 @@ def _runner(value: object, location: str) -> dict[str, Any]:
     return runner
 
 
+def _aggregate_cost(value: object) -> None:
+    location = "/export/aggregate_cost"
+    cost = _closed(
+        value,
+        "status value unit source lower_bound provider_authentication_verified "
+        "provider_billing_verified provider_billing_cap missing_values_are_zero",
+        location,
+    )
+    _require(
+        cost["status"] in ("known_zero", "reported_estimate", "unknown"),
+        "BASELINE_VALUE_INVALID",
+        location,
+    )
+    if cost["value"] is not None:
+        _nonnegative_number(cost["value"], location)
+    _literal(cost["unit"], "USD", location)
+    _require(
+        cost["source"]
+        in (
+            "deterministic_runner_no_model_cost",
+            "source_result.pi_reported_cost_usd",
+            "source_result.runner_reported_cost_usd",
+        ),
+        "BASELINE_VALUE_INVALID",
+        location,
+    )
+    _require(type(cost["lower_bound"]) is bool, "BASELINE_VALUE_INVALID", location)
+    for key in (
+        "provider_authentication_verified",
+        "provider_billing_verified",
+        "provider_billing_cap",
+        "missing_values_are_zero",
+    ):
+        _literal(cost[key], False, location)
+
+
+def _usage(value: object) -> None:
+    location = "/rows/usage"
+    usage = _closed(
+        value,
+        "status input_tokens output_tokens total_tokens cache_read_tokens "
+        "cache_write_tokens reported_cost cost_unit source lower_bound "
+        "provider_authentication_verified provider_billing_verified missing_values_are_zero",
+        location,
+    )
+    status = usage["status"]
+    _require(
+        status in ("observed", "partial", "unknown", "not_stored_per_case"),
+        "BASELINE_VALUE_INVALID",
+        location,
+    )
+    for key in (
+        "input_tokens", "output_tokens", "total_tokens", "cache_read_tokens", "cache_write_tokens"
+    ):
+        if usage[key] is not None:
+            _integer(usage[key], location)
+    if usage["reported_cost"] is not None:
+        _nonnegative_number(usage["reported_cost"], location)
+    _literal(usage["cost_unit"], "USD", location)
+    _require(
+        usage["source"]
+        in (
+            "pi_reported_runner_usage",
+            "claude_cli_reported",
+            "runner_unknown_cost",
+            "product_result_stores_aggregate_only",
+        ),
+        "BASELINE_VALUE_INVALID",
+        location,
+    )
+    _require(type(usage["lower_bound"]) is bool, "BASELINE_VALUE_INVALID", location)
+    for key in (
+        "provider_authentication_verified", "provider_billing_verified", "missing_values_are_zero"
+    ):
+        _literal(usage[key], False, location)
+    measured = status in ("observed", "partial")
+    core = ("input_tokens", "output_tokens", "total_tokens", "reported_cost")
+    _require(
+        all((usage[key] is not None) == measured for key in core)
+        and not (status == "observed" and usage["lower_bound"]),
+        "BASELINE_USAGE_STATE_MISMATCH",
+        location,
+    )
+
+
 def _export(value: object) -> tuple[dict[str, Any], dict[str, Any]]:
     location = "/export"
     exported = _closed(
@@ -264,9 +386,9 @@ def _export(value: object) -> tuple[dict[str, Any], dict[str, Any]]:
         ("status", "complete"),
     ):
         _literal(exported[key], expected, location)
-    _text(exported["generated_at"], location, 64)
+    _utc_datetime(exported["generated_at"], "/export/generated_at")
     _require(type(exported["include_answers"]) is bool, "BASELINE_VALUE_INVALID", location)
-    _require(type(exported["aggregate_cost"]) is dict, "BASELINE_SHAPE_INVALID", location)
+    _aggregate_cost(exported["aggregate_cost"])
     source = _closed(
         exported["source"],
         "alias run_id result_digest result_schema preparation_digest "
@@ -274,7 +396,8 @@ def _export(value: object) -> tuple[dict[str, Any], dict[str, Any]]:
         "local_authenticated_source_checked authenticity_scope",
         location,
     )
-    _text(source["alias"], location)
+    alias = _text(source["alias"], "/export/source/alias")
+    _require(_ALIAS.fullmatch(alias) is not None, "BASELINE_VALUE_INVALID", "/export/source/alias")
     for key in (
         "run_id",
         "result_digest",
@@ -369,7 +492,7 @@ def _row(value: object, source: dict[str, Any], case_id: str, include_answers: b
     _text(outcome["reason"], location, 256)
     _literal(outcome["producer_recorded"], True, location)
     _literal(outcome["independently_regraded"], False, location)
-    _require(type(row["usage"]) is dict, "BASELINE_SHAPE_INVALID", location)
+    _usage(row["usage"])
     attempt = _closed(
         row["attempt"],
         "status attempt_id request_digest receipt_digest termination_reason "
@@ -392,6 +515,8 @@ def _row(value: object, source: dict[str, Any], case_id: str, include_answers: b
             _digest(attempt[key], location)
         elif key != "duration_ms":
             _text(attempt[key], location)
+    if available and attempt["duration_ms"] is not None:
+        _nonnegative_number(attempt["duration_ms"], "/rows/attempt/duration_ms")
     answer = row["answer"]
     _require(type(answer) is dict, "BASELINE_SHAPE_INVALID", location)
     answer = _closed(
@@ -463,10 +588,9 @@ def _semantics(scope: dict[str, Any], verifier: str, direction: str) -> dict[str
     return project_semantics(parse_semantics(declaration))
 
 
-def project_baseline_bundle(documents: BaselineDocuments, *, direction: str) -> dict[str, object]:
-    """Validate consumed producer contracts and project a native event bundle without I/O."""
+def _validate_exchange(documents: BaselineDocuments) -> _ValidatedExchange:
+    """Validate the exact five-file exchange independently of measurement direction."""
     _require(type(documents) is BaselineDocuments, "BASELINE_DOCUMENTS_REQUIRED", "/")
-    _require(direction in ("higher", "lower"), "BASELINE_DIRECTION_INVALID", "/direction")
     _manifest(documents)
     scope, ids, verifier = _scope(documents.scope)
     exported, source = _export(documents.export)
@@ -495,6 +619,66 @@ def project_baseline_bundle(documents: BaselineDocuments, *, direction: str) -> 
         },
     }
     _require(counts == exported["counts"], "BASELINE_COUNTS_MISMATCH", "/export/counts")
+    return _ValidatedExchange(scope, ids, verifier, source, statuses, counts)
+
+
+def project_baseline_result(documents: BaselineDocuments) -> dict[str, object]:
+    """Project validated producer statuses as descriptive common evidence."""
+    validated = _validate_exchange(documents)
+    items: list[dict[str, object]] = []
+    for index, status in enumerate(validated.statuses):
+        missing = status == "missing"
+        items.append(
+            {
+                "coordinate": {"kind": "case", "index": index},
+                "metric": {"semantic_binding": "unbound", "source_metric_index": 0},
+                "applicability": "applicable",
+                "availability": "missing" if missing else "observed",
+                "value": None if missing else status == "observed_true",
+                "reason": "SOURCE_MISSING" if missing else None,
+                "next_action": "inspect_source" if missing else "none",
+                "origin": "source_claim",
+                "method": None,
+                "policy": None,
+                "permitted_effect": "descriptive",
+            }
+        )
+    result: dict[str, object] = {
+        "schema": "evidence_result.v1",
+        "source": {
+            "format": "goppi.baseline_case_exchange",
+            "format_version": "v2",
+            "identity": {
+                "kind": "bound_bundle",
+                "manifest_raw_hash": documents.identities["manifest.json"][0],
+                "members": {name: documents.identities[name][0] for name in FILES},
+            },
+        },
+        "processing": {"state": "analyzed", "reason": None, "next_action": "none"},
+        "population": {
+            "unit": "case",
+            "observed_count": len(documents.rows),
+            "planned_count": len(validated.ids),
+        },
+        "items": items,
+        "verification": [],
+    }
+    try:
+        check_result_invariants(result)
+    except ResultInvariantError:
+        raise BaselineProjectionError(
+            "INTERNAL_ERROR", "BASELINE_RESULT_INVARIANT_FAILED", "/result"
+        ) from None
+    return result
+
+
+def project_baseline_bundle(documents: BaselineDocuments, *, direction: str) -> dict[str, object]:
+    """Validate consumed producer contracts and project a native event bundle without I/O."""
+    _require(type(documents) is BaselineDocuments, "BASELINE_DOCUMENTS_REQUIRED", "/")
+    _require(direction in ("higher", "lower"), "BASELINE_DIRECTION_INVALID", "/direction")
+    validated = _validate_exchange(documents)
+    scope, ids, verifier = validated.scope, validated.ids, validated.verifier
+    source, statuses, counts = validated.source, validated.statuses, validated.counts
     selector = {"instrument": INSTRUMENT, "metric_id": METRIC}
     rows = [
         {

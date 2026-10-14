@@ -84,7 +84,7 @@ is ready; obtain the completed producer artifact and its version context first.
 
 | Producer | Input boundary |
 | --- | --- |
-| goppi | `project-baseline` accepts the exact baseline exchange manifest v2 described below; P7 paired handoffs and older grounded-pilot exchanges have separate routes. No generic ingest profile. A CLI summary is insufficient; do not manufacture rows from counts. |
+| goppi | `audit-baseline` and `project-baseline` accept the exact baseline exchange manifest v2 described below; P7 paired handoffs, the separate C55 operator-answer assessment, and older grounded-pilot exchanges have different contracts. No generic ingest profile. A CLI summary is insufficient; do not manufacture rows from counts. |
 | Langfuse | The supported `4.35.0` denotes the **server export profile**, not the SDK version. Supply the worker's `observations_v2` or `scores` blob-export file as an uncompressed JSON array with the complete field groups. A REST response, Parquet file, or partially selected export is a different shape. Wait for a completed export manifest; SDK flush alone is insufficient. |
 | DeepEval | Supply the ordinary `4.1.1` or `4.2.8` TestRun JSON written by the tool, with the producer version recorded separately. Select `--version 4.2.8` explicitly for that profile; the default remains `4.1.1`. A failed test run can still write a valid artifact. Zero, evaluator errors, and absent verdicts remain distinct. |
 | Promptfoo | Supply the `0.123.0` or `0.124.1` eval output JSON (summary version 3). An assertion-failure exit can accompany a valid export. Direct `audit-promptfoo FILE --json` defaults to 0.123.0; select `--version 0.124.1` explicitly for that producer. With a supplied manifest, `audit-counts` uses its explicit source version and expected hash. |
@@ -621,6 +621,49 @@ claim; a future producer must explicitly satisfy the versioned input contract.
 See the [local comparison study](EVIDENCE_REVIEW.md) for the jq baseline,
 aggregate-count counterexample, measured command cost, and unmeasured user value.
 
+## Audit a completed goppi baseline as common evidence
+
+For the exact completed baseline exchange v2 directory, get a descriptive
+`evidence_result.v1` in one call:
+
+```sh
+underwrite audit-baseline --exchange /path/to/agent-exchange --json
+```
+
+The result lists the raw SHA-256 identity of `manifest.json` and each of the
+five fixed exchange files, plus planned and parsed source-record counts. Each
+item's `coordinate.index` is its **0-based position** in the validated ordered
+`scope.selection.case_ids` kept in the original exchange. A present row whose
+primary outcome is missing still counts as a parsed source record; its value is
+`null`, distinct from an observed `false`. Case IDs, answers, producer reasons,
+usage, private labels, and local paths are not included in the default JSON.
+Keep the source directory to resolve a position or recover the original bytes;
+hashes are not retrieval locations and this command does not create a record.
+
+The values have `origin: source_claim` and `permitted_effect: descriptive`.
+`verification` is empty because this version has no portable reference that a
+separate consumer can resolve and reperform. The command does check the five
+file bytes, manifest/scope binding, ordered roster and counts while accepting
+the exchange; an empty verification list avoids claiming a portable proof or
+producer authentication. No statistical direction or policy is inferred, and
+this result is not a `read.v2`, acceptance decision, or gate input. It does not
+accept goppi's separate C55 operator-answer assessment.
+
+Python callers can use the same bounded read-once path:
+
+```python
+from pathlib import Path
+from underwrite.instrument.ingest.goppi_baseline import audit_baseline_exchange
+
+result = audit_baseline_exchange(Path("/path/to/agent-exchange"))
+```
+
+It returns the same validated result object. Invalid source input raises a
+finite `CaptureError` or `BaselineProjectionError`; the CLI projects those
+into one `evidence_error.v1` on stderr with exit 2 and no partial stdout.
+Use `underwrite capabilities --json` to confirm that the installed executable
+offers this route; PyPI `0.0.1` can differ from this development checkout.
+
 ## Project a completed goppi baseline into event observations
 
 For `goppi.baseline_case_exchange.manifest.v2`, use the directory containing
@@ -652,6 +695,11 @@ duplicated, extra or reordered source rows are errors, not a partial successful
 import. No producer process, model, supplied schema, original source pointer or
 network request runs. Answer bodies, costs, usage, arbitrary source reasons and
 producer authority flags are omitted from the projection.
+
+This consumer profile also bounds `generated_at` to 64 UTC timestamp characters
+and source aliases to the local 128-character token form. Some otherwise
+producer-valid extreme timestamps or identifiers fall outside those limits and
+are refused, never truncated into a successful result.
 
 The observation's `raw.hash` identifies a **consumer-generated canonical native
 bundle**, not the producer's rows or export bytes. `payload.sources` retains the

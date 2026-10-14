@@ -165,7 +165,7 @@ export, or version offered by each producer. Select the version explicitly.
 
 | Your input | Supported profile | Start here |
 | --- | --- | --- |
-| **goppi** | Completed baseline exchange manifest v2; separate paired-handoff route | [`project-baseline`](AGENT_USAGE.md#project-a-completed-goppi-baseline-into-event-observations) · [`review-handoff`](AGENT_USAGE.md#review-a-completed-paired-handoff-in-one-call) |
+| **goppi** | Completed baseline exchange manifest v2; separate paired-handoff route | [`audit-baseline`](AGENT_USAGE.md#audit-a-completed-goppi-baseline-as-common-evidence) for descriptive common JSON · [`project-baseline`](AGENT_USAGE.md#project-a-completed-goppi-baseline-into-event-observations) for native measurement · [`review-handoff`](AGENT_USAGE.md#review-a-completed-paired-handoff-in-one-call) |
 | **Langfuse** | `4.35.0` server blob exports: observations-v2 and scores JSON arrays | [`audit-langfuse`](AGENT_USAGE.md#account-for-langfuse-score-kinds-and-associations) |
 | **DeepEval** | Ordinary TestRun JSON, `4.1.1` or `4.2.8` | [`audit-deepeval`](AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors) |
 | **Promptfoo** | Eval output JSON, `0.123.0` or `0.124.1` | [`audit-promptfoo`](AGENT_USAGE.md#source-checkout-pilot-audit-promptfoo-counts) |
@@ -182,9 +182,10 @@ See [artifact requirements](AGENT_USAGE.md#get-the-right-producer-artifact) and
 
 Generic `ingest` / `project` normalizes supported exports to an observation;
 external observations do not enter the current `measure` path. goppi uses its
-explicit exchange adapters: `project-baseline` can produce native event
-observations, and `prepare-event-policy` binds a consumer configuration while
-leaving statistical assumptions unknown.
+explicit exchange adapters: `audit-baseline` produces descriptive
+`evidence_result.v1` without a policy or directional verdict, while
+`project-baseline` can produce native event observations. `prepare-event-policy`
+binds a consumer configuration while leaving statistical assumptions unknown.
 
 ## Keep results you can return to
 
