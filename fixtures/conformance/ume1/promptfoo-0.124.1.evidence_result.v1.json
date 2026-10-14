@@ -1,0 +1,164 @@
+{
+  "items": [
+    {
+      "applicability": "unknown",
+      "availability": "observed",
+      "coordinate": {
+        "index": 0,
+        "kind": "row"
+      },
+      "method": null,
+      "metric": {
+        "semantic_binding": "unbound",
+        "source_metric_index": 0
+      },
+      "next_action": "none",
+      "origin": "source_claim",
+      "permitted_effect": "descriptive",
+      "policy": null,
+      "reason": null,
+      "value": 1
+    },
+    {
+      "applicability": "unknown",
+      "availability": "observed",
+      "coordinate": {
+        "index": 1,
+        "kind": "row"
+      },
+      "method": null,
+      "metric": {
+        "semantic_binding": "unbound",
+        "source_metric_index": 0
+      },
+      "next_action": "none",
+      "origin": "source_claim",
+      "permitted_effect": "descriptive",
+      "policy": null,
+      "reason": null,
+      "value": 0
+    },
+    {
+      "applicability": "unknown",
+      "availability": "error",
+      "coordinate": {
+        "index": 2,
+        "kind": "row"
+      },
+      "method": null,
+      "metric": {
+        "semantic_binding": "unbound",
+        "source_metric_index": 0
+      },
+      "next_action": "inspect_source",
+      "origin": "source_claim",
+      "permitted_effect": "descriptive",
+      "policy": null,
+      "reason": "SOURCE_ERROR",
+      "value": null
+    },
+    {
+      "applicability": "unknown",
+      "availability": "error",
+      "coordinate": {
+        "index": 3,
+        "kind": "row"
+      },
+      "method": null,
+      "metric": {
+        "semantic_binding": "unbound",
+        "source_metric_index": 0
+      },
+      "next_action": "inspect_source",
+      "origin": "source_claim",
+      "permitted_effect": "descriptive",
+      "policy": null,
+      "reason": "SOURCE_ERROR",
+      "value": null
+    },
+    {
+      "applicability": "unknown",
+      "availability": "observed",
+      "coordinate": {
+        "index": 4,
+        "kind": "row"
+      },
+      "method": null,
+      "metric": {
+        "semantic_binding": "unbound",
+        "source_metric_index": 0
+      },
+      "next_action": "none",
+      "origin": "source_claim",
+      "permitted_effect": "descriptive",
+      "policy": null,
+      "reason": null,
+      "value": 1
+    },
+    {
+      "applicability": "unknown",
+      "availability": "error",
+      "coordinate": {
+        "index": 5,
+        "kind": "row"
+      },
+      "method": null,
+      "metric": {
+        "semantic_binding": "unbound",
+        "source_metric_index": 0
+      },
+      "next_action": "inspect_source",
+      "origin": "source_claim",
+      "permitted_effect": "descriptive",
+      "policy": null,
+      "reason": "SOURCE_ERROR",
+      "value": null
+    },
+    {
+      "applicability": "unknown",
+      "availability": "observed",
+      "coordinate": {
+        "index": 6,
+        "kind": "row"
+      },
+      "method": null,
+      "metric": {
+        "semantic_binding": "unbound",
+        "source_metric_index": 0
+      },
+      "next_action": "none",
+      "origin": "source_claim",
+      "permitted_effect": "descriptive",
+      "policy": null,
+      "reason": null,
+      "value": 0.3
+    }
+  ],
+  "population": {
+    "observed_count": 7,
+    "planned_count": null,
+    "unit": "row"
+  },
+  "processing": {
+    "next_action": "none",
+    "reason": null,
+    "state": "analyzed"
+  },
+  "schema": "evidence_result.v1",
+  "source": {
+    "format": "promptfoo.eval-output",
+    "format_version": "0.124.1",
+    "identity": {
+      "kind": "single_file",
+      "raw_hash": "sha256:17348c05994cdef96e90c7bd24b8ab46f0f5cd5629ad27a6f5203c51205152c7"
+    }
+  },
+  "verification": [
+    {
+      "evidence_ref": "fixture_sha256",
+      "method": "sha256",
+      "scope": "artifact",
+      "target": "source_bytes"
+    }
+  ]
+}

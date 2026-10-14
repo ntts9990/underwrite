@@ -27,6 +27,8 @@ build-backend = "uv_build"
 module-name = "underwrite"
 module-root = "src"
 source-include = [
+    "contracts/evidence_result.v1.schema.json",
+    "contracts/metric_definition.v1.schema.json",
     "contracts/measurement_semantics.v1.schema.json",
     "contracts/measurement_policy.v3.schema.json",
     "contracts/read.v2.schema.json",

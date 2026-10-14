@@ -1,0 +1,91 @@
+{
+  "items": [
+    {
+      "applicability": "unknown",
+      "availability": "observed",
+      "coordinate": {
+        "case_index": 0,
+        "kind": "metric_occurrence",
+        "metric_index": 0
+      },
+      "method": null,
+      "metric": {
+        "semantic_binding": "unbound",
+        "source_metric_index": 0
+      },
+      "next_action": "none",
+      "origin": "source_claim",
+      "permitted_effect": "descriptive",
+      "policy": null,
+      "reason": null,
+      "value": 1.0
+    },
+    {
+      "applicability": "unknown",
+      "availability": "observed",
+      "coordinate": {
+        "case_index": 0,
+        "kind": "metric_occurrence",
+        "metric_index": 1
+      },
+      "method": null,
+      "metric": {
+        "semantic_binding": "unbound",
+        "source_metric_index": 1
+      },
+      "next_action": "none",
+      "origin": "source_claim",
+      "permitted_effect": "descriptive",
+      "policy": null,
+      "reason": null,
+      "value": 0.0
+    },
+    {
+      "applicability": "unknown",
+      "availability": "error",
+      "coordinate": {
+        "case_index": 0,
+        "kind": "metric_occurrence",
+        "metric_index": 2
+      },
+      "method": null,
+      "metric": {
+        "semantic_binding": "unbound",
+        "source_metric_index": 2
+      },
+      "next_action": "inspect_source",
+      "origin": "source_claim",
+      "permitted_effect": "descriptive",
+      "policy": null,
+      "reason": "SOURCE_ERROR",
+      "value": null
+    }
+  ],
+  "population": {
+    "observed_count": 3,
+    "planned_count": null,
+    "unit": "metric_occurrence"
+  },
+  "processing": {
+    "next_action": "none",
+    "reason": null,
+    "state": "analyzed"
+  },
+  "schema": "evidence_result.v1",
+  "source": {
+    "format": "deepeval.test-run",
+    "format_version": "4.2.8",
+    "identity": {
+      "kind": "single_file",
+      "raw_hash": "sha256:5050efd8a89c8ee841237341383f73af590b778643f96da4e971ad534e23abbd"
+    }
+  },
+  "verification": [
+    {
+      "evidence_ref": "fixture_sha256",
+      "method": "sha256",
+      "scope": "artifact",
+      "target": "source_bytes"
+    }
+  ]
+}

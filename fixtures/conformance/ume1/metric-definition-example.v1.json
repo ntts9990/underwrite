@@ -1,0 +1,70 @@
+{
+  "method": null,
+  "metric_id": "case_latency",
+  "namespace": "example",
+  "policy": null,
+  "schema": "metric_definition.v1",
+  "semantic": {
+    "aggregation": {
+      "denominator": {
+        "definition": "No aggregate denominator is used.",
+        "id": "none"
+      },
+      "method": {
+        "definition": "No aggregate is computed by this declaration.",
+        "id": "none"
+      }
+    },
+    "applicability": {
+      "definition": "Only executed cases have an elapsed duration.",
+      "id": "executed_case"
+    },
+    "construct": {
+      "definition": "Elapsed execution time for one evaluated case.",
+      "id": "latency"
+    },
+    "grounding": {
+      "label_source": null,
+      "rubric": null
+    },
+    "missingness": {
+      "abstained": {
+        "definition": "Operator declined the run.",
+        "id": "declined"
+      },
+      "error": {
+        "definition": "Duration capture failed.",
+        "id": "clock_error"
+      },
+      "missing": {
+        "definition": "No execution was observed.",
+        "id": "not_run"
+      }
+    },
+    "prediction_timing": "not_prediction",
+    "required_coordinates": [
+      "case_index"
+    ],
+    "sampling": {
+      "expected_population_basis": {
+        "definition": "Approved case inventory, if present.",
+        "id": "approved_cases"
+      },
+      "unit": "case"
+    },
+    "target": {
+      "definition": "Elapsed wall-clock duration for the declared case boundary.",
+      "id": "elapsed_time",
+      "kind": "quantity"
+    },
+    "value": {
+      "desirable_direction": "lower",
+      "maximum": null,
+      "minimum": 0,
+      "type": "number",
+      "unit": "ms"
+    }
+  },
+  "semantic_digest": "sha256:6a7713387bd59bc8a2d20e3341328d8d3d373fb5c2f444a44185a28584ac761a",
+  "version": "v1"
+}
