@@ -224,6 +224,12 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 (),
                 ("langfuse_accounting.v1",),
             ),
+            profile(
+                "langfuse.row-index.v1",
+                ("observations", "scores", "view"),
+                (),
+                ("langfuse_row_index.v1",),
+            ),
         ),
         _standalone(audit_langfuse.main),
     ),

@@ -19,6 +19,12 @@ from underwrite.instrument.evidence.langfuse_accounting import (
     RULE_PROFILE,
     SCOPE,
 )
+from underwrite.instrument.evidence.langfuse_row_index import (
+    LIMITATIONS as ROW_INDEX_LIMITATIONS,
+)
+from underwrite.instrument.evidence.langfuse_row_index import (
+    SCOPE as ROW_INDEX_SCOPE,
+)
 from underwrite.instrument.ingest.langfuse_accounting import SOURCES
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -163,15 +169,98 @@ def build_schema() -> dict[str, object]:
     }
 
 
+def build_row_index_schema() -> dict[str, object]:
+    digest = {"type": "string", "pattern": "^sha256:[a-f0-9]{64}(?![\\s\\S])"}
+    row = _object(
+        {
+            "score_index": _count(MAX_SCORES - 1),
+            "data_type": {"enum": list(KIND_RULES)},
+            "numeric_field_presence": {"const": "present"},
+            "string_field_presence": {"enum": ["present", "null"]},
+            "association": {"enum": list(ASSOCIATION_RULES)},
+            "target_observation_index": {
+                "type": ["integer", "null"],
+                "minimum": 0,
+                "maximum": MAX_OBSERVATIONS - 1,
+            },
+        }
+    )
+    row["allOf"] = [
+        _tag(
+            "association",
+            association,
+            {
+                "target_observation_index": _count(MAX_OBSERVATIONS - 1)
+                if association == "observation_local"
+                else {"type": "null"}
+            },
+        )
+        for association in ASSOCIATION_RULES
+    ]
+    schema = _object(
+        {
+            "schema": {"const": "langfuse_row_index.v1"},
+            "source_rule_profile": {"const": RULE_PROFILE},
+            "sources": _object(
+                {
+                    role: _object(
+                        {
+                            "format": {"const": selector[0]},
+                            "format_version": {"const": selector[1]},
+                            "raw_hash": digest,
+                            "claims_verified": {"const": False},
+                        }
+                    )
+                    for role, selector in SOURCES.items()
+                }
+            ),
+            "scope": _object({key: {"const": value} for key, value in ROW_INDEX_SCOPE.items()}),
+            "counts": _object(
+                {
+                    "observations": _count(MAX_OBSERVATIONS),
+                    "scores": _count(MAX_SCORES),
+                    "by_data_type": _object({key: _count(MAX_SCORES) for key in KIND_RULES}),
+                    "associations": _object({key: _count(MAX_SCORES) for key in ASSOCIATION_RULES}),
+                    "observations_without_local_scores": _count(MAX_OBSERVATIONS),
+                }
+            ),
+            "score_rows": {"type": "array", "maxItems": MAX_SCORES, "items": row},
+            "verification": {"const": []},
+            "limitations": {"const": list(ROW_INDEX_LIMITATIONS)},
+            "next_actions": {
+                "type": "array",
+                "maxItems": len(NEXT_ACTIONS),
+                "items": {"enum": list(NEXT_ACTIONS)},
+                "uniqueItems": True,
+            },
+        }
+    )
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:underwrite:contract:langfuse_row_index.v1",
+        "title": "langfuse_row_index.v1",
+        "description": "Content-minimized structural view of two independently selected exports.",
+        **schema,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
-    target = ROOT / "contracts/langfuse_accounting.v1.schema.json"
-    rendered = json.dumps(build_schema(), indent=2, ensure_ascii=False) + "\n"
+    targets = {
+        ROOT / "contracts/langfuse_accounting.v1.schema.json": build_schema(),
+        ROOT / "contracts/langfuse_row_index.v1.schema.json": build_row_index_schema(),
+    }
     if args.check:
-        return 0 if target.exists() and target.read_text(encoding="utf-8") == rendered else 1
-    target.write_text(rendered, encoding="utf-8")
+        return 0 if all(
+            target.exists()
+            and target.read_text(encoding="utf-8")
+            == json.dumps(schema, indent=2, ensure_ascii=False) + "\n"
+            for target, schema in targets.items()
+        ) else 1
+    for target, schema in targets.items():
+        target.write_text(json.dumps(schema, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return 0
 
 
