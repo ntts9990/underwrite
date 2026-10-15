@@ -16,6 +16,13 @@ CONFIG_MAX_BYTES = 1024 * 1024
 SCAN_MAX_BYTES = 4 * 1024 * 1024
 JSON_MAX_DEPTH = 64
 POLICY_MAX_ENTRIES = 1024
+CAPTURED_MAX_BYTES = 32 * 1024 * 1024
+JSONL_LINE_MAX_BYTES = 1024 * 1024
+JSONL_LINES_MAX = 100_000
+SELECTED_FILES_MAX = 4096
+VISITED_ENTRIES_MAX = 100_000
+LEAKS_MAX = 4096
+OUTPUT_MAX_BYTES = 1024 * 1024
 
 
 class AdmissionError(ValueError):
@@ -109,13 +116,18 @@ def validate_date(value: str | None) -> date | None:
 
 def limit_entries(count: int, location: str) -> None:
     if count > POLICY_MAX_ENTRIES:
-        raise AdmissionError(
-            "INPUT_LIMIT_EXCEEDED",
-            "INPUT_LIMIT_EXCEEDED",
-            location,
-            limit_kind="entries",
-            limit=POLICY_MAX_ENTRIES,
-        )
+        raise resource_error(location, "entries", POLICY_MAX_ENTRIES)
+
+
+def resource_error(location: str, kind: str, limit: int) -> AdmissionError:
+    """One finite budget refusal shared by legacy handlers and rendering."""
+    return AdmissionError(
+        "INPUT_LIMIT_EXCEEDED",
+        "INPUT_LIMIT_EXCEEDED",
+        location,
+        limit_kind=kind,
+        limit=limit,
+    )
 
 
 def limit_policy_entries(value: object, key: str, location: str) -> None:

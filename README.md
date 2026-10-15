@@ -270,12 +270,22 @@ vocabulary, and `drift check` / `pins refresh` work with supplied pin registries
 
 Legacy `absence` and `drift check` exemption files and `boundary scan` allowlists
 are bounded to 1 MiB, 64 JSON container levels, and 1024 policy entries each.
-`boundary scan` reads at most 4 MiB per selected JSON or JSONL file. Duplicate
-keys and nonfinite numbers are invalid; supplied `--now` and policy expiry dates
-must be real ASCII `YYYY-MM-DD` dates. Admission failures return a typed
-`UNCONFIGURED` result with exit 2. An absent `--now` still yields `NOW_REQUIRED`
-only when the semantic check needs a clock. These are per-file limits; total
-walk, leak, and output budgets are separate follow-on work.
+`boundary scan` reads at most 4 MiB per selected JSON or JSONL file and 32 MiB
+of captured bytes across the command, including its allowlist. It admits up to
+4096 selected files, 100000 visited directory entries, 100000 physical JSONL
+lines and 1 MiB per raw line (including its delimiter), and 4096 leaks including
+allowed rows. Its selected JSON or human output is capped at 1 MiB including
+the final newline. Duplicate keys and nonfinite numbers are invalid; supplied
+`--now` and policy expiry dates must be real ASCII `YYYY-MM-DD` dates. Admission
+failures return a typed `UNCONFIGURED` result with exit 2. An absent `--now`
+still yields `NOW_REQUIRED` only when the semantic check needs a clock.
+
+`absence` retains `Path.glob` matching and refuses more than 4096 matching
+regular files; it does not bound directory traversal within `Path.glob` or
+suppressed internal filesystem errors. Boundary scans follow an explicitly
+selected directory link and regular file links, but do not descend into a child
+directory link. These selections do not establish path containment against a
+hostile filesystem.
 
 `pins refresh` selects one registry repository and copies committed Git blobs.
 Refresh paths must be normalized relative `/`-separated components; empty, dot,

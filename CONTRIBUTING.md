@@ -95,7 +95,7 @@ contract, including failure and interpretation boundaries, before refactoring.
 
 | Concern | Existing owner | Maintain the boundary |
 | --- | --- | --- |
-| Bounded local input | `_fileio.read_descriptor`, `instrument/ingest/transport.decode_json`, `inspection.read_at`, `local_capture.RootReader` | Reuse strict decoding and descriptor reads; captured-byte flows must not reopen source paths for storage |
+| Bounded local input | `_fileio.read_descriptor`, `_json.decode_json` (re-exported by ingest transport), `cli.local_json.read_source`, `inspection.read_at`, `local_capture.RootReader` | Reuse strict decoding and descriptor reads; captured-byte flows must not reopen source paths for storage |
 | CLI results and errors | `cli/evidence.py`, `service/_record_errors.py` and its CLI/schema projections | Reuse the emitter and owned diagnostics; distinguish analysis, storage, and process exits |
 | Composed record responses | `cli/record_capture.py` | Share response admission, storage verification and storage wording; retain producer-specific analysis, input selection and meaning in their command adapters |
 | Paired calculation and review | `instrument/evidence/paired_review.evaluate_paired_review` | Calculate once; presentations project results rather than derive new verdicts |

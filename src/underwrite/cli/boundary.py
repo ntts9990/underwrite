@@ -42,28 +42,39 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import os
+import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any, cast
 
-from underwrite_core.boundary import Leak, scan_strings
+from underwrite_core.boundary import Leak, iter_strings
 
 from underwrite.cli.legacy_input import (
+    CAPTURED_MAX_BYTES,
     CONFIG_MAX_BYTES,
+    JSONL_LINE_MAX_BYTES,
+    JSONL_LINES_MAX,
+    LEAKS_MAX,
+    OUTPUT_MAX_BYTES,
     SCAN_MAX_BYTES,
+    SELECTED_FILES_MAX,
+    VISITED_ENTRIES_MAX,
     AdmissionError,
     decode_bytes,
     limit_policy_entries,
     read_bytes,
-    read_json,
     require_date,
+    resource_error,
     validate_date,
     validate_policy,
 )
 
 _SCHEMA_SUFFIX = ".schema.json"
 _SCANNABLE_SUFFIXES = (".json", ".jsonl")
+_LINE_SEPARATORS = re.compile(r"\r\n|[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]")
 
 
 @dataclass(frozen=True)
@@ -78,9 +89,10 @@ class AllowlistEntry:
     adr: str
 
 
-def load_allowlist(path: Path) -> list[AllowlistEntry]:
+def _load_allowlist(path: Path) -> tuple[list[AllowlistEntry], int]:
     """Admit every entry against the installed shape and strict date contract."""
-    raw = read_json(path, CONFIG_MAX_BYTES, "/allowlist")
+    captured = read_bytes(path, CONFIG_MAX_BYTES, "/allowlist")
+    raw = decode_bytes(captured, "/allowlist")
     if not isinstance(raw, dict):
         raise AdmissionError("INVALID_JSON_INPUT", "INVALID_JSON_INPUT", "/allowlist")
     limit_policy_entries(cast(object, raw), "entries", "/allowlist")
@@ -94,36 +106,90 @@ def load_allowlist(path: Path) -> list[AllowlistEntry]:
         reason, expiry, adr = item["reason"], item["expiry"], item["adr"]
         expiry_date = require_date(expiry, "/allowlist")
         entries.append(AllowlistEntry(path_glob, term, reason, expiry, expiry_date, adr))
-    return entries
+    return entries, len(captured)
+
+
+def load_allowlist(path: Path) -> list[AllowlistEntry]:
+    """Compatibility list API over the same captured and validated bytes."""
+    return _load_allowlist(path)[0]
 
 
 def _is_scannable(path: Path) -> bool:
     return path.suffix in _SCANNABLE_SUFFIXES and not path.name.endswith(_SCHEMA_SUFFIX)
 
 
+def _directory_files(root: Path, visited: int, admitted: int) -> tuple[list[Path], int]:
+    """Visit every directory entry once, then sort selected Path objects per root."""
+    selected: list[Path] = []
+    pending = [root]
+    while pending:
+        directory = pending.pop()
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                visited += 1
+                if visited > VISITED_ENTRIES_MAX:
+                    raise resource_error("/files", "directory_entries", VISITED_ENTRIES_MAX)
+                path = Path(entry.path)
+                if entry.is_file(follow_symlinks=True) and _is_scannable(path):
+                    selected.append(path)
+                    if admitted + len(selected) > SELECTED_FILES_MAX:
+                        raise resource_error("/files", "selected_files", SELECTED_FILES_MAX)
+                elif entry.is_dir(follow_symlinks=False):
+                    pending.append(path)
+    return sorted(selected), visited
+
+
 def _scannable_files(paths: list[Path]) -> list[Path]:
     """Every *.json/*.jsonl file under `paths` (files kept as-is, directories walked
     recursively), *.schema.json excluded, in deterministic order."""
     files: list[Path] = []
+    visited = 0
     for root in paths:
-        if root.is_file():
-            if _is_scannable(root):
-                files.append(root)
-        else:
-            files.extend(p for p in sorted(root.rglob("*")) if p.is_file() and _is_scannable(p))
+        try:
+            if root.is_file():
+                if _is_scannable(root):
+                    files.append(root)
+            elif root.is_dir():
+                selected, visited = _directory_files(root, visited, len(files))
+                files.extend(selected)
+            else:
+                raise AdmissionError("SOURCE_READ_FAILED", "SOURCE_READ_FAILED", "/files")
+            if len(files) > SELECTED_FILES_MAX:
+                raise resource_error("/files", "selected_files", SELECTED_FILES_MAX)
+        except OSError:
+            raise AdmissionError("SOURCE_READ_FAILED", "SOURCE_READ_FAILED", "/files") from None
     return files
 
 
-def _scan_file(path: Path) -> list[Leak]:
-    raw = read_bytes(path, SCAN_MAX_BYTES, "/files")
+def _physical_lines(text: str) -> Iterator[tuple[int, str, int]]:
+    """Yield splitlines-compatible content and delimiter byte width without a list."""
+    start = 0
+    number = 0
+    for separator in _LINE_SEPARATORS.finditer(text):
+        yield number, text[start : separator.start()], len(separator.group(0).encode("utf-8"))
+        number += 1
+        start = separator.end()
+    if start < len(text):
+        yield number, text[start:], 0
+
+
+def _scan_file(raw: bytes, path: Path) -> Iterator[Leak]:
     if path.suffix == ".jsonl":
-        leaks: list[Leak] = []
-        for line_no, raw_line in enumerate(raw.splitlines()):
-            if not raw_line.strip():
+        try:
+            text = raw.decode("utf-8", errors="strict")
+        except UnicodeError:
+            raise AdmissionError("INVALID_JSON_INPUT", "INVALID_JSON_INPUT", "/files") from None
+        for line_no, line, delimiter_bytes in _physical_lines(text):
+            if line_no >= JSONL_LINES_MAX:
+                raise resource_error("/files", "lines", JSONL_LINES_MAX)
+            encoded = line.encode("utf-8")
+            if len(encoded) + delimiter_bytes > JSONL_LINE_MAX_BYTES:
+                raise resource_error("/files", "line_bytes", JSONL_LINE_MAX_BYTES)
+            if not line.strip():
                 continue
-            leaks.extend(scan_strings(decode_bytes(raw_line, "/files"), path=f"line[{line_no}]"))
-        return leaks
-    return scan_strings(decode_bytes(raw, "/files"))
+            yield from iter_strings(decode_bytes(encoded, "/files"), path=f"line[{line_no}]")
+        return
+    yield from iter_strings(decode_bytes(raw, "/files"))
 
 
 def _match(entries: list[AllowlistEntry], relpath: str, term: str) -> AllowlistEntry | None:
@@ -180,19 +246,93 @@ def _admission_refusal(
     return 2, _result("UNCONFIGURED", 2, exc.details())
 
 
+def _row_lower_bound(row: dict[str, Any]) -> int:
+    """Bytes common to JSON and human output, before either adds formatting."""
+    fields = ["file", "path", "term", "family"]
+    if row.get("reason"):
+        fields.append("reason")
+    if row["allowed"]:
+        fields.extend(("expiry", "adr"))
+    return sum(len(str(row[key]).encode("utf-8")) for key in fields if key in row)
+
+
+def _classified_row(
+    file: str, leak: Leak, entries: list[AllowlistEntry], now_date: date | None
+) -> dict[str, Any] | None:
+    entry = _match(entries, file, leak.term)
+    if entry is None:
+        return _row(file, leak, allowed=False)
+    if now_date is None:
+        return None
+    if entry.expiry_date > now_date:
+        return _row(file, leak, allowed=True, entry=entry)
+    return _row(file, leak, allowed=False, reason="allow_expired", entry=entry)
+
+
+def _scan_selected(
+    files: list[Path], entries: list[AllowlistEntry], now_date: date | None, captured: int
+) -> tuple[int, dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    lower_bound = 0
+    leak_count = 0
+    for file in files:
+        relpath = str(file)
+        try:
+            remaining = CAPTURED_MAX_BYTES - captured
+            allowance = min(SCAN_MAX_BYTES, max(1, remaining))
+            try:
+                raw = read_bytes(file, allowance, "/files")
+            except AdmissionError as exc:
+                if exc.limit_kind == "bytes" and allowance < SCAN_MAX_BYTES:
+                    raise resource_error("/files", "captured_bytes", CAPTURED_MAX_BYTES) from None
+                raise
+            captured += len(raw)
+            if captured > CAPTURED_MAX_BYTES:
+                raise resource_error("/files", "captured_bytes", CAPTURED_MAX_BYTES)
+            for leak in _scan_file(raw, file):
+                leak_count += 1
+                if leak_count > LEAKS_MAX:
+                    raise resource_error("/files", "leaks", LEAKS_MAX)
+                row = _classified_row(relpath, leak, entries, now_date)
+                if row is None:
+                    details: dict[str, Any] = {
+                        "file": relpath,
+                        "path": leak.path,
+                        "term": leak.term,
+                    }
+                    return 1, _result("NOW_REQUIRED", 1, details)
+                lower_bound += _row_lower_bound(row)
+                if lower_bound > OUTPUT_MAX_BYTES:
+                    raise resource_error("/output", "output_bytes", OUTPUT_MAX_BYTES)
+                rows.append(row)
+        except AdmissionError as exc:
+            return _admission_refusal(exc, file)
+
+    has_leak = any(not row["allowed"] for row in rows)
+    state = "LEAK" if has_leak else "PASS"
+    exit_code = 1 if has_leak else 0
+    details = {"files_scanned": len(files), "leaks": rows, "allowlist_entries": len(entries)}
+    return exit_code, _result(state, exit_code, details)
+
+
 def cmd_boundary_scan(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
     """`underwrite boundary scan` -- see the module docstring for the full state vocabulary."""
     paths: list[Path] = list(args.paths)
     try:
         now_date = validate_date(args.now)
-        entries = load_allowlist(args.allowlist) if args.allowlist is not None else []
+        entries, captured = (
+            _load_allowlist(args.allowlist) if args.allowlist is not None else ([], 0)
+        )
     except AdmissionError as exc:
         return _admission_refusal(exc, args.allowlist)
     missing = [str(p) for p in paths if not p.exists()]
     if missing:
         return 2, _result("UNCONFIGURED", 2, {"missing": missing})
 
-    files = _scannable_files(paths)
+    try:
+        files = _scannable_files(paths)
+    except AdmissionError as exc:
+        return _admission_refusal(exc)
     if not files:
         empty_details: dict[str, Any] = {
             "files_scanned": 0,
@@ -201,32 +341,4 @@ def cmd_boundary_scan(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         }
         return 1, _result("EMPTY_POPULATION", 1, empty_details)
 
-    rows: list[dict[str, Any]] = []
-    for file in files:
-        relpath = str(file)
-        try:
-            leaks = _scan_file(file)
-        except AdmissionError as exc:
-            return _admission_refusal(exc, file)
-        for leak in leaks:
-            entry = _match(entries, relpath, leak.term)
-            if entry is None:
-                rows.append(_row(relpath, leak, allowed=False))
-                continue
-            if now_date is None:
-                nr_details: dict[str, Any] = {"file": relpath, "path": leak.path, "term": leak.term}
-                return 1, _result("NOW_REQUIRED", 1, nr_details)
-            if entry.expiry_date > now_date:
-                rows.append(_row(relpath, leak, allowed=True, entry=entry))
-            else:
-                rows.append(_row(relpath, leak, allowed=False, reason="allow_expired", entry=entry))
-
-    has_leak = any(not row["allowed"] for row in rows)
-    state = "LEAK" if has_leak else "PASS"
-    exit_code = 1 if has_leak else 0
-    details: dict[str, Any] = {
-        "files_scanned": len(files),
-        "leaks": rows,
-        "allowlist_entries": len(entries),
-    }
-    return exit_code, _result(state, exit_code, details)
+    return _scan_selected(files, entries, now_date, captured)

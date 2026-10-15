@@ -5,13 +5,17 @@ itself, unmodified. The contract defines the output shape."""
 from __future__ import annotations
 
 import json
-from typing import Any
+import sys
+from io import StringIO
+from typing import Any, TextIO
+
+from underwrite.cli.legacy_input import OUTPUT_MAX_BYTES, resource_error
 
 _REPO_TABLE_HEADER = ("repo", "state", "pins", "commit")
 _SHORT_COMMIT_LEN = 7
 
 
-def _render_repo_table(repos: dict[str, Any]) -> None:
+def _render_repo_table(repos: dict[str, Any], stream: TextIO) -> None:
     """One row per repo (`drift check`'s `details.repos`): repo, state, pins, short commit."""
     rows = [
         (repo, info["state"], str(info["pins"]), str(info["source_commit"])[:_SHORT_COMMIT_LEN])
@@ -21,12 +25,15 @@ def _render_repo_table(repos: dict[str, Any]) -> None:
     for row in rows:
         for index, cell in enumerate(row):
             widths[index] = max(widths[index], len(cell))
-    print("  " + "  ".join(h.ljust(widths[i]) for i, h in enumerate(_REPO_TABLE_HEADER)))
+    print(
+        "  " + "  ".join(h.ljust(widths[i]) for i, h in enumerate(_REPO_TABLE_HEADER)),
+        file=stream,
+    )
     for row in rows:
-        print("  " + "  ".join(cell.ljust(widths[i]) for i, cell in enumerate(row)))
+        print("  " + "  ".join(cell.ljust(widths[i]) for i, cell in enumerate(row)), file=stream)
 
 
-def _render_leak_rows(leaks: list[Any]) -> None:
+def _render_leak_rows(leaks: list[Any], stream: TextIO) -> None:
     """One row per gate_vocab/authority_vocab leak (`boundary scan`, boundary scan)."""
     for leak in leaks:
         line = f"  {leak['file']}  {leak['path']}  {leak['term']}  ({leak['family']})"
@@ -34,29 +41,58 @@ def _render_leak_rows(leaks: list[Any]) -> None:
             line += f"  allowed ({leak.get('reason')}, {leak.get('expiry')}, {leak.get('adr')})"
         elif leak.get("reason"):
             line += f"  {leak['reason']}"
-        print(line)
+        print(line, file=stream)
 
 
-def render(payload: dict[str, Any], *, as_json: bool) -> None:
-    """Print `payload` (commands.py's cli_result.v1 dict) to stdout."""
+def _render_to(stream: TextIO, payload: dict[str, Any], as_json: bool) -> None:
     if as_json:
-        print(json.dumps(payload, indent=2))
+        print(json.dumps(payload, indent=2), file=stream)
         return
 
-    print(f"{payload['command']}: {payload['state']} (exit {payload['exit_code']})")
+    print(f"{payload['command']}: {payload['state']} (exit {payload['exit_code']})", file=stream)
     details = payload["details"]
     skip_keys = ("repos", "retired", "leaks")
     scalar_details = {key: value for key, value in details.items() if key not in skip_keys}
     width = max((len(str(key)) for key in scalar_details), default=0)
     for key, value in scalar_details.items():
-        print(f"  {str(key).ljust(width)}  {value}")
+        print(f"  {str(key).ljust(width)}  {value}", file=stream)
 
     repos = details.get("repos")
     if repos:
-        _render_repo_table(repos)
+        _render_repo_table(repos, stream)
     retired = details.get("retired")
     if retired:
-        print("  retired: " + ", ".join(f"{repo} ({pins})" for repo, pins in retired.items()))
+        print(
+            "  retired: " + ", ".join(f"{repo} ({pins})" for repo, pins in retired.items()),
+            file=stream,
+        )
     leaks = details.get("leaks")
     if leaks:
-        _render_leak_rows(leaks)
+        _render_leak_rows(leaks, stream)
+
+
+def render(payload: dict[str, Any], *, as_json: bool, bounded: bool = False) -> int:
+    """Emit one complete selected result, replacing oversized boundary output finitely."""
+    if not bounded:
+        _render_to(sys.stdout, payload, as_json)
+        return int(payload["exit_code"])
+
+    buffer = StringIO()
+    _render_to(buffer, payload, as_json)
+    output = buffer.getvalue()
+    if len(output.encode("utf-8")) > OUTPUT_MAX_BYTES:
+        refusal: dict[str, Any] = {
+            "schema": "cli_result.v1",
+            "command": payload["command"],
+            "state": "UNCONFIGURED",
+            "exit_code": 2,
+            "details": resource_error("/output", "output_bytes", OUTPUT_MAX_BYTES).details(),
+        }
+        buffer = StringIO()
+        _render_to(buffer, refusal, as_json)
+        output = buffer.getvalue()
+        if len(output.encode("utf-8")) > OUTPUT_MAX_BYTES:
+            raise ValueError("BOUNDARY_REFUSAL_OUTPUT_LIMIT_EXCEEDED")
+        payload = refusal
+    sys.stdout.write(output)
+    return int(payload["exit_code"])
