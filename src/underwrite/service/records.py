@@ -153,59 +153,6 @@ def _store_for_save(root: Path) -> tuple[Path, Path]:
     return records, staging
 
 
-def _store_for_read(root: Path) -> Path:
-    _validate_control(root, directory=True, missing="STORE_NOT_FOUND")
-    records = root / "records"
-    _validate_control(records, directory=True, missing="STORE_NOT_FOUND")
-    staging = root / ".staging"
-    if staging.exists() or staging.is_symlink():
-        _validate_control(staging, directory=True, missing="STORE_NOT_FOUND")
-    return records
-
-
-def _record_dir(records: Path, identifier: str, *, missing: str = "RECORD_NOT_FOUND") -> Path:
-    try:
-        checked = record_id(identifier)
-    except FormatError:
-        raise RecordError("INVALID_SPEC", "/record_id") from None
-    path = records / checked
-    _validate_control(path, directory=True, missing=missing)
-    return path
-
-
-def _read_manifest(record_dir: Path, expected_id: str) -> RecordSnapshot:
-    manifest_path = record_dir / "manifest.json"
-    try:
-        info = _validate_control(manifest_path, directory=False, missing="RECORD_NOT_PUBLISHED")
-        if info.st_size > MAX_MANIFEST_BYTES:
-            raise RecordError("INVALID_RECORD", "/record")
-        _, file_flags = _platform_flags()
-        descriptor = os.open(manifest_path, file_flags)
-        try:
-            raw = read_descriptor(descriptor, MAX_MANIFEST_BYTES)
-        finally:
-            os.close(descriptor)
-        if len(raw) > MAX_MANIFEST_BYTES:
-            raise RecordError("INVALID_RECORD", "/record")
-        if len(raw) != info.st_size:
-            raise RecordError("INVALID_RECORD", "/record")
-        manifest = strict_manifest(raw)
-        if manifest["record_id"] != expected_id:
-            raise RecordError("INVALID_RECORD", "/record")
-        return RecordSnapshot(manifest, digest_bytes(raw))
-    except RecordError:
-        raise
-    except (OSError, FormatError, TransportError):
-        raise RecordError("INVALID_RECORD", "/record") from None
-
-
-def read_record(root: Path, identifier: str) -> RecordSnapshot:
-    """Read one strictly canonical, published record manifest."""
-    records = _store_for_read(root)
-    directory = _record_dir(records, identifier)
-    return _read_manifest(directory, identifier)
-
-
 @contextmanager
 def _private_descriptor(
     path: str | Path,
@@ -213,13 +160,14 @@ def _private_descriptor(
     parent: int | None = None,
     directory: bool,
     missing: str,
+    location: str = "/record",
 ) -> Generator[int]:
     """Validate the opened control node; descendants remain relative to its fd."""
     directory_flags, file_flags = _platform_flags()
     try:
         descriptor = os.open(path, directory_flags if directory else file_flags, dir_fd=parent)
     except FileNotFoundError:
-        raise RecordError(missing, "/record") from None
+        raise RecordError(missing, location) from None
     except NotImplementedError:
         raise RecordError("UNSUPPORTED_PLATFORM") from None
     except OSError as exc:
@@ -228,19 +176,25 @@ def _private_descriptor(
             if exc.errno in {errno.ELOOP, errno.ENOTDIR, errno.EISDIR}
             else "STORE_IO_ERROR"
         )
-        raise RecordError(code, "/record") from None
+        raise RecordError(code, location) from None
+    completed = False
     try:
         info = os.fstat(descriptor)
         expected = stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode)
         if not expected:
-            raise RecordError("INVALID_STORE_LAYOUT", "/record")
+            raise RecordError("INVALID_STORE_LAYOUT", location)
         if not _private(info.st_mode):
-            raise RecordError("INSECURE_STORE", "/record")
+            raise RecordError("INSECURE_STORE", location)
         yield descriptor
+        completed = True
     except OSError:
-        raise RecordError("STORE_IO_ERROR", "/record") from None
+        raise RecordError("STORE_IO_ERROR", location) from None
     finally:
-        os.close(descriptor)
+        try:
+            os.close(descriptor)
+        except OSError:
+            if completed:
+                raise RecordError("STORE_IO_ERROR", location) from None
 
 
 def _read_descriptor_bytes(descriptor: int, limit: int) -> bytes:
@@ -257,7 +211,10 @@ def _manifest_at(directory: int, identifier: str) -> RecordSnapshot:
         with _private_descriptor(
             "manifest.json", parent=directory, directory=False, missing="RECORD_NOT_PUBLISHED"
         ) as descriptor:
+            initial_size = os.fstat(descriptor).st_size
             raw = _read_descriptor_bytes(descriptor, MAX_MANIFEST_BYTES)
+            if len(raw) != initial_size:
+                raise RecordError("INVALID_RECORD", "/record")
         manifest = strict_manifest(raw)
         if manifest["record_id"] != identifier:
             raise RecordError("INVALID_RECORD", "/record")
@@ -270,22 +227,120 @@ def _manifest_at(directory: int, identifier: str) -> RecordSnapshot:
         raise RecordError("INVALID_RECORD", "/record") from None
 
 
+def _legacy_manifest_at(directory: int, identifier: str) -> RecordSnapshot:
+    """Keep read/list/verify manifest I/O failures under their existing error."""
+    try:
+        return _manifest_at(directory, identifier)
+    except RecordError as exc:
+        if exc.code == "STORE_IO_ERROR":
+            raise RecordError("INVALID_RECORD", "/record") from None
+        if exc.code in {"INSECURE_STORE", "INVALID_STORE_LAYOUT", "RECORD_NOT_PUBLISHED"}:
+            raise RecordError(exc.code) from None
+        raise
+    except TransportError:
+        raise RecordError("INVALID_RECORD", "/record") from None
+
+
+@contextmanager
+def _store_descriptor(root: Path, *, legacy: bool = False) -> Generator[int]:
+    with ExitStack() as opened:
+        root_fd = _entered_descriptor(
+            opened, root, directory=True, missing="STORE_NOT_FOUND", legacy=legacy
+        )
+        records_fd = _entered_descriptor(
+            opened,
+            "records",
+            parent=root_fd,
+            directory=True,
+            missing="STORE_NOT_FOUND",
+            legacy=legacy,
+        )
+        try:
+            _entered_descriptor(
+                opened,
+                ".staging",
+                parent=root_fd,
+                directory=True,
+                missing="STORE_NOT_FOUND",
+                legacy=legacy,
+            )
+        except RecordError as exc:
+            if exc.code != "STORE_NOT_FOUND":
+                raise
+        yield records_fd
+
+
+@contextmanager
+def _record_descriptor(records_fd: int, identifier: str, *, legacy: bool = False) -> Generator[int]:
+    with ExitStack() as opened:
+        directory = _entered_descriptor(
+            opened,
+            identifier,
+            parent=records_fd,
+            directory=True,
+            missing="RECORD_NOT_FOUND",
+            legacy=legacy,
+        )
+        yield directory
+
+
+def _entered_descriptor(
+    opened: ExitStack,
+    path: str | Path,
+    *,
+    parent: int | None = None,
+    directory: bool,
+    missing: str,
+    legacy: bool,
+) -> int:
+    """Open one descriptor with the facade's existing error location."""
+    return opened.enter_context(
+        _private_descriptor(
+            path,
+            parent=parent,
+            directory=directory,
+            missing=missing,
+            location="" if legacy else "/record",
+        )
+    )
+
+
+def _checked_record_id(identifier: str) -> str:
+    try:
+        return record_id(identifier)
+    except FormatError:
+        raise RecordError("INVALID_SPEC", "/record_id") from None
+
+
+def read_record(root: Path, identifier: str) -> RecordSnapshot:
+    """Read one strictly canonical published manifest from its opened record."""
+    checked = _checked_record_id(identifier)
+    with _store_descriptor(root, legacy=True) as records_fd:
+        with _record_descriptor(records_fd, checked, legacy=True) as directory:
+            return _legacy_manifest_at(directory, checked)
+
+
+@contextmanager
+def _opened_file_at(
+    directory: int, name: str, *, missing: str = "SOURCE_READ_FAILED"
+) -> Generator[int]:
+    """Open and check the declared member through the anchored files directory."""
+    with ExitStack() as opened:
+        parent = directory
+        parts = ["files", *name.split("/")]
+        for part in parts[:-1]:
+            parent = opened.enter_context(
+                _private_descriptor(part, parent=parent, directory=True, missing=missing)
+            )
+        descriptor = opened.enter_context(
+            _private_descriptor(parts[-1], parent=parent, directory=False, missing=missing)
+        )
+        yield descriptor
+
+
 def _selected_bytes_at(directory: int, name: str, limit: int) -> bytes:
     try:
-        with ExitStack() as opened:
-            parent = directory
-            parts = ["files", *name.split("/")]
-            for part in parts[:-1]:
-                parent = opened.enter_context(
-                    _private_descriptor(
-                        part, parent=parent, directory=True, missing="SOURCE_READ_FAILED"
-                    )
-                )
-            descriptor = opened.enter_context(
-                _private_descriptor(
-                    parts[-1], parent=parent, directory=False, missing="SOURCE_READ_FAILED"
-                )
-            )
+        with _opened_file_at(directory, name) as descriptor:
             return _read_descriptor_bytes(descriptor, limit)
     except RecordError as exc:
         if exc.code == "STORE_IO_ERROR":
@@ -314,41 +369,18 @@ def read_record_file(
     The default budget is 1 MiB; explicit budgets may reach the storage-owned
     MAX_FILE_BYTES ceiling without changing JSON document read limits.
     """
-    try:
-        checked_id = record_id(identifier)
-    except FormatError:
-        raise RecordError("INVALID_SPEC", "/record_id") from None
+    checked_id = _checked_record_id(identifier)
     try:
         checked_name = logical_name(name)
     except FormatError:
         raise RecordError("INVALID_SPEC", "/spec/files") from None
     if type(max_bytes) is not int or not 0 < max_bytes <= MAX_FILE_BYTES:
         raise RecordError("INVALID_SPEC", "/spec/files")
-    with ExitStack() as opened:
-        root_fd = opened.enter_context(
-            _private_descriptor(root, directory=True, missing="STORE_NOT_FOUND")
-        )
-        records_fd = opened.enter_context(
-            _private_descriptor(
-                "records", parent=root_fd, directory=True, missing="STORE_NOT_FOUND"
-            )
-        )
-        try:
-            with _private_descriptor(
-                ".staging", parent=root_fd, directory=True, missing="STORE_NOT_FOUND"
-            ):
-                pass
-        except RecordError as exc:
-            if exc.code != "STORE_NOT_FOUND":
-                raise
-        directory = opened.enter_context(
-            _private_descriptor(
-                checked_id, parent=records_fd, directory=True, missing="RECORD_NOT_FOUND"
-            )
-        )
-        snapshot = _manifest_at(directory, checked_id)
-        selected = _selected_file(snapshot, checked_name, max_bytes)
-        raw = _selected_bytes_at(directory, checked_name, max_bytes)
+    with _store_descriptor(root) as records_fd:
+        with _record_descriptor(records_fd, checked_id) as directory:
+            snapshot = _manifest_at(directory, checked_id)
+            selected = _selected_file(snapshot, checked_name, max_bytes)
+            raw = _selected_bytes_at(directory, checked_name, max_bytes)
     digest = digest_bytes(raw)
     if len(raw) != selected["bytes"] or digest != selected["sha256"]:
         raise RecordError("RECORD_FILE_INTEGRITY_MISMATCH", "/record")
@@ -842,115 +874,72 @@ def save_captured_record(root: Path, spec: CapturedRecordSpec) -> RecordSnapshot
 
 def list_records(root: Path) -> dict[str, object]:
     """Derive a bounded, sorted catalog from complete and unpublished directories."""
-    records = _store_for_read(root)
-    try:
-        with os.scandir(records) as iterator:
-            entries = list(islice(iterator, MAX_RECORDS + 1))
-    except OSError:
-        raise RecordError("STORE_IO_ERROR", "/catalog") from None
-    if len(entries) > MAX_RECORDS:
-        raise RecordError("RECORD_LIMIT_EXCEEDED", "/catalog")
     result: list[dict[str, object]] = []
-    for entry in sorted(entries, key=lambda item: item.name):
+    with _store_descriptor(root, legacy=True) as records_fd:
         try:
-            identifier = record_id(entry.name)
-            if not entry.is_dir(follow_symlinks=False):
-                raise FormatError("INVALID_ENTRY")
-            directory = _record_dir(records, identifier)
-            manifest_path = directory / "manifest.json"
-            if not manifest_path.exists() and not manifest_path.is_symlink():
-                result.append({"record_id": identifier, "state": "unpublished"})
-                continue
-            snapshot = _read_manifest(directory, identifier)
-            result.append(
-                {
-                    "record_id": identifier,
-                    "state": "complete",
-                    "manifest_digest": snapshot.digest,
-                    "kind": snapshot.manifest["kind"],
-                    "label": snapshot.manifest["label"],
-                    "captured_at": snapshot.manifest["captured_at"],
-                }
-            )
-        except FormatError:
-            raise RecordError("INVALID_STORE_LAYOUT", "/catalog") from None
+            with os.scandir(records_fd) as iterator:
+                entries = list(islice(iterator, MAX_RECORDS + 1))
+        except OSError:
+            raise RecordError("STORE_IO_ERROR", "/catalog") from None
+        if len(entries) > MAX_RECORDS:
+            raise RecordError("RECORD_LIMIT_EXCEEDED", "/catalog")
+        for entry in sorted(entries, key=lambda item: item.name):
+            try:
+                identifier = record_id(entry.name)
+                if not entry.is_dir(follow_symlinks=False):
+                    raise FormatError("INVALID_ENTRY")
+            except FormatError:
+                raise RecordError("INVALID_STORE_LAYOUT", "/catalog") from None
+            with _record_descriptor(records_fd, identifier, legacy=True) as directory:
+                try:
+                    snapshot = _legacy_manifest_at(directory, identifier)
+                except RecordError as exc:
+                    if exc.code != "RECORD_NOT_PUBLISHED":
+                        raise
+                    result.append({"record_id": identifier, "state": "unpublished"})
+                    continue
+                result.append(
+                    {
+                        "record_id": identifier,
+                        "state": "complete",
+                        "manifest_digest": snapshot.digest,
+                        "kind": snapshot.manifest["kind"],
+                        "label": snapshot.manifest["label"],
+                        "captured_at": snapshot.manifest["captured_at"],
+                    }
+                )
     return {"schema": "record_catalog.v1", "record_count": len(result), "records": result}
 
 
-def _stored_files_root(record_dir: Path) -> tuple[str | None, Path | None]:
-    files_root = record_dir / "files"
+def _file_finding_at(directory: int, item: dict[str, object]) -> str | None:
+    """Stream one declared member from its checked leaf descriptor."""
+    name = cast(str, item["name"])
+    declared = cast(int, item["bytes"])
     try:
-        root_info = files_root.lstat()
-    except FileNotFoundError:
-        return "FILE_MISSING", None
-    except OSError:
-        return "FILE_READ_FAILED", None
-    if not stat.S_ISDIR(root_info.st_mode) or stat.S_ISLNK(root_info.st_mode):
-        return "FILE_NOT_REGULAR", None
-    if not _private(root_info.st_mode):
-        return "FILE_NOT_PRIVATE", None
-    return None, files_root
-
-
-def _file_finding(record_dir: Path, item: dict[str, object]) -> str | None:
-    root_code, files_root = _stored_files_root(record_dir)
-    if root_code is not None or files_root is None:
-        return root_code
-    path = files_root.joinpath(*cast(str, item["name"]).split("/"))
-    code, info = _file_metadata_finding(path, cast(str, item["name"]), files_root)
-    if code is not None or info is None:
-        return code
-    return _file_content_finding(path, info, item)
-
-
-def _file_content_finding(path: Path, info: os.stat_result, item: dict[str, object]) -> str | None:
-    if info.st_size != item["bytes"]:
-        return "FILE_SIZE_MISMATCH"
-    try:
-        hasher = hashlib.sha256()
-        with path.open("rb") as stream:
-            remaining = cast(int, item["bytes"])
+        with _opened_file_at(directory, name, missing="RECORD_FILE_NOT_FOUND") as descriptor:
+            if os.fstat(descriptor).st_size != declared:
+                return "FILE_SIZE_MISMATCH"
+            hasher = hashlib.sha256()
+            remaining = declared
             while remaining:
-                chunk = stream.read(min(_READ_SIZE, remaining + 1))
+                chunk = os.read(descriptor, min(_READ_SIZE, remaining + 1))
                 if not chunk or len(chunk) > remaining:
                     return "FILE_SIZE_MISMATCH"
                 hasher.update(chunk)
                 remaining -= len(chunk)
-            if stream.read(1):
+            if os.read(descriptor, 1):
                 return "FILE_SIZE_MISMATCH"
-    except OSError:
-        return "FILE_READ_FAILED"
-    return None if "sha256:" + hasher.hexdigest() == item["sha256"] else "FILE_DIGEST_MISMATCH"
-
-
-def _file_metadata_finding(
-    path: Path, name: str, record_dir: Path
-) -> tuple[str | None, os.stat_result | None]:
-    current = record_dir
-    code: str | None = None
-    info: os.stat_result | None = None
-    try:
-        for component in name.split("/")[:-1]:
-            current /= component
-            parent_info = current.lstat()
-            if not stat.S_ISDIR(parent_info.st_mode) or stat.S_ISLNK(parent_info.st_mode):
-                code = "FILE_NOT_REGULAR"
-                break
-            if not _private(parent_info.st_mode):
-                code = "FILE_NOT_PRIVATE"
-                break
-        if code is None:
-            info = path.lstat()
-    except FileNotFoundError:
-        code = "FILE_MISSING"
-    except OSError:
-        code = "FILE_READ_FAILED"
-    if code is None and info is not None:
-        if not stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode):
-            code = "FILE_NOT_REGULAR"
-        elif not _private(info.st_mode):
-            code = "FILE_NOT_PRIVATE"
-    return code, info
+        return None if "sha256:" + hasher.hexdigest() == item["sha256"] else "FILE_DIGEST_MISMATCH"
+    except RecordError as exc:
+        mapped = {
+            "RECORD_FILE_NOT_FOUND": "FILE_MISSING",
+            "INVALID_STORE_LAYOUT": "FILE_NOT_REGULAR",
+            "INSECURE_STORE": "FILE_NOT_PRIVATE",
+            "STORE_IO_ERROR": "FILE_READ_FAILED",
+        }.get(exc.code)
+        if mapped is None:
+            raise
+        return mapped
 
 
 def _linked_artifact_refs(
@@ -968,10 +957,13 @@ def _linked_artifact_refs(
     return result
 
 
-def _link_finding(root: Path, item: dict[str, object], manifest: dict[str, object]) -> str | None:
+def _link_finding(
+    records_fd: int, item: dict[str, object], manifest: dict[str, object]
+) -> str | None:
     identifier = cast(str, item["record_id"])
     try:
-        target = read_record(root, identifier)
+        with _record_descriptor(records_fd, identifier, legacy=True) as directory:
+            target = _legacy_manifest_at(directory, identifier)
     except RecordError as exc:
         return {
             "RECORD_NOT_FOUND": "LINK_RECORD_NOT_FOUND",
@@ -994,20 +986,21 @@ def _link_finding(root: Path, item: dict[str, object], manifest: dict[str, objec
 
 def verify_record(root: Path, identifier: str) -> dict[str, object]:
     """Check stored bytes and direct links without granting provenance or authority."""
-    snapshot = read_record(root, identifier)
-    records = _store_for_read(root)
-    directory = _record_dir(records, identifier)
-    files = cast(list[dict[str, object]], snapshot.manifest["files"])
-    links = cast(list[dict[str, object]], snapshot.manifest["links"])
-    findings: list[dict[str, object]] = []
-    for item in files:
-        code = _file_finding(directory, item)
-        if code is not None:
-            findings.append({"code": code, "name": item["name"], "record_id": None})
-    for item in links:
-        code = _link_finding(root, item, snapshot.manifest)
-        if code is not None:
-            findings.append({"code": code, "name": None, "record_id": item["record_id"]})
+    checked_id = _checked_record_id(identifier)
+    with _store_descriptor(root, legacy=True) as records_fd:
+        with _record_descriptor(records_fd, checked_id, legacy=True) as directory:
+            snapshot = _legacy_manifest_at(directory, checked_id)
+            files = cast(list[dict[str, object]], snapshot.manifest["files"])
+            links = cast(list[dict[str, object]], snapshot.manifest["links"])
+            findings: list[dict[str, object]] = []
+            for item in files:
+                code = _file_finding_at(directory, item)
+                if code is not None:
+                    findings.append({"code": code, "name": item["name"], "record_id": None})
+            for item in links:
+                code = _link_finding(records_fd, item, snapshot.manifest)
+                if code is not None:
+                    findings.append({"code": code, "name": None, "record_id": item["record_id"]})
     return {
         "schema": "record_verification.v1",
         "record_id": identifier,
