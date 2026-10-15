@@ -77,6 +77,30 @@ another gate. Standalone contributors use this guide and AGENTS.md without a
 sibling checkout. Keep the observable contract stable during refactoring and
 record why a genuinely different boundary needs a new implementation.
 
+Decide whether Underwrite should own a feature before assigning its module.
+Underwrite's distinctive result is comparable, missingness-aware evidence and
+the next verification task across producer formats. It may own a domain
+measurement when that meaning and evidence boundary are its distinctive work;
+it does not need to own every statistic or every useful agent feature. A producer
+such as goppi owns its execution capture, native trace/verifier binding, trace
+export, proposals, and controlled reruns. The calling agent can write narrative,
+label hypotheses, and prepare a patch through the producer's review path.
+
+For a proposed integration, record the user's concrete task, the producer-owned
+artifact/operation, and the smallest handoff that lets Underwrite check it.
+Underwrite still validates bounded input and selected raw-byte identity. It checks
+manifest bindings, cross-references, roster and coverage when the chosen contract
+declares them, and owns the meaning of its comparison. Producer-native verification
+stays a source claim. Independently reperforming a calculation can establish
+calculation agreement, not authenticate producer execution or the truth of
+source claims.
+If that narrow handoff cannot deliver the result, explain the
+observed gap before adding an Underwrite implementation; compare user steps,
+semantic correctness, maintenance cost, and measured result, not code volume.
+For example, ask goppi to export its already bound case trace and verifier facts
+before porting its digest and sort rules to Python. A version-specific local
+adapter may still be warranted once a portable product handoff exists.
+
 For a common module, identify the shared responsibility, observable contract,
 invariants, failure meaning, and reason for change. Code can implement the same
 rule differently; similar code can also represent different domain concepts.

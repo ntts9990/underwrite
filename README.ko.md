@@ -2,11 +2,11 @@
 
 <h1><img src="assets/brand/underwrite-logo.png" alt="underwrite" width="640"></h1>
 
-### 평가 파일을 에이전트가 활용할 근거로.
+### 평가 파일로 무엇을 말할 수 있는지 확인하세요.
 
-결과를 살펴보고, 근거를 보관하고, 빠진 정보를 드러냅니다.
+불일치를 찾고, 빠진 근거를 드러내고, 다음에 확인할 일을 정합니다.
 
-**로컬 CLI와 Python 라이브러리 · 구조화된 JSON · 서버나 모델 호출 없이**
+**로컬 CLI와 Python 라이브러리 · 타입이 명시된 JSON · 서버나 모델 호출 없이**
 
 [![CI](https://github.com/ntts9990/underwrite/actions/workflows/ci.yml/badge.svg)](https://github.com/ntts9990/underwrite/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/underwrite)](https://pypi.org/project/underwrite/)
@@ -19,14 +19,18 @@
 
 </div>
 
-underwrite는 지원되는 로컬 평가 내보내기 파일을 사람과 코딩 에이전트가 살펴보고,
-저장하고, 다시 사용할 수 있는 구조화된 결과로 바꿉니다. **goppi, Langfuse,
-DeepEval, Promptfoo**의 결과를 가져와 해당 아티팩트에 맞는 경로로 처리하면,
-무엇이 제공되었고 무엇이 아직 알려지지 않았는지 확인할 수 있습니다.
+이미 **goppi, Langfuse, DeepEval, Promptfoo**의 평가 파일이 있나요? 점수나 요약만으로는
+제공된 행이 선언 집계와 일치하는지, 계획된 사례가 모두 포함됐는지 알기 어렵습니다.
+underwrite는 지원되는 로컬 프로필에서 확인할 수 있는 관계를 검사하고, 알 수 없는
+사례 범위를 명시합니다. 발견 사항, 입력 식별 정보, 해석의 한계가 담긴 타입이 명시된
+CLI/Python JSON을 반환합니다. 사람이나 호출 에이전트는 이를 바탕으로 다음에 필요한
+근거를 요청할 수 있습니다.
 
-터미널과 에이전트 작업 흐름에서 기존 파일을 읽고 JSON을 받은 뒤, 호출한 에이전트가
-설명을 작성하도록 하세요. 파일을 검사하는 데 Docker, 대시보드, 제공자 인증 정보나
-평가 재실행은 필요하지 않습니다.
+underwrite는 평가를 실행하는 도구를 보완합니다. goppi는 실행, trace와 verifier의
+결합, 재실행을 맡고, 다른 생성 도구는 내보내기 파일과 점수를 만듭니다. underwrite는
+제공된 파일을 살펴보고 선택한 바이트를 보관할 수 있습니다. 에이전트를 다시 실행하거나
+생성자를 독립적으로 인증하거나 범용 품질 점수를 매기지 않습니다. 지원되는 로컬
+파일을 검사하는 데 Docker, 대시보드, 제공자 인증 정보는 필요하지 않습니다.
 
 > [!NOTE]
 > **이 README는 `0.0.2` 소스 체크아웃을 설명합니다.** 이전 PyPI `0.0.1`에는
@@ -39,7 +43,8 @@ DeepEval, Promptfoo**의 결과를 가져와 해당 아티팩트에 맞는 경�
 이 체크아웃은 Linux와 macOS의 CPython 3.12에서 테스트했습니다. 일반 아티팩트
 읽기를 포함한 파일 기반 CLI 작업에는 Unix/POSIX 파일 API가 필요합니다.
 
-포함된 합성 예제를 실행해 보세요. API 키나 인접한 다른 저장소는 필요하지 않습니다.
+**1. 파일을 검사합니다.** 포함된 합성 예제를 실행하세요. API 키나 인접한 다른
+저장소는 필요하지 않습니다.
 
 ```sh
 git clone https://github.com/ntts9990/underwrite.git
@@ -50,8 +55,9 @@ uv run --frozen --no-sync underwrite audit-promptfoo \
   fixtures/examples/evidence/synthetic-promptfoo-count-mismatch.json --json
 ```
 
-원본 요약은 **결과 3개**를 선언하지만, 파일에는 **행 2개**가 있습니다.
-명령은 이 불일치를 보고합니다. 다음은 다른 필드를 생략한 실제 출력입니다.
+**2. 발견 사항을 읽습니다.** 생성 도구의 요약은 **결과 3개**와 **실패 1개**를
+선언하지만, 파일에는 **행 2개**와 **실패 행 0개**가 있습니다. 명령은 어느 쪽이
+잘못됐는지 추측하지 않고 차이를 보고합니다. 다음은 실제 출력에서 고른 필드입니다.
 
 ```json
 {
@@ -59,6 +65,10 @@ uv run --frozen --no-sync underwrite audit-promptfoo \
   "declared_relation": "inconsistent",
   "producer_stats": {"errors": 1, "failures": 1, "successes": 1, "total": 3},
   "row_tallies": {"errors": 1, "failures": 0, "successes": 1, "total": 2},
+  "deltas": {"errors": 0, "failures": -1, "successes": 0, "total": -1},
+  "findings": [
+    {"code": "CATEGORY_COUNT_MISMATCH", "location": "/results/stats/failures", "row_index": null}
+  ],
   "limitations": [
     "PLANNED_DENOMINATOR_UNKNOWN",
     "CAUSE_UNKNOWN",
@@ -68,9 +78,11 @@ uv run --frozen --no-sync underwrite audit-promptfoo \
 }
 ```
 
-행이 없는 이유를 추측하거나 원천의 판정을 독립적으로 검증된 사실로 취급하지 않고도
-구체적인 불일치를 확인할 수 있습니다. 종료 코드 `0`은 보고서가 생성되었다는 뜻입니다.
-결과를 해석하려면 보고서의 필드를 확인하세요. 입력과 분석을 함께 보관하려면
+**3. 다음을 확인합니다.** 실행 기록·계획된 사례 목록과 내보내기 파일을
+대조하세요. 그전에는 실행이 누락됐는지, 실패 행이 빠졌는지 단정할 수 없습니다.
+`CAUSE_UNKNOWN`과 `PLANNED_DENOMINATOR_UNKNOWN`이 이 한계를 드러냅니다.
+종료 코드 `0`은 보고서가 생성됐다는 뜻이지 집계가 일치하거나 원천 판정이
+검증됐다는 뜻이 아닙니다. 입력과 분석을 함께 보관하려면
 [로컬 기록으로 저장하세요](#다시-찾아볼-수-있는-결과-보관).
 
 <details>
@@ -106,34 +118,30 @@ uv run --frozen --no-sync underwrite accept \
 
 ## 왜 underwrite인가요?
 
-- **요약 뒤에 숨은 불일치를 찾습니다.** Promptfoo의 선언 집계와 실제 제공된 행을
-  비교하고, 전용 집계 검사 명령으로 DeepEval의 평가기 오류와 Langfuse 점수의
-  연결 관계를 확인합니다.
-- **에이전트가 바로 활용할 결과를 제공합니다.** 타입이 명시된 JSON에 입력 식별 정보,
-  발견 사항, 해석의 한계를 담습니다. `capabilities --json`은 현재 실행 파일의
-  명령과 입력 프로필을 알려줍니다.
-- **답변의 근거가 된 바이트를 보관합니다.** 선택한 입력과 분석을 불변 로컬 기록으로
-  저장합니다. 원래 경로 없이도 나중에 검증하고 조회하며, 저장된 네이티브 측정은
-  현재 엔진으로 다시 계산할 수 있습니다.
-- **측정 기준을 명시합니다.** 제공된 정책에 따라 네이티브 이진 사건 근거를 측정합니다.
-  누락된 근거나 선언되지 않은 가정을 성공 판정으로 바꾸지 않고 결과에 드러냅니다.
+| 평가 후 궁금한 점 | underwrite가 제공하는 것 |
+| --- | --- |
+| 요약과 제공된 기록이 일치하나요? | 프로필별 집계 검사: Promptfoo 집계 차이, DeepEval 평가기 오류, Langfuse 점수 연결 관계. |
+| 무엇이 아직 알려지지 않았나요? | 계획 분모 미확인이나 검증되지 않은 원천 주장 같은 결측과 한계를 명시해, 알 수 없는 값을 0으로 바꾸지 않습니다. |
+| 이 근거로 측정할 수 있나요? | 별도의 네이티브 이진 사건 경로에서 선언된 의미와 정책에 따라 측정합니다. 외부 점수는 범용 품질 판정이 되지 않습니다. |
+| 나중에 결론을 다시 확인할 수 있나요? | 타입이 명시된 CLI/Python JSON과 선택한 원본 바이트·분석을 연결해 보관하고 검증·조회할 수 있는 비공개 로컬 기록. |
 
 ## 작동 방식
 
 ```mermaid
 flowchart LR
-    A[지원되는 로컬 평가 파일] --> B[검사와 집계 확인]
-    B --> C[구조화된 JSON 결과]
-    C --> D[사용자 또는 에이전트가 한계 검토]
-    D --> E[사람이 변경 결정 검토]
-    B --> F[선택적 로컬 기록]
+    A[지원되는 로컬 평가 파일] --> B[정확한 프로필 선택]
+    B --> C[제공된 기록과 결측 검사]
+    C --> D[타입 JSON: 발견 사항, 식별 정보, 한계]
+    D --> E[사람이나 에이전트가 다음 근거 수집]
+    C --> F[선택적 비공개 로컬 기록]
     F --> G[검증과 조회]
-    H[네이티브 근거 + 명시적 정책] --> I[측정]
-    I --> C
+    H[네이티브 사건 근거 + 정책] --> I[측정]
+    I --> D
 ```
 
-이 검토 단계는 살펴볼 근거를 제공합니다. 제안된 변경을 적용하거나 병합 권한을
-부여하지 않습니다. 로컬 기록은 선택한 입력과 결과를 나중에 검토할 수 있도록 보관합니다.
+명령은 선택한 프로필이 지원하는 범위만 검사합니다. 호출 에이전트가 JSON을
+해석하고 다음 근거 작업을 수행할 수 있지만, underwrite가 변경을 적용하거나
+병합 권한을 부여하지는 않습니다. 로컬 기록은 선택한 입력과 결과를 보관합니다.
 
 ## 에이전트 사용
 
@@ -144,6 +152,10 @@ flowchart LR
 uv run --frozen --no-sync underwrite --help
 uv run --frozen --no-sync underwrite capabilities --json
 ```
+
+Python에서는 `underwrite.instrument.ingest.accounting.audit_promptfoo_file(Path(...))`로
+같은 결과를 딕셔너리로 받을 수 있습니다. 생성 도구별 필드를 해석하기 전에 정확히
+지원되는 프로필을 선택하세요.
 
 터미널을 사용할 수 있는 에이전트에게 다음과 같이 요청할 수 있습니다.
 
