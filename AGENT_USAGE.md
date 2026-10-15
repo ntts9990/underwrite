@@ -747,6 +747,25 @@ with a 4 MiB byte limit and 64-level JSON depth limit. Output omits item values,
 metric identities, evidence references, source identities, and the input path.
 The hash and count pattern can still link outputs to known inputs.
 
+For an item-level action and declared semantic-binding summary, select the
+opt-in view:
+
+```sh
+underwrite inspect-result /path/to/evidence-result.json --view actions --json
+```
+
+The Python equivalent is `inspect_result_file(path, view="actions")`, which
+returns `common_result_inspection_actions.v1`. Its two additional histograms
+count items by `next_action` and by the producer's declared metric
+`semantic_binding`. All contract categories appear with zero counts for an
+analyzed empty result; both histograms are null for `insufficient` or
+`unsupported`. The counts sum to the analyzed item population, but actions
+are not distinct causes or work units. A declared binding is not an
+independently checked metric identity. The view withholds metric IDs,
+namespaces, values, source identities, evidence references, and the path;
+raw hashes and count patterns remain linkable. Omitting `--view` or using
+`--view summary` retains the original `common_result_inspection.v1` output.
+
 Exit 0 means the file was inspected. A valid source-declared `insufficient` or
 `unsupported` result also exits 0 and has null availability counts. Invalid JSON,
 schema failures, and count or coordinate invariant failures exit 2 with a typed

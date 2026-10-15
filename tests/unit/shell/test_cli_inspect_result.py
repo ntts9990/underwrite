@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from underwrite_core.canonical import content_digest, digest_bytes
+from underwrite_core.canonical import canonical_bytes, content_digest, digest_bytes
 
 from underwrite.cli import inspect_result
 from underwrite.cli.evidence import EvidenceError
@@ -30,9 +31,27 @@ def _document() -> dict[str, Any]:
     return cast(dict[str, Any], json.loads(FIXTURE.read_bytes()))
 
 
-def _cli(path: Path, *, as_json: bool = True) -> int:
+def _cli(path: Path, *, as_json: bool = True, view: str | None = None) -> int:
     args = ["inspect-result", str(path)]
+    if view is not None:
+        args.extend(("--view", view))
     return main([*args, "--json"] if as_json else args)
+
+
+def _control(raw: bytes) -> tuple[dict[str, int], dict[str, int]]:
+    document = json.loads(raw)
+    contract = json.loads(Path("contracts/evidence_result.v1.schema.json").read_bytes())
+    actions = contract["$defs"]["item"]["properties"]["next_action"]["enum"]
+    bindings = [
+        branch["properties"]["semantic_binding"]["const"]
+        for branch in contract["$defs"]["metric_binding"]["oneOf"]
+    ]
+    action_counts = Counter(item["next_action"] for item in document["items"])
+    binding_counts = Counter(item["metric"]["semantic_binding"] for item in document["items"])
+    return (
+        {name: action_counts[name] for name in actions},
+        {name: binding_counts[name] for name in bindings},
+    )
 
 
 def test_c55_file_api_cli_and_capability(
@@ -71,6 +90,127 @@ def test_c55_file_api_cli_and_capability(
     assert entry["profiles"][0]["output_schemas"] == ["common_result_inspection.v1"]
 
 
+def test_actions_view_matches_same_byte_control_and_preserves_default(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = _selected(tmp_path)
+    raw = path.read_bytes()
+    control_actions, control_bindings = _control(raw)
+    assert control_actions == {
+        "none": 2, "inspect_source": 5, "supply_plan": 0,
+        "supply_applicability": 0, "supply_definition": 0, "supply_label": 0,
+        "rerun_source": 0,
+    }
+    assert control_bindings == {"unbound": 7, "bound": 0}
+    default = inspect_result.inspect_result_file(path)
+    actions = inspect_result.inspect_result_file(path, view="actions")
+    assert actions["schema"] == "common_result_inspection_actions.v1"
+    assert actions["selected_result"] == default["selected_result"] == {
+        "format": "evidence_result.v1", "raw_hash": digest_bytes(raw)
+    }
+    assert actions["item_next_action_counts"] == control_actions
+    assert actions["declared_semantic_binding_counts"] == control_bindings
+    count = len(_document()["items"])
+    assert sum(control_actions.values()) == sum(control_bindings.values()) == count
+    assert {key: value for key, value in actions.items() if key not in {
+        "item_next_action_counts", "declared_semantic_binding_counts"
+    }} == {**default, "schema": "common_result_inspection_actions.v1"}
+    packaged_validator("common_result_inspection_actions.v1").validate(actions)  # pyright: ignore[reportUnknownMemberType]
+    assert _cli(path, view="actions") == 0
+    streams = capsys.readouterr()
+    assert streams.err == "" and json.loads(streams.out) == actions
+    assert _cli(path) == 0
+    assert capsys.readouterr().out == canonical_bytes(default).decode() + "\n"
+    assert _cli(path, as_json=False, view="actions") == 0
+    human = capsys.readouterr()
+    assert "inspect_source=5" in human.out and "unbound=7" in human.out
+    assert CANARY not in human.out
+    assert main(["capabilities", "--json"]) == 0
+    capability = json.loads(capsys.readouterr().out)
+    entry = next(item for item in capability["commands"] if item["command"] == "inspect-result")
+    assert entry["profiles"] == [
+        {"name": "evidence_result.v1", "required_inputs": ["file"],
+         "input_schemas": ["evidence_result.v1"],
+         "output_schemas": ["common_result_inspection.v1"]},
+        {"name": "evidence_result.v1|actions", "required_inputs": ["file", "view"],
+         "input_schemas": ["evidence_result.v1"],
+         "output_schemas": ["common_result_inspection_actions.v1"]},
+    ]
+
+
+def test_action_and_binding_histograms_add_information_without_private_content(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    baseline = _selected(tmp_path)
+    original = inspect_result.inspect_result_file(baseline, view="actions")
+    document = _document()
+    document["source"]["format"] = CANARY
+    document["items"][4]["next_action"] = "supply_plan"
+    document["items"][0]["metric"] = {
+        "semantic_binding": "bound", "namespace": CANARY, "id": CANARY,
+        "version": "v1", "semantic_digest": "sha256:" + "0" * 64,
+    }
+    document["verification"] = [{"target": "source_bytes", "method": "sha256",
+                                 "scope": "artifact", "evidence_ref": CANARY}]
+    changed = _selected(tmp_path, document)
+    raw = changed.read_bytes()
+    report = inspect_result.inspect_result_file(changed, view="actions")
+    control_actions, control_bindings = _control(raw)
+    assert report["selected_result"] == {
+        "format": "evidence_result.v1", "raw_hash": digest_bytes(raw)
+    }
+    assert report["availability_counts"] == original["availability_counts"]
+    assert report["item_next_action_counts"] == control_actions
+    assert control_actions != original["item_next_action_counts"]
+    assert report["declared_semantic_binding_counts"] == control_bindings != original[
+        "declared_semantic_binding_counts"
+    ]
+    assert (control_actions["inspect_source"], control_actions["supply_plan"]) == (4, 1)
+    assert control_bindings == {"unbound": 6, "bound": 1}
+    assert _cli(changed, view="actions") == 0
+    streams = capsys.readouterr()
+    assert streams.err == "" and json.loads(streams.out) == report
+    assert CANARY not in streams.out and str(changed) not in streams.out
+
+
+def test_invalid_api_view_refuses_before_reading(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def forbidden(*args: object, **kwargs: object) -> bytes:
+        raise AssertionError("input read")
+
+    monkeypatch.setattr(inspect_result, "read_source", forbidden)
+    with pytest.raises(EvidenceError) as caught:
+        inspect_result.inspect_result_file(tmp_path / CANARY, view="other")  # type: ignore[arg-type]
+    assert caught.value.payload["code"] == "INVALID_INPUT"
+    assert caught.value.payload["reason"] == "UNSUPPORTED_VIEW"
+    assert caught.value.payload["location"] == "/view"
+
+
+def test_actions_view_reads_selected_bytes_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _selected(tmp_path)
+    raw = path.read_bytes()
+    original = inspect_result.read_source
+    reads = 0
+
+    def captured(*args: Any, **kwargs: Any) -> bytes:
+        nonlocal reads
+        reads += 1
+        selected = original(*args, **kwargs)
+        path.write_bytes(b"replaced after capture")
+        return selected
+
+    monkeypatch.setattr(inspect_result, "read_source", captured)
+    report = inspect_result.inspect_result_file(path, view="actions")
+    assert reads == 1
+    assert report["selected_result"] == {
+        "format": "evidence_result.v1", "raw_hash": digest_bytes(raw)
+    }
+    assert report["item_next_action_counts"] == _control(raw)[0]
+
+
 @pytest.mark.parametrize("state,reason,action", [
     ("insufficient", "MISSING_INPUT", "supply_input"),
     ("unsupported", "UNSUPPORTED_FORMAT", "provide_supported_export"),
@@ -93,6 +233,44 @@ def test_non_analyzed_is_valid_inspection_without_counts(
     assert output["declared_population"] is None
     assert output["availability_counts"] is None
     assert output["checks"]["item_invariants"] == "not_applicable"
+
+
+@pytest.mark.parametrize("state,reason,action", [
+    ("insufficient", "MISSING_INPUT", "supply_input"),
+    ("unsupported", "UNSUPPORTED_FORMAT", "provide_supported_export"),
+])
+def test_actions_view_nonanalyzed_has_null_histograms(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], state: str, reason: str, action: str
+) -> None:
+    document = _document()
+    document.update({"processing": {"state": state, "reason": reason, "next_action": action},
+                     "population": None, "items": []})
+    if reason == "MISSING_INPUT":
+        document["source"] = None
+        document["verification"] = []
+    path = _selected(tmp_path, document)
+    assert _cli(path, view="actions") == 0
+    streams = capsys.readouterr()
+    assert streams.err == ""
+    report = json.loads(streams.out)
+    assert report["item_next_action_counts"] is None
+    assert report["declared_semantic_binding_counts"] is None
+    assert report["availability_counts"] is None
+    assert report["checks"]["item_invariants"] == "not_applicable"
+
+
+def test_actions_view_analyzed_empty_has_zero_histograms(tmp_path: Path) -> None:
+    document = _document()
+    document["population"] = {"unit": "case", "observed_count": 0, "planned_count": 7}
+    document["items"] = []
+    report = inspect_result.inspect_result_file(_selected(tmp_path, document), view="actions")
+    assert report["availability_counts"] == {
+        "observed": 0, "missing": 0, "error": 0, "abstained": 0, "total": 0
+    }
+    assert report["item_next_action_counts"] == {name: 0 for name in _control(
+        json.dumps(document).encode()
+    )[0]}
+    assert report["declared_semantic_binding_counts"] == {"unbound": 0, "bound": 0}
 
 
 def test_success_does_not_project_source_content(
@@ -138,6 +316,21 @@ def test_invariant_refusal_is_finite_and_private(
     error = json.loads(streams.err)
     assert (error["code"], error["reason"], error["location"]) == (
         "INVALID_INPUT", reason, location
+    )
+
+
+def test_actions_view_rejects_duplicate_coordinates_before_aggregation(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    document = _document()
+    document["items"][1]["coordinate"] = document["items"][0]["coordinate"]
+    path = _selected(tmp_path, document)
+    assert _cli(path, view="actions") == ERROR_EXIT
+    streams = capsys.readouterr()
+    assert streams.out == "" and CANARY not in streams.err
+    error = json.loads(streams.err)
+    assert (error["code"], error["reason"], error["location"]) == (
+        "INVALID_INPUT", "RESULT_COORDINATE_DUPLICATE", "/items/1/coordinate"
     )
 
 
@@ -211,6 +404,81 @@ def test_packaged_contract_fault_is_configuration_error(
     with pytest.raises(SchemaConfigurationError):
         inspect_result.inspect_result_file(path)
     assert _cli(path) == ERROR_EXIT
+    streams = capsys.readouterr()
+    assert streams.out == "" and CANARY not in streams.err
+    error = json.loads(streams.err)
+    assert (error["code"], error["reason"], error["location"]) == (
+        "SCHEMA_CONFIGURATION_ERROR", "INVALID_PACKAGED_CONTRACT", ""
+    )
+
+
+@pytest.mark.parametrize(
+    "broken_contract", ["evidence_result.v1", "common_result_inspection_actions.v1"]
+)
+def test_actions_view_contract_fault_is_finite_and_private(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    broken_contract: str,
+) -> None:
+    path = _selected(tmp_path)
+    original = inspect_result.packaged_validator
+
+    def broken(name: str) -> Any:
+        if name == broken_contract:
+            raise SchemaConfigurationError("MISSING_PACKAGED_CONTRACT")
+        return original(name)
+
+    monkeypatch.setattr(inspect_result, "packaged_validator", broken)
+    with pytest.raises(SchemaConfigurationError):
+        inspect_result.inspect_result_file(path, view="actions")
+    assert _cli(path, view="actions") == ERROR_EXIT
+    streams = capsys.readouterr()
+    assert streams.out == "" and CANARY not in streams.err
+    error = json.loads(streams.err)
+    assert (error["code"], error["reason"], error["location"]) == (
+        "SCHEMA_CONFIGURATION_ERROR", "INVALID_PACKAGED_CONTRACT", ""
+    )
+
+
+@pytest.mark.parametrize("owner_shape", [
+    {},
+    {"$defs": {"item": {"properties": {"next_action": {"enum": ["none", "none"]}}},
+               "metric_binding": {"oneOf": [
+                   {"properties": {"semantic_binding": {"const": "unbound"}}}
+               ]}}},
+    {"$defs": {"item": {"properties": {"next_action": {"enum": ["none", 1]}}},
+               "metric_binding": {"oneOf": [
+                   {"properties": {"semantic_binding": {"const": "unbound"}}}
+               ]}}},
+    {"$defs": {"item": {"properties": {"next_action": {"enum": ["none"]}}},
+               "metric_binding": {"oneOf": [
+                   {"properties": {"semantic_binding": {"const": "unbound"}}},
+                   {"properties": {"semantic_binding": {"const": "unbound"}}},
+               ]}}},
+])
+def test_actions_view_malformed_trusted_vocabulary_is_configuration_error(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    owner_shape: dict[str, object],
+) -> None:
+    path = _selected(tmp_path)
+    original = inspect_result.packaged_validator
+
+    class BrokenValidator:
+        schema = owner_shape
+
+        def validate(self, document: object) -> None:
+            del document
+
+    def broken(name: str) -> Any:
+        return BrokenValidator() if name == "evidence_result.v1" else original(name)
+
+    monkeypatch.setattr(inspect_result, "packaged_validator", broken)
+    with pytest.raises(SchemaConfigurationError):
+        inspect_result.inspect_result_file(path, view="actions")
+    assert _cli(path, view="actions") == ERROR_EXIT
     streams = capsys.readouterr()
     assert streams.out == "" and CANARY not in streams.err
     error = json.loads(streams.err)

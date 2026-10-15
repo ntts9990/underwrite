@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections import Counter
 from pathlib import Path
 from typing import cast
 
@@ -1265,10 +1266,61 @@ def _common_result_inspection_pilot(cli: Path, fixtures: Path, work: Path) -> No
     )
     api = _success([str(cli.parent / "python"), "-c", api_code, str(selected)], work)
     _require(json.loads(api.stdout) == inspection, "installed result inspection API differs")
+    actions = _cli_json(
+        cli,
+        ["inspect-result", str(selected), "--view", "actions"],
+        work / "common-result-inspection-actions.json",
+        work,
+    )
+    owner = json.loads(selected.read_bytes())
+    contract = json.loads((ROOT / "contracts/evidence_result.v1.schema.json").read_bytes())
+    action_vocab = contract["$defs"]["item"]["properties"]["next_action"]["enum"]
+    binding_vocab = [
+        branch["properties"]["semantic_binding"]["const"]
+        for branch in contract["$defs"]["metric_binding"]["oneOf"]
+    ]
+    action_control = Counter(item["next_action"] for item in owner["items"])
+    binding_control = Counter(item["metric"]["semantic_binding"] for item in owner["items"])
+    _require(
+        actions.get("schema") == "common_result_inspection_actions.v1"
+        and actions.get("item_next_action_counts")
+        == {name: action_control[name] for name in action_vocab}
+        and actions.get("declared_semantic_binding_counts")
+        == {name: binding_control[name] for name in binding_vocab}
+        and actions.get("availability_counts") == inspection.get("availability_counts")
+        and actions.get("selected_result") == inspection.get("selected_result"),
+        "installed action inspection differs from selected bytes",
+    )
+    action_api_code = (
+        "import json,sys; from pathlib import Path; "
+        "from underwrite.cli.inspect_result import inspect_result_file; "
+        "print(json.dumps(inspect_result_file(Path(sys.argv[1]),view='actions'),sort_keys=True))"
+    )
+    action_api = _success([str(cli.parent / "python"), "-c", action_api_code, str(selected)], work)
+    _require(json.loads(action_api.stdout) == actions, "installed action inspection API differs")
+    capabilities = _cli_json(cli, ["capabilities"], work / "inspection-capabilities.json", work)
+    descriptor = next(
+        item for item in cast(list[dict[str, object]], capabilities["commands"])
+        if item["command"] == "inspect-result"
+    )
+    selected_profile = next(
+        item for item in cast(list[dict[str, object]], descriptor["profiles"])
+        if item["name"] == "evidence_result.v1|actions"
+    )
+    _require(
+        selected_profile["required_inputs"] == ["file", "view"]
+        and selected_profile["output_schemas"] == ["common_result_inspection_actions.v1"],
+        "installed action inspection capability selector changed",
+    )
     _require(
         str(selected) not in json.dumps(inspection)
         and "goppi.operator_answer_assessment" not in json.dumps(inspection),
         "result inspection leaked input content",
+    )
+    _require(
+        str(selected) not in json.dumps(actions)
+        and "goppi.operator_answer_assessment" not in json.dumps(actions),
+        "action inspection leaked input content",
     )
     invalid = work / "private-invalid-result.json"
     invalid.write_bytes(b'{"schema":"private","schema":"private"}')
