@@ -255,7 +255,7 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
         tuple(
             profile(
                 "|".join((DEEPEVAL_SOURCE[0], version)),
-                ("file",),
+                ("file",) if version == DEEPEVAL_SOURCE[1] else ("file", "version"),
                 (),
                 (selected.accounting_schema,),
             )
@@ -278,7 +278,7 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
         tuple(
             profile(
                 "|".join((PROMPTFOO_SOURCE[0], version)),
-                ("file",),
+                ("file",) if version == PROMPTFOO_SOURCE[1] else ("file", "version"),
                 (),
                 ("promptfoo_accounting.v1",),
             )

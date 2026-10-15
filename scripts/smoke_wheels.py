@@ -545,6 +545,41 @@ def _record_pilots(cli: Path, fixtures: Path, work: Path) -> None:
         installed_capabilities == json.loads(checkout_capabilities.stdout),
         "checkout and installed capabilities differ",
     )
+    commands = cast(list[dict[str, object]], installed_capabilities["commands"])
+    for command, name, fixture, version, schema in (
+        (
+            "audit-deepeval",
+            "deepeval.test-run|4.2.8",
+            "deepeval-4.2.8/ordinary.json",
+            "4.2.8",
+            "deepeval_accounting.v2",
+        ),
+        (
+            "audit-promptfoo",
+            "promptfoo.eval-output|0.124.1",
+            "promptfoo-0.124.1/results.json",
+            "0.124.1",
+            "promptfoo_accounting.v1",
+        ),
+    ):
+        descriptor = next(item for item in commands if item["command"] == command)
+        profiles = cast(list[dict[str, object]], descriptor["profiles"])
+        selected = next(item for item in profiles if item["name"] == name)
+        _require(
+            selected["required_inputs"] == ["file", "version"]
+            and selected["output_schemas"] == [schema],
+            f"installed {name} capability selector changed",
+        )
+        required = cast(list[str], selected["required_inputs"])
+        args = [command, str(ROOT / "fixtures/golden/external" / fixture)]
+        if "version" in required:
+            args.extend(("--version", version))
+        observed = _cli_json(cli, args, work / f"{command}-advertised.json", work)
+        source = cast(dict[str, object], observed["source"])
+        _require(
+            observed["schema"] == schema and source["format_version"] == version,
+            f"installed {name} capability selected the wrong source profile",
+        )
     audit = _cli_json(
         cli,
         ["audit-run", "--input", str(fixtures / "run-audit/synthetic-inventory.json")],

@@ -82,6 +82,67 @@ def test_capability_command_validates_and_is_registration_derived(
     assert "package_version" not in report
 
 
+@pytest.mark.parametrize(
+    ("command", "name", "fixture", "version", "schema"),
+    [
+        (
+            "audit-deepeval",
+            "deepeval.test-run|4.1.1",
+            "deepeval/test_run_20260914_132634.json",
+            "4.1.1",
+            "deepeval_accounting.v1",
+        ),
+        (
+            "audit-deepeval",
+            "deepeval.test-run|4.2.8",
+            "deepeval-4.2.8/ordinary.json",
+            "4.2.8",
+            "deepeval_accounting.v2",
+        ),
+        (
+            "audit-promptfoo",
+            "promptfoo.eval-output|0.123.0",
+            "promptfoo/results.json",
+            "0.123.0",
+            "promptfoo_accounting.v1",
+        ),
+        (
+            "audit-promptfoo",
+            "promptfoo.eval-output|0.124.1",
+            "promptfoo-0.124.1/results.json",
+            "0.124.1",
+            "promptfoo_accounting.v1",
+        ),
+    ],
+)
+def test_advertised_audit_profile_runs_its_registered_fixture(
+    command: str,
+    name: str,
+    fixture: str,
+    version: str,
+    schema: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main.main(["capabilities", "--json"]) == 0
+    capabilities_report = json.loads(capsys.readouterr().out)
+    descriptor = next(row for row in capabilities_report["commands"] if row["command"] == command)
+    selected = next(row for row in descriptor["profiles"] if row["name"] == name)
+    required = ["file"] if name.endswith(("4.1.1", "0.123.0")) else ["file", "version"]
+    assert selected["required_inputs"] == required
+    assert selected["output_schemas"] == [schema]
+
+    argv = [command, str(ROOT / "fixtures/golden/external" / fixture)]
+    if "version" in selected["required_inputs"]:
+        argv.extend(("--version", version))
+    assert main.main([*argv, "--json"]) == 0
+    streams = capsys.readouterr()
+    assert streams.err == ""
+    result = json.loads(streams.out)
+    assert result["schema"] == schema
+    assert result["source"]["format_version"] == version
+    _validator(schema).validate(result)
+
+
 def test_help_and_dispatch_names_come_from_each_descriptor(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
