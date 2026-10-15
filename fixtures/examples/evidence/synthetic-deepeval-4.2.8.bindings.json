@@ -1,0 +1,84 @@
+{
+  "bindings": [
+    {
+      "definition": {
+        "method": null,
+        "metric_id": "fixed_score",
+        "namespace": "synthetic",
+        "policy": null,
+        "schema": "metric_definition.v1",
+        "semantic": {
+          "aggregation": {
+            "denominator": {
+              "definition": "No aggregate denominator is used.",
+              "id": "none"
+            },
+            "method": {
+              "definition": "No aggregate is computed by this declaration.",
+              "id": "none"
+            }
+          },
+          "applicability": {
+            "definition": "A metric occurrence recorded in the captured fixture TestRun.",
+            "id": "reported_metric"
+          },
+          "construct": {
+            "definition": "Numeric score emitted by the synthetic fixed DeepEval fixture metric.",
+            "id": "synthetic_fixed_score"
+          },
+          "grounding": {
+            "label_source": null,
+            "rubric": null
+          },
+          "missingness": {
+            "abstained": {
+              "definition": "The fixture has no abstention state.",
+              "id": "not_used"
+            },
+            "error": {
+              "definition": "The occurrence reports an error.",
+              "id": "evaluator_error"
+            },
+            "missing": {
+              "definition": "The occurrence contains no score or error.",
+              "id": "unscored"
+            }
+          },
+          "prediction_timing": "not_prediction",
+          "required_coordinates": [
+            "case_index",
+            "metric_index"
+          ],
+          "sampling": {
+            "expected_population_basis": {
+              "definition": "Metric occurrences present in the captured fixture TestRun.",
+              "id": "reported_occurrences"
+            },
+            "unit": "metric_occurrence"
+          },
+          "target": {
+            "definition": "The fixture metric's output, without a truth or quality claim.",
+            "id": "fixture_metric_output",
+            "kind": "quantity"
+          },
+          "value": {
+            "desirable_direction": "neither",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number",
+            "unit": "score"
+          }
+        },
+        "semantic_digest": "sha256:87354ab4f2c94200bf2c55b22136dd6da63bee56dbde998c09b040234160106b",
+        "version": "v1"
+      },
+      "source_metric_name": "zero"
+    }
+  ],
+  "name_binding_authority": "owner_asserted_stable_name_not_verified",
+  "schema": "deepeval_metric_bindings.v1",
+  "source": {
+    "format": "deepeval.test-run",
+    "format_version": "4.2.8"
+  }
+}

@@ -97,6 +97,19 @@ acquisition fails. Missing metric verdicts and source flaky declarations retain
 their distinct meanings. The logical file names and retrieval commands stay the
 same; never relabel a saved v1 report as v2.
 
+For an owner-asserted metric binding pack, add `--version 4.2.8 --bindings PACK`
+to `records audit-deepeval FILE --root ROOT --id NEW_ID --json`. This opt-in
+`deepeval_bound_record.v1` route captures the pack and TestRun independently once,
+then saves `source/bindings.bin`, `source/deepeval.bin`, and either
+`analysis/evidence_result.json` or `analysis/error.json`, plus `invocation.json`.
+Completely captured malformed inputs remain available; incomplete acquisitions
+leave no partial source file. Pack acquisition error takes precedence over source
+acquisition error. Saved verification checks two base files plus each captured
+source. The response keeps the raw pack hash separate from item semantic digests;
+stored-byte integrity does not authenticate the owner declaration. Exits 0/2/3
+retain the result, diagnostic, and storage-failure meanings above. The no-bindings
+route and its existing logical names remain unchanged.
+
 For two supported Langfuse exports, use
 `records audit-langfuse --observations FILE --scores FILE --root ROOT --id NEW_ID --json`.
 It analyzes and retains the same complete input buffers, the result or diagnostic,

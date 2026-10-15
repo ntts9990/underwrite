@@ -436,6 +436,30 @@ result = audit_deepeval_bound_file(
 )
 ```
 
+To retain the bound result and both exact inputs in one call, use the opt-in
+record route:
+
+```sh
+underwrite records audit-deepeval /path/to/test_run.json --version 4.2.8 \
+  --bindings /private/path/deepeval-bindings.json \
+  --root /private/review-store --id deepeval.bound-001 --json
+underwrite records verify --root /private/review-store --id deepeval.bound-001 --json
+underwrite records read-json --root /private/review-store --id deepeval.bound-001 \
+  --name analysis/evidence_result.json --json
+```
+
+The `deepeval_bound_record.v1` response separates both acquisition states,
+analysis, and storage. It captures the pack and source independently once, then
+validates the pack, analyzes the source, and binds a complete pair. A complete
+malformed input is retained with its diagnostic; an oversized or unreadable input
+has no partial saved bytes. Acquisition errors take precedence, pack before
+source. The selected source hash must match the bound result's source identity.
+The pack's raw hash identifies its captured bytes; each item's semantic digest
+identifies an owner declaration. Neither authenticates the declared meaning or
+producer. Paths appear only in the private invocation file, never in this
+response. Exit 0 means a result saved, 2 a diagnostic saved, and 3 storage
+failed. The no-bindings record route keeps its existing accounting contracts.
+
 The result lists ordinal metric occurrences, source-byte hash, score/error/missing
 availability, and any bound namespace, metric ID, version, and semantic digest.
 Source metric names and declaration prose stay in the private pack; bound IDs are
@@ -443,8 +467,8 @@ visible in the result and should be nonsensitive. `planned_count` stays null,
 source values remain `source_claim`, and the result grants no statistical,
 acceptance, or approval authority. JSON output is limited to 1 MiB; a larger
 otherwise valid population returns a typed `OUTPUT_LIMIT_EXCEEDED` error with
-no partial stdout. The unbound accounting command and `records audit-deepeval`
-retain their existing contracts and behavior.
+no partial stdout. The unbound accounting command retains its existing contract
+and behavior.
 
 In v2, `source_flaky` is the producer's boolean declaration at case and metric
 level, not measured instability or a computed CI outcome. A failed flaky case

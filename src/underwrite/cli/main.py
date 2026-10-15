@@ -189,6 +189,12 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 tuple(selected.record_schema for selected in DEEPEVAL_PROFILES.values()),
             ),
             profile(
+                "audit-deepeval|4.2.8|owner-asserted-metric-bindings",
+                ("file", "version", "bindings", "root", "id"),
+                ("deepeval_metric_bindings.v1",),
+                ("deepeval_bound_record.v1",),
+            ),
+            profile(
                 "audit-langfuse",
                 ("observations", "scores", "root", "id"),
                 (),

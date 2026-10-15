@@ -14,6 +14,7 @@ from typing import Any, cast
 from jsonschema import Draft202012Validator
 from underwrite_core.canonical import CanonicalizationError, canonical_bytes, digest_bytes
 
+from underwrite.cli import record_deepeval_bound
 from underwrite.cli.evidence import (
     EvidenceError,
     ReportOutput,
@@ -99,6 +100,12 @@ def configure(parser: argparse.ArgumentParser) -> None:
         choices=tuple(PROFILES),
         default=SOURCE[1],
         help="Explicit source version; no detection or fallback.",
+    )
+    parser.add_argument(
+        "--bindings",
+        type=Path,
+        default=None,
+        help="Owner-asserted DeepEval 4.2.8 metric binding pack to retain with the source.",
     )
     parser.add_argument("--root", type=Path, required=True, help="Explicit private record root.")
     parser.add_argument("--id", type=_identifier, required=True, help="New immutable record ID.")
@@ -286,6 +293,15 @@ def run_record_deepeval(
 
 
 def produce(args: argparse.Namespace) -> dict[str, object]:
+    if args.bindings is not None:
+        return record_deepeval_bound.run_record_bound_deepeval(
+            cast(Path, args.file),
+            cast(Path, args.bindings),
+            cast(Path, args.root),
+            cast(str, args.id),
+            as_json=cast(bool, args.json),
+            version=cast(str, args.version),
+        )
     return run_record_deepeval(
         cast(Path, args.file),
         cast(Path, args.root),
@@ -302,9 +318,13 @@ def main(argv: list[str]) -> int:
         configure,
         produce,
         ReportOutput(
-            lambda args: profile_for(cast(str, args.version)).record_schema,
+            lambda args: record_deepeval_bound.SCHEMA
+            if args.bindings is not None
+            else profile_for(cast(str, args.version)).record_schema,
             max_bytes=OUTPUT_MAX_BYTES,
-            human=render_human,
+            human=lambda report: record_deepeval_bound.render_human(report)
+            if report["schema"] == record_deepeval_bound.SCHEMA
+            else render_human(report),
             exit_status=lambda report: cast(int, report["exit_code"]),
         ),
     )

@@ -537,6 +537,76 @@ def _evidence_pilots(cli: Path, fixtures: Path, work: Path) -> None:
     _require(diagnostic.get("schema") == "evidence_error.v1", "pilot error schema mismatch")
 
 
+def _bound_deepeval_record_pilot(
+    cli: Path, work: Path, capabilities: dict[str, object]
+) -> None:
+    commands = cast(list[dict[str, object]], capabilities["commands"])
+    records_entry = next(item for item in commands if item["command"] == "records")
+    profiles = cast(list[dict[str, object]], records_entry["profiles"])
+    selected = next(
+        item
+        for item in profiles
+        if item["name"] == "audit-deepeval|4.2.8|owner-asserted-metric-bindings"
+    )
+    _require(
+        selected["required_inputs"] == ["file", "version", "bindings", "root", "id"]
+        and selected["input_schemas"] == ["deepeval_metric_bindings.v1"]
+        and selected["output_schemas"] == ["deepeval_bound_record.v1"],
+        "installed bound DeepEval capability does not describe its executable route",
+    )
+    output_schemas = cast(list[str], selected["output_schemas"])
+    source = work / "bound-deepeval-source.json"
+    source_raw = (ROOT / "fixtures/golden/external/deepeval-4.2.8/ordinary.json").read_bytes()
+    source.write_bytes(source_raw)
+    bindings = work / "bound-deepeval-bindings.json"
+    pack_raw = (
+        ROOT / "fixtures/examples/evidence/synthetic-deepeval-4.2.8.bindings.json"
+    ).read_bytes()
+    bindings.write_bytes(pack_raw)
+    store = work / "bound-deepeval-store"
+    values = {"version": "4.2.8", "bindings": str(bindings), "root": str(store), "id": "bound"}
+    args = ["records", "audit-deepeval", str(source)]
+    for requirement in cast(list[str], selected["required_inputs"])[1:]:
+        args.extend(("--" + requirement, values[requirement]))
+    report = _cli_json(cli, args, work / "bound-deepeval-record.json", work)
+    analysis = cast(dict[str, object], report["analysis"])
+    result = cast(dict[str, object], analysis["report"])
+    source_identity = cast(dict[str, object], cast(dict[str, object], result["source"])["identity"])
+    sources = cast(dict[str, dict[str, object]], report["sources"])
+    storage = cast(dict[str, object], report["storage"])
+    verification = cast(dict[str, object], storage["verification"])
+    _require(
+        report["schema"] == output_schemas[0]
+        and report["source_format_version"] == "4.2.8"
+        and source_identity["raw_hash"] == sources["deepeval"]["raw_hash"]
+        == "sha256:" + hashlib.sha256(source_raw).hexdigest()
+        and sources["bindings"]["raw_hash"] == "sha256:" + hashlib.sha256(pack_raw).hexdigest()
+        and verification["files_checked"] == 2 + len(sources),
+        "installed bound DeepEval capture changed source identity or retained file count",
+    )
+    source.unlink()
+    bindings.unlink()
+    verified = _cli_json(
+        cli,
+        ["records", "verify", "--root", str(store), "--id", "bound"],
+        work / "bound-deepeval-verification.json",
+        work,
+    )
+    recovered = _cli_json(
+        cli,
+        [
+            "records", "read-json", "--root", str(store), "--id", "bound",
+            "--name", "analysis/evidence_result.json",
+        ],
+        work / "bound-deepeval-recovered.json",
+        work,
+    )
+    _require(
+        verified["valid"] is True and recovered["content"] == result,
+        "installed bound DeepEval result did not survive source removal",
+    )
+
+
 def _record_pilots(cli: Path, fixtures: Path, work: Path) -> None:
     installed_capabilities = _cli_json(cli, ["capabilities"], work / "capabilities.json", work)
     checkout_capabilities = _success(
@@ -546,6 +616,7 @@ def _record_pilots(cli: Path, fixtures: Path, work: Path) -> None:
         installed_capabilities == json.loads(checkout_capabilities.stdout),
         "checkout and installed capabilities differ",
     )
+    _bound_deepeval_record_pilot(cli, work, installed_capabilities)
     commands = cast(list[dict[str, object]], installed_capabilities["commands"])
     for command, name, fixture, version, schema in (
         (
