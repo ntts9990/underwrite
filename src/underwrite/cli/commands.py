@@ -17,10 +17,12 @@ from underwrite_core.absence import AbsenceError, Exemption, check_population
 
 from underwrite.cli.legacy_input import (
     CONFIG_MAX_BYTES,
+    SELECTED_FILES_MAX,
     AdmissionError,
     limit_policy_entries,
     read_json,
     require_date,
+    resource_error,
     validate_date,
     validate_policy,
 )
@@ -82,6 +84,24 @@ def load_exemptions(path: Path) -> dict[str, Exemption]:
     return exemptions
 
 
+def _matched_population(root: Path, pattern: str) -> int:
+    """Retain Path.glob selection while bounding admitted regular matches."""
+    count = 0
+    try:
+        for path in root.glob(pattern):
+            if path.is_file():
+                count += 1
+                if count > SELECTED_FILES_MAX:
+                    raise resource_error("/root", "selected_files", SELECTED_FILES_MAX)
+    except AdmissionError:
+        raise
+    except (ValueError, NotImplementedError):
+        raise AdmissionError("INVALID_GLOB", "INVALID_GLOB", "/glob") from None
+    except OSError:
+        raise AdmissionError("SOURCE_READ_FAILED", "SOURCE_READ_FAILED", "/root") from None
+    return count
+
+
 def cmd_absence(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
     """`underwrite absence` -- population = count of files matching --glob under --root."""
     try:
@@ -93,7 +113,10 @@ def cmd_absence(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
     if not root.is_dir():
         return 2, _result("absence", "UNCONFIGURED", 2, {"root": str(root)})
 
-    count = sum(1 for path in root.glob(args.glob) if path.is_file())
+    try:
+        count = _matched_population(root, args.glob)
+    except AdmissionError as exc:
+        return 2, _result("absence", "UNCONFIGURED", 2, exc.details())
     exemption = exemptions.get(args.exemption_key) if args.exemption_key is not None else None
 
     try:

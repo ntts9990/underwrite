@@ -2,10 +2,11 @@
 
 English terms use word boundaries that include underscores and digits; Korean
 terms use substring matching so particles do not conceal them. Hyphenated terms
-are matched literally. Keys are never scanned. Pure scanning does not grant any
+are matched literally. String keys are scanned. Pure scanning does not grant any
 measurement, acceptance or deployment authority."""
 
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Literal, TypeGuard
 
@@ -102,12 +103,13 @@ class Leak:
     family: LeakFamily
 
 
-def _find_hangul(text: str, terms: tuple[str, ...], family: LeakFamily, path: str) -> list[Leak]:
-    leaks: list[Leak] = []
+def _iter_hangul(
+    text: str, terms: tuple[str, ...], family: LeakFamily, path: str
+) -> Iterator[Leak]:
     for term in terms:
         start = 0
         while (idx := text.find(term, start)) != -1:
-            leaks.append(Leak(path=path, term=term, family=family))
+            yield Leak(path=path, term=term, family=family)
             start = idx + len(term)
             # Every registered Hangul term is non-empty, so `start` must
             # strictly pass the match it just found -- otherwise the next
@@ -116,25 +118,20 @@ def _find_hangul(text: str, terms: tuple[str, ...], family: LeakFamily, path: st
             # empty term, or a mutation of the line above), not a hang.
             if start <= idx:
                 raise AssertionError(f"boundary scan did not advance past index {idx}")
-    return leaks
 
 
-def _scan_text(text: str, path: str) -> list[Leak]:
-    leaks = [
-        Leak(path=path, term=m.group(0), family="gate_vocab") for m in _GATE_PATTERN.finditer(text)
-    ]
-    leaks += _find_hangul(text, _GATE_HANGUL, "gate_vocab", path)
-    leaks += [
-        Leak(path=path, term=m.group(0), family="authority_vocab")
-        for m in _AUTHORITY_PATTERN.finditer(text)
-    ]
-    leaks += _find_hangul(text, _AUTHORITY_HANGUL, "authority_vocab", path)
-    return leaks
+def _iter_text(text: str, path: str) -> Iterator[Leak]:
+    for match in _GATE_PATTERN.finditer(text):
+        yield Leak(path=path, term=match.group(0), family="gate_vocab")
+    yield from _iter_hangul(text, _GATE_HANGUL, "gate_vocab", path)
+    for match in _AUTHORITY_PATTERN.finditer(text):
+        yield Leak(path=path, term=match.group(0), family="authority_vocab")
+    yield from _iter_hangul(text, _AUTHORITY_HANGUL, "authority_vocab", path)
 
 
 def _is_object_dict(value: object) -> TypeGuard[dict[object, object]]:
     """`isinstance(value, dict)`, narrowed to `dict[object, object]` (not
-    `dict[Unknown, Unknown]`) so `_walk` below type-checks with no
+    `dict[Unknown, Unknown]`) so `_iter_walk` below type-checks with no
     `typing.cast`."""
     return isinstance(value, dict)
 
@@ -145,21 +142,26 @@ def _is_object_list(value: object) -> TypeGuard[list[object]]:
     return isinstance(value, list)
 
 
-def _walk(value: object, path: str, leaks: list[Leak]) -> None:
-    """Recurse into dicts (keys and values) and lists only — see `scan_strings`."""
+def _iter_walk(value: object, path: str) -> Iterator[Leak]:
+    """Recurse into dicts (keys and values) and lists in original order."""
     if _is_object_dict(value):
         for key, item in value.items():
             key_path = f"{path}.{key}" if isinstance(key, str) else f"{path}.{key!r}"
             if isinstance(key, str):
-                leaks.extend(_scan_text(key, key_path))
-            _walk(item, key_path, leaks)
+                yield from _iter_text(key, key_path)
+            yield from _iter_walk(item, key_path)
     elif _is_object_list(value):
         for index, item in enumerate(value):
-            _walk(item, f"{path}[{index}]", leaks)
+            yield from _iter_walk(item, f"{path}[{index}]")
     elif isinstance(value, str):
-        leaks.extend(_scan_text(value, path))
+        yield from _iter_text(value, path)
     # Tuples and other scalars (int/float/bool/None) are not recursed into:
     # JSON has no tuples, and a non-string scalar cannot carry vocabulary.
+
+
+def iter_strings(value: object, *, path: str = "$") -> Iterator[Leak]:
+    """Yield each key/value vocabulary match in the established traversal order."""
+    yield from _iter_walk(value, path)
 
 
 def scan_strings(value: object, *, path: str = "$") -> list[Leak]:
@@ -171,9 +173,7 @@ def scan_strings(value: object, *, path: str = "$") -> list[Leak]:
     are ignored (module docstring). Returns every leak found, in traversal
     order; an empty list means `value` is measurement-only.
     """
-    leaks: list[Leak] = []
-    _walk(value, path, leaks)
-    return leaks
+    return list(iter_strings(value, path=path))
 
 
 _MAX_SHOWN_LEAKS = 5

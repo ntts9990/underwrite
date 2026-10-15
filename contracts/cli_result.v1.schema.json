@@ -802,7 +802,8 @@
                 "INVALID_DATE",
                 "SOURCE_READ_FAILED",
                 "UNSUPPORTED_PLATFORM",
-                "SCHEMA_CONFIGURATION_ERROR"
+                "SCHEMA_CONFIGURATION_ERROR",
+                "INVALID_GLOB"
               ]
             },
             "location": {
@@ -810,7 +811,9 @@
                 "/now",
                 "/exemptions",
                 "/allowlist",
-                "/files"
+                "/files",
+                "/root",
+                "/glob"
               ]
             }
           }
@@ -832,14 +835,23 @@
               "enum": [
                 "/exemptions",
                 "/allowlist",
-                "/files"
+                "/files",
+                "/root",
+                "/output"
               ]
             },
             "limit_kind": {
               "enum": [
                 "bytes",
                 "depth",
-                "entries"
+                "entries",
+                "selected_files",
+                "directory_entries",
+                "captured_bytes",
+                "line_bytes",
+                "lines",
+                "leaks",
+                "output_bytes"
               ]
             },
             "limit": {

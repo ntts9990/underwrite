@@ -514,8 +514,13 @@ def main(argv: list[str] | None = None) -> int:
             return descriptor.handler(args_list[0], args_list[1:])
     args = build_parser().parse_args(args_list)
     exit_code, payload = args.handler(args)
-    render.render(payload, as_json=bool(getattr(args, "json", False)))
-    return exit_code
+    bounded = payload["command"] == "boundary scan"
+    rendered_exit = render.render(
+        payload,
+        as_json=bool(getattr(args, "json", False)),
+        bounded=bounded,
+    )
+    return rendered_exit if bounded else exit_code
 
 
 if __name__ == "__main__":

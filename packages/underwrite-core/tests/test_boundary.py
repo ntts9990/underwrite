@@ -1,19 +1,22 @@
 """Standalone behavior and boundary checks."""
 
+from collections.abc import Iterator
+
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from underwrite_core import boundary as boundary_module
 from underwrite_core.boundary import (
     GATE_VOCAB,
     RECOMMENDATION_AUTHORITY_VOCAB,
     Leak,
     VocabularyLeak,
     _compile_latin_pattern,  # pyright: ignore[reportPrivateUsage]
-    _find_hangul,  # pyright: ignore[reportPrivateUsage]
     _is_hangul_term,  # pyright: ignore[reportPrivateUsage]
+    _iter_hangul,  # pyright: ignore[reportPrivateUsage]
     _split_vocab,  # pyright: ignore[reportPrivateUsage]
-    _walk,  # pyright: ignore[reportPrivateUsage]
     assert_measurement_only,
+    iter_strings,
     scan_strings,
 )
 
@@ -96,8 +99,8 @@ def test_hangul_term_repeated_finds_every_occurrence_in_order() -> None:
 def test_korean_authority_term_is_detected_with_authority_family() -> None:
     # The only existing Korean-vocabulary tests use GATE_VOCAB hangul terms
     # (승격/배포); RECOMMENDATION_AUTHORITY_VOCAB's hangul terms (권고/권장)
-    # were otherwise never exercised, leaving _scan_text's authority-family
-    # _find_hangul call (as opposed to its gate-family one, a few lines
+    # were otherwise never exercised, leaving _iter_text's authority-family
+    # Hangul call (as opposed to its gate-family one, a few lines
     # earlier) unverified.
     leaks = scan_strings({"note": "이 변경을 권고합니다"})
     assert len(leaks) == 1
@@ -134,6 +137,48 @@ def test_top_level_list_indexing() -> None:
     assert leaks[0].path == "$[1]"
     assert leaks[0].term == "reject"
     assert leaks[0].family == "gate_vocab"
+
+
+def test_lazy_iterator_preserves_key_value_and_family_order() -> None:
+    value = {"promote": "배포 recommend", "nested": ["reject", "권고"]}
+    assert list(iter_strings(value)) == scan_strings(value)
+    assert [(leak.path, leak.term, leak.family) for leak in iter_strings(value)] == [
+        ("$.promote", "promote", "gate_vocab"),
+        ("$.promote", "배포", "gate_vocab"),
+        ("$.promote", "recommend", "authority_vocab"),
+        ("$.nested[0]", "reject", "gate_vocab"),
+        ("$.nested[1]", "권고", "authority_vocab"),
+    ]
+
+
+def test_iterator_does_not_visit_later_keys_before_first_match() -> None:
+    class LaterKey:
+        def __repr__(self) -> str:
+            raise AssertionError("visited later key")
+
+    selected = iter_strings({"promote": 1, LaterKey(): 2})
+    assert next(selected).term == "promote"
+    with pytest.raises(AssertionError, match="visited later key"):
+        list(selected)
+
+
+def test_text_matching_yields_before_exhausting_regex_matches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Match:
+        def group(self, _index: int) -> str:
+            return "promote"
+
+    class Pattern:
+        def finditer(self, _text: str) -> Iterator[Match]:
+            yield Match()
+            raise AssertionError("eagerly exhausted matches")
+
+    monkeypatch.setattr(boundary_module, "_GATE_PATTERN", Pattern())
+    selected = iter_strings("promote")
+    assert next(selected).term == "promote"
+    with pytest.raises(AssertionError, match="eagerly exhausted"):
+        next(selected)
 
 
 def test_assert_measurement_only_passes_clean_payload() -> None:
@@ -262,29 +307,24 @@ def test_compile_latin_pattern_joins_multiple_terms_with_a_bare_pipe() -> None:
 
 
 def test_walk_ignores_bare_scalars_at_the_top_level() -> None:
-    leaks: list[Leak] = []
-    _walk(42, "$", leaks)
-    _walk(True, "$", leaks)
-    _walk(None, "$", leaks)
-    assert leaks == []
+    for value in (42, True, None):
+        assert list(iter_strings(value)) == []
 
 
 def test_walk_formats_a_non_string_dict_key_with_repr() -> None:
-    leaks: list[Leak] = []
-    _walk({1: "promote"}, "$", leaks)
+    leaks = list(iter_strings({1: "promote"}))
     assert len(leaks) == 1
     assert leaks[0].path == "$.1"  # non-str key path uses !r, value still scanned
 
 
 def test_walk_scans_string_dict_keys_themselves() -> None:
-    leaks: list[Leak] = []
-    _walk({"reject": "safe value"}, "$", leaks)
+    leaks = list(iter_strings({"reject": "safe value"}))
     assert len(leaks) == 1
     assert leaks[0].path == "$.reject"
     assert leaks[0].term == "reject"
 
 
-# --- _find_hangul: progress guarantee ---------------------------------------
+# --- Hangul matcher: progress guarantee --------------------------------------
 
 
 def test_find_hangul_raises_instead_of_looping_forever_on_an_empty_term() -> None:
@@ -295,11 +335,11 @@ def test_find_hangul_raises_instead_of_looping_forever_on_an_empty_term() -> Non
     # scan is safe in real use: every registered vocabulary term is
     # non-empty (see GATE_VOCAB/RECOMMENDATION_AUTHORITY_VOCAB above).
     with pytest.raises(AssertionError, match=r"did not advance past index 0"):
-        _find_hangul("anything at all", ("",), "gate_vocab", "$")
+        list(_iter_hangul("anything at all", ("",), "gate_vocab", "$"))
 
 
 def test_find_hangul_advances_past_adjacent_occurrences_of_a_real_term() -> None:
     # A real (non-empty) term never trips the guard, including back-to-back
     # occurrences with no separator between them.
-    leaks = _find_hangul("배포배포", ("배포",), "gate_vocab", "$note")
+    leaks = list(_iter_hangul("배포배포", ("배포",), "gate_vocab", "$note"))
     assert [leak.term for leak in leaks] == ["배포", "배포"]
