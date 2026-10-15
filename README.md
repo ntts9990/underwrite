@@ -35,10 +35,10 @@ quality score. No Docker, dashboard, or provider credentials are needed to
 inspect the supported local files.
 
 > [!NOTE]
-> **This README describes the `0.0.2` source checkout.** The older PyPI `0.0.1`
-> lacks the newer workflows; use the source quickstart to try them. That older
-> build's `pins refresh` needs a separate caution; see
-> [Published installation](#install).
+> **This README describes the `0.1.0` source tree and matching wheels.** The older
+> PyPI `0.0.1` lacks these workflows; use the source quickstart or matching
+> `0.1.0` app/core wheels. The older build's `pins refresh` needs a separate
+> caution; see [Published installation](#install).
 
 ## Quickstart
 
@@ -259,9 +259,10 @@ probability, and a successful command is not approval to ship.
 
 ## Install
 
-For the workflows on this page, use the [source quickstart](#quickstart).
-`uv sync` selects the matching workspace `underwrite-core`. Development wheels
-must also pair app and core built from the same checkout.
+For the workflows on this page, use the [source quickstart](#quickstart) or
+matching `0.1.0` app/core wheels. `uv sync` selects the workspace
+`underwrite-core`; locally built wheels must pair app and core from the same
+checkout.
 
 <details>
 <summary>Install the older published PyPI 0.0.1</summary>
@@ -271,18 +272,17 @@ uv tool install 'underwrite==0.0.1'
 underwrite --help
 ```
 
-The published [app](https://pypi.org/project/underwrite/0.0.1/) and
-[core](https://pypi.org/project/underwrite-core/0.0.1/) have not been re-released.
-They do not include the development measurement, accounting, records, handoff, or
-`capabilities` workflows. Discover installed commands with `--help`; the shared
-version number does not establish equal functionality. Do not mix development
-app wheels with the published core.
+The older published [app](https://pypi.org/project/underwrite/0.0.1/) and
+[core](https://pypi.org/project/underwrite-core/0.0.1/) do not include the
+`0.1.0` measurement, accounting, records, handoff, or `capabilities` workflows.
+Discover installed commands with `--help`. Do not pair a `0.1.0` app wheel with
+the `0.0.1` core.
 
 The published `0.0.1` `pins refresh` should not process an untrusted pin
 manifest. A controlled local audit reproduced overwrite of a writable file
-outside the pin registry using a crafted manifest. The current development
-checkout refuses that path before mutation, but this correction has not been
-published to PyPI. The reproduced case required the crafted manifest and a
+outside the pin registry using a crafted manifest. The `0.1.0` code
+refuses that path before mutation; the older `0.0.1` artifacts do not include
+the correction. The reproduced case required the crafted manifest and a
 writable target file.
 
 </details>

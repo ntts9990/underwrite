@@ -5,15 +5,15 @@ and report what each output establishes. It does not need a server or credential
 From a source checkout, run `uv sync --frozen --all-groups` once, then use
 `uv run --frozen --no-sync underwrite` in the commands below. An installed CLI can
 use `underwrite` directly. The checkout command uses its matching local core;
-install development app/core wheels from the same checkout together. A development
-app combined with the older published core is not a supported pairing.
+install matching `0.1.0` app/core wheels together. A `0.1.0` app combined with
+the older published `0.0.1` core is not a supported pairing.
 
 Run `underwrite --help` first. When listed, `underwrite capabilities --json`
 returns command profiles, required inputs, input/output schema names, and exact
 registered ingest codecs from the executable in use. Check this output instead
 of inferring support from the package version alone. Published PyPI `0.0.1`
 has no `capabilities`, producer-audit, records, or handoff commands; use help-based
-discovery there and the source checkout for the newer workflows below.
+discovery there and the `0.1.0` source tree or matching wheels for the workflows below.
 Capability availability is not evidence that
 an arbitrary producer export satisfies a profile.
 
@@ -52,9 +52,9 @@ fi
 ```
 
 An existing destination is left untouched. Copying the skill does not install
-underwrite or enable the unreleased pilot commands in a published package.
+underwrite or add commands absent from the selected installed package.
 Provide an existing CLI or a prepared source checkout; the skill checks command
-availability instead of assuming capabilities from the unchanged version number.
+availability instead of assuming capabilities from the package version alone.
 No global configuration, hook, MCP registration, telemetry, or model execution
 is installed by this recipe. Once installed, the agent may select the skill for
 matching requests; it is not a background process.
@@ -110,7 +110,7 @@ approved a change. Acceptance always requires human review and sets
 
 The current native path uses `measurement_policy.v3`, profile
 `binary-event-directional.v1`, `read.v2`, `declared_claims.v2`, and
-`acceptance_decision.v2`. Both source packages are `0.0.2`; the older PyPI
+`acceptance_decision.v2`. Both source packages are `0.1.0`; the older PyPI
 `0.0.1` lacks these workflows. Use this checkout or matching wheels for them.
 
 The native bundle declares `payload.measurement_semantics` (`measurement_semantics.v1`):
@@ -487,9 +487,8 @@ are the same as v1.
 
 ## Source-checkout pilot: audit Promptfoo counts
 
-The pilot commands documented here are available in this development checkout and
-wheels built from it. The previously published PyPI `0.0.1` artifacts have not
-been replaced or released again.
+The pilot commands documented here are available in this `0.1.0` source tree
+and matching wheels. The older PyPI `0.0.1` artifacts lack these workflows.
 
 For a Promptfoo 0.123.0 export, audit the supplied file directly without creating
 a manifest:
@@ -737,9 +736,9 @@ observed annotations retain the previous report shape.
 The [observed-and-missing fixture](fixtures/examples/evidence/synthetic-observed-and-missing.json)
 has one observed zero with an endpoint reason and a separate missing
 infrastructure slot. It remains `not_measured` because a primary pair is missing.
-The source annotation does not repair that gap. The pilot input/output schemas
-are unreleased: older strict validators may reject reason-bearing outputs, so
-use the matching contracts from the same checkout or built wheel.
+The source annotation does not repair that gap. Older PyPI `0.0.1` strict
+validators may reject reason-bearing outputs; use the matching `0.1.0` source
+or wheel contracts.
 
 A nonsignificant p-value does not establish equivalence. None of these three
 pilot reports is a `read.v2`, an acceptance decision, or merge authorization; do
@@ -849,7 +848,8 @@ It returns the same validated result object. Invalid source input raises a
 finite `CaptureError` or `BaselineProjectionError`; the CLI projects those
 into one `evidence_error.v1` on stderr with exit 2 and no partial stdout.
 Use `underwrite capabilities --json` to confirm that the installed executable
-offers this route; PyPI `0.0.1` can differ from this development checkout.
+offers this route. The older PyPI `0.0.1` lacks it; use `0.1.0` source or
+matching wheels.
 
 When you explicitly want to retain the same source bytes and result in a
 private immutable record, use the one-call capture path:
