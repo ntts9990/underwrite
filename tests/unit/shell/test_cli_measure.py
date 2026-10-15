@@ -14,7 +14,7 @@ from _repo_paths import repo_root
 from jsonschema import Draft202012Validator, ValidationError
 from underwrite_core.canonical import content_digest
 
-from underwrite.cli import measure
+from underwrite.cli import measure, measurement_flow
 from underwrite.cli.main import main
 
 ROOT = repo_root(Path(__file__).resolve())
@@ -153,7 +153,7 @@ def test_limits_emit_no_partial_output(
 ) -> None:
     path = FIXTURES / "read-input.json"
     if kind == "byte":
-        monkeypatch.setattr(measure, "OBSERVATION_MAX_BYTES", 1)
+        monkeypatch.setattr(measurement_flow, "OBSERVATION_MAX_BYTES", 1)
     elif kind == "depth":
         path = tmp_path / "deep.json"
         path.write_text(
@@ -180,7 +180,7 @@ def test_inventory_limit_is_a_schema_refusal_before_computation(
     def forbidden(*args: object, **kwargs: object) -> None:
         pytest.fail("measurement computation reached for oversized requested cells")
 
-    monkeypatch.setattr(measure, "assemble_event_read", forbidden)
+    monkeypatch.setattr(measurement_flow, "assemble_event_read", forbidden)
     assert main(_args(policy=path)) == ERROR_EXIT
     error = _error(capsys, "INVALID_POLICY")
     assert (error["reason"], error["location"]) == (
@@ -239,7 +239,7 @@ def test_invalid_inputs_before_computation(
     def forbidden(*args: object, **kwargs: object) -> None:
         pytest.fail("statistics called for invalid policy")
 
-    monkeypatch.setattr(measure, "assemble_event_read", forbidden)
+    monkeypatch.setattr(measurement_flow, "assemble_event_read", forbidden)
     assert main(_args(policy=path)) == ERROR_EXIT
     _error(capsys, "UNSUPPORTED_PROFILE" if fault == "profile" else "INVALID_POLICY")
 
@@ -402,7 +402,7 @@ def test_usage_and_unexpected_exception_are_closed(
     def broken(*args: object, **kwargs: object) -> None:
         raise RuntimeError("secret input must not escape")
 
-    monkeypatch.setattr(measure, "assemble_event_read", broken)
+    monkeypatch.setattr(measurement_flow, "assemble_event_read", broken)
     assert main(_args()) == ERROR_EXIT
     _error(capsys, "INTERNAL_ERROR")
 
@@ -480,7 +480,7 @@ def test_unrecognized_pure_error_is_not_echoed(
         error.reason = "secret"
         raise error
 
-    monkeypatch.setattr(measure, "assemble_event_read", broken)
+    monkeypatch.setattr(measurement_flow, "assemble_event_read", broken)
     assert main(_args()) == ERROR_EXIT
     _error(capsys, "INTERNAL_ERROR")
 
@@ -567,7 +567,7 @@ def test_unknown_event_error_is_not_echoed(
         error.reason = "secret"  # type: ignore[assignment]
         raise error
 
-    monkeypatch.setattr(measure, "assemble_event_read", broken)
+    monkeypatch.setattr(measurement_flow, "assemble_event_read", broken)
     assert main(_args()) == ERROR_EXIT
     _error(capsys, "INTERNAL_ERROR")
 
@@ -701,7 +701,7 @@ def test_shared_measurement_preserves_configuration_faults(
         raise measure.SchemaConfigurationError("SCHEMA_EVALUATION_FAILED")
 
     monkeypatch.setattr(
-        measure,
+        measurement_flow,
         "measurement_validators" if stage == "construction" else "validate",
         broken,
     )

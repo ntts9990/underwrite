@@ -20,8 +20,15 @@ from underwrite_core.canonical import canonical_bytes
 
 from underwrite.acceptance import decision as dc
 from underwrite.acceptance.claims import MAX_CLAIMS_PER_BASIS
-from underwrite.cli import measure
+from underwrite.cli.evidence import display
 from underwrite.cli.local_json import read_document, validate
+from underwrite.cli.measurement_flow import (
+    OBSERVATION_MAX_DEPTH,
+    measurement_validators,
+)
+from underwrite.cli.measurement_flow import (
+    OUTPUT_MAX_BYTES as MEASUREMENT_OUTPUT_MAX_BYTES,
+)
 from underwrite.instrument.evidence.split import assign_split
 from underwrite.instrument.ingest.application import NEXT_ACTIONS
 from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
@@ -31,11 +38,11 @@ CLAIMS_MAX_BYTES = 1024 * 1024
 DOCUMENT_MAX_DEPTH = 16
 # A read is what `underwrite measure` wrote: at most its output bytes. measure bounds no
 # output depth; its observation depth is a loose ceiling on any read it writes.
-READ_MAX_BYTES = measure.OUTPUT_MAX_BYTES
-READ_MAX_DEPTH = measure.OBSERVATION_MAX_DEPTH
+READ_MAX_BYTES = MEASUREMENT_OUTPUT_MAX_BYTES
+READ_MAX_DEPTH = OBSERVATION_MAX_DEPTH
 # declared_claims.v2 basis_claims maxItems: one basis binds at most this many reads.
 MAX_READS = MAX_CLAIMS_PER_BASIS
-OUTPUT_MAX_BYTES = measure.OUTPUT_MAX_BYTES
+OUTPUT_MAX_BYTES = MEASUREMENT_OUTPUT_MAX_BYTES
 _INVALID = {"candidate": "INVALID_CANDIDATE", "claims": "INVALID_CLAIMS", "reads": "INVALID_READ"}
 # Codes whose next action does not follow from the refused input (dc.REFUSAL_ACTIONS).
 _ACTIONS = {
@@ -115,7 +122,7 @@ def _decide(args: argparse.Namespace) -> dict[str, Any]:
         raise AcceptError("INVALID_CLAIMS", "LEGACY_CLAIMS_REQUIRES_MIGRATION", "/claims/schema")
     claims_validator = packaged_validator("declared_claims.v2")
     validate(claims_validator, claims, AcceptError, "INVALID_CLAIMS", "/claims")
-    read_validator = measure.measurement_validators()[0]
+    read_validator = measurement_validators()[0]
     reads: list[dict[str, Any]] = []
     for index, path in enumerate(args.read):
         location = f"/reads/{index}"
@@ -148,17 +155,17 @@ def _human(decision: dict[str, Any]) -> str:
         f"candidate: {decision['candidate_id']} (basis {decision['basis']})",
         f"classification: {decision['classification']} "
         f"({decision['from_state']} -> {decision['next_state']})",
-        "reason_codes: " + measure.display(decision["reason_codes"]),
+        "reason_codes: " + display(decision["reason_codes"]),
     ]
     for claim in decision["claims"]:
         read = claim["read"]
         lines.append(
             f"claim {claim['claim_id']} ({claim['effect']}, {claim['subject_id']}): "
-            + ("no read supplied" if read is None else measure.display(read))
+            + ("no read supplied" if read is None else display(read))
         )
-    lines.append("inputs: " + measure.display(decision["inputs"]))
-    lines.append("selection: " + measure.display(decision["selection"]))
-    lines.append("limitations: " + measure.display(decision["limitations"]))
+    lines.append("inputs: " + display(decision["inputs"]))
+    lines.append("selection: " + display(decision["selection"]))
+    lines.append("limitations: " + display(decision["limitations"]))
     return "\n".join(lines)
 
 

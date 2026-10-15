@@ -10,7 +10,7 @@ import pytest
 from _repo_paths import repo_root
 from underwrite_core.canonical import canonical_bytes, digest_bytes
 
-from underwrite.cli import measure, record_capture
+from underwrite.cli import measure, measurement_flow, record_capture
 from underwrite.cli import record_measure as command
 from underwrite.cli.main import main
 from underwrite.instrument.ingest.schema import SchemaConfigurationError
@@ -157,7 +157,7 @@ def test_oversized_source_has_no_partial_capture_and_policy_is_attempted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     observation, policy = inputs(tmp_path)
-    monkeypatch.setattr(measure, "OBSERVATION_MAX_BYTES", 1)
+    monkeypatch.setattr(measurement_flow, "OBSERVATION_MAX_BYTES", 1)
     store = tmp_path / "store"
     code, report = invoke(observation, policy, store, capsys)
     assert code == ERROR_EXIT
@@ -200,10 +200,12 @@ def test_configuration_and_output_faults_precede_storage(
     if fault == "contracts":
         monkeypatch.setattr(command, "packaged_validator", fail)
     elif fault == "construction":
-        monkeypatch.setattr(measure, "measurement_validators", fail)
+        monkeypatch.setattr(measurement_flow, "measurement_validators", fail)
     elif fault == "evaluation":
         monkeypatch.setattr(
-            measure, "measurement_validators", lambda: (BrokenValidator(), BrokenValidator())
+            measurement_flow,
+            "measurement_validators",
+            lambda: (BrokenValidator(), BrokenValidator()),
         )
     else:
         monkeypatch.setattr(

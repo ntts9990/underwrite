@@ -17,6 +17,13 @@ from underwrite.instrument.ingest.application import NEXT_ACTIONS
 from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
 
 REPORT_MAX_BYTES = 1024 * 1024
+DISPLAY_LIMIT = 1024
+
+
+def display(value: object) -> str:
+    """One escaped JSON value for human output, bounded and marked if truncated."""
+    text = json.dumps(value, ensure_ascii=True, sort_keys=True)
+    return text if len(text) <= DISPLAY_LIMIT else text[:DISPLAY_LIMIT] + " [truncated]"
 
 
 @dataclass(frozen=True)
