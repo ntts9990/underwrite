@@ -20,6 +20,13 @@ contract before comparing code shape; reuse existing owners without merging
 different measurement meanings. Keep the pure core/effectful adapter boundaries
 below, and introduce ports only for concrete interactions that need them.
 
+Decide product ownership before implementation reuse. Underwrite's distinct work
+is cross-producer evidence meaning, comparability, missingness, and next
+verification tasks. Use producer owners for native execution, trace export,
+and proposals when they supply the needed boundary; see
+[CONTRIBUTING.md](CONTRIBUTING.md#implementation-owners) for the local
+integration and trust boundary.
+
 Prioritize structured JSON results for the calling agent: include result states,
 input and policy identities, populations/missingness, and interpretation limits
 where applicable and supported by the available evidence.

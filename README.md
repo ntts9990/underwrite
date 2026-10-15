@@ -2,11 +2,11 @@
 
 <h1><img src="assets/brand/underwrite-logo.png" alt="underwrite" width="640"></h1>
 
-### From eval files to evidence your agent can use.
+### Know what your eval files actually support.
 
-Inspect results. Keep the evidence. Make missing information visible.
+Find mismatches. Keep missing evidence visible. Know what to check next.
 
-**Local CLI & Python library · Structured JSON · No server or model calls**
+**Local CLI & Python library · Typed JSON · No server or model calls**
 
 [![CI](https://github.com/ntts9990/underwrite/actions/workflows/ci.yml/badge.svg)](https://github.com/ntts9990/underwrite/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/underwrite)](https://pypi.org/project/underwrite/)
@@ -19,14 +19,20 @@ Inspect results. Keep the evidence. Make missing information visible.
 
 </div>
 
-underwrite turns supported local evaluation exports into structured results you
-and your coding agent can inspect, save, and reuse. Bring results from **goppi,
-Langfuse, DeepEval, or Promptfoo**; use the route for that artifact to check what
-was supplied and what remains unknown.
+Already have evaluation exports from **goppi, Langfuse, DeepEval, or Promptfoo**?
+A score or summary alone does not show whether supplied rows match declared
+totals or whether the planned case inventory is complete. For supported local
+profiles, underwrite checks relationships it can verify and makes unknown
+coverage explicit. It returns typed CLI/Python results with findings, input
+identity, and interpretation limits. You or your agent can use them to request
+the next piece of evidence.
 
-It fits into your terminal and agent workflow. Read existing files, get JSON,
-and let the calling agent write the explanation. No Docker, dashboard, provider
-credentials, or evaluation rerun is needed to inspect those files.
+Underwrite complements the tools that run evaluations: goppi owns execution,
+trace/verifier binding, and reruns; other producers own their exports and scores.
+Underwrite examines supplied artifacts and can retain selected bytes. It does
+not rerun an agent, independently authenticate a producer, or assign a universal
+quality score. No Docker, dashboard, or provider credentials are needed to
+inspect the supported local files.
 
 > [!NOTE]
 > **This README describes the `0.0.2` source checkout.** The older PyPI `0.0.1`
@@ -40,7 +46,8 @@ Requires **Python 3.12+** and [uv](https://docs.astral.sh/uv/).
 This checkout is tested with CPython 3.12 on Linux and macOS. File-based CLI
 workflows require Unix/POSIX file APIs, including ordinary artifact reads.
 
-Run a bundled synthetic example—no API key or adjacent repository required:
+**1. Check the file.** Run a bundled synthetic example—no API key or adjacent
+repository required:
 
 ```sh
 git clone https://github.com/ntts9990/underwrite.git
@@ -51,8 +58,10 @@ uv run --frozen --no-sync underwrite audit-promptfoo \
   fixtures/examples/evidence/synthetic-promptfoo-count-mismatch.json --json
 ```
 
-The source summary declares **3 results**; the file contains **2 rows**.
-The command reports the inconsistency. Actual output, with other fields omitted:
+**2. Read the finding.** The producer summary declares **3 results**, including
+**1 failure**; the file contains **2 rows**, with **0 failure rows**. The command
+reports the difference without guessing which side is wrong. Selected fields
+from its actual output:
 
 ```json
 {
@@ -60,6 +69,10 @@ The command reports the inconsistency. Actual output, with other fields omitted:
   "declared_relation": "inconsistent",
   "producer_stats": {"errors": 1, "failures": 1, "successes": 1, "total": 3},
   "row_tallies": {"errors": 1, "failures": 0, "successes": 1, "total": 2},
+  "deltas": {"errors": 0, "failures": -1, "successes": 0, "total": -1},
+  "findings": [
+    {"code": "CATEGORY_COUNT_MISMATCH", "location": "/results/stats/failures", "row_index": null}
+  ],
   "limitations": [
     "PLANNED_DENOMINATOR_UNKNOWN",
     "CAUSE_UNKNOWN",
@@ -69,10 +82,12 @@ The command reports the inconsistency. Actual output, with other fields omitted:
 }
 ```
 
-You get a concrete finding without guessing why a row is absent or treating the
-source's verdict as independently verified. Exit `0` means the report was
-produced; inspect its fields to interpret the result. To keep the input and
-analysis together, [save them in a local record](#keep-results-you-can-return-to).
+**3. Next check.** Compare the export with the producer's run record and planned
+case inventory before claiming that a run was skipped or a failure row is
+missing. `CAUSE_UNKNOWN` and `PLANNED_DENOMINATOR_UNKNOWN` make that limit
+explicit. Exit `0` means the report was produced, not that the counts agree or
+the source's verdict was verified. To keep the input and analysis together,
+[save them in a local record](#keep-results-you-can-return-to).
 
 <details>
 <summary><strong>Try the native measurement → acceptance workflow</strong></summary>
@@ -107,36 +122,31 @@ See [measurement meaning](AGENT_USAGE.md#measurement-meaning-and-migration).
 
 ## Why underwrite?
 
-- **Catch the mismatch behind the summary.** Compare Promptfoo's declared counts
-  with its supplied rows; inspect DeepEval evaluator errors and Langfuse score
-  associations through dedicated accounting commands.
-- **Give your agent a usable result.** Typed JSON includes input identities,
-  findings, and interpretation limits. `capabilities --json` describes the
-  commands and input profiles of the executable in use.
-- **Keep the bytes behind the answer.** Capture selected inputs and their analysis
-  in immutable local records. Verify and retrieve them later without the original
-  paths; recalculate saved native measurements with the current engine.
-- **Make the measurement explicit.** Measure native binary-event evidence under
-  a supplied policy. Missing evidence and undeclared assumptions remain visible
-  instead of becoming a successful verdict.
+| Question after an evaluation | What underwrite gives you |
+| --- | --- |
+| Does the summary match the supplied records? | Profile-specific accounting: Promptfoo count deltas, DeepEval evaluator errors, or Langfuse score associations. |
+| What is still unknown? | Explicit missingness and limits such as an unknown planned denominator or unverified source claim, so a zero is not silently substituted. |
+| Can this evidence support a measurement? | A separate native binary-event path with declared semantics and policy; external scores do not become a universal quality verdict. |
+| Can I revisit the conclusion? | Typed CLI/Python JSON and optional private records tying selected input bytes to the analysis, with verification and retrieval. |
 
 ## How it works
 
 ```mermaid
 flowchart LR
-    A[Supported local eval files] --> B[Inspect and account]
-    B --> C[Structured JSON result]
-    C --> D[You or your agent review limits]
-    D --> E[Human reviews change decisions]
-    B --> F[Optional local records]
+    A[Supported local eval file] --> B[Select exact profile]
+    B --> C[Check supplied records and missingness]
+    C --> D[Typed JSON: finding, identity, limits]
+    D --> E[Agent or person gathers next evidence]
+    C --> F[Optional private record]
     F --> G[Verify and retrieve]
-    H[Native evidence + explicit policy] --> I[Measure]
-    I --> C
+    H[Native event evidence + policy] --> I[Measure]
+    I --> D
 ```
 
-These review steps produce evidence for inspection. They do not apply a proposed
-change or grant merge authority. Local records keep selected inputs and results
-for later review.
+The command checks only what its selected profile supports. The calling agent
+interprets the JSON and can pursue the next evidence task; underwrite does not
+apply a proposed change or grant merge authority. Local records keep selected
+inputs and results for later review.
 
 ## Agent use
 
@@ -147,6 +157,11 @@ discover the available routes, execute them, and use the JSON in its response:
 uv run --frozen --no-sync underwrite --help
 uv run --frozen --no-sync underwrite capabilities --json
 ```
+
+Python callers can use
+`underwrite.instrument.ingest.accounting.audit_promptfoo_file(Path(...))` for
+the same result as a dictionary. Select an exact supported profile before
+interpreting any producer-specific field.
 
 Example task for an agent with terminal access:
 
