@@ -35,20 +35,32 @@ SKIPPED_WITH_REASON/EXEMPTION_EXPIRED are not part of this command's
 vocabulary (there is no `--exemptions`/`--exemption-key` pair here, only
 `--allowlist`/`--now`).
 
-Shell module: file I/O only (no subprocess, no network). Imports stdlib and
-underwrite_core only."""
+Shell module: file I/O only (no subprocess, no network). Shared CLI admission
+owns bounded JSON acquisition; the pure core owns date and vocabulary meaning."""
 
 from __future__ import annotations
 
 import argparse
 import fnmatch
-import json
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any, cast
 
 from underwrite_core.boundary import Leak, scan_strings
+
+from underwrite.cli.legacy_input import (
+    CONFIG_MAX_BYTES,
+    SCAN_MAX_BYTES,
+    AdmissionError,
+    decode_bytes,
+    limit_policy_entries,
+    read_bytes,
+    read_json,
+    require_date,
+    validate_date,
+    validate_policy,
+)
 
 _SCHEMA_SUFFIX = ".schema.json"
 _SCANNABLE_SUFFIXES = (".json", ".jsonl")
@@ -62,37 +74,26 @@ class AllowlistEntry:
     term: str
     reason: str
     expiry: str
+    expiry_date: date
     adr: str
 
 
-def _get_str(obj: dict[str, Any], key: str) -> str | None:
-    value = obj.get(key)
-    return value if isinstance(value, str) else None
-
-
 def load_allowlist(path: Path) -> list[AllowlistEntry]:
-    """Parse rules/boundary-allowlist.json with plain shape checks (schema validation is
-    a test-time concern, core purity contract, mirrored from commands.load_exemptions)."""
-    raw: object = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_unique_object)
+    """Admit every entry against the installed shape and strict date contract."""
+    raw = read_json(path, CONFIG_MAX_BYTES, "/allowlist")
     if not isinstance(raw, dict):
-        raise ValueError("ALLOWLIST_OBJECT_REQUIRED")
-    raw_entries = cast("dict[str, Any]", raw).get("entries")
-    if not isinstance(raw_entries, list):
-        raise ValueError(f"{path}: expected a JSON object with an 'entries' array")
+        raise AdmissionError("INVALID_JSON_INPUT", "INVALID_JSON_INPUT", "/allowlist")
+    limit_policy_entries(cast(object, raw), "entries", "/allowlist")
+    validate_policy(cast(object, raw), "boundary_allowlist.v1", "INVALID_ALLOWLIST", "/allowlist")
+    document = cast(dict[str, Any], raw)
+    selected_entries = cast(list[dict[str, str]], document["entries"])
 
     entries: list[AllowlistEntry] = []
-    for item in cast("list[Any]", raw_entries):
-        if not isinstance(item, dict):
-            raise ValueError(f"{path}: entry is not an object: {item!r}")
-        item_dict = cast("dict[str, Any]", item)
-        path_glob = _get_str(item_dict, "path_glob")
-        term = _get_str(item_dict, "term")
-        reason = _get_str(item_dict, "reason")
-        expiry = _get_str(item_dict, "expiry")
-        adr = _get_str(item_dict, "adr")
-        if path_glob is None or term is None or reason is None or expiry is None or adr is None:
-            raise ValueError(f"{path}: entry missing a required string field: {item!r}")
-        entries.append(AllowlistEntry(path_glob, term, reason, expiry, adr))
+    for item in selected_entries:
+        path_glob, term = item["path_glob"], item["term"]
+        reason, expiry, adr = item["reason"], item["expiry"], item["adr"]
+        expiry_date = require_date(expiry, "/allowlist")
+        entries.append(AllowlistEntry(path_glob, term, reason, expiry, expiry_date, adr))
     return entries
 
 
@@ -113,29 +114,16 @@ def _scannable_files(paths: list[Path]) -> list[Path]:
     return files
 
 
-def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("DUPLICATE_JSON_KEY")
-        result[key] = value
-    return result
-
-
 def _scan_file(path: Path) -> list[Leak]:
-    text = path.read_text(encoding="utf-8")
+    raw = read_bytes(path, SCAN_MAX_BYTES, "/files")
     if path.suffix == ".jsonl":
         leaks: list[Leak] = []
-        for line_no, raw_line in enumerate(text.splitlines()):
+        for line_no, raw_line in enumerate(raw.splitlines()):
             if not raw_line.strip():
                 continue
-            leaks.extend(
-                scan_strings(
-                    json.loads(raw_line, object_pairs_hook=_unique_object), path=f"line[{line_no}]"
-                )
-            )
+            leaks.extend(scan_strings(decode_bytes(raw_line, "/files"), path=f"line[{line_no}]"))
         return leaks
-    return scan_strings(json.loads(text, object_pairs_hook=_unique_object))
+    return scan_strings(decode_bytes(raw, "/files"))
 
 
 def _match(entries: list[AllowlistEntry], relpath: str, term: str) -> AllowlistEntry | None:
@@ -180,20 +168,31 @@ def _result(state: str, exit_code: int, details: dict[str, Any]) -> dict[str, An
     }
 
 
+def _admission_refusal(
+    exc: AdmissionError, invalid_path: Path | None = None
+) -> tuple[int, dict[str, Any]]:
+    if exc.reason == "INVALID_JSON_INPUT" and invalid_path is not None:
+        return 2, _result(
+            "UNCONFIGURED",
+            2,
+            {"invalid": [str(invalid_path)], "reason": "INVALID_JSON_INPUT"},
+        )
+    return 2, _result("UNCONFIGURED", 2, exc.details())
+
+
 def cmd_boundary_scan(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
     """`underwrite boundary scan` -- see the module docstring for the full state vocabulary."""
     paths: list[Path] = list(args.paths)
+    try:
+        now_date = validate_date(args.now)
+        entries = load_allowlist(args.allowlist) if args.allowlist is not None else []
+    except AdmissionError as exc:
+        return _admission_refusal(exc, args.allowlist)
     missing = [str(p) for p in paths if not p.exists()]
     if missing:
         return 2, _result("UNCONFIGURED", 2, {"missing": missing})
 
     files = _scannable_files(paths)
-    try:
-        entries = load_allowlist(args.allowlist) if args.allowlist is not None else []
-    except (ValueError, UnicodeError, RecursionError):
-        return 2, _result(
-            "UNCONFIGURED", 2, {"invalid": [str(args.allowlist)], "reason": "INVALID_JSON_INPUT"}
-        )
     if not files:
         empty_details: dict[str, Any] = {
             "files_scanned": 0,
@@ -207,19 +206,17 @@ def cmd_boundary_scan(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         relpath = str(file)
         try:
             leaks = _scan_file(file)
-        except (ValueError, UnicodeError, RecursionError):
-            return 2, _result(
-                "UNCONFIGURED", 2, {"invalid": [relpath], "reason": "INVALID_JSON_INPUT"}
-            )
+        except AdmissionError as exc:
+            return _admission_refusal(exc, file)
         for leak in leaks:
             entry = _match(entries, relpath, leak.term)
             if entry is None:
                 rows.append(_row(relpath, leak, allowed=False))
                 continue
-            if args.now is None:
+            if now_date is None:
                 nr_details: dict[str, Any] = {"file": relpath, "path": leak.path, "term": leak.term}
                 return 1, _result("NOW_REQUIRED", 1, nr_details)
-            if date.fromisoformat(entry.expiry) > date.fromisoformat(args.now):
+            if entry.expiry_date > now_date:
                 rows.append(_row(relpath, leak, allowed=True, entry=entry))
             else:
                 rows.append(_row(relpath, leak, allowed=False, reason="allow_expired", entry=entry))

@@ -281,6 +281,7 @@ def test_boundary_scan_now_required_payload_validates(tmp_path: Path) -> None:
     allowlist.write_text(
         json.dumps(
             {
+                "schema": "boundary_allowlist.v1",
                 "entries": [
                     {
                         "path_glob": str(target),
@@ -289,7 +290,7 @@ def test_boundary_scan_now_required_payload_validates(tmp_path: Path) -> None:
                         "expiry": "2099-01-01",
                         "adr": "example-rule",
                     }
-                ]
+                ],
             }
         ),
         encoding="utf-8",

@@ -3,6 +3,7 @@
 An empty population never passes without an applicable exemption. Callers supply
 current time explicitly so expiry evaluation remains deterministic and pure."""
 
+import re
 from dataclasses import dataclass
 from datetime import date
 from enum import Enum
@@ -10,6 +11,19 @@ from enum import Enum
 
 class AbsenceError(ValueError):
     """Raised when a population-absence verdict cannot be computed as specified."""
+
+
+_DATE_SHAPE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}\Z")
+
+
+def parse_date(value: str) -> date:
+    """Parse an ASCII YYYY-MM-DD calendar date, with no ISO variants."""
+    if not _DATE_SHAPE.fullmatch(value):
+        raise AbsenceError("INVALID_DATE")
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise AbsenceError("INVALID_DATE") from None
 
 
 class AbsenceOutcome(Enum):
@@ -46,8 +60,8 @@ def _validate_exemption(exemption: Exemption) -> date:
     if not exemption.reason.strip():
         raise AbsenceError("INVALID_EXEMPTION")
     try:
-        return date.fromisoformat(exemption.expiry)
-    except ValueError as exc:
+        return parse_date(exemption.expiry)
+    except AbsenceError as exc:
         raise AbsenceError("INVALID_EXEMPTION") from exc
 
 
@@ -64,7 +78,7 @@ def check_population(
     fails as `EMPTY_POPULATION`; a present one requires a sealed-clock
     `now` (raises `AbsenceError("NOW_REQUIRED")` when missing) and must
     itself be well-formed (raises `AbsenceError("INVALID_EXEMPTION")`
-    otherwise), then compares `expiry` to `now` via `date.fromisoformat`.
+    otherwise), then compares `expiry` to `now` using the strict date parser.
     """
     if count >= min_count:
         return AbsenceVerdict(
@@ -84,7 +98,7 @@ def check_population(
         raise AbsenceError("NOW_REQUIRED")
 
     expiry_date = _validate_exemption(exemption)
-    now_date = date.fromisoformat(now)
+    now_date = parse_date(now)
 
     if expiry_date > now_date:
         outcome = AbsenceOutcome.SKIPPED_WITH_REASON

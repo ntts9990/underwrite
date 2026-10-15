@@ -234,9 +234,6 @@
               "NOW_REQUIRED",
               "UNCONFIGURED"
             ]
-          },
-          "details": {
-            "$ref": "#/$defs/driftDetails"
           }
         }
       }
@@ -410,6 +407,66 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "pattern": "^drift check$"
+          },
+          "state": {
+            "enum": [
+              "PASS",
+              "SKIPPED_WITH_REASON",
+              "DRIFT",
+              "EMPTY_POPULATION",
+              "EXEMPTION_EXPIRED",
+              "NOW_REQUIRED"
+            ]
+          }
+        },
+        "required": [
+          "command",
+          "state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "details": {
+            "$ref": "#/$defs/driftDetails"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "pattern": "^drift check$"
+          },
+          "state": {
+            "const": "UNCONFIGURED"
+          }
+        },
+        "required": [
+          "command",
+          "state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "details": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/driftDetails"
+              },
+              {
+                "$ref": "#/$defs/legacyAdmissionDetails"
+              }
+            ]
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -437,16 +494,23 @@
       }
     },
     "absenceUnconfiguredDetails": {
-      "type": "object",
-      "required": [
-        "root"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "root": {
-          "type": "string"
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "root"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "root": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/legacyAdmissionDetails"
         }
-      }
+      ]
     },
     "driftDetails": {
       "type": "object",
@@ -685,6 +749,9 @@
               "const": "INVALID_JSON_INPUT"
             }
           }
+        },
+        {
+          "$ref": "#/$defs/legacyAdmissionDetails"
         }
       ]
     },
@@ -716,6 +783,72 @@
           ]
         }
       }
+    },
+    "legacyAdmissionDetails": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "reason",
+            "location"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "enum": [
+                "INVALID_JSON_INPUT",
+                "INVALID_EXEMPTION",
+                "INVALID_ALLOWLIST",
+                "INVALID_DATE",
+                "SOURCE_READ_FAILED",
+                "UNSUPPORTED_PLATFORM",
+                "SCHEMA_CONFIGURATION_ERROR"
+              ]
+            },
+            "location": {
+              "enum": [
+                "/now",
+                "/exemptions",
+                "/allowlist",
+                "/files"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "reason",
+            "location",
+            "limit_kind",
+            "limit"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "const": "INPUT_LIMIT_EXCEEDED"
+            },
+            "location": {
+              "enum": [
+                "/exemptions",
+                "/allowlist",
+                "/files"
+              ]
+            },
+            "limit_kind": {
+              "enum": [
+                "bytes",
+                "depth",
+                "entries"
+              ]
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      ]
     }
   }
 }

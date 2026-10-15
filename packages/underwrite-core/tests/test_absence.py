@@ -3,7 +3,13 @@
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
-from underwrite_core.absence import AbsenceError, AbsenceOutcome, Exemption, check_population
+from underwrite_core.absence import (
+    AbsenceError,
+    AbsenceOutcome,
+    Exemption,
+    check_population,
+    parse_date,
+)
 
 
 def test_count_at_or_above_min_is_pass() -> None:
@@ -64,6 +70,17 @@ def test_malformed_expiry_raises_invalid_exemption() -> None:
     exemption = Exemption(reason="r", expiry="not-a-date")
     with pytest.raises(AbsenceError, match=r"^INVALID_EXEMPTION$"):
         check_population(0, 1, exemption=exemption, now="2026-09-04")
+
+
+@pytest.mark.parametrize("value", ["20260904", "2026-W36-5", "2026-02-30", "２０２６-09-04"])
+def test_date_parser_requires_ascii_calendar_date(value: str) -> None:
+    with pytest.raises(AbsenceError, match=r"^INVALID_DATE$"):
+        parse_date(value)
+
+
+def test_date_parser_keeps_valid_leap_day_and_pure_threshold_short_circuit() -> None:
+    assert parse_date("2024-02-29").isoformat() == "2024-02-29"
+    assert check_population(1, 1, now="2026-02-30").outcome is AbsenceOutcome.PASS
 
 
 @given(
