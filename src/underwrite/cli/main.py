@@ -138,6 +138,12 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 ("evidence_result.v1",),
                 ("common_result_inspection.v1",),
             ),
+            profile(
+                "evidence_result.v1|actions",
+                ("file", "view"),
+                ("evidence_result.v1",),
+                ("common_result_inspection_actions.v1",),
+            ),
         ),
         _standalone(inspect_result.main),
     ),

@@ -7,6 +7,7 @@ import pytest
 from underwrite.instrument.evidence.common_result import (
     ResultInvariantError,
     check_result_invariants,
+    item_histograms,
 )
 
 
@@ -68,3 +69,25 @@ def test_malformed_coordinate_has_finite_diagnostic() -> None:
         "RESULT_COORDINATE_INVALID", "/items/1/coordinate"
     )
     assert "PRIVATE_VALUE" not in str(caught.value)
+
+
+def test_item_histograms_count_only_validated_declared_categories() -> None:
+    result: dict[str, object] = {
+        "processing": {"state": "analyzed"},
+        "items": [
+            {"next_action": "none", "metric": {"semantic_binding": "unbound"}},
+            {"next_action": "inspect_source", "metric": {"semantic_binding": "bound"}},
+            {"next_action": "inspect_source", "metric": {"semantic_binding": "unbound"}},
+        ],
+    }
+    assert item_histograms(result, ("none", "inspect_source", "rerun_source"),
+                           ("unbound", "bound")) == (
+        {"none": 1, "inspect_source": 2, "rerun_source": 0},
+        {"unbound": 2, "bound": 1},
+    )
+    result["items"] = []
+    assert item_histograms(result, ("none",), ("unbound", "bound")) == (
+        {"none": 0}, {"unbound": 0, "bound": 0}
+    )
+    result["processing"] = {"state": "insufficient"}
+    assert item_histograms(result, ("none",), ("unbound", "bound")) == (None, None)

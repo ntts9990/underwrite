@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import cast
 
 
@@ -87,3 +87,25 @@ def availability_counts(result: Mapping[str, object]) -> dict[str, int] | None:
     for item in items:
         counts[cast(str, item["availability"])] += 1
     return {**counts, "total": len(items)}
+
+
+def item_histograms(
+    result: Mapping[str, object],
+    action_names: Sequence[str],
+    binding_names: Sequence[str],
+) -> tuple[dict[str, int] | None, dict[str, int] | None]:
+    """Count declared item actions and semantic bindings after caller validation.
+
+    Vocabulary comes from the installed evidence_result contract, not this pure
+    calculation. Null means no analyzed population; zero-filled maps mean one.
+    """
+    processing = cast(Mapping[str, object], result["processing"])
+    if processing["state"] != "analyzed":
+        return None, None
+    actions = dict.fromkeys(action_names, 0)
+    bindings = dict.fromkeys(binding_names, 0)
+    for item in cast(list[Mapping[str, object]], result["items"]):
+        actions[cast(str, item["next_action"])] += 1
+        metric = cast(Mapping[str, object], item["metric"])
+        bindings[cast(str, metric["semantic_binding"])] += 1
+    return actions, bindings
