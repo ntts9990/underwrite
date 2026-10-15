@@ -11,7 +11,7 @@ from typing import Any, cast
 
 from underwrite_core.canonical import canonical_bytes, content_digest
 
-from underwrite.cli import measure
+from underwrite.cli import measurement_flow
 from underwrite.cli.evidence import EvidenceError, ReportOutput, run_cli
 from underwrite.cli.local_json import Validator, decode_document, validate
 from underwrite.cli.records import OUTPUT_MAX_BYTES, record_error_payload
@@ -99,24 +99,24 @@ def _stored_outcome(
     return {"state": "error", "error": document}
 
 
-def _calculate(sources: dict[measure.InputRole, RecordFileSnapshot]) -> dict[str, Any]:
-    def reader(role: measure.InputRole) -> tuple[dict[str, Any], str]:
-        maximum, depth = measure.input_limits(role)
+def _calculate(sources: dict[measurement_flow.InputRole, RecordFileSnapshot]) -> dict[str, Any]:
+    def reader(role: measurement_flow.InputRole) -> tuple[dict[str, Any], str]:
+        maximum, depth = measurement_flow.input_limits(role)
         return decode_document(
             sources[role].data,
             maximum,
             depth,
             "/" + role,
             "INVALID_" + role.upper(),
-            measure.MeasurementError,
+            measurement_flow.MeasurementError,
         )
 
     try:
-        return {"state": "result", "report": measure.read_measurement(reader)}
+        return {"state": "result", "report": measurement_flow.read_measurement(reader)}
     except SchemaConfigurationError:
         raise
     except Exception as exc:
-        error = measure.measurement_error(exc)
+        error = measurement_flow.measurement_error(exc)
         if error.payload["code"] == "SCHEMA_CONFIGURATION_ERROR":
             raise SchemaConfigurationError("INVALID_MEASUREMENT_SCHEMA") from None
         if error.payload["code"] not in ELIGIBLE_DIAGNOSTIC_CODES:
@@ -130,7 +130,7 @@ def run_replay_measure(root: Path, identifier: str) -> dict[str, object]:
     record_error = packaged_validator("record_error.v1")
     packaged_validator("evidence_error.v1")
     packaged_validator("observation.v1")
-    read_validator, _ = measure.measurement_validators()
+    read_validator, _ = measurement_flow.measurement_validators()
     error_validator = packaged_validator("measurement_error.v1")
     try:
         snapshot = read_record(root, identifier)
@@ -163,9 +163,9 @@ def run_replay_measure(root: Path, identifier: str) -> dict[str, object]:
                 )
             return value
 
-        sources: dict[measure.InputRole, RecordFileSnapshot] = {
-            role: selected(f"source/{role}.bin", measure.input_limits(role)[0])
-            for role in cast(tuple[measure.InputRole, ...], ("observation", "policy"))
+        sources: dict[measurement_flow.InputRole, RecordFileSnapshot] = {
+            role: selected(f"source/{role}.bin", measurement_flow.input_limits(role)[0])
+            for role in cast(tuple[measurement_flow.InputRole, ...], ("observation", "policy"))
         }
         saved = selected(outcome_name, RECORD_READ_MAX_BYTES)
     except RecordError as exc:

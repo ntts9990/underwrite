@@ -59,8 +59,8 @@ REASON_CODES: Final[tuple[ReasonCode, ...]] = (
     "lifecycle_ineligible",
 )
 PARTIAL_FAIL: Final = "measured_fail_under_partial_availability"
-# read.v1's two read shapes: a measured read is full or partial (partial lowers pass);
-# a not-measured read may sit at any state (above quorum it is a panel-less unknown).
+# The generic classifier accepts these read verdict/availability pairs. Current
+# read.v2 binding checks the source read's population, diagnostics, and verdict first.
 CONSISTENT_READS: Final[frozenset[tuple[str, str]]] = frozenset(
     {
         ("pass", "full"),

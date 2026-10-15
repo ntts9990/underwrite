@@ -14,7 +14,7 @@ from typing import Any, cast
 from jsonschema import Draft202012Validator
 from underwrite_core.canonical import CanonicalizationError, canonical_bytes, digest_bytes
 
-from underwrite.cli import measure
+from underwrite.cli import measurement_flow
 from underwrite.cli.evidence import (
     EvidenceError,
     ReportOutput,
@@ -56,7 +56,7 @@ def _contracts() -> _Contracts:
     schema = cast(dict[str, Any], aggregate.schema)
     storage = Draft202012Validator({"$defs": schema["$defs"], "$ref": "#/$defs/storage"})
     packaged_validator("observation.v1")
-    read_validator, _ = measure.measurement_validators()
+    read_validator, _ = measurement_flow.measurement_validators()
     return _Contracts(
         cast(Validator, aggregate),
         cast(Validator, storage),
@@ -99,21 +99,25 @@ def configure(parser: argparse.ArgumentParser) -> None:
 
 
 def _analyze(
-    paths: dict[measure.InputRole, Path],
-) -> tuple[dict[measure.InputRole, bytes], dict[str, object], dict[str, Any]]:
-    captured: dict[measure.InputRole, bytes] = {}
+    paths: dict[measurement_flow.InputRole, Path],
+) -> tuple[dict[measurement_flow.InputRole, bytes], dict[str, object], dict[str, Any]]:
+    captured: dict[measurement_flow.InputRole, bytes] = {}
     sources: dict[str, object] = {}
-    errors: dict[measure.InputRole, measure.MeasurementError] = {}
+    errors: dict[measurement_flow.InputRole, measurement_flow.MeasurementError] = {}
     for role, path in paths.items():
-        maximum, _ = measure.input_limits(role)
+        maximum, _ = measurement_flow.input_limits(role)
         try:
             raw = read_source(
-                path, maximum, "/" + role, "INVALID_" + role.upper(), measure.MeasurementError
+                path,
+                maximum,
+                "/" + role,
+                "INVALID_" + role.upper(),
+                measurement_flow.MeasurementError,
             )
         except SchemaConfigurationError:
             raise
         except Exception as exc:
-            error = measure.measurement_error(exc)
+            error = measurement_flow.measurement_error(exc)
             errors[role] = error
             sources[role] = {"state": "unavailable", "error": error.payload}
         else:
@@ -122,39 +126,42 @@ def _analyze(
 
     phase = "analysis"
 
-    def reader(role: measure.InputRole) -> tuple[dict[str, Any], str]:
+    def reader(role: measurement_flow.InputRole) -> tuple[dict[str, Any], str]:
         nonlocal phase
         if role in errors:
             phase = "acquisition"
             raise errors[role]
-        maximum, depth = measure.input_limits(role)
+        maximum, depth = measurement_flow.input_limits(role)
         return decode_document(
             captured[role],
             maximum,
             depth,
             "/" + role,
             "INVALID_" + role.upper(),
-            measure.MeasurementError,
+            measurement_flow.MeasurementError,
         )
 
     try:
-        analysis: dict[str, Any] = {"state": "result", "report": measure.read_measurement(reader)}
+        analysis: dict[str, Any] = {
+            "state": "result",
+            "report": measurement_flow.read_measurement(reader),
+        }
     except SchemaConfigurationError:
         raise
     except Exception as exc:
         analysis = {
             "state": "error",
             "phase": phase,
-            "error": measure.measurement_error(exc).payload,
+            "error": measurement_flow.measurement_error(exc).payload,
         }
     return captured, sources, analysis
 
 
 def _files(
-    paths: dict[measure.InputRole, Path],
+    paths: dict[measurement_flow.InputRole, Path],
     root: Path,
     identifier: str,
-    captured: dict[measure.InputRole, bytes],
+    captured: dict[measurement_flow.InputRole, bytes],
     envelope: dict[str, Any],
     contracts: _Contracts,
 ) -> tuple[CapturedRecordFile, ...]:
@@ -163,7 +170,7 @@ def _files(
     document = analysis["report"] if result else analysis["error"]
     _check(contracts.read if result else contracts.measurement_error, document)
     encoded = canonical_bytes(document) + b"\n"
-    if len(encoded) > min(RECORD_READ_MAX_BYTES, measure.OUTPUT_MAX_BYTES):
+    if len(encoded) > min(RECORD_READ_MAX_BYTES, measurement_flow.OUTPUT_MAX_BYTES):
         raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
     invocation = {
         "command": COMMAND,
@@ -221,7 +228,7 @@ def run_record_measure(
     except FormatError:
         raise EvidenceError("USAGE_ERROR", "INVALID_ARGUMENTS_SEE_HELP") from None
     contracts = _contracts()
-    paths: dict[measure.InputRole, Path] = {"observation": observation, "policy": policy}
+    paths: dict[measurement_flow.InputRole, Path] = {"observation": observation, "policy": policy}
     captured, sources, analysis = _analyze(paths)
     envelope: dict[str, Any] = {
         "schema": SCHEMA,

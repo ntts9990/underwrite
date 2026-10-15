@@ -11,7 +11,7 @@ import pytest
 from _repo_paths import repo_root
 from underwrite_core.canonical import canonical_bytes
 
-from underwrite.cli import measure, record_measure, replay_measure
+from underwrite.cli import measure, measurement_flow, record_measure, replay_measure
 from underwrite.cli.main import main
 from underwrite.instrument.ingest.schema import SchemaConfigurationError
 from underwrite.service import records
@@ -187,7 +187,7 @@ def test_manifest_swap_refuses_before_calculation(
     def forbidden(_: measure.InputReader) -> dict[str, Any]:
         pytest.fail("calculated before identity check")
 
-    monkeypatch.setattr(measure, "read_measurement", forbidden)
+    monkeypatch.setattr(measurement_flow, "read_measurement", forbidden)
     code, error = invoke(store, capsys)
     assert code == REFUSAL_EXIT and error["reason"] == "RECORD_MANIFEST_IDENTITY_MISMATCH"
 
@@ -209,7 +209,7 @@ def test_current_internal_fault_and_configuration_refuse(
     def fail(_: Any) -> Any:
         raise ValueError("private data")
 
-    monkeypatch.setattr(measure, "read_measurement", fail)
+    monkeypatch.setattr(measurement_flow, "read_measurement", fail)
     code, error = invoke(store, capsys)
     assert code == REFUSAL_EXIT and error["code"] == "INTERNAL_ERROR"
 
@@ -289,7 +289,7 @@ def test_current_ineligible_diagnostics_refuse(
     def fail(_: measure.InputReader) -> dict[str, Any]:
         raise measure.MeasurementError(fault, "INTERNAL_ERROR")
 
-    monkeypatch.setattr(measure, "read_measurement", fail)
+    monkeypatch.setattr(measurement_flow, "read_measurement", fail)
     code, report = invoke(store, capsys)
     assert code == REFUSAL_EXIT
     assert report["schema"] == "evidence_error.v1"

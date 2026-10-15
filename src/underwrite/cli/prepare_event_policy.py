@@ -11,7 +11,11 @@ from pathlib import Path
 from typing import cast
 
 from underwrite.cli.evidence import EvidenceError, ReportOutput, read_validated, run_cli
-from underwrite.cli.measure import OBSERVATION_MAX_BYTES, OBSERVATION_MAX_DEPTH, POLICY_MAX_BYTES
+from underwrite.cli.measurement_flow import (
+    OBSERVATION_MAX_BYTES,
+    OBSERVATION_MAX_DEPTH,
+    POLICY_MAX_BYTES,
+)
 from underwrite.instrument.evidence.goppi_baseline import (
     BaselineProjectionError,
     baseline_policy_inputs,

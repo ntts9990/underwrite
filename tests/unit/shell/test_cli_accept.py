@@ -18,12 +18,14 @@ from underwrite_core.canonical import canonical_bytes, content_digest
 
 from underwrite.acceptance import decision as dc
 from underwrite.acceptance.claims import parse_claims
+from underwrite.acceptance.classify import Availability, Verdict, classify_evidence
 from underwrite.cli import accept, local_json
 from underwrite.cli.local_json import LocalJsonError
 from underwrite.cli.main import main
 from underwrite.cli.measure import measurement_validators
 from underwrite.instrument.ingest.application import NEXT_ACTIONS
 from underwrite.instrument.ingest.schema import SchemaConfigurationError
+from underwrite.measurement_contract.read import validate_event_read
 
 ROOT = repo_root(Path(__file__).resolve())
 GOLDEN = ROOT / "fixtures/examples/event-acceptance"
@@ -31,6 +33,67 @@ MEASUREMENT = ROOT / "fixtures/examples/event-measurement"
 ERROR_EXIT = 2
 PASSING = ("read.json", "read-secondary.json")
 NOT_MEASURED = ("read.json", "read-not-measured.json")
+
+
+@pytest.mark.parametrize(
+    ("scenario", "pair", "classification"),
+    [
+        ("pass", ("pass", "full"), "screened"),
+        ("fail", ("fail", "full"), "rejected"),
+        ("warn", ("warn", "full"), "indeterminate"),
+        ("unmeasured_full", ("not_measured", "full"), "indeterminate"),
+        ("unmeasured_partial", ("not_measured", "partial"), "indeterminate"),
+        ("unmeasured_below_quorum", ("not_measured", "below_quorum"), "indeterminate"),
+    ],
+)
+def test_current_measurement_read_pairs_bind_to_classifier(
+    scenario: str,
+    pair: tuple[Verdict, Availability],
+    classification: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    observation_path, policy_path = _measurement_case(scenario, tmp_path)
+    assert main(
+        ["measure", "--observation", str(observation_path), "--policy", str(policy_path), "--json"]
+    ) == 0
+    output = capsys.readouterr()
+    assert output.err == ""
+    read = json.loads(output.out)
+    bound = validate_event_read(read)
+    assert (bound.verdict, bound.availability) == pair
+    result = classify_evidence(
+        "held_in", [("event", "disqualifying")], {"event": pair}, hard_failure=False
+    )
+    assert result.classification == classification
+
+
+def _selected_rows(observation: dict[str, Any], selector: dict[str, Any]) -> list[dict[str, Any]]:
+    for reading in observation["payload"]["readings"]:
+        if all(reading.get(key) == selector[key] for key in ("instrument", "metric_id")):
+            return cast(list[dict[str, Any]], reading["rows"])
+    raise AssertionError("fixture reading missing")
+
+
+def _measurement_case(scenario: str, tmp_path: Path) -> tuple[Path, Path]:
+    observation = json.loads((MEASUREMENT / "read-input.json").read_bytes())
+    policy = json.loads((MEASUREMENT / "policy.json").read_bytes())
+    declaration = observation["payload"]["measurement_semantics"]
+    outcomes = _selected_rows(observation, declaration["outcome"])
+    if scenario == "fail":
+        for row in outcomes:
+            row["outcome"] = 0
+        for row in _selected_rows(observation, declaration["prediction"]):
+            row["score"] = 0
+    elif scenario == "unmeasured_partial":
+        outcomes.pop()
+    elif scenario == "unmeasured_below_quorum":
+        outcomes.clear()
+    if scenario == "warn":
+        policy["eprocess"]["max_observations"] = 1
+    elif scenario == "unmeasured_full":
+        policy["assumptions"]["parameters_prespecified"] = "unknown"
+    return write(tmp_path, "observation.json", observation), write(tmp_path, "policy.json", policy)
 
 
 class Validator(Protocol):
