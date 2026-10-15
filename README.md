@@ -268,6 +268,16 @@ a manifest with an expected hash, `check` examines release evidence linkage,
 vocabulary, and `drift check` / `pins refresh` work with supplied pin registries.
 [JSON contracts](contracts/) define each command family's results and errors.
 
+`pins refresh` selects one registry repository and copies committed Git blobs.
+Refresh paths must be normalized relative `/`-separated components; empty, dot,
+parent, backslash, Unicode control/format, oversized, and colliding destinations
+are refused.
+The selected registry and its existing destinations are checked before mutation.
+Each pin is replaced with a new inode under its opened registry parent, and
+`PINS.json` is replaced last. Admission or Git-source failures leave the registry
+unchanged. A later filesystem failure reports `publication: may_be_partial`;
+refresh is not an all-files transaction or a durability guarantee.
+
 <a id="development-checkout-evidence-pilots"></a>
 
 ## Documentation

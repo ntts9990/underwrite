@@ -256,11 +256,9 @@
         "properties": {
           "state": {
             "enum": [
-              "PASS"
+              "PASS",
+              "UNCONFIGURED"
             ]
-          },
-          "details": {
-            "$ref": "#/$defs/pinsRefreshDetails"
           }
         }
       }
@@ -363,6 +361,52 @@
         "properties": {
           "details": {
             "$ref": "#/$defs/boundaryUnconfiguredDetails"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "pattern": "^pins refresh$"
+          },
+          "state": {
+            "const": "PASS"
+          }
+        },
+        "required": [
+          "command",
+          "state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "details": {
+            "$ref": "#/$defs/pinsRefreshDetails"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "pattern": "^pins refresh$"
+          },
+          "state": {
+            "const": "UNCONFIGURED"
+          }
+        },
+        "required": [
+          "command",
+          "state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "details": {
+            "$ref": "#/$defs/pinsRefreshRefusalDetails"
           }
         }
       }
@@ -643,6 +687,35 @@
           }
         }
       ]
+    },
+    "pinsRefreshRefusalDetails": {
+      "type": "object",
+      "required": [
+        "reason",
+        "publication"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "enum": [
+            "INVALID_REPO",
+            "INVALID_MANIFEST",
+            "INVALID_PIN_PATH",
+            "PIN_TARGET_UNSAFE",
+            "MANIFEST_LIMIT_EXCEEDED",
+            "UNSUPPORTED_PLATFORM",
+            "PIN_WRITE_FAILED",
+            "GIT_SOURCE_UNAVAILABLE",
+            "GIT_EXECUTION_FAILED"
+          ]
+        },
+        "publication": {
+          "enum": [
+            "not_started",
+            "may_be_partial"
+          ]
+        }
+      }
     }
   }
 }

@@ -1,6 +1,7 @@
 """Standalone behavior and boundary checks."""
 
 import ast
+import configparser
 import shutil
 import subprocess
 import sys
@@ -262,6 +263,36 @@ def test_importlinter_pure_layer_contract_has_a_subject() -> None:
         assert prefix in contract_block, f"{prefix} missing from the contract's source_modules"
 
 
+def _assert_shared_shell_import_contract(config_text: str) -> None:
+    config = configparser.ConfigParser()
+    config.read_string(config_text)
+    pure = config["importlinter:contract:pure-layer-stdlib-and-core-only"]
+    forbidden = pure["forbidden_modules"].split()
+    for owner in ("underwrite._fileio", "underwrite._json"):
+        assert forbidden.count(owner) == 1
+    assert "|" not in forbidden
+    layers = config["importlinter:contract:layer-hierarchy"]["layers"].splitlines()
+    assert "underwrite._fileio | underwrite._json" in {line.strip() for line in layers}
+
+
+def test_shared_shell_owners_are_forbidden_separately_below_pure_domains() -> None:
+    current = IMPORTLINTER_CONFIG.read_text(encoding="utf-8")
+    _assert_shared_shell_import_contract(current)
+    broken = current.replace(
+        "    underwrite._fileio\n    underwrite._json\n",
+        "    underwrite._fileio | underwrite._json\n",
+        1,
+    )
+    assert broken != current
+    with pytest.raises(AssertionError):
+        _assert_shared_shell_import_contract(broken)
+
+    copy_dir = REPO_ROOT / "src/underwrite/instrument/evidence"
+    assert find_disallowed_imports(copy_dir, _PURE_APP_ALLOWED_PREFIXES) == []
+    assert not _module_is_allowed("underwrite._fileio", _PURE_APP_ALLOWED_PREFIXES)
+    assert not _module_is_allowed("underwrite._json", _PURE_APP_ALLOWED_PREFIXES)
+
+
 def test_disallowed_import_is_detected_in_temp_copy(tmp_path: Path) -> None:
     copy_dir = tmp_path / "measurement"
     shutil.copytree(_PURE_APP_DIRS["underwrite.measurement"], copy_dir)
@@ -278,3 +309,29 @@ def test_descriptor_reader_has_one_effectful_owner_and_compatible_reexports() ->
 
     assert transport.read_descriptor is fileio.read_descriptor
     assert transport.TransportError is fileio.TransportError
+
+
+def test_json_decoder_has_one_effectful_owner_and_compatible_reexports() -> None:
+    import underwrite._json as shared_json
+    from underwrite.instrument.ingest import transport
+
+    assert transport.decode_json is shared_json.decode_json
+    assert transport.DecodeError is shared_json.DecodeError
+    for raw, reason in (
+        (b'{"x":1,"x":2}', "DUPLICATE_JSON_KEY"),
+        (b'{"x":NaN}', "NON_FINITE_JSON_NUMBER"),
+        (b"\xff", "INVALID_JSON_INPUT"),
+        (b"[[0]]", "DEPTH_LIMIT_EXCEEDED"),
+    ):
+        with pytest.raises(shared_json.DecodeError, match=f"^{reason}$"):
+            transport.decode_json(raw, 1)
+
+
+def test_shared_json_owner_imports_only_stdlib() -> None:
+    source = REPO_ROOT / "src/underwrite/_json.py"
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            assert all(alias.name.split(".")[0] in _STDLIB for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module is not None:
+            assert node.module.split(".")[0] in _STDLIB

@@ -8,13 +8,18 @@ shell layer performs filesystem and Git subprocess I/O."""
 from __future__ import annotations
 
 import json
+import re
 import subprocess
+import unicodedata
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any, cast
 
 from underwrite_core.canonical import digest_bytes
+
+from underwrite._json import DecodeError, decode_json
+from underwrite.fleet._pin_storage import PinError, PinRegistry
 
 
 class PinState(Enum):
@@ -181,7 +186,7 @@ def _git_output(repo_dir: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
-def _dump_manifest(manifest: Manifest) -> None:
+def _manifest_bytes(manifest: Manifest) -> bytes:
     payload = {
         "schema": manifest.schema,
         "repo": manifest.repo,
@@ -193,8 +198,98 @@ def _dump_manifest(manifest: Manifest) -> None:
             for relpath, file in sorted(manifest.files.items())
         },
     }
-    manifest_path = manifest.manifest_dir / "PINS.json"
-    manifest_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    return (json.dumps(payload, indent=2) + "\n").encode("utf-8")
+
+
+_REPO_COMPONENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
+_MAX_REPO_BYTES = 128
+_MAX_PATH_BYTES = 4096
+_MAX_COMPONENT_BYTES = 255
+_MAX_COMPONENTS = 64
+
+
+def _repo_component(repo: str) -> None:
+    if (
+        not _REPO_COMPONENT.fullmatch(repo)
+        or len(repo.encode("utf-8")) > _MAX_REPO_BYTES
+        or repo in {".", ".."}
+    ):
+        raise PinError("INVALID_REPO")
+
+
+def _path_parts(value: object) -> tuple[str, ...]:
+    if not isinstance(value, str) or not value or "\\" in value or "\x00" in value:
+        raise PinError("INVALID_PIN_PATH")
+    parts = tuple(value.split("/"))
+    if (
+        any(
+            not part
+            or part in {".", ".."}
+            or ":" in part
+            or len(part.encode("utf-8")) > _MAX_COMPONENT_BYTES
+            or any(unicodedata.category(c) in {"Cc", "Cf"} for c in part)
+            for part in parts
+        )
+        or len(parts) > _MAX_COMPONENTS
+        or len(value.encode("utf-8")) > _MAX_PATH_BYTES
+    ):
+        raise PinError("INVALID_PIN_PATH")
+    return parts
+
+
+def _refresh_manifest(raw: bytes, directory: Path, repo: str) -> Manifest:
+    try:
+        value = decode_json(raw, 64)
+    except DecodeError:
+        raise PinError("INVALID_MANIFEST") from None
+    if not isinstance(value, dict):
+        raise PinError("INVALID_MANIFEST")
+    document = cast(dict[str, object], value)
+    if (
+        document.get("schema") != "pins.v1"
+        or document.get("repo") != repo
+        or not isinstance(document.get("source_root"), str)
+        or not isinstance(document.get("source_commit"), str)
+        or not isinstance(document.get("captured_at"), str)
+        or not isinstance(document.get("files"), dict)
+    ):
+        raise PinError("INVALID_MANIFEST")
+    entries = cast(dict[str, object], document["files"])
+    files: dict[str, ManifestFile] = {}
+    for relpath, entry in entries.items():
+        if not isinstance(entry, dict):
+            raise PinError("INVALID_MANIFEST")
+        fields = cast(dict[str, object], entry)
+        source_path, sha256 = fields.get("source_path"), fields.get("sha256")
+        if not isinstance(source_path, str) or not isinstance(sha256, str):
+            raise PinError("INVALID_MANIFEST")
+        _path_parts(relpath)
+        _path_parts(source_path)
+        files[relpath] = ManifestFile(source_path, sha256)
+    return Manifest(
+        "pins.v1",
+        repo,
+        cast(str, document["source_root"]),
+        cast(str, document["source_commit"]),
+        cast(str, document["captured_at"]),
+        files,
+        directory,
+        False,
+    )
+
+
+def _inventory(manifest: Manifest) -> tuple[tuple[str, ...], ...]:
+    paths = tuple(_path_parts(path) for path in manifest.files)
+    folded: set[tuple[str, ...]] = {("pins.json",)}
+    for parts in paths:
+        normalized = tuple(unicodedata.normalize("NFC", part).casefold() for part in parts)
+        if normalized in folded or normalized[0] == "pins.json":
+            raise PinError("INVALID_PIN_PATH")
+        folded.add(normalized)
+    for parts in folded:
+        if any(parts[:index] in folded for index in range(1, len(parts))):
+            raise PinError("INVALID_PIN_PATH")
+    return paths
 
 
 def refresh_pins(pins_root: Path, siblings_root: Path, repo: str) -> Manifest:
@@ -203,33 +298,46 @@ def refresh_pins(pins_root: Path, siblings_root: Path, repo: str) -> Manifest:
     Resolve every source before writing, so a missing committed source leaves the
     previous pins intact. Subsequent drift checks still compare the live checkout.
     """
-    manifest = _parse_manifest(pins_root / "active" / repo / "PINS.json", retired=False)
-    sibling_dir = siblings_root / repo
-    commit = _git_output(sibling_dir, "rev-parse", "HEAD")
-    captured_at = _git_output(sibling_dir, "log", "-1", "--format=%cI", commit)
-    blobs = {
-        relpath: subprocess.check_output(
-            ["git", "-C", str(sibling_dir), "cat-file", "blob", f"{commit}:{file.source_path}"],
-            stderr=subprocess.PIPE,
+    _repo_component(repo)
+    manifest_dir = pins_root / "active" / repo
+    with PinRegistry(pins_root, repo) as registry:
+        manifest = _refresh_manifest(registry.read_manifest(), manifest_dir, repo)
+        paths = _inventory(manifest)
+        registry.admit(paths)
+        sibling_dir = siblings_root / repo
+        try:
+            commit = _git_output(sibling_dir, "rev-parse", "HEAD")
+            captured_at = _git_output(sibling_dir, "log", "-1", "--format=%cI", commit)
+            blobs = {
+                relpath: subprocess.check_output(
+                    [
+                        "git",
+                        "-C",
+                        str(sibling_dir),
+                        "cat-file",
+                        "blob",
+                        f"{commit}:{file.source_path}",
+                    ],
+                    stderr=subprocess.PIPE,
+                )
+                for relpath, file in manifest.files.items()
+            }
+        except OSError:
+            raise PinError("GIT_EXECUTION_FAILED") from None
+        files: dict[str, ManifestFile] = {}
+        for (relpath, file), parts in zip(manifest.files.items(), paths, strict=True):
+            data = blobs[relpath]
+            registry.replace(parts, data)
+            files[relpath] = ManifestFile(source_path=file.source_path, sha256=digest_bytes(data))
+        refreshed = Manifest(
+            schema=manifest.schema,
+            repo=repo,
+            source_root=sibling_dir.name,
+            source_commit=commit,
+            captured_at=captured_at,
+            files=files,
+            manifest_dir=manifest.manifest_dir,
+            retired=False,
         )
-        for relpath, file in manifest.files.items()
-    }
-    files: dict[str, ManifestFile] = {}
-    for relpath, file in manifest.files.items():
-        data = blobs[relpath]
-        pinned_path = manifest.manifest_dir / relpath
-        pinned_path.parent.mkdir(parents=True, exist_ok=True)
-        pinned_path.write_bytes(data)
-        files[relpath] = ManifestFile(source_path=file.source_path, sha256=digest_bytes(data))
-    refreshed = Manifest(
-        schema=manifest.schema,
-        repo=repo,
-        source_root=sibling_dir.name,
-        source_commit=commit,
-        captured_at=captured_at,
-        files=files,
-        manifest_dir=manifest.manifest_dir,
-        retired=False,
-    )
-    _dump_manifest(refreshed)
-    return refreshed
+        registry.replace(("PINS.json",), _manifest_bytes(refreshed))
+        return refreshed
