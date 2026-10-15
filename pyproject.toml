@@ -31,6 +31,7 @@ source-include = [
     "contracts/common_result_inspection.v1.schema.json",
     "contracts/common_result_inspection_actions.v1.schema.json",
     "contracts/metric_definition.v1.schema.json",
+    "contracts/deepeval_bound_record.v1.schema.json",
     "contracts/deepeval_metric_bindings.v1.schema.json",
     "contracts/measurement_semantics.v1.schema.json",
     "contracts/measurement_policy.v3.schema.json",

@@ -166,7 +166,12 @@ def test_required_inputs_exist_on_the_registered_parser_profile() -> None:
         descriptor.configure(parser)
         children = _subcommands(parser)
         for profile in descriptor.profiles:
-            owner = children.get(profile.name, parser)
+            owner_name = (
+                profile.name.split("|", 1)[0]
+                if descriptor.command == "records"
+                else profile.name
+            )
+            owner = children.get(owner_name, parser)
             destinations = _destinations(owner)
             required_clauses = _required_clauses(owner)
             for requirement in profile.required_inputs:
