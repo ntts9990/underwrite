@@ -19,6 +19,12 @@ def configure(parser: argparse.ArgumentParser) -> None:
         "Audit the exact goppi baseline exchange v2 as descriptive source claims. "
         "No statistical direction, independent provenance, or approval is inferred."
     )
+    parser.epilog = (
+        "Each item's coordinate.index is the zero-based position in scope.json's "
+        "ordered selection.case_ids array. Keep the source directory to resolve "
+        "original case IDs or bytes; hashes identify bytes, not retrieval locations. "
+        "Case IDs and private text are omitted from the result."
+    )
     parser.add_argument("--exchange", type=Path, required=True, metavar="DIR")
     parser.add_argument("--json", action="store_true", help="Emit evidence_result.v1 JSON.")
 
