@@ -1,6 +1,6 @@
 [project]
 name = "underwrite-core"
-version = "0.0.1"
+version = "0.0.2"
 description = "Dependency-free canonical evidence and integrity primitives"
 readme = "README.md"
 requires-python = ">=3.12"

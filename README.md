@@ -29,13 +29,17 @@ and let the calling agent write the explanation. No Docker, dashboard, provider
 credentials, or evaluation rerun is needed to inspect those files.
 
 > [!NOTE]
-> **This README describes the development checkout.** The workflows below are
-> newer than the published PyPI `0.0.1`. Use the source quickstart to try them;
-> both builds still have the same version number. [Published installation](#install).
+> **This README describes the `0.0.2` source checkout.** The older PyPI `0.0.1`
+> lacks the newer workflows; use the source quickstart to try them. That older
+> build's `pins refresh` needs a separate caution; see
+> [Published installation](#install).
 
 ## Quickstart
 
 Requires **Python 3.12+** and [uv](https://docs.astral.sh/uv/).
+This checkout is tested with CPython 3.12 on Linux and macOS. File-based CLI
+workflows require Unix/POSIX file APIs, including ordinary artifact reads.
+
 Run a bundled synthetic example—no API key or adjacent repository required:
 
 ```sh
@@ -169,7 +173,7 @@ export, or version offered by each producer. Select the version explicitly.
 | **Langfuse** | `4.35.0` server blob exports: observations-v2 and scores JSON arrays | [`audit-langfuse`](AGENT_USAGE.md#account-for-langfuse-score-kinds-and-associations), with an optional content-minimized row index |
 | **DeepEval** | Ordinary TestRun JSON, `4.1.1` or `4.2.8` | [`audit-deepeval`](AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors) |
 | **Promptfoo** | Eval output JSON, `0.123.0` or `0.124.1` | [`audit-promptfoo`](AGENT_USAGE.md#source-checkout-pilot-audit-promptfoo-counts) |
-| **External common result** | `evidence_result.v1` JSON from a producer | [`inspect-result`](AGENT_USAGE.md#inspect-an-external-common-result) for contract screening and computed availability counts |
+| **External common result** | `evidence_result.v1` JSON from a producer | [`inspect-result`](AGENT_USAGE.md#inspect-an-external-common-result) for contract screening and availability counts, with optional evidence-item `next_action` and declared metric-binding counts |
 | **Native evidence** | `underwrite.evidence-bundle` / `v1` | `ingest` → `measure` → `accept` |
 | **Inspect AI** | `inspect.eval-log` / `0.3.263` | `ingest` |
 | **OpenInference** | `openinference.traces` / `0.1.38` | `ingest` |
@@ -192,6 +196,8 @@ binds a consumer configuration while leaving statistical assumptions unknown.
 For an already produced `evidence_result.v1` file, `inspect-result` checks the
 installed contract and item counts without verifying the producer's source or
 bundle, or admitting that result to measurement or acceptance.
+Its optional action view counts recorded next actions for evidence remediation,
+not executed tool calls or an agent trajectory.
 
 ## Keep results you can return to
 
@@ -256,6 +262,13 @@ They do not include the development measurement, accounting, records, handoff, o
 `capabilities` workflows. Discover installed commands with `--help`; the shared
 version number does not establish equal functionality. Do not mix development
 app wheels with the published core.
+
+The published `0.0.1` `pins refresh` should not process an untrusted pin
+manifest. A controlled local audit reproduced overwrite of a writable file
+outside the pin registry using a crafted manifest. The current development
+checkout refuses that path before mutation, but this correction has not been
+published to PyPI. The reproduced case required the crafted manifest and a
+writable target file.
 
 </details>
 

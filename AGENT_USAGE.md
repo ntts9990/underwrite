@@ -6,12 +6,12 @@ From a source checkout, run `uv sync --frozen --all-groups` once, then use
 `uv run --frozen --no-sync underwrite` in the commands below. An installed CLI can
 use `underwrite` directly. The checkout command uses its matching local core;
 install development app/core wheels from the same checkout together. A development
-app combined with the published same-version core is not a supported pairing.
+app combined with the older published core is not a supported pairing.
 
 Run `underwrite --help` first. When listed, `underwrite capabilities --json`
 returns command profiles, required inputs, input/output schema names, and exact
 registered ingest codecs from the executable in use. Check this output instead
-of inferring support from the unchanged package version. Published PyPI `0.0.1`
+of inferring support from the package version alone. Published PyPI `0.0.1`
 has no `capabilities`, producer-audit, records, or handoff commands; use help-based
 discovery there and the source checkout for the newer workflows below.
 Capability availability is not evidence that
@@ -110,8 +110,8 @@ approved a change. Acceptance always requires human review and sets
 
 The current native path uses `measurement_policy.v3`, profile
 `binary-event-directional.v1`, `read.v2`, `declared_claims.v2`, and
-`acceptance_decision.v2`. Package versions remain `0.0.1`; use this checkout or
-matching development wheels, not the older published packages.
+`acceptance_decision.v2`. Both source packages are `0.0.2`; the older PyPI
+`0.0.1` lacks these workflows. Use this checkout or matching wheels for them.
 
 The native bundle declares `payload.measurement_semantics` (`measurement_semantics.v1`):
 the construct, binary event and positive meaning, desirable direction, unit,

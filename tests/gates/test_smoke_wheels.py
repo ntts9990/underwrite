@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import tomllib
+import zipfile
 from pathlib import Path
 from typing import cast
 
@@ -13,7 +15,7 @@ import pytest
 from scripts import smoke_wheels
 
 
-def test_locked_dependency_sync_precedes_offline_wheels_in_temp_environment(
+def test_locked_dependency_sync_precedes_app_only_local_resolution(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("UV_PROJECT_ENVIRONMENT", str(tmp_path / "main-venv"))
@@ -22,35 +24,61 @@ def test_locked_dependency_sync_precedes_offline_wheels_in_temp_environment(
 
     def record(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         calls.append((args, cast(dict[str, str], kwargs["env"])))
-        return subprocess.CompletedProcess(args, 0, "", "")
+        return subprocess.CompletedProcess(
+            args, 1 if args[:2] == [str(venv / "bin/python"), "-I"] else 0, "", ""
+        )
 
     monkeypatch.setattr(smoke_wheels.subprocess, "run", record)
     venv = tmp_path / "smoke-venv"
     wheels = (tmp_path / "core.whl", tmp_path / "app.whl")
     smoke_wheels._install_wheels(tmp_path, venv, wheels)  # pyright: ignore[reportPrivateUsage]
 
-    sync, install, check = (args for args, _ in calls)
+    sync, absent, install, check = (args for args, _ in calls)
     assert sync[:2] == ["uv", "sync"]
     assert {"--frozen", "--no-default-groups", "--no-install-workspace", "--project"} <= set(sync)
     assert install[:3] == ["uv", "pip", "install"]
-    assert {"--offline", "--no-deps", str(wheels[0]), str(wheels[1])} <= set(install)
+    assert absent[:2] == [str(venv / "bin/python"), "-I"]
+    assert {"--offline", "--no-index", "--find-links", str(wheels[1])} <= set(install)
+    assert str(wheels[0].parent) in install
+    assert str(wheels[0]) not in install
+    assert "--no-deps" not in install
     assert check[:3] == ["uv", "pip", "check"]
     assert all(env["UV_PROJECT_ENVIRONMENT"] == str(venv) for _, env in calls)
     assert all("PYTHONPATH" not in env for _, env in calls)
 
 
 def test_origin_guard_rejects_editable_install(tmp_path: Path) -> None:
+    version = tomllib.loads(
+        (smoke_wheels.ROOT / "packages/underwrite-core/pyproject.toml").read_text()
+    )["project"]["version"]
     venv = tmp_path / "venv"
     site = (
         venv / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
     )
-    wheels = (tmp_path / "underwrite_core.whl", tmp_path / "underwrite.whl")
+    wheels = (
+        tmp_path / f"underwrite_core-{version}-py3-none-any.whl",
+        tmp_path / f"underwrite-{version}-py3-none-any.whl",
+    )
     for name, wheel in zip(("underwrite_core", "underwrite"), wheels, strict=True):
-        record = site / f"{name}-0.0.1.dist-info/direct_url.json"
-        record.parent.mkdir(parents=True)
-        record.write_text(json.dumps({"url": wheel.as_uri()}), encoding="utf-8")
+        metadata = f"Name: {name.replace('_', '-')}\nVersion: {version}\n"
+        with zipfile.ZipFile(wheel, "w") as archive:
+            archive.writestr(f"{name}/__init__.py", b"# installed fixture\n")
+            archive.writestr(f"{name}-{version}.dist-info/METADATA", metadata)
+        package = site / name
+        package.mkdir(parents=True)
+        (package / "__init__.py").write_bytes(b"# installed fixture\n")
+        record = site / f"{name}-{version}.dist-info"
+        record.mkdir()
+        (record / "METADATA").write_text(metadata)
+        if name == "underwrite":
+            (record / "direct_url.json").write_text(json.dumps({"url": wheel.as_uri()}))
     smoke_wheels._check_wheel_origins(venv, wheels)  # pyright: ignore[reportPrivateUsage]
-    editable_record = site / "underwrite-0.0.1.dist-info/direct_url.json"
+    core_file = site / "underwrite_core/__init__.py"
+    core_file.write_text("# wrong core bytes\n")
+    with pytest.raises(smoke_wheels.SmokeFailure, match="core bytes differ"):
+        smoke_wheels._check_wheel_origins(venv, wheels)  # pyright: ignore[reportPrivateUsage]
+    core_file.write_bytes(b"# installed fixture\n")
+    editable_record = site / f"underwrite-{version}.dist-info/direct_url.json"
     editable_record.write_text(
         json.dumps({"url": tmp_path.as_uri(), "dir_info": {"editable": True}}), encoding="utf-8"
     )

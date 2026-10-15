@@ -1,13 +1,13 @@
 [project]
 name = "underwrite"
-version = "0.0.1"
+version = "0.0.2"
 description = "Local evidence normalization, measurement, and acceptance checks"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 dependencies = [
-    "underwrite-core>=0.0.1,<0.1",
+    "underwrite-core>=0.0.2,<0.1",
     "jsonschema>=4.26.0",
     "pyyaml>=6.0.3",
 ]

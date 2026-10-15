@@ -8,6 +8,7 @@ import subprocess
 import tarfile
 import tomllib
 import zipfile
+from email.parser import BytesParser
 from pathlib import Path
 
 import pytest
@@ -100,6 +101,30 @@ def test_wheel_ships_no_contract_outside_the_population(built: tuple[Path, Path]
             if item.filename.startswith(WHEEL_DIR) and not item.is_dir()
         )
     assert shipped == population(ROOT)
+
+
+def test_app_wheel_and_sdist_keep_authored_core_requirement(built: tuple[Path, Path]) -> None:
+    app = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
+    requirement = next(
+        dependency for dependency in app["dependencies"] if dependency.startswith("underwrite-core")
+    )
+    with zipfile.ZipFile(built[0]) as archive:
+        metadata_file = next(
+            name for name in archive.namelist() if name.endswith(".dist-info/METADATA")
+        )
+        wheel_metadata = BytesParser().parsebytes(archive.read(metadata_file))
+    with tarfile.open(built[1]) as archive:
+        member = next(
+            item
+            for item in archive.getmembers()
+            if item.name.count("/") == 1 and item.name.endswith("/PKG-INFO")
+        )
+        stream = archive.extractfile(member)
+        assert stream is not None
+        sdist_metadata = BytesParser().parsebytes(stream.read())
+    for metadata in (wheel_metadata, sdist_metadata):
+        assert metadata["Version"] == app["version"]
+        assert requirement in (metadata.get_all("Requires-Dist") or [])
 
 
 def _tree(tmp_path: Path, names: tuple[str, ...], includes: tuple[str, ...]) -> Path:

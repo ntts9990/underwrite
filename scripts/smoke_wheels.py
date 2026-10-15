@@ -10,7 +10,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
+import zipfile
 from collections import Counter
+from email.parser import BytesParser
 from pathlib import Path
 from typing import cast
 
@@ -85,8 +88,7 @@ def _cli_json(cli: Path, args: list[str], output: Path, cwd: Path) -> dict[str, 
     return cast(dict[str, object], document)
 
 
-def _install_wheels(work: Path, venv: Path, wheels: tuple[Path, Path]) -> None:
-    python = venv / "bin/python"
+def _prepare_wheel_environment(work: Path, venv: Path) -> None:
     _success(
         [
             "uv",
@@ -102,16 +104,22 @@ def _install_wheels(work: Path, venv: Path, wheels: tuple[Path, Path]) -> None:
         work,
         project_environment=venv,
     )
+
+
+def _install_app_from_local_dist(work: Path, venv: Path, wheels: tuple[Path, Path]) -> None:
+    python = venv / "bin/python"
     _success(
         [
             "uv",
             "pip",
             "install",
             "--offline",
-            "--no-deps",
+            "--no-index",
+            "--find-links",
+            str(wheels[0].parent),
             "--python",
             str(python),
-            *(str(wheel) for wheel in wheels),
+            str(wheels[1]),
         ],
         work,
         project_environment=venv,
@@ -119,20 +127,120 @@ def _install_wheels(work: Path, venv: Path, wheels: tuple[Path, Path]) -> None:
     _success(["uv", "pip", "check", "--python", str(python)], work, project_environment=venv)
 
 
+def _install_wheels(work: Path, venv: Path, wheels: tuple[Path, Path]) -> None:
+    _prepare_wheel_environment(work, venv)
+    python = venv / "bin/python"
+    absent = _command(
+        [
+            str(python),
+            "-I",
+            "-c",
+            "from importlib.metadata import version; print(version('underwrite-core'))",
+        ],
+        work,
+        project_environment=venv,
+    )
+    _require(absent.returncode != 0, "core was installed before app dependency resolution")
+    _install_app_from_local_dist(work, venv, wheels)
+
+
+def _stale_core_upgrade(work: Path, wheels: tuple[Path, Path]) -> None:
+    """Use a synthetic old-version surrogate, not published PyPI bytes."""
+    build = tomllib.loads((ROOT / "packages/underwrite-core/pyproject.toml").read_text())[
+        "build-system"
+    ]
+    source = work / "stale-core-source"
+    package = source / "src/underwrite_core"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "canonical.py").write_text("", encoding="utf-8")
+    (source / "pyproject.toml").write_text(
+        '[project]\nname = "underwrite-core"\nversion = "0.0.1"\n'
+        'requires-python = ">=3.12"\n'
+        "[build-system]\n"
+        f"requires = [{', '.join(json.dumps(requirement) for requirement in build['requires'])}]\n"
+        f"build-backend = {json.dumps(build['build-backend'])}\n"
+        '[tool.uv.build-backend]\nmodule-name = "underwrite_core"\nmodule-root = "src"\n',
+        encoding="utf-8",
+    )
+    dist = work / "stale-core-dist"
+    _success(
+        [
+            "uv",
+            "build",
+            "--offline",
+            "--wheel",
+            "--no-sources",
+            "--project",
+            str(source),
+            "--out-dir",
+            str(dist),
+        ],
+        work,
+    )
+    old = list(dist.glob("underwrite_core-0.0.1-*.whl"))
+    _require(len(old) == 1, "stale-core surrogate wheel missing")
+    venv = work / "stale-venv"
+    _prepare_wheel_environment(work, venv)
+    python = venv / "bin/python"
+    _success(
+        ["uv", "pip", "install", "--offline", "--no-deps", "--python", str(python), str(old[0])],
+        work,
+        project_environment=venv,
+    )
+    missing = _command(
+        [str(python), "-I", "-c", "from underwrite_core.canonical import safe_integer_value"],
+        work,
+    )
+    _require(missing.returncode != 0, "stale-core surrogate unexpectedly has the new API")
+    _install_app_from_local_dist(work, venv, wheels)
+    _check_wheel_origins(venv, wheels)
+    _success([str(venv / "bin/underwrite"), "--help"], work)
+
+
 def _check_wheel_origins(venv: Path, wheels: tuple[Path, Path]) -> None:
+    """Check installed versions and package bytes, including a resolved core wheel."""
     site = (
         venv / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
     )
     for distribution, wheel in zip(("underwrite_core", "underwrite"), wheels, strict=True):
-        records = list(site.glob(f"{distribution}-*.dist-info/direct_url.json"))
-        _require(len(records) == 1, f"expected one installed {distribution} origin record")
-        origin: object = json.loads(records[0].read_text(encoding="utf-8"))
-        _require(isinstance(origin, dict), f"invalid {distribution} origin record")
-        record = cast(dict[str, object], origin)
-        _require(
-            record.get("url") == wheel.as_uri() and "dir_info" not in record,
-            f"{distribution} was not installed from its built wheel",
-        )
+        with zipfile.ZipFile(wheel) as archive:
+            metadata_name = next(
+                name for name in archive.namelist() if name.endswith(".dist-info/METADATA")
+            )
+            metadata = BytesParser().parsebytes(archive.read(metadata_name))
+            version = metadata["Version"]
+            records = list(site.glob(f"{distribution}-*.dist-info"))
+            _require(
+                len(records) == 1 and records[0].name == f"{distribution}-{version}.dist-info",
+                f"installed {distribution} version differs from built wheel",
+            )
+            installed = BytesParser().parsebytes((records[0] / "METADATA").read_bytes())
+            _require(
+                installed["Name"] == metadata["Name"]
+                and installed["Version"] == version
+                and installed.get_all("Requires-Dist") == metadata.get_all("Requires-Dist"),
+                f"installed {distribution} metadata differs from built wheel",
+            )
+            members = [
+                name
+                for name in archive.namelist()
+                if name.startswith(f"{distribution}/") and not name.endswith("/")
+            ]
+            _require(bool(members), f"built {distribution} has no package members")
+            for name in members:
+                _require(
+                    (site / name).read_bytes() == archive.read(name),
+                    f"installed {distribution} bytes differ from built wheel",
+                )
+        if distribution == "underwrite":
+            origin: object = json.loads((records[0] / "direct_url.json").read_text())
+            _require(isinstance(origin, dict), "invalid underwrite origin record")
+            record = cast(dict[str, object], origin)
+            _require(
+                record.get("url") == wheel.as_uri() and "dir_info" not in record,
+                "underwrite was not installed from its built wheel",
+            )
 
 
 def _promptfoo_numeric_pilot(
@@ -1820,6 +1928,7 @@ def _smoke(dist: Path) -> None:
         wheels = (core_wheel, app_wheel)
         _install_wheels(work, venv, wheels)
         _check_wheel_origins(venv, wheels)
+        _stale_core_upgrade(work, wheels)
         _evidence_pilots(cli, fixtures, work)
         _record_pilots(cli, fixtures, work)
         _handoff_pilot(cli, work)
