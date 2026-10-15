@@ -8,7 +8,6 @@ decision logic, and `underwrite absence` is its product surface."""
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import subprocess
 from pathlib import Path
@@ -16,6 +15,15 @@ from typing import Any, cast
 
 from underwrite_core.absence import AbsenceError, Exemption, check_population
 
+from underwrite.cli.legacy_input import (
+    CONFIG_MAX_BYTES,
+    AdmissionError,
+    limit_policy_entries,
+    read_json,
+    require_date,
+    validate_date,
+    validate_policy,
+)
 from underwrite.fleet.drift import DriftOutcome, DriftVerdict, drift_check
 from underwrite.fleet.pins import PinError, PinState, load_manifests, refresh_pins
 
@@ -54,45 +62,39 @@ def _result(command: str, state: str, exit_code: int, details: dict[str, Any]) -
     }
 
 
-def _get_str(obj: dict[str, Any], key: str) -> str | None:
-    value = obj.get(key)
-    return value if isinstance(value, str) else None
-
-
 def load_exemptions(path: Path) -> dict[str, Exemption]:
-    """Parse rules/exemptions.json (exemptions.v1) with plain shape checks.
-
-    Missing or non-string required fields are refused instead of silently
-    constructing an exemption.
-    """
-    raw: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
-    raw_exemptions = raw.get("exemptions")
-    if not isinstance(raw_exemptions, dict):
-        raise ValueError(f"{path}: expected a JSON object with an 'exemptions' object")
+    """Admit every exemption under the installed shape and strict date contract."""
+    raw = read_json(path, CONFIG_MAX_BYTES, "/exemptions")
+    limit_policy_entries(raw, "exemptions", "/exemptions")
+    validate_policy(raw, "exemptions.v1", "INVALID_EXEMPTION", "/exemptions")
+    document = cast(dict[str, Any], raw)
+    entries = cast(dict[str, dict[str, Any]], document["exemptions"])
 
     exemptions: dict[str, Exemption] = {}
-    for key, entry in cast("dict[str, Any]", raw_exemptions).items():
-        if not isinstance(entry, dict):
-            raise ValueError(f"{path}: exemption {key!r} is not an object")
-        entry_dict = cast("dict[str, Any]", entry)
-        reason = _get_str(entry_dict, "reason")
-        expiry = _get_str(entry_dict, "expiry")
-        if reason is None or expiry is None:
-            raise ValueError(f"{path}: exemption {key!r} missing a string 'reason'/'expiry'")
-        exemptions[key] = Exemption(reason=reason, expiry=expiry, adr=_get_str(entry_dict, "adr"))
+    for key, entry in entries.items():
+        reason = cast(str, entry["reason"])
+        expiry = cast(str, entry["expiry"])
+        adr = cast(str | None, entry.get("adr"))
+        if not reason.strip():
+            raise AdmissionError("INVALID_EXEMPTION", "INVALID_EXEMPTION", "/exemptions")
+        require_date(expiry, "/exemptions")
+        exemptions[key] = Exemption(reason=reason, expiry=expiry, adr=adr)
     return exemptions
 
 
 def cmd_absence(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
     """`underwrite absence` -- population = count of files matching --glob under --root."""
+    try:
+        validate_date(args.now)
+        exemptions = load_exemptions(args.exemptions) if args.exemptions is not None else {}
+    except AdmissionError as exc:
+        return 2, _result("absence", "UNCONFIGURED", 2, exc.details())
     root: Path = args.root
     if not root.is_dir():
         return 2, _result("absence", "UNCONFIGURED", 2, {"root": str(root)})
 
     count = sum(1 for path in root.glob(args.glob) if path.is_file())
-    exemption = None
-    if args.exemptions is not None and args.exemption_key is not None:
-        exemption = load_exemptions(args.exemptions).get(args.exemption_key)
+    exemption = exemptions.get(args.exemption_key) if args.exemption_key is not None else None
 
     try:
         verdict = check_population(count, args.min, exemption=exemption, now=args.now)
@@ -144,7 +146,11 @@ def _repo_table(
 
 def cmd_drift_check(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
     """`underwrite drift check` -- underwrite.fleet.drift.drift_check over pins + siblings."""
-    exemptions = load_exemptions(args.exemptions) if args.exemptions is not None else {}
+    try:
+        validate_date(args.now)
+        exemptions = load_exemptions(args.exemptions) if args.exemptions is not None else {}
+    except AdmissionError as exc:
+        return 2, _result("drift check", "UNCONFIGURED", 2, exc.details())
     verdict = drift_check(args.pins_root, args.siblings_root, exemptions=exemptions, now=args.now)
     repos, retired = _repo_table(args.pins_root, verdict)
 

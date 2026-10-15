@@ -268,6 +268,15 @@ a manifest with an expected hash, `check` examines release evidence linkage,
 vocabulary, and `drift check` / `pins refresh` work with supplied pin registries.
 [JSON contracts](contracts/) define each command family's results and errors.
 
+Legacy `absence` and `drift check` exemption files and `boundary scan` allowlists
+are bounded to 1 MiB, 64 JSON container levels, and 1024 policy entries each.
+`boundary scan` reads at most 4 MiB per selected JSON or JSONL file. Duplicate
+keys and nonfinite numbers are invalid; supplied `--now` and policy expiry dates
+must be real ASCII `YYYY-MM-DD` dates. Admission failures return a typed
+`UNCONFIGURED` result with exit 2. An absent `--now` still yields `NOW_REQUIRED`
+only when the semantic check needs a clock. These are per-file limits; total
+walk, leak, and output budgets are separate follow-on work.
+
 `pins refresh` selects one registry repository and copies committed Git blobs.
 Refresh paths must be normalized relative `/`-separated components; empty, dot,
 parent, backslash, Unicode control/format, oversized, and colliding destinations

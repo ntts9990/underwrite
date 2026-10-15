@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:underwrite:contract:exemptions.v1",
   "title": "exemptions.v1",
-  "description": "Declared, dated exemptions for the absence/drift gates: a reasoned, unexpired exemption downgrades a below-population/UNCONFIGURED failure to a reported skip, never a silent pass. Loaded by the CLI (underwrite.cli.commands.load_exemptions) from rules/exemptions.json and evaluated by underwrite_core.absence.check_population / underwrite.fleet.drift.drift_check. Validated in tests only -- the CLI itself validates the shape with plain checks.",
+  "description": "Declared, dated exemptions for the absence/drift gates: a reasoned, unexpired exemption downgrades a below-population/UNCONFIGURED failure to a reported skip, never a silent pass. Loaded by the CLI (underwrite.cli.commands.load_exemptions) from rules/exemptions.json and evaluated by underwrite_core.absence.check_population / underwrite.fleet.drift.drift_check. The CLI validates the installed contract, calendar dates and input limits before applying an exemption.",
   "type": "object",
   "required": [
     "schema",
