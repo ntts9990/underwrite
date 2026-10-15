@@ -10,13 +10,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 from pathlib import Path
 from typing import Any, cast
 
 from underwrite_core.absence import AbsenceError, Exemption, check_population
 
 from underwrite.fleet.drift import DriftOutcome, DriftVerdict, drift_check
-from underwrite.fleet.pins import PinState, load_manifests, refresh_pins
+from underwrite.fleet.pins import PinError, PinState, load_manifests, refresh_pins
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_PINS_ROOT = _REPO_ROOT / "contracts" / "pins"
@@ -168,7 +169,22 @@ def cmd_drift_check(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
 
 def cmd_pins_refresh(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
     """`underwrite pins refresh` -- re-copy one repo's pinned bytes from its sibling checkout."""
-    manifest = refresh_pins(args.pins_root, args.siblings_root, args.repo)
+    try:
+        manifest = refresh_pins(args.pins_root, args.siblings_root, args.repo)
+    except PinError as exc:
+        return 2, _result(
+            "pins refresh",
+            "UNCONFIGURED",
+            2,
+            {"reason": exc.reason, "publication": exc.publication},
+        )
+    except subprocess.CalledProcessError:
+        return 2, _result(
+            "pins refresh",
+            "UNCONFIGURED",
+            2,
+            {"reason": "GIT_SOURCE_UNAVAILABLE", "publication": "not_started"},
+        )
     details: dict[str, Any] = {
         "repo": manifest.repo,
         "source_commit": manifest.source_commit,

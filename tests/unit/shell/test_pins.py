@@ -4,16 +4,20 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import shutil
+import stat
 import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from conftest import SAMPLE_PINS_ROOT
 from underwrite_core.canonical import digest_bytes
 
+from underwrite.fleet._pin_storage import PinError, PinRegistry
 from underwrite.fleet.pins import Manifest, PinState, load_manifests, refresh_pins, verify_pins
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -21,6 +25,8 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 REAL_PINS_ROOT = SAMPLE_PINS_ROOT
 PINS_PY = REPO_ROOT / "src" / "underwrite" / "fleet" / "pins.py"
 _RED_INJECTION_MIN_BYTES = 10_000
+PIN_MODE = 0o600
+MANIFEST_MODE = 0o640
 
 
 def _active_manifest_file_count(pins_root: Path) -> int:
@@ -260,6 +266,130 @@ def test_refresh_missing_committed_source_preserves_all_existing_pins(
 
     after = {p.relative_to(pins_root): p.read_bytes() for p in pins_root.rglob("*") if p.is_file()}
     assert after == before
+    assert not list(pins_root.rglob(".pins-refresh-*"))
+
+
+def test_refresh_creates_nested_destination_from_committed_blob(
+    stale_sample_pins: tuple[Path, Path], hermetic_git_sibling: Callable[[str], Path]
+) -> None:
+    pins_root, manifest_path = stale_sample_pins
+    sibling_dir = hermetic_git_sibling("sample-tool")
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    original = next(iter(payload["files"].values()))
+    payload["files"]["new/nested/copy.json"] = dict(original)
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    refreshed = refresh_pins(pins_root, sibling_dir.parent, "sample-tool")
+
+    nested = manifest_path.parent / "new/nested/copy.json"
+    original = manifest_path.parent / "contracts/sample.schema.json"
+    assert nested.read_bytes() == original.read_bytes()
+    assert refreshed.files["new/nested/copy.json"].sha256 == digest_bytes(nested.read_bytes())
+    assert not list(pins_root.rglob(".pins-refresh-*"))
+
+
+def test_refresh_preserves_ordinary_existing_mode_on_new_inodes(
+    stale_sample_pins: tuple[Path, Path], hermetic_git_sibling: Callable[[str], Path]
+) -> None:
+    pins_root, manifest_path = stale_sample_pins
+    sibling_dir = hermetic_git_sibling("sample-tool")
+    pin = manifest_path.parent / "contracts/sample.schema.json"
+    pin.chmod(PIN_MODE)
+    manifest_path.chmod(MANIFEST_MODE)
+    prior = (pin.stat().st_ino, manifest_path.stat().st_ino)
+
+    refresh_pins(pins_root, sibling_dir.parent, "sample-tool")
+
+    assert (pin.stat().st_ino, manifest_path.stat().st_ino) != prior
+    assert stat.S_IMODE(pin.stat().st_mode) == PIN_MODE
+    assert stat.S_IMODE(manifest_path.stat().st_mode) == MANIFEST_MODE
+
+
+def test_replacement_failure_cleans_unconsumed_temp_and_reports_uncertainty(
+    stale_sample_pins: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pins_root, manifest_path = stale_sample_pins
+    pin = manifest_path.parent / "contracts/sample.schema.json"
+    before = pin.read_bytes()
+
+    def fail_replace(*_args: object, **_kwargs: object) -> None:
+        raise OSError("injected replacement failure")
+
+    with PinRegistry(pins_root, "sample-tool") as registry:
+        registry.admit((("contracts", "sample.schema.json"),))
+        monkeypatch.setattr(os, "replace", fail_replace)
+        with pytest.raises(PinError) as caught:
+            registry.replace(("contracts", "sample.schema.json"), b"new bytes")
+    assert (caught.value.reason, caught.value.publication) == ("PIN_WRITE_FAILED", "may_be_partial")
+    assert pin.read_bytes() == before
+    assert not list(pins_root.rglob(".pins-refresh-*"))
+
+
+def test_parent_swapped_to_symlink_after_admission_does_not_escape(
+    stale_sample_pins: tuple[Path, Path], tmp_path: Path
+) -> None:
+    pins_root, manifest_path = stale_sample_pins
+    parent = manifest_path.parent / "contracts"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "sample.schema.json"
+    sentinel.write_bytes(b"outside")
+
+    with PinRegistry(pins_root, "sample-tool") as registry:
+        registry.admit((("contracts", "sample.schema.json"),))
+        parent.rename(parent.with_name("contracts-original"))
+        parent.symlink_to(outside, target_is_directory=True)
+        with pytest.raises(PinError) as caught:
+            registry.replace(("contracts", "sample.schema.json"), b"new bytes")
+    assert caught.value.reason == "PIN_TARGET_UNSAFE"
+    assert sentinel.read_bytes() == b"outside"
+    assert not list(pins_root.rglob(".pins-refresh-*"))
+
+
+def test_leaf_swapped_to_symlink_at_publication_replaces_only_entry(
+    stale_sample_pins: tuple[Path, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pins_root, manifest_path = stale_sample_pins
+    pin = manifest_path.parent / "contracts/sample.schema.json"
+    outside = tmp_path / "outside-sentinel"
+    outside.write_bytes(b"outside")
+    original_replace = os.replace
+
+    def swapped_replace(src: str, dst: str, **kwargs: int) -> None:
+        pin.unlink()
+        pin.symlink_to(outside)
+        original_replace(src, dst, **kwargs)
+
+    with PinRegistry(pins_root, "sample-tool") as registry:
+        registry.admit((("contracts", "sample.schema.json"),))
+        monkeypatch.setattr(os, "replace", swapped_replace)
+        registry.replace(("contracts", "sample.schema.json"), b"new selected bytes")
+    assert pin.read_bytes() == b"new selected bytes"
+    assert outside.read_bytes() == b"outside"
+    assert not list(pins_root.rglob(".pins-refresh-*"))
+
+
+def test_exclusive_temp_collision_does_not_unlink_unowned_file(
+    stale_sample_pins: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pins_root, manifest_path = stale_sample_pins
+    parent = manifest_path.parent / "contracts"
+    collision = parent / ".pins-refresh-fixed"
+    collision.write_bytes(b"unowned")
+    pin = parent / "sample.schema.json"
+    before = pin.read_bytes()
+    monkeypatch.setattr(
+        "underwrite.fleet._pin_storage.uuid.uuid4",
+        lambda: SimpleNamespace(hex="fixed"),
+    )
+
+    with PinRegistry(pins_root, "sample-tool") as registry:
+        registry.admit((("contracts", "sample.schema.json"),))
+        with pytest.raises(PinError, match="PIN_WRITE_FAILED"):
+            registry.replace(("contracts", "sample.schema.json"), b"new")
+
+    assert collision.read_bytes() == b"unowned"
+    assert pin.read_bytes() == before
 
 
 # --- (h) red-injection: a single flipped byte in a >=10KB file is caught -------
@@ -321,11 +451,12 @@ def test_pins_module_has_attribution_docstring_and_imports_only_stdlib_and_core(
 
     stdlib = set(sys.stdlib_module_names)
     allowed = {*stdlib, "underwrite_core"}
+    local = {"underwrite._json", "underwrite.fleet._pin_storage"}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                assert alias.name.split(".")[0] in allowed, alias.name
+                assert alias.name.split(".")[0] in allowed or alias.name in local, alias.name
         elif isinstance(node, ast.ImportFrom):
             if node.level > 0 or node.module is None:
                 continue
-            assert node.module.split(".")[0] in allowed, node.module
+            assert node.module.split(".")[0] in allowed or node.module in local, node.module

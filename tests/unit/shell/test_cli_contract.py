@@ -14,11 +14,14 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
 from underwrite.cli import boundary, commands
+from underwrite.fleet import pins as pins_module
+from underwrite.fleet._pin_storage import PinError
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 REAL_PINS_ROOT = SAMPLE_PINS_ROOT
 SCHEMA_PATH = REPO_ROOT / "contracts" / "cli_result.v1.schema.json"
+REFUSAL_EXIT = 2
 
 
 def _schema() -> dict[str, Any]:
@@ -183,6 +186,58 @@ def test_pins_refresh_pass_payload_validates(
 
     assert payload["state"] == "PASS"
     assert payload["command"] == "pins refresh"
+    _validate(payload)
+
+
+def test_pins_refresh_invalid_path_refusal_is_closed(
+    pins_tree: Path, hermetic_git_sibling: Callable[[str], Path]
+) -> None:
+    sibling_dir = hermetic_git_sibling("sample-tool")
+    args = argparse.Namespace(
+        repo="../escape", pins_root=pins_tree, siblings_root=sibling_dir.parent
+    )
+    exit_code, payload = commands.cmd_pins_refresh(args)
+    assert exit_code == REFUSAL_EXIT
+    assert payload["state"] == "UNCONFIGURED"
+    assert payload["details"] == {"reason": "INVALID_REPO", "publication": "not_started"}
+    _validate(payload)
+    payload["details"]["publication"] = "invented"
+    with pytest.raises(ValidationError):
+        _validate(payload)
+
+
+def test_pins_refresh_git_launch_failure_is_finite(
+    pins_tree: Path,
+    hermetic_git_sibling: Callable[[str], Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sibling_dir = hermetic_git_sibling("sample-tool")
+
+    def unavailable(*_args: object) -> str:
+        raise OSError("private git executable path")
+
+    monkeypatch.setattr(pins_module, "_git_output", unavailable)
+    args = argparse.Namespace(
+        repo="sample-tool", pins_root=pins_tree, siblings_root=sibling_dir.parent
+    )
+    exit_code, payload = commands.cmd_pins_refresh(args)
+    assert exit_code == REFUSAL_EXIT
+    assert payload["details"] == {"reason": "GIT_EXECUTION_FAILED", "publication": "not_started"}
+    assert "private" not in str(payload)
+    _validate(payload)
+
+
+def test_pins_refresh_attempted_write_reports_possible_partial(
+    pins_tree: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail(*_args: object) -> pins_module.Manifest:
+        raise PinError("PIN_WRITE_FAILED", "may_be_partial")
+
+    monkeypatch.setattr(commands, "refresh_pins", fail)
+    args = argparse.Namespace(repo="sample-tool", pins_root=pins_tree, siblings_root=pins_tree)
+    exit_code, payload = commands.cmd_pins_refresh(args)
+    assert exit_code == REFUSAL_EXIT
+    assert payload["details"] == {"reason": "PIN_WRITE_FAILED", "publication": "may_be_partial"}
     _validate(payload)
 
 
