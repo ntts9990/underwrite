@@ -287,6 +287,16 @@ selected directory link and regular file links, but do not descend into a child
 directory link. These selections do not establish path containment against a
 hostile filesystem.
 
+`drift check` admits up to 256 manifests and 4096 declared pin files while
+counting at most 100000 visited registry entries. Each manifest is limited to
+1 MiB and 64 JSON container levels; each selected source or pin copy is limited
+to 4 MiB. The 32 MiB command capture budget includes exemption bytes, manifests,
+and both copies. Read-only inspection follows selected directory and file links;
+it does not create an atomic filesystem snapshot or a hostile-path containment
+guarantee. Missing or nonregular selected copies are reported as DRIFT; malformed,
+unreadable, or excessive registry input returns a typed `UNCONFIGURED` result
+without fabricated population counts.
+
 `pins refresh` selects one registry repository and copies committed Git blobs.
 Refresh paths must be normalized relative `/`-separated components; empty, dot,
 parent, backslash, Unicode control/format, oversized, and colliding destinations
@@ -296,6 +306,8 @@ Each pin is replaced with a new inode under its opened registry parent, and
 `PINS.json` is replaced last. Admission or Git-source failures leave the registry
 unchanged. A later filesystem failure reports `publication: may_be_partial`;
 refresh is not an all-files transaction or a durability guarantee.
+Refresh captures each committed Git blob within 4 MiB and the 32 MiB aggregate
+budget, and checks the fully serialized 1 MiB manifest before its first write.
 
 <a id="development-checkout-evidence-pilots"></a>
 

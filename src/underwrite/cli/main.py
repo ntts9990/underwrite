@@ -514,7 +514,7 @@ def main(argv: list[str] | None = None) -> int:
             return descriptor.handler(args_list[0], args_list[1:])
     args = build_parser().parse_args(args_list)
     exit_code, payload = args.handler(args)
-    bounded = payload["command"] == "boundary scan"
+    bounded = payload["command"] in {"boundary scan", "drift check"}
     rendered_exit = render.render(
         payload,
         as_json=bool(getattr(args, "json", False)),
