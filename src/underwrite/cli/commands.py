@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import os
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, cast
 
@@ -19,15 +20,26 @@ from underwrite.cli.legacy_input import (
     CONFIG_MAX_BYTES,
     SELECTED_FILES_MAX,
     AdmissionError,
+    decode_bytes,
     limit_policy_entries,
-    read_json,
+    read_bytes,
     require_date,
     resource_error,
     validate_date,
     validate_policy,
 )
-from underwrite.fleet.drift import DriftOutcome, DriftVerdict, drift_check
-from underwrite.fleet.pins import PinError, PinState, load_manifests, refresh_pins
+from underwrite.fleet import pins as pin_registry
+from underwrite.fleet.drift import DriftOutcome, DriftVerdict
+from underwrite.fleet.drift import (
+    _inspect_drift as _inspect_drift,  # pyright: ignore[reportPrivateUsage]
+)
+from underwrite.fleet.pins import (
+    Manifest,
+    PinError,
+    PinReadError,
+    PinState,
+    refresh_pins,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_PINS_ROOT = _REPO_ROOT / "contracts" / "pins"
@@ -64,9 +76,10 @@ def _result(command: str, state: str, exit_code: int, details: dict[str, Any]) -
     }
 
 
-def load_exemptions(path: Path) -> dict[str, Exemption]:
+def _load_exemptions(path: Path) -> tuple[dict[str, Exemption], int]:
     """Admit every exemption under the installed shape and strict date contract."""
-    raw = read_json(path, CONFIG_MAX_BYTES, "/exemptions")
+    captured = read_bytes(path, CONFIG_MAX_BYTES, "/exemptions")
+    raw = decode_bytes(captured, "/exemptions")
     limit_policy_entries(raw, "exemptions", "/exemptions")
     validate_policy(raw, "exemptions.v1", "INVALID_EXEMPTION", "/exemptions")
     document = cast(dict[str, Any], raw)
@@ -81,7 +94,12 @@ def load_exemptions(path: Path) -> dict[str, Exemption]:
             raise AdmissionError("INVALID_EXEMPTION", "INVALID_EXEMPTION", "/exemptions")
         require_date(expiry, "/exemptions")
         exemptions[key] = Exemption(reason=reason, expiry=expiry, adr=adr)
-    return exemptions
+    return exemptions, len(captured)
+
+
+def load_exemptions(path: Path) -> dict[str, Exemption]:
+    """Public loader over the same one-capture admission path."""
+    return _load_exemptions(path)[0]
 
 
 def _matched_population(root: Path, pattern: str) -> int:
@@ -137,16 +155,15 @@ def cmd_absence(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
 
 
 def _repo_table(
-    pins_root: Path, verdict: DriftVerdict
+    manifests: Sequence[Manifest], verdict: DriftVerdict
 ) -> tuple[dict[str, dict[str, Any]], dict[str, int]]:
     """Return sorted active-repository details and retired pin counts.
 
-    Manifest metadata is re-derived from the user-supplied registry. Retired
-    repositories remain visible but do not count in the active population.
+    Retired repositories remain visible but do not count in the active population.
     """
     repos: dict[str, dict[str, Any]] = {}
     retired: dict[str, int] = {}
-    for manifest in load_manifests(pins_root):
+    for manifest in manifests:
         pins = len(manifest.files)
         if manifest.retired:
             retired[manifest.repo] = pins
@@ -171,11 +188,25 @@ def cmd_drift_check(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
     """`underwrite drift check` -- underwrite.fleet.drift.drift_check over pins + siblings."""
     try:
         validate_date(args.now)
-        exemptions = load_exemptions(args.exemptions) if args.exemptions is not None else {}
+        exemptions, config_bytes = (
+            _load_exemptions(args.exemptions) if args.exemptions is not None else ({}, 0)
+        )
     except AdmissionError as exc:
         return 2, _result("drift check", "UNCONFIGURED", 2, exc.details())
-    verdict = drift_check(args.pins_root, args.siblings_root, exemptions=exemptions, now=args.now)
-    repos, retired = _repo_table(args.pins_root, verdict)
+    if config_bytes > pin_registry.PIN_TOTAL_MAX_BYTES:
+        refusal = resource_error("/pins", "captured_bytes", pin_registry.PIN_TOTAL_MAX_BYTES)
+        return 2, _result("drift check", "UNCONFIGURED", 2, refusal.details())
+    try:
+        verdict, manifests = _inspect_drift(
+            args.pins_root,
+            args.siblings_root,
+            exemptions=exemptions,
+            now=args.now,
+            remaining=pin_registry.PIN_TOTAL_MAX_BYTES - config_bytes,
+        )
+    except PinReadError as exc:
+        return 2, _result("drift check", "UNCONFIGURED", 2, exc.details())
+    repos, retired = _repo_table(manifests, verdict)
 
     details: dict[str, Any] = {
         "active_population": verdict.pin_report.active_population,

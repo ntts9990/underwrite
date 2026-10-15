@@ -773,7 +773,9 @@
             "UNSUPPORTED_PLATFORM",
             "PIN_WRITE_FAILED",
             "GIT_SOURCE_UNAVAILABLE",
-            "GIT_EXECUTION_FAILED"
+            "GIT_EXECUTION_FAILED",
+            "INPUT_LIMIT_EXCEEDED",
+            "DECLARED_FILE_LIMIT_EXCEEDED"
           ]
         },
         "publication": {
@@ -803,7 +805,10 @@
                 "SOURCE_READ_FAILED",
                 "UNSUPPORTED_PLATFORM",
                 "SCHEMA_CONFIGURATION_ERROR",
-                "INVALID_GLOB"
+                "INVALID_GLOB",
+                "INVALID_PIN_MANIFEST",
+                "INVALID_PIN_PATH",
+                "PIN_READ_FAILED"
               ]
             },
             "location": {
@@ -813,7 +818,8 @@
                 "/allowlist",
                 "/files",
                 "/root",
-                "/glob"
+                "/glob",
+                "/pins"
               ]
             }
           }
@@ -837,7 +843,8 @@
                 "/allowlist",
                 "/files",
                 "/root",
-                "/output"
+                "/output",
+                "/pins"
               ]
             },
             "limit_kind": {
@@ -851,7 +858,9 @@
                 "line_bytes",
                 "lines",
                 "leaks",
-                "output_bytes"
+                "output_bytes",
+                "manifests",
+                "declared_files"
               ]
             },
             "limit": {

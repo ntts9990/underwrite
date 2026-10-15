@@ -15,7 +15,13 @@ from pathlib import Path
 
 from underwrite_core.absence import AbsenceError, AbsenceOutcome, Exemption, check_population
 
-from underwrite.fleet.pins import PinReport, PinState, verify_pins
+from underwrite.fleet import pins as pin_registry
+from underwrite.fleet.pins import (
+    Manifest,
+    PinReport,
+    PinState,
+    _inspect_pins,  # pyright: ignore[reportPrivateUsage]
+)
 
 
 class DriftOutcome(Enum):
@@ -85,20 +91,9 @@ def _population_verdict(
     return DriftVerdict(mapped, report, verdict.reason, verdict.expiry, adr)
 
 
-def drift_check(
-    pins_root: Path,
-    siblings_root: Path,
-    *,
-    exemptions: Mapping[str, Exemption] | None = None,
-    now: str | None = None,
+def _classify(
+    report: PinReport, exemptions: Mapping[str, Exemption], now: str | None
 ) -> DriftVerdict:
-    """Verify pins (`underwrite.fleet.pins.verify_pins`) and fold in the population rule.
-
-    See the module docstring for the exemption-key/branch mapping.
-    """
-    exemptions = exemptions or {}
-    report = verify_pins(pins_root, siblings_root)
-
     if report.active_population == 0:
         return _population_verdict(
             report, exemptions.get("empty-pins"), now, DriftOutcome.EMPTY_POPULATION
@@ -118,3 +113,28 @@ def drift_check(
     if unconfigured_repos:
         return DriftVerdict(DriftOutcome.UNCONFIGURED, report)
     return DriftVerdict(DriftOutcome.PASS, report)
+
+
+def _inspect_drift(
+    pins_root: Path,
+    siblings_root: Path,
+    *,
+    exemptions: Mapping[str, Exemption] | None = None,
+    now: str | None = None,
+    remaining: int | None = None,
+) -> tuple[DriftVerdict, list[Manifest]]:
+    """One admitted manifest/byte capture for verdict and the caller's presentation."""
+    budget = pin_registry.PIN_TOTAL_MAX_BYTES if remaining is None else remaining
+    manifests, report = _inspect_pins(pins_root, siblings_root, budget)
+    return _classify(report, exemptions or {}, now), manifests
+
+
+def drift_check(
+    pins_root: Path,
+    siblings_root: Path,
+    *,
+    exemptions: Mapping[str, Exemption] | None = None,
+    now: str | None = None,
+) -> DriftVerdict:
+    """Verify one registry and fold its admitted report into the population rule."""
+    return _inspect_drift(pins_root, siblings_root, exemptions=exemptions, now=now)[0]

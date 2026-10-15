@@ -451,7 +451,7 @@ def test_pins_module_has_attribution_docstring_and_imports_only_stdlib_and_core(
 
     stdlib = set(sys.stdlib_module_names)
     allowed = {*stdlib, "underwrite_core"}
-    local = {"underwrite._json", "underwrite.fleet._pin_storage"}
+    local = {"underwrite._fileio", "underwrite._json", "underwrite.fleet._pin_storage"}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
