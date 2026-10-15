@@ -73,51 +73,20 @@ jobs:
               assert metadata["Requires-Python"] == projects[package]["requires-python"]
               if package == "underwrite-core":
                   assert not metadata.get_all("Requires-Dist")
+              else:
+                  core_requirement = next(
+                      dependency for dependency in projects["underwrite"]["dependencies"]
+                      if dependency.startswith("underwrite-core")
+                  )
+                  assert core_requirement in (metadata.get_all("Requires-Dist") or [])
           version = projects["underwrite"]["version"]
           for name in population(Path.cwd()):
               expected_bytes = check_source(Path.cwd(), name)
               check_wheel(Path(f"dist/underwrite-{version}-py3-none-any.whl"), name, expected_bytes)
               check_sdist(Path(f"dist/underwrite-{version}.tar.gz"), name, expected_bytes)
           PY
-      - name: Install both wheels in a clean environment outside the checkout
-        run: |
-          uv venv --python 3.12 "$RUNNER_TEMP/release-smoke"
-          uv pip install --python "$RUNNER_TEMP/release-smoke/bin/python" dist/underwrite_core-*.whl
-          uv pip install --python "$RUNNER_TEMP/release-smoke/bin/python" --find-links dist dist/underwrite-*.whl
-          uv pip check --python "$RUNNER_TEMP/release-smoke/bin/python"
-          cd "$RUNNER_TEMP"
-          "$RUNNER_TEMP/release-smoke/bin/underwrite" --help
-          uv run --frozen --no-sync --project "$GITHUB_WORKSPACE" python - "$RUNNER_TEMP/release-smoke/bin/python" <<'PY'
-          import os
-          from pathlib import Path
-          import subprocess
-          import sys
-          import tomllib
-
-          subprocess.run([sys.argv[1], "-I", "-c", """
-          from importlib.metadata import version
-          from importlib.resources import files
-          import json
-          import sys
-          import underwrite_core
-          from jsonschema import Draft202012Validator
-          from underwrite.instrument.ingest.schema import packaged_validator
-
-          assert version('underwrite') == sys.argv[1]
-          assert version('underwrite-core') == sys.argv[2]
-          resources = list(files('underwrite').joinpath('_contracts').iterdir())
-          assert resources
-          for resource in resources:
-              if resource.name.endswith('.schema.json'):
-                  schema = json.loads(resource.read_text())
-                  assert schema['$id'].startswith('urn:underwrite:contract:')
-                  Draft202012Validator.check_schema(schema)
-          packaged_validator('observation.v1')
-          """, *[
-              tomllib.loads((Path(os.environ["GITHUB_WORKSPACE"]) / path).read_text())["project"]["version"]
-              for path in ("pyproject.toml", "packages/underwrite-core/pyproject.toml")
-          ]], check=True)
-          PY
+      - name: Smoke the exact distributions to publish outside the checkout
+        run: uv run --frozen --no-sync python scripts/smoke_wheels.py --dist dist
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pypi-distributions

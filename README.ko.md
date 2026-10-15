@@ -29,13 +29,16 @@ DeepEval, Promptfoo**의 결과를 가져와 해당 아티팩트에 맞는 경�
 평가 재실행은 필요하지 않습니다.
 
 > [!NOTE]
-> **이 README는 개발 체크아웃을 설명합니다.** 아래 작업 흐름은 PyPI에 공개된
-> `0.0.1`보다 이후에 추가되었습니다. 직접 사용하려면 소스 빠른 시작을 따르세요.
-> 두 빌드는 여전히 같은 버전 번호를 사용합니다. [공개판 설치](#설치).
+> **이 README는 `0.0.2` 소스 체크아웃을 설명합니다.** 이전 PyPI `0.0.1`에는
+> 새 작업 흐름이 없습니다. 새 기능은 소스 빠른 시작으로 사용하세요. 이전 공개판의
+> `pins refresh` 사용 시 주의 사항은 [공개판 설치](#설치)를 참고하세요.
 
 ## 빠른 시작
 
 **Python 3.12 이상**과 [uv](https://docs.astral.sh/uv/)가 필요합니다.
+이 체크아웃은 Linux와 macOS의 CPython 3.12에서 테스트했습니다. 일반 아티팩트
+읽기를 포함한 파일 기반 CLI 작업에는 Unix/POSIX 파일 API가 필요합니다.
+
 포함된 합성 예제를 실행해 보세요. API 키나 인접한 다른 저장소는 필요하지 않습니다.
 
 ```sh
@@ -164,10 +167,11 @@ API, 내보내기 형식, 버전을 지원한다는 뜻은 아닙니다. 버전�
 
 | 입력 | 지원 프로필 | 시작 경로 |
 | --- | --- | --- |
-| **goppi** | 완료된 baseline exchange manifest v2; paired handoff는 별도 경로 | [`project-baseline`](AGENT_USAGE.md#project-a-completed-goppi-baseline-into-event-observations) · [`review-handoff`](AGENT_USAGE.md#review-a-completed-paired-handoff-in-one-call) |
-| **Langfuse** | `4.35.0` 서버 blob export: observations-v2와 scores JSON 배열 | [`audit-langfuse`](AGENT_USAGE.md#account-for-langfuse-score-kinds-and-associations) |
+| **goppi** | 완료된 baseline exchange manifest v2; paired handoff는 별도 경로 | 설명용 공통 JSON은 [`audit-baseline`](AGENT_USAGE.md#audit-a-completed-goppi-baseline-as-common-evidence) · 네이티브 측정용 관측은 [`project-baseline`](AGENT_USAGE.md#project-a-completed-goppi-baseline-into-event-observations) · [`review-handoff`](AGENT_USAGE.md#review-a-completed-paired-handoff-in-one-call) |
+| **Langfuse** | `4.35.0` 서버 blob export: observations-v2와 scores JSON 배열 | [`audit-langfuse`](AGENT_USAGE.md#account-for-langfuse-score-kinds-and-associations), 선택형 내용 최소화 행 인덱스 제공 |
 | **DeepEval** | 일반 TestRun JSON, `4.1.1` 또는 `4.2.8` | [`audit-deepeval`](AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors) |
 | **Promptfoo** | Eval output JSON, `0.123.0` 또는 `0.124.1` | [`audit-promptfoo`](AGENT_USAGE.md#source-checkout-pilot-audit-promptfoo-counts) |
+| **외부 공통 결과** | 생성 도구의 `evidence_result.v1` JSON | [`inspect-result`](AGENT_USAGE.md#inspect-an-external-common-result)로 계약과 가용성 집계를 검사하고, 선택적으로 근거 항목의 `next_action`과 선언된 메트릭 결합 상태별 개수를 집계 |
 | **네이티브 근거** | `underwrite.evidence-bundle` / `v1` | `ingest` → `measure` → `accept` |
 | **Inspect AI** | `inspect.eval-log` / `0.3.263` | `ingest` |
 | **OpenInference** | `openinference.traces` / `0.1.38` | `ingest` |
@@ -182,8 +186,14 @@ DeepEval 집계 검사의 기본값은 `4.1.1`입니다. `4.2.8` 프로필을 �
 
 범용 `ingest` / `project`는 지원되는 내보내기를 관측으로 정규화합니다.
 외부 관측은 현재 `measure` 경로로 이어지지 않습니다. goppi는 명시적인 exchange
-어댑터를 사용합니다. `project-baseline`은 네이티브 사건 관측을 만들 수 있고,
+어댑터를 사용합니다. `audit-baseline`은 정책이나 방향성 판정 없이 설명용
+`evidence_result.v1`을 만들고, `project-baseline`은 네이티브 사건 관측을 만들 수 있습니다.
 `prepare-event-policy`는 소비자 설정을 결합하면서 통계 가정은 알 수 없는 상태로 둡니다.
+이미 생성된 `evidence_result.v1` 파일은 `inspect-result`로 설치된 계약과 항목 수를
+검사할 수 있습니다. 이 명령은 생성 도구의 원본 파일이나 묶음을 확인하거나 측정·수락
+권한을 부여하지 않습니다.
+선택형 조치 뷰의 `next_action`은 근거 보완을 위한 후속 조치이며, 에이전트가 실행한
+도구 호출이나 작업 경로를 뜻하지 않습니다.
 
 ## 다시 찾아볼 수 있는 결과 보관
 
@@ -244,6 +254,12 @@ underwrite --help
 이 배포물에는 개발판의 측정, 집계 검사, 기록, handoff, `capabilities` 작업 흐름이
 포함되어 있지 않습니다. 설치된 명령은 `--help`로 확인하세요. 버전 번호가 같다고
 기능도 같은 것은 아닙니다. 개발판 앱 wheel과 공개판 코어를 섞지 마세요.
+
+공개된 `0.0.1`의 `pins refresh`에는 신뢰할 수 없는 핀 매니페스트를 사용하지 마세요.
+통제된 로컬 감사에서 조작된 매니페스트로 핀 등록부 밖의 쓰기 가능한 파일이
+덮어써지는 것을 재현했습니다. 현재 개발 체크아웃은 변경 전에 해당 경로를
+거부하지만, 이 수정은 아직 PyPI에 공개되지 않았습니다. 재현된 사례에는 조작된
+매니페스트와 쓰기 가능한 대상 파일이 필요했습니다.
 
 </details>
 
