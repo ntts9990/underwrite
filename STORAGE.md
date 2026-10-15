@@ -313,6 +313,12 @@ means only that an explicit verification artifact is linked. Its claims remain
 claims. `provenance.verified` remains false; an attestation reference or matching
 hash does not independently authenticate the producer.
 
+Read, list, and verify check opened private store and member descriptors. Verify
+streams each declared member through its checked descriptor, with one extra-byte
+probe for growth. These checks do not create an atomic whole-store snapshot or a
+hostile-filesystem sandbox: a descriptor opened before a pathname replacement
+may still read the admitted original inode.
+
 Bounds are 64 files, 128 MiB per file, 512 MiB per capture, a 256 KiB manifest,
 16 direct links, and 1,000 records per catalog. There is no hidden global store.
 The root's parent must already exist; read commands never create the supplied

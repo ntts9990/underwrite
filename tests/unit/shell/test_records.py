@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import json
 import os
 import stat
@@ -1052,6 +1053,415 @@ def test_selected_read_checks_opened_permissions_and_releases_all_descriptors(
     for descriptor in opened:
         with pytest.raises(OSError):
             os.fstat(descriptor)
+
+
+def test_read_record_checks_manifest_mode_on_the_opened_descriptor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _ = _save(tmp_path)
+    manifest = root / "records/capture.001/manifest.json"
+    original = os.open
+
+    def expose(
+        path: str | Path, flags: int, mode: int = 0o777, *, dir_fd: int | None = None
+    ) -> int:
+        descriptor = original(path, flags, mode, dir_fd=dir_fd)
+        if path in (manifest, "manifest.json"):
+            os.fchmod(descriptor, 0o644)
+        return descriptor
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "open", expose)
+        error = _assert_error("INSECURE_STORE", lambda: records.read_record(root, "capture.001"))
+    assert error.location == ""
+
+
+def test_verify_refuses_leaf_swapped_to_link_before_descriptor_acquisition(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _ = _save(tmp_path)
+    selected = root / "records/capture.001/files/source/result.json"
+    outside = tmp_path / "outside-copy.json"
+    outside.write_bytes(selected.read_bytes())
+    original = os.open
+    swapped = False
+
+    def replace_before_open(
+        path: str | Path, flags: int, mode: int = 0o777, *, dir_fd: int | None = None
+    ) -> int:
+        nonlocal swapped
+        if path == "result.json" and not swapped:
+            swapped = True
+            selected.unlink()
+            selected.symlink_to(outside)
+        return original(path, flags, mode, dir_fd=dir_fd)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "open", replace_before_open)
+        result = records.verify_record(root, "capture.001")
+    assert swapped
+    findings = cast(list[dict[str, object]], result["findings"])
+    assert findings == [
+        {"code": "FILE_NOT_REGULAR", "name": "source/result.json", "record_id": None}
+    ]
+
+
+@pytest.mark.parametrize("facade", ["read", "list", "verify"])
+def test_legacy_manifest_transport_refusal_keeps_invalid_record_location(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, facade: str
+) -> None:
+    root, _ = _save(tmp_path)
+
+    def refuse(_descriptor: int, _limit: int) -> bytes:
+        raise TransportError("private manifest reader detail")
+
+    monkeypatch.setattr(records, "read_descriptor", refuse)
+    actions: dict[str, Callable[[], object]] = {
+        "read": lambda: records.read_record(root, "capture.001"),
+        "list": lambda: records.list_records(root),
+        "verify": lambda: records.verify_record(root, "capture.001"),
+    }
+    error = _assert_error("INVALID_RECORD", actions[facade])
+    assert error.location == "/record"
+
+
+@pytest.mark.parametrize(
+    "node,facade,expected,location",
+    [
+        (node, facade, "STORE_IO_ERROR", "" if facade != "selected" else "/record")
+        for node in ("root", "records", "staging", "record")
+        for facade in ("read", "list", "verify", "selected")
+    ]
+    + [
+        ("manifest", facade, "INVALID_RECORD", "/record")
+        for facade in ("read", "list", "verify")
+    ]
+    + [("manifest", "selected", "STORE_IO_ERROR", "/record")]
+    + [
+        (
+            node,
+            facade,
+            "FILE_READ_FAILED" if facade == "verify" else "SOURCE_READ_FAILED",
+            "/record",
+        )
+        for node in ("files", "leaf")
+        for facade in ("verify", "selected")
+    ],
+)
+def test_descriptor_close_failure_preserves_facade_diagnostic(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    node: str,
+    facade: str,
+    expected: str,
+    location: str,
+) -> None:
+    root, _ = _save(tmp_path)
+    record = root / "records/capture.001"
+    target = {
+        "root": root,
+        "records": root / "records",
+        "staging": root / ".staging",
+        "record": record,
+        "manifest": record / "manifest.json",
+        "files": record / "files/source",
+        "leaf": record / "files/source/result.json",
+    }[node]
+    identity = (target.stat().st_dev, target.stat().st_ino)
+    original_close = os.close
+    failed = False
+
+    def fail_after_close(descriptor: int) -> None:
+        nonlocal failed
+        info = os.fstat(descriptor)
+        original_close(descriptor)
+        if not failed and (info.st_dev, info.st_ino) == identity:
+            failed = True
+            raise OSError(errno.EIO, "private close detail")
+
+    actions: dict[str, Callable[[], object]] = {
+        "read": lambda: records.read_record(root, "capture.001"),
+        "list": lambda: records.list_records(root),
+        "verify": lambda: records.verify_record(root, "capture.001"),
+        "selected": lambda: records.read_record_file(root, "capture.001", "source/result.json"),
+    }
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "close", fail_after_close)
+        if expected == "FILE_READ_FAILED":
+            report = records.verify_record(root, "capture.001")
+            assert cast(list[dict[str, object]], report["findings"]) == [
+                {"code": expected, "name": "source/result.json", "record_id": None}
+            ]
+        else:
+            error = _assert_error(expected, actions[facade])
+            assert error.location == location
+    assert failed
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        ValueError("programming fault"),
+        TypeError("programming fault"),
+        RecordError("RECORD_FILE_NOT_FOUND", "/record"),
+    ],
+)
+def test_manifest_close_error_does_not_mask_unexpected_reader_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: Exception
+) -> None:
+    root, _ = _save(tmp_path)
+    target = root / "records/capture.001/manifest.json"
+    identity = (target.stat().st_dev, target.stat().st_ino)
+    original_close = os.close
+    failed = False
+
+    def fail_after_close(descriptor: int) -> None:
+        nonlocal failed
+        info = os.fstat(descriptor)
+        original_close(descriptor)
+        if not failed and (info.st_dev, info.st_ino) == identity:
+            failed = True
+            raise OSError(errno.EIO, "private close detail")
+
+    def refuse(_descriptor: int, _limit: int) -> bytes:
+        raise failure
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "close", fail_after_close)
+        patch.setattr(records, "read_descriptor", refuse)
+        with pytest.raises(type(failure)) as caught:
+            records.read_record(root, "capture.001")
+    assert caught.value is failure
+    assert failed
+
+
+@pytest.mark.parametrize("facade", ["read", "list", "verify"])
+def test_legacy_manifest_unexpected_reader_error_still_propagates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, facade: str
+) -> None:
+    root, _ = _save(tmp_path)
+    failure = ValueError("programming fault")
+
+    def refuse(_descriptor: int, _limit: int) -> bytes:
+        raise failure
+
+    monkeypatch.setattr(records, "read_descriptor", refuse)
+    actions: dict[str, Callable[[], object]] = {
+        "read": lambda: records.read_record(root, "capture.001"),
+        "list": lambda: records.list_records(root),
+        "verify": lambda: records.verify_record(root, "capture.001"),
+    }
+    with pytest.raises(ValueError) as caught:
+        actions[facade]()
+    assert caught.value is failure
+
+
+@pytest.mark.parametrize(
+    "relative", [".", "records", "records/capture.001", "records/capture.001/manifest.json"]
+)
+def test_legacy_control_mode_errors_keep_empty_location(tmp_path: Path, relative: str) -> None:
+    root, _ = _save(tmp_path)
+    selected = root if relative == "." else root / relative
+    selected.chmod(0o755 if selected.is_dir() else 0o644)
+    error = _assert_error("INSECURE_STORE", lambda: records.read_record(root, "capture.001"))
+    assert error.location == ""
+
+
+def test_verify_streams_member_in_bounded_reads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    raw = b"x" * (2 * records._READ_SIZE + 3)  # pyright: ignore[reportPrivateUsage]
+    root, _ = _save(tmp_path, raw)
+    selected = root / "records/capture.001/files/source/result.json"
+    inode = selected.stat().st_ino
+    original = os.read
+    requests: list[int] = []
+
+    def tracked(descriptor: int, size: int) -> bytes:
+        if os.fstat(descriptor).st_ino == inode:
+            requests.append(size)
+        return original(descriptor, size)
+
+    monkeypatch.setattr(os, "read", tracked)
+    assert records.verify_record(root, "capture.001")["valid"] is True
+    assert requests and max(requests) <= records._READ_SIZE  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.parametrize("change", ["growth", "short_read", "zero_growth"])
+def test_verify_detects_growth_and_short_reads_from_opened_leaf(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    root, _ = _save(tmp_path, b"" if change == "zero_growth" else b"abcd")
+    selected = root / "records/capture.001/files/source/result.json"
+    inode = selected.stat().st_ino
+    original = os.read
+    changed = False
+
+    def altered(descriptor: int, size: int) -> bytes:
+        nonlocal changed
+        if os.fstat(descriptor).st_ino == inode and not changed:
+            changed = True
+            if change == "short_read":
+                return b""
+            with selected.open("ab") as stream:
+                stream.write(b"x")
+        return original(descriptor, size)
+
+    monkeypatch.setattr(os, "read", altered)
+    findings = cast(list[dict[str, object]], records.verify_record(root, "capture.001")["findings"])
+    assert changed and findings == [
+        {"code": "FILE_SIZE_MISMATCH", "name": "source/result.json", "record_id": None}
+    ]
+
+
+def test_verify_fifo_member_is_not_read_or_blocked(tmp_path: Path) -> None:
+    root, _ = _save(tmp_path)
+    selected = root / "records/capture.001/files/source/result.json"
+    selected.unlink()
+    os.mkfifo(selected, PRIVATE_FILE_MODE)
+    findings = cast(list[dict[str, object]], records.verify_record(root, "capture.001")["findings"])
+    assert findings == [
+        {"code": "FILE_NOT_REGULAR", "name": "source/result.json", "record_id": None}
+    ]
+
+
+@pytest.mark.parametrize("phase", ["open", "read"])
+def test_verify_member_io_refusal_is_one_finite_finding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, phase: str
+) -> None:
+    root, _ = _save(tmp_path)
+    selected = root / "records/capture.001/files/source/result.json"
+    inode = selected.stat().st_ino
+    original_open, original_read = os.open, os.read
+
+    def refused_open(
+        path: str | Path, flags: int, mode: int = 0o777, *, dir_fd: int | None = None
+    ) -> int:
+        if phase == "open" and path == "result.json":
+            raise PermissionError("private host path")
+        return original_open(path, flags, mode, dir_fd=dir_fd)
+
+    def refused_read(descriptor: int, size: int) -> bytes:
+        if phase == "read" and os.fstat(descriptor).st_ino == inode:
+            raise OSError("private host path")
+        return original_read(descriptor, size)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "open", refused_open)
+        patch.setattr(os, "read", refused_read)
+        report = records.verify_record(root, "capture.001")
+    findings = cast(list[dict[str, object]], report["findings"])
+    assert findings == [
+        {"code": "FILE_READ_FAILED", "name": "source/result.json", "record_id": None}
+    ]
+
+
+def test_verify_checks_member_mode_on_opened_descriptor_and_closes_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _ = _save(tmp_path)
+    original = os.open
+    opened: list[int] = []
+
+    def expose(
+        path: str | Path, flags: int, mode: int = 0o777, *, dir_fd: int | None = None
+    ) -> int:
+        descriptor = original(path, flags, mode, dir_fd=dir_fd)
+        if path == "result.json":
+            os.fchmod(descriptor, 0o644)
+            opened.append(descriptor)
+        return descriptor
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "open", expose)
+        report = records.verify_record(root, "capture.001")
+        findings = cast(list[dict[str, object]], report["findings"])
+    assert findings == [
+        {"code": "FILE_NOT_PRIVATE", "name": "source/result.json", "record_id": None}
+    ]
+    assert opened
+    for descriptor in opened:
+        with pytest.raises(OSError):
+            os.fstat(descriptor)
+
+
+def test_verify_refuses_nested_directory_changed_to_link_before_open(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _ = _save(tmp_path)
+    nested = root / "records/capture.001/files/source"
+    moved = tmp_path / "moved-source"
+    original = os.open
+    swapped = False
+
+    def replace_before_open(
+        path: str | Path, flags: int, mode: int = 0o777, *, dir_fd: int | None = None
+    ) -> int:
+        nonlocal swapped
+        if path == "source" and not swapped:
+            swapped = True
+            nested.rename(moved)
+            nested.symlink_to(moved, target_is_directory=True)
+        return original(path, flags, mode, dir_fd=dir_fd)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "open", replace_before_open)
+        report = records.verify_record(root, "capture.001")
+        findings = cast(list[dict[str, object]], report["findings"])
+    assert swapped and findings == [
+        {"code": "FILE_NOT_REGULAR", "name": "source/result.json", "record_id": None}
+    ]
+
+
+def test_catalog_disappearing_record_directory_is_not_unpublished(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _ = _save(tmp_path)
+    directory = root / "records/capture.001"
+    original = os.open
+    moved = False
+
+    def disappear(
+        path: str | Path, flags: int, mode: int = 0o777, *, dir_fd: int | None = None
+    ) -> int:
+        nonlocal moved
+        if path == "capture.001" and not moved:
+            moved = True
+            directory.rename(tmp_path / "moved-record")
+        return original(path, flags, mode, dir_fd=dir_fd)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "open", disappear)
+        error = _assert_error("RECORD_NOT_FOUND", lambda: records.list_records(root))
+    assert moved and error.location == ""
+
+
+def test_verify_direct_link_reuses_one_store_root_descriptor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source(tmp_path)
+    root = tmp_path / "store"
+    linked = records.save_record(root, _spec("linked.001"), source)
+    spec = _spec("analysis.001")
+    spec["links"] = [
+        {"relation": "input", "record_id": "linked.001", "manifest_digest": linked.digest}
+    ]
+    records.save_record(root, spec, source)
+    original = os.open
+    root_opens = 0
+
+    def tracked(
+        path: str | Path, flags: int, mode: int = 0o777, *, dir_fd: int | None = None
+    ) -> int:
+        nonlocal root_opens
+        if path == root:
+            root_opens += 1
+        return original(path, flags, mode, dir_fd=dir_fd)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "open", tracked)
+        assert records.verify_record(root, "analysis.001")["valid"] is True
+    assert root_opens == 1
 
 
 def test_selected_read_returns_verified_buffer_after_leaf_replacement(
