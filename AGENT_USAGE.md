@@ -2,11 +2,11 @@
 
 underwrite reads local artifacts. An agent can run its CLI, keep the JSON outputs,
 and report what each output establishes. It does not need a server or credentials.
-Install the published CLI with `uv tool install 'underwrite==0.1.0'`, then run
+Install the versioned CLI with `uv tool install 'underwrite==0.1.1'`, then run
 `underwrite` directly. The app resolves a compatible `underwrite-core`.
 For an importable Python API, install the same app version into a Python 3.12
-environment; see [Install](README.md#install). A `0.1.0` app combined with the
-older `0.0.1` core is not a supported pairing.
+environment; see [Install](README.md#install). The app accepts core
+`>=0.1.0,<0.2`; the older `0.0.1` core is not a supported pairing.
 
 Commands below that name `fixtures/`, `skills/`, or other repository files need
 a [GitHub checkout](https://github.com/ntts9990/underwrite); those files are not
@@ -116,8 +116,9 @@ approved a change. Acceptance always requires human review and sets
 
 The current native path uses `measurement_policy.v3`, profile
 `binary-event-directional.v1`, `read.v2`, `declared_claims.v2`, and
-`acceptance_decision.v2`. Both published packages are `0.1.0`; the older PyPI
-`0.0.1` lacks these workflows. Use the installed CLI or a checkout for them.
+`acceptance_decision.v2`. These workflows were introduced in published `0.1.0`
+and remain in the `0.1.1` source tree; older PyPI `0.0.1` lacks them. Use the
+installed CLI or a checkout for the selected version.
 
 The native bundle declares `payload.measurement_semantics` (`measurement_semantics.v1`):
 the construct, binary event and positive meaning, desirable direction, unit,
@@ -749,8 +750,8 @@ The [observed-and-missing fixture](fixtures/examples/evidence/synthetic-observed
 has one observed zero with an endpoint reason and a separate missing
 infrastructure slot. It remains `not_measured` because a primary pair is missing.
 The source annotation does not repair that gap. Older PyPI `0.0.1` strict
-validators may reject reason-bearing outputs; use the matching `0.1.0` source
-or wheel contracts.
+validators may reject reason-bearing outputs; use the matching `0.1.0` or
+`0.1.1` source or wheel contracts.
 
 A nonsignificant p-value does not establish equivalence. None of these three
 descriptive reports is a `read.v2`, an acceptance decision, or merge authorization; do
@@ -860,8 +861,8 @@ It returns the same validated result object. Invalid source input raises a
 finite `CaptureError` or `BaselineProjectionError`; the CLI projects those
 into one `evidence_error.v1` on stderr with exit 2 and no partial stdout.
 Use `underwrite capabilities --json` to confirm that the installed executable
-offers this route. The older PyPI `0.0.1` lacks it; use `0.1.0` source or
-matching wheels.
+offers this route. The older PyPI `0.0.1` lacks it; use the installed `0.1.0`
+CLI or the `0.1.1` source/wheel and confirm the profile.
 
 When you explicitly want to retain the same source bytes and result in a
 private immutable record, use the one-call capture path:

@@ -7,4 +7,5 @@ and bundles. Requires Python 3.12 or later.
 This package performs pure computations using the Python standard library. Local
 file access and CLI operations belong to the companion `underwrite` package.
 
-Licensed under [Apache-2.0](LICENSE). See [NOTICE](NOTICE).
+Licensed under [Apache-2.0](https://github.com/ntts9990/underwrite/blob/main/LICENSE).
+See the repository [NOTICE](https://github.com/ntts9990/underwrite/blob/main/NOTICE).

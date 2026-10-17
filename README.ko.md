@@ -33,7 +33,7 @@ underwrite는 평가를 실행하는 도구를 보완합니다. goppi는 실행,
 파일을 검사하는 데 Docker, 대시보드, 제공자 인증 정보는 필요하지 않습니다.
 
 > [!NOTE]
-> **`0.1.0`이 PyPI에 공개되었습니다.** CLI와 Python 작업 흐름은 체크아웃 없이
+> **이 안내는 `underwrite==0.1.1`을 대상으로 합니다.** CLI와 Python 작업 흐름은 체크아웃 없이
 > 사용할 수 있습니다. 이전 `0.0.1`에는 이 작업 흐름이 없고 `pins refresh`에
 > 별도 주의 사항이 있습니다. [설치](#설치)를 참고하세요.
 
@@ -41,14 +41,14 @@ underwrite는 평가를 실행하는 도구를 보완합니다. goppi는 실행,
 
 **Python 3.12 이상**과 [uv](https://docs.astral.sh/uv/)가 필요합니다. 아래의 선택형
 합성 예제 다운로드에는 `curl`을 사용합니다.
-`0.1.0`은 Linux와 macOS의 CPython 3.12에서 테스트했습니다. 일반 아티팩트
-읽기를 포함한 파일 기반 CLI 작업에는 Unix/POSIX 파일 API가 필요합니다.
+파일 기반 CLI 작업은 Linux와 macOS의 CPython 3.12에서 테스트했습니다.
+일반 아티팩트 읽기를 포함해 Unix/POSIX 파일 API가 필요합니다.
 
 **1. 설치하고 파일을 검사합니다.** 앱만 설치해도 호환되는 `underwrite-core`가
 함께 설치됩니다. 공개 합성 예제를 다운로드하세요. 체크아웃이나 API 키는 필요하지 않습니다.
 
 ```sh
-uv tool install 'underwrite==0.1.0'
+uv tool install 'underwrite==0.1.1'
 underwrite capabilities --json
 example_dir=$(mktemp -d)
 curl -fsSLo "$example_dir/promptfoo.json" \
@@ -174,7 +174,7 @@ Python에서는 `underwrite.instrument.ingest.accounting.audit_promptfoo_file(Pa
 
 터미널을 사용할 수 있는 에이전트에게 다음과 같이 요청할 수 있습니다.
 
-> 설치된 `underwrite` 0.1.0 CLI로
+> 설치된 `underwrite` 0.1.1 CLI로
 > `/absolute/path/to/completed-promptfoo-export.json`을 Promptfoo 0.123.0
 > 내보내기 파일로 검토하세요. `capabilities --json`과
 > `audit-promptfoo --version 0.123.0`을 사용하세요. `declared_relation`, `producer_stats`,
@@ -274,11 +274,11 @@ underwrite는 서로 다른 종류의 근거를 구분합니다.
 
 ## 설치
 
-공개된 앱을 설치하면 호환되는 코어가 의존성으로 선택됩니다. 설치된 프로필은
+버전을 지정해 앱을 설치하면 호환되는 코어가 의존성으로 선택됩니다. 설치된 프로필은
 `underwrite --help`와 `underwrite capabilities --json`으로 확인하세요.
 
 ```sh
-uv tool install 'underwrite==0.1.0'
+uv tool install 'underwrite==0.1.1'
 underwrite --help
 underwrite capabilities --json
 ```
@@ -291,7 +291,7 @@ underwrite capabilities --json
 
 ```sh
 uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python 'underwrite==0.1.0'
+uv pip install --python .venv/bin/python 'underwrite==0.1.1'
 .venv/bin/python - <<'PY'
 from pathlib import Path
 from underwrite.instrument.ingest.accounting import audit_promptfoo_file
