@@ -17,6 +17,7 @@ from underwrite.instrument.ingest.application import (
     DEFAULT_MAX_BYTES,
     DEFAULT_MAX_DEPTH,
     DIAGNOSTICS,
+    direct_file_read_error,
     instrument_diagnostic,
     packaged_ingestor,
 )
@@ -65,15 +66,7 @@ def read_langfuse_file(path: Path, role: str) -> bytes:
     try:
         return read_local_file(path, DEFAULT_MAX_BYTES)
     except TransportError as exc:
-        reason = str(exc)
-        if reason == "BYTE_LIMIT_EXCEEDED":
-            code = "INPUT_LIMIT_EXCEEDED"
-        elif reason == "UNSUPPORTED_PLATFORM":
-            code = "UNSUPPORTED_PLATFORM"
-        else:
-            code = "SOURCE_READ_FAILED"
-            if reason != "SOURCE_NOT_REGULAR_FILE":
-                reason = "SOURCE_READ_FAILED"
+        code, reason = direct_file_read_error(exc)
         raise LangfuseFileError(code, reason, location) from None
 
 
@@ -108,9 +101,7 @@ def audit_langfuse_files(observations_file: Path, scores_file: Path) -> dict[str
     return _account(observation_identity, observations, score_identity, scores)
 
 
-def audit_langfuse_row_index_files(
-    observations_file: Path, scores_file: Path
-) -> dict[str, object]:
+def audit_langfuse_row_index_files(observations_file: Path, scores_file: Path) -> dict[str, object]:
     """Return the checked content-minimized view of the same two selected files."""
     accounting = audit_langfuse_files(observations_file, scores_file)
     try:

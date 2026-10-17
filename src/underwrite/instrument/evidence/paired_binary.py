@@ -15,7 +15,6 @@ from underwrite_core.canonical import CanonicalizationError, canonical_bytes, di
 
 from underwrite.instrument.evidence._resampling import ResamplingPolicy
 from underwrite.instrument.evidence.paired import (
-    EXACT_MAX_CASES,
     CaseScore,
     PairedError,
     measure_paired,
@@ -471,11 +470,6 @@ def _measure(parsed: _Parsed) -> tuple[dict[str, object], tuple[str, ...]]:
     if primary is None:
         raise _invalid()
     settings = parsed.settings
-    n = len(primary)
-    transforms = 2**n if n <= EXACT_MAX_CASES else cast(int, settings["permutation_iterations"])
-    reserved = n * (transforms + cast(int, settings["bootstrap_iterations"]))
-    if reserved > cast(int, settings["max_work"]):
-        raise _invalid("COMPUTATION_LIMIT_EXCEEDED")
     baseline = [
         CaseScore(case_id, cast(int, parsed.records[(case_id, "baseline", 0)].outcome))
         for case_id in sorted(primary)

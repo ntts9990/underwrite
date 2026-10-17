@@ -65,7 +65,7 @@ def check_sdist(path: Path, name: str, expected: bytes) -> None:
             assert stream.read() == expected, "RESOURCE_BYTES_DIFFER"
 
 
-def _metadata_bytes(path: Path) -> bytes:
+def read_metadata_bytes(path: Path) -> bytes:
     if path.suffix == ".whl":
         with zipfile.ZipFile(path) as archive:
             names = [name for name in archive.namelist() if name.endswith(".dist-info/METADATA")]
@@ -81,6 +81,57 @@ def _metadata_bytes(path: Path) -> bytes:
         stream = archive.extractfile(members[0])
         assert stream is not None
         return stream.read()
+
+
+@pytest.mark.parametrize("members", [[], ["a.dist-info/METADATA", "b.dist-info/METADATA"]])
+def test_wheel_metadata_requires_one_member(tmp_path: Path, members: list[str]) -> None:
+    artifact = tmp_path / "synthetic.whl"
+    with zipfile.ZipFile(artifact, "w") as archive:
+        for name in members:
+            archive.writestr(name, b"Name: synthetic\n")
+    with pytest.raises(AssertionError, match="METADATA_MEMBER_POPULATION"):
+        read_metadata_bytes(artifact)
+
+
+def test_wheel_metadata_does_not_require_unix_mode_bits(tmp_path: Path) -> None:
+    artifact = tmp_path / "synthetic.whl"
+    with zipfile.ZipFile(artifact, "w") as archive:
+        member = zipfile.ZipInfo("synthetic.dist-info/METADATA")
+        member.create_system = 0
+        member.external_attr = 0x20
+        archive.writestr(member, b"Name: synthetic\n")
+    assert read_metadata_bytes(artifact) == b"Name: synthetic\n"
+
+
+@pytest.mark.parametrize("member_type", [tarfile.REGTYPE, tarfile.SYMTYPE])
+def test_sdist_metadata_requires_regular_member(tmp_path: Path, member_type: bytes) -> None:
+    artifact = tmp_path / "synthetic.tar.gz"
+    with tarfile.open(artifact, "w:gz") as archive:
+        member = tarfile.TarInfo("synthetic/PKG-INFO")
+        member.type = member_type
+        member.size = len(b"Name: synthetic\n") if member_type == tarfile.REGTYPE else 0
+        if member_type == tarfile.SYMTYPE:
+            member.linkname = "elsewhere"
+        content = io.BytesIO(b"Name: synthetic\n") if member_type == tarfile.REGTYPE else None
+        archive.addfile(member, content)
+    if member_type == tarfile.REGTYPE:
+        assert read_metadata_bytes(artifact) == b"Name: synthetic\n"
+    else:
+        with pytest.raises(AssertionError, match="PKG_INFO_MEMBER_POPULATION"):
+            read_metadata_bytes(artifact)
+
+
+@pytest.mark.parametrize("names", [[], ["one/PKG-INFO", "two/PKG-INFO"]])
+def test_sdist_metadata_requires_one_member(tmp_path: Path, names: list[str]) -> None:
+    artifact = tmp_path / "synthetic.tar.gz"
+    with tarfile.open(artifact, "w:gz") as archive:
+        for name in names:
+            data = b"Name: synthetic\n"
+            member = tarfile.TarInfo(name)
+            member.size = len(data)
+            archive.addfile(member, io.BytesIO(data))
+    with pytest.raises(AssertionError, match="PKG_INFO_MEMBER_POPULATION"):
+        read_metadata_bytes(artifact)
 
 
 def _readme_payload(metadata_bytes: bytes) -> str:
@@ -237,7 +288,7 @@ def test_app_wheel_and_sdist_keep_authored_core_requirement(built: tuple[Path, P
         dependency for dependency in app["dependencies"] if dependency.startswith("underwrite-core")
     )
     for artifact in built:
-        metadata = BytesParser().parsebytes(_metadata_bytes(artifact))
+        metadata = BytesParser().parsebytes(read_metadata_bytes(artifact))
         assert metadata["Version"] == app["version"]
         dependencies = metadata.get_all("Requires-Dist") or []
         assert requirement in dependencies
@@ -251,7 +302,7 @@ def test_built_readmes_are_authored_utf8_and_render_with_usable_links(
     authored = (ROOT / project_root / project["readme"]).read_bytes()
     archive_name = f"{project['name'].replace('-', '_')}-{project['version']}"
     for suffix in ("-py3-none-any.whl", ".tar.gz"):
-        metadata_bytes = _metadata_bytes(distributions / f"{archive_name}{suffix}")
+        metadata_bytes = read_metadata_bytes(distributions / f"{archive_name}{suffix}")
         metadata = BytesParser().parsebytes(metadata_bytes)
         assert not any(
             item.startswith("readme-renderer") for item in metadata.get_all("Requires-Dist") or []

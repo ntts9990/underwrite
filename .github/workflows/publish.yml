@@ -36,12 +36,12 @@ jobs:
           from email.parser import BytesParser
           from pathlib import Path
           import sys
-          import tarfile
           import tomllib
-          import zipfile
 
           sys.path[:0] = ["tests", "tests/gates"]
-          from test_packaged_contracts import check_source, check_sdist, check_wheel, population
+          from test_packaged_contracts import (
+              check_source, check_sdist, check_wheel, population, read_metadata_bytes,
+          )
 
           projects = {
               "underwrite": tomllib.loads(Path("pyproject.toml").read_text())["project"],
@@ -55,18 +55,7 @@ jobs:
           artifacts = [path for path in Path("dist").iterdir() if path.name != ".gitignore"]
           assert {path.name for path in artifacts} == expected
           for path in artifacts:
-              if path.suffix == ".whl":
-                  with zipfile.ZipFile(path) as archive:
-                      members = [name for name in archive.namelist() if name.endswith(".dist-info/METADATA")]
-                      assert len(members) == 1
-                      metadata = BytesParser().parsebytes(archive.read(members[0]))
-              else:
-                  with tarfile.open(path) as archive:
-                      members = [member for member in archive.getmembers() if member.name.count("/") == 1 and member.name.endswith("/PKG-INFO")]
-                      assert len(members) == 1
-                      stream = archive.extractfile(members[0])
-                      assert stream is not None
-                      metadata = BytesParser().parsebytes(stream.read())
+              metadata = BytesParser().parsebytes(read_metadata_bytes(path))
               package = "underwrite-core" if path.name.startswith("underwrite_core-") else "underwrite"
               assert metadata["Name"] == package
               assert metadata["Version"] == projects[package]["version"]

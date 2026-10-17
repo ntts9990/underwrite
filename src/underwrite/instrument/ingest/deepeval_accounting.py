@@ -19,6 +19,7 @@ from underwrite.instrument.ingest.application import (
     DEFAULT_MAX_BYTES,
     DEFAULT_MAX_DEPTH,
     DIAGNOSTICS,
+    direct_file_read_error,
     instrument_diagnostic,
     packaged_ingestor,
 )
@@ -116,15 +117,7 @@ def read_deepeval_file(path: Path) -> bytes:
     try:
         return read_local_file(path, DEFAULT_MAX_BYTES)
     except TransportError as exc:
-        reason = str(exc)
-        if reason == "BYTE_LIMIT_EXCEEDED":
-            code = "INPUT_LIMIT_EXCEEDED"
-        elif reason == "UNSUPPORTED_PLATFORM":
-            code = "UNSUPPORTED_PLATFORM"
-        else:
-            code = "SOURCE_READ_FAILED"
-            if reason != "SOURCE_NOT_REGULAR_FILE":
-                reason = "SOURCE_READ_FAILED"
+        code, reason = direct_file_read_error(exc)
         raise DeepevalFileError(code, reason, "/file") from None
 
 

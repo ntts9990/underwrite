@@ -203,6 +203,35 @@ def test_work_limit_is_configuration_error_not_negative_evidence(
     assert error["next_action"] == "REDUCE_COMPUTATION"
 
 
+def test_work_budget_boundary_and_insufficient_cohort_cli(tmp_path: Path, capsys: Any) -> None:
+    policy = policy_doc()
+    reserved = 2 * (4 + policy["bootstrap_iterations"])
+    policy["max_work"] = reserved
+    status, report, other = invoke(tmp_path, capsys, policy=policy)
+    assert status == 0 and other == ""
+    assert report["status"] == "measured"
+    assert report["estimate"]["reserved_work"] == reserved
+
+    policy["max_work"] = reserved - 1
+    status, error, other = invoke(tmp_path, capsys, policy=policy)
+    assert status == ERROR_EXIT and other == ""
+    assert error["code"] == "COMPUTATION_LIMIT_EXCEEDED"
+    assert error["next_action"] == "REDUCE_COMPUTATION"
+
+    one_case = input_doc()
+    one_case["primary_case_ids"] = ["a"]
+    one_case["planned_slots"] = [
+        slot for slot in one_case["planned_slots"] if slot["case_id"] == "a"
+    ]
+    one_case["slot_records"] = [slot for slot in one_case["slot_records"] if slot["case_id"] == "a"]
+    policy["max_work"] = 1
+    status, report, other = invoke(tmp_path, capsys, value=one_case, policy=policy)
+    assert status == 0 and other == ""
+    assert report["status"] == "not_measured"
+    assert report["reason"] == "INSUFFICIENT_PRIMARY_CASES"
+    assert report["estimate"]["reserved_work"] is None
+
+
 def test_missing_argument_is_bounded_usage_error(capsys: Any) -> None:
     assert main(["--json"]) == ERROR_EXIT
     streams = capsys.readouterr()

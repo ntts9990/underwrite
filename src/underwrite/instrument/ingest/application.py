@@ -48,6 +48,18 @@ def packaged_ingestor(*, max_bytes: int, max_depth: int) -> Ingestor:
         raise SchemaConfigurationError("INVALID_OBSERVATION_SCHEMA") from exc
 
 
+def direct_file_read_error(error: TransportError) -> tuple[str, str]:
+    """Map a normalized local read refusal to a finite direct-capture diagnostic."""
+    reason = str(error)
+    if reason == "BYTE_LIMIT_EXCEEDED":
+        return "INPUT_LIMIT_EXCEEDED", reason
+    if reason == "UNSUPPORTED_PLATFORM":
+        return reason, reason
+    if reason == "SOURCE_NOT_REGULAR_FILE":
+        return "SOURCE_READ_FAILED", reason
+    return "SOURCE_READ_FAILED", "SOURCE_READ_FAILED"
+
+
 # Values below are adapter-owned public reasons, never arbitrary exception text.
 DIAGNOSTICS: dict[type[Exception], tuple[str, int, dict[str, str] | str]] = {
     UsageError: (

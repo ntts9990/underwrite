@@ -318,6 +318,55 @@ def test_assumptions_false_and_work_limit_remain_nonverdicts() -> None:
     assert exc.value.code == "INVALID_INPUT"
 
 
+def test_exact_work_budget_and_one_below_preserve_measured_boundary() -> None:
+    settings = policy()
+    # Two primary pairs use four exact sign flips and 1,000 bootstrap draws.
+    reserved = 2 * (4 + settings["bootstrap_iterations"])
+    settings["max_work"] = reserved
+    measured = _evaluate(source_input(), settings)
+    assert measured["status"] == "measured"
+    assert measured["estimate"]["reserved_work"] == reserved
+    assert measured["estimate"]["effect"] == EXPECTED_EFFECT
+    assert measured["estimate"] == _evaluate(source_input(), settings)["estimate"]
+
+    settings["max_work"] = reserved - 1
+    with pytest.raises(PairedBinaryError) as exc:
+        _evaluate(source_input(), settings)
+    assert exc.value.code == "COMPUTATION_LIMIT_EXCEEDED"
+
+
+@pytest.mark.parametrize("count,transforms", [(12, 4096), (13, 10_000)])
+def test_work_reservation_crosses_exact_sampling_boundary(count: int, transforms: int) -> None:
+    cases = tuple(f"case-{index:02d}" for index in range(count))
+    settings = policy()
+    reserved = count * (transforms + settings["bootstrap_iterations"])
+    settings["max_work"] = reserved
+    measured = _evaluate(source_input(cases), settings)
+    assert measured["status"] == "measured"
+    assert measured["estimate"]["reserved_work"] == reserved
+
+    settings["max_work"] = reserved - 1
+    with pytest.raises(PairedBinaryError) as exc:
+        _evaluate(source_input(cases), settings)
+    assert exc.value.code == "COMPUTATION_LIMIT_EXCEEDED"
+
+
+def test_unmeasured_reasons_precede_work_budget() -> None:
+    settings = policy()
+    settings["max_work"] = 1
+    one_case = _evaluate(source_input(("a",)), settings)
+    assert one_case["status"] == "not_measured"
+    assert one_case["reason"] == "INSUFFICIENT_PRIMARY_CASES"
+    assert one_case["estimate"]["reserved_work"] is None
+
+    incomplete = source_input()
+    incomplete["slot_records"].pop()
+    assert _evaluate(incomplete, settings)["reason"] == "PRIMARY_COHORT_INCOMPLETE"
+
+    settings["assumptions"]["fixed_sample"] = False
+    assert _evaluate(source_input(), settings)["reason"] == "ASSUMPTIONS_NOT_DECLARED"
+
+
 def test_slot_array_order_does_not_change_accounting_or_estimate() -> None:
     original = source_input()
     reversed_input = deepcopy(original)
