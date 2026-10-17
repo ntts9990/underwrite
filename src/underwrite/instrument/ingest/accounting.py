@@ -19,6 +19,7 @@ from underwrite.instrument.ingest.application import (
     DEFAULT_MAX_BYTES,
     DEFAULT_MAX_DEPTH,
     DIAGNOSTICS,
+    direct_file_read_error,
     instrument_diagnostic,
     packaged_ingestor,
 )
@@ -197,15 +198,7 @@ def read_promptfoo_file(path: Path) -> bytes:
     try:
         raw = read_local_file(path, DEFAULT_MAX_BYTES)
     except TransportError as exc:
-        reason = str(exc)
-        if reason == "BYTE_LIMIT_EXCEEDED":
-            code = "INPUT_LIMIT_EXCEEDED"
-        elif reason == "UNSUPPORTED_PLATFORM":
-            code = "UNSUPPORTED_PLATFORM"
-        else:
-            code = "SOURCE_READ_FAILED"
-            if reason != "SOURCE_NOT_REGULAR_FILE":
-                reason = "SOURCE_READ_FAILED"
+        code, reason = direct_file_read_error(exc)
         raise AccountingCaseError(code, reason, "/file") from None
     return raw
 
@@ -216,9 +209,7 @@ def validate_version(version: str) -> None:
         raise AccountingCaseError("UNSUPPORTED_FORMAT", "UNSUPPORTED_PROMPTFOO_VERSION")
 
 
-def _audit_promptfoo_bytes(
-    raw: bytes, *, version: str, row_index: bool
-) -> dict[str, object]:
+def _audit_promptfoo_bytes(raw: bytes, *, version: str, row_index: bool) -> dict[str, object]:
     validate_version(version)
     try:
         observed, projection = packaged_ingestor(
@@ -258,9 +249,7 @@ def audit_promptfoo_file(path: Path, *, version: str = SOURCE[1]) -> dict[str, o
     return audit_promptfoo_bytes(read_promptfoo_file(path), version=version)
 
 
-def audit_promptfoo_row_index_file(
-    path: Path, *, version: str = SOURCE[1]
-) -> dict[str, object]:
+def audit_promptfoo_row_index_file(path: Path, *, version: str = SOURCE[1]) -> dict[str, object]:
     """Return a checked content-minimized row view after one bounded file read."""
     validate_version(version)
     try:

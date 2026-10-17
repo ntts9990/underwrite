@@ -1,4 +1,4 @@
-"""Descriptor ownership and byte accounting, not an implementation-shaped one-read mock."""
+"""Descriptor ownership, byte accounting, and direct-capture read diagnostics."""
 
 from __future__ import annotations
 
@@ -7,12 +7,18 @@ import stat
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from types import ModuleType
+from typing import Any, cast
 
 import pytest
 from _repo_paths import repo_root
 
-from underwrite.instrument.ingest import transport
+from underwrite.instrument.ingest import (
+    accounting,
+    deepeval_accounting,
+    langfuse_accounting,
+    transport,
+)
 from underwrite.instrument.ingest.project import Projection, Source
 
 ROOT = repo_root(Path(__file__).resolve())
@@ -258,6 +264,83 @@ def test_unexpected_failures_propagate_after_descriptor_cleanup(
         _read(path, 1)
     assert caught.value is error
     _closed(fd, real_fstat)
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        (accounting, "read_promptfoo_file", None, accounting.AccountingCaseError, "/file"),
+        (
+            deepeval_accounting,
+            "read_deepeval_file",
+            None,
+            deepeval_accounting.DeepevalFileError,
+            "/file",
+        ),
+        (
+            langfuse_accounting,
+            "read_langfuse_file",
+            "observations",
+            langfuse_accounting.LangfuseFileError,
+            "/observations",
+        ),
+        (
+            langfuse_accounting,
+            "read_langfuse_file",
+            "scores",
+            langfuse_accounting.LangfuseFileError,
+            "/scores",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "expected",
+    [
+        ("SOURCE_READ_FAILED", "SOURCE_READ_FAILED", "SOURCE_READ_FAILED"),
+        ("SOURCE_NOT_REGULAR_FILE", "SOURCE_READ_FAILED", "SOURCE_NOT_REGULAR_FILE"),
+        ("BYTE_LIMIT_EXCEEDED", "INPUT_LIMIT_EXCEEDED", "BYTE_LIMIT_EXCEEDED"),
+        ("UNSUPPORTED_PLATFORM", "UNSUPPORTED_PLATFORM", "UNSUPPORTED_PLATFORM"),
+        ("private source text", "SOURCE_READ_FAILED", "SOURCE_READ_FAILED"),
+    ],
+)
+def test_direct_capture_reader_has_one_finite_read_refusal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    case: tuple[ModuleType, str, str | None, type[ValueError], str],
+    expected: tuple[str, str, str],
+) -> None:
+    adapter, reader_name, role, error_type, location = case
+    reason, code, public_reason = expected
+    path = tmp_path / "private-source"
+    reads: list[tuple[Path, int]] = []
+
+    def fail(selected: Path, maximum: int) -> bytes:
+        reads.append((selected, maximum))
+        raise transport.TransportError(reason)
+
+    monkeypatch.setattr(adapter, "read_local_file", fail)
+    reader = cast(Callable[..., bytes], getattr(adapter, reader_name))
+    with pytest.raises(error_type) as caught:
+        if role is None:
+            reader(path)
+        else:
+            reader(path, role)
+    error = cast(Any, caught.value)
+    assert (error.code, error.reason, error.location) == (code, public_reason, location)
+    assert reads == [(path, adapter.DEFAULT_MAX_BYTES)]
+    assert not list(tmp_path.iterdir())
+
+
+def test_langfuse_unknown_role_refuses_before_file_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def forbidden(path: Path, maximum: int) -> bytes:
+        pytest.fail("unknown role reached file acquisition")
+
+    monkeypatch.setattr(langfuse_accounting, "read_local_file", forbidden)
+    with pytest.raises(ValueError, match="^unknown Langfuse source role$"):
+        langfuse_accounting.read_langfuse_file(tmp_path / "private-source", "unknown")
+    assert not list(tmp_path.iterdir())
 
 
 def test_replacing_path_after_open_keeps_original_unlinked_descriptor(
