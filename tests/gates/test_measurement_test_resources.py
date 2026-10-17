@@ -27,7 +27,7 @@ def test_copied_read_projection_suite_uses_outer_fixture_data(tmp_path: Path) ->
     for name in ("read.v1.schema.json", "statistical_seed.v1.schema.json"):
         shutil.copy2(root / "contracts" / name, contracts / name)
 
-    # This checks data discovery using real inputs and the entire copied suite.
+    # Bound parent collection to the copied tree while running its entire suite.
 
     result = subprocess.run(
         [
@@ -37,6 +37,8 @@ def test_copied_read_projection_suite_uses_outer_fixture_data(tmp_path: Path) ->
             "-c",
             "/dev/null",
             "--rootdir",
+            str(candidate / "copied"),
+            "--confcutdir",
             str(candidate / "copied"),
             "-o",
             f"pythonpath={copied_tests}",
