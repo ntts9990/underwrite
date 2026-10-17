@@ -1143,6 +1143,49 @@ An `acceptance_decision.v2` carries `classification`, `reason_codes`,
 measured) distinct from `indeterminate` (acceptance cannot settle the
 candidate). Neither grants approval.
 
+## Scan and pin limits
+
+Legacy `absence` and `drift check` exemption files and `boundary scan` allowlists
+are bounded to 1 MiB, 64 JSON container levels, and 1024 policy entries each.
+`boundary scan` reads at most 4 MiB per selected JSON or JSONL file and 32 MiB
+of captured bytes across the command, including its allowlist. It admits up to
+4096 selected files, 100000 visited directory entries, 100000 physical JSONL
+lines and 1 MiB per raw line (including its delimiter), and 4096 leaks including
+allowed rows. Its selected JSON or human output is capped at 1 MiB including
+the final newline. Duplicate keys and nonfinite numbers are invalid; supplied
+`--now` and policy expiry dates must be real ASCII `YYYY-MM-DD` dates. Admission
+failures return a typed `UNCONFIGURED` result with exit 2. An absent `--now`
+still yields `NOW_REQUIRED` only when the semantic check needs a clock.
+
+`absence` retains `Path.glob` matching and refuses more than 4096 matching
+regular files; it does not bound directory traversal within `Path.glob` or
+suppressed internal filesystem errors. Boundary scans follow an explicitly
+selected directory link and regular file links, but do not descend into a child
+directory link. These selections do not establish path containment against a
+hostile filesystem.
+
+`drift check` admits up to 256 manifests and 4096 declared pin files while
+counting at most 100000 visited registry entries. Each manifest is limited to
+1 MiB and 64 JSON container levels; each selected source or pin copy is limited
+to 4 MiB. The 32 MiB command capture budget includes exemption bytes, manifests,
+and both copies. Read-only inspection follows selected directory and file links;
+it does not create an atomic filesystem snapshot or a hostile-path containment
+guarantee. Missing or nonregular selected copies are reported as DRIFT; malformed,
+unreadable, or excessive registry input returns a typed `UNCONFIGURED` result
+without fabricated population counts.
+
+`pins refresh` selects one registry repository and copies committed Git blobs.
+Refresh paths must be normalized relative `/`-separated components; empty, dot,
+parent, backslash, Unicode control/format, oversized, and colliding destinations
+are refused.
+The selected registry and its existing destinations are checked before mutation.
+Each pin is replaced with a new inode under its opened registry parent, and
+`PINS.json` is replaced last. Admission or Git-source failures leave the registry
+unchanged. A later filesystem failure reports `publication: may_be_partial`;
+refresh is not an all-files transaction or a durability guarantee.
+Refresh captures each committed Git blob within 4 MiB and the 32 MiB aggregate
+budget, and checks the fully serialized 1 MiB manifest before its first write.
+
 ## Task prompt for a coding agent
 
 Use the [optional skill](#optional-artifact-review-skill) for repeatable routing,

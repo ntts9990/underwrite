@@ -6,7 +6,7 @@
 
 Find mismatches. Keep missing evidence visible. Know what to check next.
 
-**Local CLI & Python library · Typed JSON · No server or model calls**
+**Local CLI & Python library · JSON results · No server or model calls**
 
 [![CI](https://github.com/ntts9990/underwrite/actions/workflows/ci.yml/badge.svg)](https://github.com/ntts9990/underwrite/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/underwrite)](https://pypi.org/project/underwrite/)
@@ -19,20 +19,16 @@ Find mismatches. Keep missing evidence visible. Know what to check next.
 
 </div>
 
-Already have evaluation exports from **goppi, Langfuse, DeepEval, or Promptfoo**?
-A score or summary alone does not show whether supplied rows match declared
-totals or whether the planned case inventory is complete. For supported local
-profiles, underwrite checks relationships it can verify and makes unknown
-coverage explicit. It returns typed CLI/Python results with findings, input
-identity, and interpretation limits. You or your agent can use them to request
-the next piece of evidence.
+Evaluation tools run evaluations and export result files. Underwrite reads the
+local files it supports and shows what those files establish, what remains
+unknown, and what evidence to check next. For example, it checks whether
+Promptfoo’s reported totals agree with its supplied result rows. You or your
+coding agent use the JSON result to investigate and decide. You can also save
+selected inputs with the result for later review.
 
-Underwrite complements the tools that run evaluations: goppi owns execution,
-trace/verifier binding, and reruns; other producers own their exports and scores.
-Underwrite examines supplied artifacts and can retain selected bytes. It does
-not rerun an agent, independently authenticate a producer, or assign a universal
-quality score. No Docker, dashboard, or provider credentials are needed to
-inspect the supported local files.
+Underwrite does not rerun evaluations, independently prove a producer's verdict,
+or assign one quality score across tools. Checking supported local files needs
+no Docker, dashboard, or provider credentials.
 
 > [!NOTE]
 > **This guide targets `underwrite==0.1.1`.** Its CLI and Python workflows work
@@ -139,29 +135,22 @@ See [measurement meaning](https://github.com/ntts9990/underwrite/blob/main/AGENT
 
 | Question after an evaluation | What underwrite gives you |
 | --- | --- |
-| Does the summary match the supplied records? | Profile-specific accounting: Promptfoo count deltas, DeepEval evaluator errors, or Langfuse score associations. |
-| What is still unknown? | Explicit missingness and limits such as an unknown planned denominator or unverified source claim, so a zero is not silently substituted. |
-| Can this evidence support a measurement? | A separate native binary-event path with declared semantics and policy; external scores do not become a universal quality verdict. |
-| Can I revisit the conclusion? | Typed CLI/Python JSON and optional private records tying selected input bytes to the analysis, with verification and retrieval. |
+| Does the summary match the supplied records? | Compare Promptfoo declared counts with rows. Separately account for DeepEval scored rows and evaluator errors, or Langfuse score associations; their aggregate summaries are not assumed checked. |
+| What is still unknown? | See when planned cases are unknown or source claims are unverified; unknown is not counted as zero. |
+| Can this evidence support a measurement? | Use the separate native binary-event path with a declared event and policy; external scores are not a universal quality verdict. |
+| Can I revisit the conclusion? | Save selected input bytes and the analysis in a private record, then verify and retrieve them later. |
 
 ## How it works
 
-```mermaid
-flowchart LR
-    A[Supported local eval file] --> B[Select exact profile]
-    B --> C[Check supplied records and missingness]
-    C --> D[Typed JSON: finding, identity, limits]
-    D --> E[Agent or person gathers next evidence]
-    C --> F[Optional private record]
-    F --> G[Verify and retrieve]
-    H[Native event evidence + policy] --> I[Measure]
-    I --> D
-```
+- **Evaluation tool:** runs the evaluation and exports result files.
+- **Underwrite:** checks the supplied results, returns JSON with findings and
+  unanswered questions, and can save selected original files with the result.
+- **You or your agent:** check the missing evidence and decide what to do next.
 
-The command checks only what its selected profile supports. The calling agent
-interprets the JSON and can pursue the next evidence task; underwrite does not
-apply a proposed change or grant merge authority. Local records keep selected
-inputs and results for later review.
+Each command checks only its selected input profile. Source verdicts remain
+source claims; Underwrite does not apply changes or grant merge authority. Its
+separate native binary-event workflow measures only a declared event under an
+explicit policy, not arbitrary external scores.
 
 ## Agent use
 
@@ -343,46 +332,8 @@ a manifest with an expected hash, `check` examines release evidence linkage,
 vocabulary, and `drift check` / `pins refresh` work with supplied pin registries.
 [JSON contracts](https://github.com/ntts9990/underwrite/tree/main/contracts/) define each command family's results and errors.
 
-Legacy `absence` and `drift check` exemption files and `boundary scan` allowlists
-are bounded to 1 MiB, 64 JSON container levels, and 1024 policy entries each.
-`boundary scan` reads at most 4 MiB per selected JSON or JSONL file and 32 MiB
-of captured bytes across the command, including its allowlist. It admits up to
-4096 selected files, 100000 visited directory entries, 100000 physical JSONL
-lines and 1 MiB per raw line (including its delimiter), and 4096 leaks including
-allowed rows. Its selected JSON or human output is capped at 1 MiB including
-the final newline. Duplicate keys and nonfinite numbers are invalid; supplied
-`--now` and policy expiry dates must be real ASCII `YYYY-MM-DD` dates. Admission
-failures return a typed `UNCONFIGURED` result with exit 2. An absent `--now`
-still yields `NOW_REQUIRED` only when the semantic check needs a clock.
-
-`absence` retains `Path.glob` matching and refuses more than 4096 matching
-regular files; it does not bound directory traversal within `Path.glob` or
-suppressed internal filesystem errors. Boundary scans follow an explicitly
-selected directory link and regular file links, but do not descend into a child
-directory link. These selections do not establish path containment against a
-hostile filesystem.
-
-`drift check` admits up to 256 manifests and 4096 declared pin files while
-counting at most 100000 visited registry entries. Each manifest is limited to
-1 MiB and 64 JSON container levels; each selected source or pin copy is limited
-to 4 MiB. The 32 MiB command capture budget includes exemption bytes, manifests,
-and both copies. Read-only inspection follows selected directory and file links;
-it does not create an atomic filesystem snapshot or a hostile-path containment
-guarantee. Missing or nonregular selected copies are reported as DRIFT; malformed,
-unreadable, or excessive registry input returns a typed `UNCONFIGURED` result
-without fabricated population counts.
-
-`pins refresh` selects one registry repository and copies committed Git blobs.
-Refresh paths must be normalized relative `/`-separated components; empty, dot,
-parent, backslash, Unicode control/format, oversized, and colliding destinations
-are refused.
-The selected registry and its existing destinations are checked before mutation.
-Each pin is replaced with a new inode under its opened registry parent, and
-`PINS.json` is replaced last. Admission or Git-source failures leave the registry
-unchanged. A later filesystem failure reports `publication: may_be_partial`;
-refresh is not an all-files transaction or a durability guarantee.
-Refresh captures each committed Git blob within 4 MiB and the 32 MiB aggregate
-budget, and checks the fully serialized 1 MiB manifest before its first write.
+For scan and pin resource limits and filesystem-selection caveats, see
+[Scan and pin limits](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#scan-and-pin-limits).
 
 <a id="development-checkout-evidence-pilots"></a>
 
