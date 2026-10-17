@@ -182,11 +182,31 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
         (
             profile("save", ("root", "spec"), ("record_spec.v1",), ("record_view.v1",)),
             profile("audit-promptfoo", ("file", "root", "id"), (), ("promptfoo_record.v1",)),
+            *(
+                profile(
+                    f"audit-promptfoo|{version}",
+                    ("file", "version", "root", "id"),
+                    (),
+                    ("promptfoo_record.v1",),
+                )
+                for version in PROMPTFOO_VERSIONS
+                if version != PROMPTFOO_SOURCE[1]
+            ),
             profile(
                 "audit-deepeval",
                 ("file", "root", "id"),
                 (),
-                tuple(selected.record_schema for selected in DEEPEVAL_PROFILES.values()),
+                (DEEPEVAL_PROFILES[DEEPEVAL_SOURCE[1]].record_schema,),
+            ),
+            *(
+                profile(
+                    f"audit-deepeval|{version}",
+                    ("file", "version", "root", "id"),
+                    (),
+                    (selected.record_schema,),
+                )
+                for version, selected in DEEPEVAL_PROFILES.items()
+                if version != DEEPEVAL_SOURCE[1]
             ),
             profile(
                 "audit-deepeval|4.2.8|owner-asserted-metric-bindings",
