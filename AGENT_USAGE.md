@@ -2,41 +2,47 @@
 
 underwrite reads local artifacts. An agent can run its CLI, keep the JSON outputs,
 and report what each output establishes. It does not need a server or credentials.
-From a source checkout, run `uv sync --frozen --all-groups` once, then use
-`uv run --frozen --no-sync underwrite` in the commands below. An installed CLI can
-use `underwrite` directly. The checkout command uses its matching local core;
-install matching `0.1.0` app/core wheels together. A `0.1.0` app combined with
-the older published `0.0.1` core is not a supported pairing.
+Install the published CLI with `uv tool install 'underwrite==0.1.0'`, then run
+`underwrite` directly. The app resolves a compatible `underwrite-core`.
+For an importable Python API, install the same app version into a Python 3.12
+environment; see [Install](README.md#install). A `0.1.0` app combined with the
+older `0.0.1` core is not a supported pairing.
+
+Commands below that name `fixtures/`, `skills/`, or other repository files need
+a [GitHub checkout](https://github.com/ntts9990/underwrite); those files are not
+in the runtime wheel. From a checkout, run `uv sync --frozen --all-groups` once
+and replace `underwrite` with `uv run --frozen --no-sync underwrite` when using
+its development environment. For your own completed exports, the installed CLI
+needs no checkout.
 
 Run `underwrite --help` first. When listed, `underwrite capabilities --json`
 returns command profiles, required inputs, input/output schema names, and exact
 registered ingest codecs from the executable in use. Check this output instead
-of inferring support from the package version alone. Published PyPI `0.0.1`
-has no `capabilities`, producer-audit, records, or handoff commands; use help-based
-discovery there and the `0.1.0` source tree or matching wheels for the workflows below.
-Capability availability is not evidence that
-an arbitrary producer export satisfies a profile.
+of inferring support from the package version alone. Published `0.1.0` has
+`capabilities`, producer audits, records, and handoff commands; older `0.0.1`
+does not. Use help-based discovery with any installed version. Capability
+availability is not evidence that an arbitrary export satisfies a profile.
 
 Choose the input path first. An `underwrite.evidence-bundle` v1 observation can
 enter the native `ingest` → `measure` → `accept` workflow with an explicit policy
 and declared claims. A supported external export can be ingested as source claims
 and byte identity; it does not produce a measurable read under the current profile.
-External observations do not enter `measure`. The separate source-checkout
-`audit-promptfoo FILE` pilot defaults to Promptfoo 0.123.0; `--version 0.124.1`
-selects the other supported export profile. Neither creates a
+External observations do not enter `measure`. The direct `audit-promptfoo FILE`
+command defaults to Promptfoo 0.123.0; `--version 0.124.1` selects the other
+supported export profile. Neither creates a
 measurement read. The promptfoo example below deliberately calls `measure` to
 show that command's typed refusal.
 
 ## Optional artifact-review skill
 
-[underwrite-review](skills/underwrite-review/SKILL.md) is a portable skill for
-reviewing user-provided local artifacts with the existing CLI. It selects the
-route supported by the supplied inputs and reports both the result and its
+[underwrite-review](skills/underwrite-review/SKILL.md) is a repository skill,
+outside the PyPI wheel, for reviewing user-provided local artifacts with the CLI.
+It selects the route supported by the supplied inputs and reports the result and its
 limits. It is separate from the developer-only `underwrite-preflight` skill.
 
-You can ask an agent to read that file directly. To make it available in another
-project, copy the `skills/underwrite-review` folder into that agent's skills
-location ([Codex](https://learn.chatgpt.com/docs/build-skills),
+You can ask an agent to read that file directly from a checkout. To make it
+available in another project, copy the `skills/underwrite-review` folder into
+that agent's skills location ([Codex](https://learn.chatgpt.com/docs/build-skills),
 [Claude Code](https://code.claude.com/docs/en/skills)). For example, from this
 checkout, choose one destination:
 
@@ -53,7 +59,7 @@ fi
 
 An existing destination is left untouched. Copying the skill does not install
 underwrite or add commands absent from the selected installed package.
-Provide an existing CLI or a prepared source checkout; the skill checks command
+Provide the installed CLI or a prepared source checkout; the skill checks command
 availability instead of assuming capabilities from the package version alone.
 No global configuration, hook, MCP registration, telemetry, or model execution
 is installed by this recipe. Once installed, the agent may select the skill for
@@ -110,8 +116,8 @@ approved a change. Acceptance always requires human review and sets
 
 The current native path uses `measurement_policy.v3`, profile
 `binary-event-directional.v1`, `read.v2`, `declared_claims.v2`, and
-`acceptance_decision.v2`. Both source packages are `0.1.0`; the older PyPI
-`0.0.1` lacks these workflows. Use this checkout or matching wheels for them.
+`acceptance_decision.v2`. Both published packages are `0.1.0`; the older PyPI
+`0.0.1` lacks these workflows. Use the installed CLI or a checkout for them.
 
 The native bundle declares `payload.measurement_semantics` (`measurement_semantics.v1`):
 the construct, binary event and positive meaning, desirable direction, unit,
@@ -485,10 +491,12 @@ unsupported. Do not delete fields to force acceptance. V2 retention preserves th
 selected version even for acquisition diagnostics; its storage and exit meanings
 are the same as v1.
 
-## Source-checkout pilot: audit Promptfoo counts
+<a id="source-checkout-pilot-audit-promptfoo-counts"></a>
 
-The pilot commands documented here are available in this `0.1.0` source tree
-and matching wheels. The older PyPI `0.0.1` artifacts lack these workflows.
+## Audit Promptfoo counts
+
+The direct audit commands ship in `0.1.0`. The older PyPI `0.0.1` artifacts lack
+them; the fixture paths below still require a GitHub checkout.
 
 For a Promptfoo 0.123.0 export, audit the supplied file directly without creating
 a manifest:
@@ -583,7 +591,9 @@ its `success` and `failureReason` fields. The construction details, stronger jq
 category comparator, and unmeasured user-value claims are in
 [task-cards.json](fixtures/examples/evidence/task-cards.json).
 
-## Source-checkout pilot: compare declarations
+<a id="source-checkout-pilot-compare-declarations"></a>
+
+## Compare declarations
 
 The two audit reports and declarations below are synthetic local examples. The
 manifest binds each supplied report by its canonical JSON digest. It declares
@@ -602,7 +612,9 @@ unknown; known differences remain visible alongside unknowns. `same` means only
 that the supplied declarations match. Both `actual_conditions_verified` and
 `semantic_equivalence_verified` remain false. Digest binding is not provenance.
 
-## Source-checkout pilot: paired binary evidence
+<a id="source-checkout-pilot-paired-binary-evidence"></a>
+
+## Paired binary evidence
 
 This separate profile consumes an explicit primary case inventory, planned
 case/arm/repeat slots, binary outcomes or missing reasons, declared contexts,
@@ -741,7 +753,7 @@ validators may reject reason-bearing outputs; use the matching `0.1.0` source
 or wheel contracts.
 
 A nonsignificant p-value does not establish equivalence. None of these three
-pilot reports is a `read.v2`, an acceptance decision, or merge authorization; do
+descriptive reports is a `read.v2`, an acceptance decision, or merge authorization; do
 not supply them to `accept`. Report computation returns exit `0` even for
 `inconsistent`, `different`, `unknown`, or `not_measured`. Invalid inputs and
 resource-limit failures return exit `2` with only `evidence_error.v1` on stderr.
@@ -1148,6 +1160,7 @@ stderr separately in a new output directory; record the command and exit code.
 Report the output schema, relevant result, evidence limits, missing inputs, and
 artifact paths. Keep source claims separate from consumer checks and measurements.
 A command's completion, matching digest, matching declarations, or nonsignificant
-result is not provenance, equivalence, or permission to merge. A pilot report is
-not a read.v2. Stop an unsupported path and report its typed error and next action.
+result is not provenance, equivalence, or permission to merge. A descriptive
+audit report is not a `read.v2`. Stop an unsupported path and report its typed
+error and next action.
 ```

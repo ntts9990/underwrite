@@ -63,20 +63,77 @@ def check_sdist(path: Path, name: str, expected: bytes) -> None:
 
 
 @pytest.fixture(scope="session")
-def built(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
-    """One bounded default build shared by every packaged-contract check."""
+def distributions(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """One workspace build shared by contract and distribution-content checks."""
     out = tmp_path_factory.mktemp("dist")
     result = subprocess.run(
-        ["uv", "build", "--offline", "--wheel", "--sdist", "--out-dir", str(out)],
+        ["uv", "build", "--offline", "--all-packages", "--out-dir", str(out)],
         cwd=ROOT,
         capture_output=True,
         text=True,
         check=False,
     )
     assert result.returncode == 0, result.stderr
-    wheels, sdists = list(out.glob("*.whl")), list(out.glob("*.tar.gz"))
+    return out
+
+
+@pytest.fixture(scope="session")
+def built(distributions: Path) -> tuple[Path, Path]:
+    wheels = list(distributions.glob("underwrite-*.whl"))
+    sdists = list(distributions.glob("underwrite-*.tar.gz"))
     assert len(wheels) == len(sdists) == 1
     return wheels[0], sdists[0]
+
+
+def check_shipping_members(shipped: set[str], allowed: set[str]) -> None:
+    assert shipped <= allowed, f"UNEXPECTED_DISTRIBUTION_FILES: {sorted(shipped - allowed)}"
+
+
+@pytest.mark.parametrize("project_root", [Path("."), Path("packages/underwrite-core")])
+def test_distributions_ship_only_runtime_build_and_legal_files(
+    distributions: Path, project_root: Path
+) -> None:
+    root = ROOT / project_root
+    config = tomllib.loads((root / "pyproject.toml").read_text())
+    project = config["project"]
+    backend = config["tool"]["uv"]["build-backend"]
+    module = backend["module-name"]
+    source = root / backend["module-root"]
+    runtime = {path.relative_to(source).as_posix() for path in (source / module).rglob("*.py")}
+    typed = f"{module}/py.typed"
+    if (source / typed).is_file():
+        runtime.add(typed)
+    schemas = population(ROOT) if module == "underwrite" else []
+    runtime.update(f"{module}/_contracts/{name}" for name in schemas)
+    archive_name = f"{project['name'].replace('-', '_')}-{project['version']}"
+    metadata = f"{archive_name}.dist-info"
+    legal = set(project["license-files"])
+    wheel_files = (
+        runtime
+        | {f"{metadata}/{name}" for name in ("WHEEL", "METADATA", "RECORD")}
+        | {f"{metadata}/licenses/{name}" for name in legal}
+    )
+    if project.get("scripts"):
+        wheel_files.add(f"{metadata}/entry_points.txt")
+    with zipfile.ZipFile(distributions / f"{archive_name}-py3-none-any.whl") as archive:
+        check_shipping_members(
+            {item.filename for item in archive.infolist() if not item.is_dir()}, wheel_files
+        )
+    sdist_files = (
+        {f"{backend['module-root']}/{name}" for name in runtime}
+        | legal
+        | {"PKG-INFO", "pyproject.toml", "pyproject.toml.orig", project["readme"]}
+        | {f"contracts/{name}" for name in schemas}
+    )
+    with tarfile.open(distributions / f"{archive_name}.tar.gz") as archive:
+        check_shipping_members(
+            {
+                item.name.removeprefix(f"{archive_name}/")
+                for item in archive.getmembers()
+                if not item.isdir()
+            },
+            sdist_files,
+        )
 
 
 def test_population_is_the_build_includes() -> None:
