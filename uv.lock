@@ -623,7 +623,7 @@ wheels = [
 
 [[package]]
 name = "underwrite"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "jsonschema" },
@@ -670,5 +670,5 @@ pure = [
 
 [[package]]
 name = "underwrite-core"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "packages/underwrite-core" }

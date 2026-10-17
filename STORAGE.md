@@ -2,9 +2,10 @@
 
 `records` stores explicitly selected files in a private, immutable local bundle.
 It does not discover inputs, execute an evaluation, or certify provenance.
-These commands ship in published `underwrite` 0.1.0. Use `underwrite records --help`
-and `underwrite capabilities --json` to confirm the installed profiles; older
-packages can differ. A GitHub checkout is needed only for repository fixtures.
+These commands were introduced in published `underwrite` 0.1.0 and remain in the
+0.1.1 source tree. Use `underwrite records --help` and
+`underwrite capabilities --json` to confirm installed profiles; older packages
+can differ. A GitHub checkout is needed only for repository fixtures.
 
 For native measurement, retain the exact observation and policy used by the
 calculation together with its read or diagnostic:

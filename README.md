@@ -11,7 +11,7 @@ Find mismatches. Keep missing evidence visible. Know what to check next.
 [![CI](https://github.com/ntts9990/underwrite/actions/workflows/ci.yml/badge.svg)](https://github.com/ntts9990/underwrite/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/underwrite)](https://pypi.org/project/underwrite/)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue)](https://pypi.org/project/underwrite/)
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/ntts9990/underwrite/blob/main/LICENSE)
 
 **[Try it](#quickstart)** · [Use with an agent](#agent-use) · [Supported formats](#supported-formats) · [Docs](#documentation)
 
@@ -35,7 +35,7 @@ quality score. No Docker, dashboard, or provider credentials are needed to
 inspect the supported local files.
 
 > [!NOTE]
-> **Version `0.1.0` is published on PyPI.** Its CLI and Python workflows work
+> **This guide targets `underwrite==0.1.1`.** Its CLI and Python workflows work
 > without a checkout. The older `0.0.1` artifacts lack these workflows and have
 > a separate `pins refresh` caution; see [Install](#install).
 
@@ -43,15 +43,15 @@ inspect the supported local files.
 
 Requires **Python 3.12+** and [uv](https://docs.astral.sh/uv/); the optional
 synthetic download below uses `curl`.
-Version `0.1.0` is tested with CPython 3.12 on Linux and macOS. File-based CLI
-workflows require Unix/POSIX file APIs, including ordinary artifact reads.
+File-based CLI workflows are tested with CPython 3.12 on Linux and macOS. They
+require Unix/POSIX file APIs, including for ordinary artifact reads.
 
 **1. Install and check a file.** The app-only install resolves a compatible
 `underwrite-core` automatically. Download the public synthetic example; no
 checkout or API key is needed:
 
 ```sh
-uv tool install 'underwrite==0.1.0'
+uv tool install 'underwrite==0.1.1'
 underwrite capabilities --json
 example_dir=$(mktemp -d)
 curl -fsSLo "$example_dir/promptfoo.json" \
@@ -181,7 +181,7 @@ interpreting any producer-specific field.
 Example task for an agent with terminal access:
 
 > Review `/absolute/path/to/completed-promptfoo-export.json` with the installed
-> `underwrite` 0.1.0 CLI as a Promptfoo 0.123.0 export. Use `capabilities --json`
+> `underwrite` 0.1.1 CLI as a Promptfoo 0.123.0 export. Use `capabilities --json`
 > and `audit-promptfoo --version 0.123.0`.
 > Report `declared_relation`, `producer_stats`, `row_tallies`, `raw_hash`,
 > `limitations`, and the next useful action. Do not rerun the producer or treat
@@ -284,12 +284,12 @@ probability, and a successful command is not approval to ship.
 
 ## Install
 
-Install the published app; its dependency resolves the compatible core. Use
+Install the versioned app; its dependency resolves the compatible core. Use
 `underwrite --help` and `underwrite capabilities --json` to see the installed
 profiles:
 
 ```sh
-uv tool install 'underwrite==0.1.0'
+uv tool install 'underwrite==0.1.1'
 underwrite --help
 underwrite capabilities --json
 ```
@@ -302,7 +302,7 @@ For the importable Python API, install into a Python 3.12 environment instead:
 
 ```sh
 uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python 'underwrite==0.1.0'
+uv pip install --python .venv/bin/python 'underwrite==0.1.1'
 .venv/bin/python - <<'PY'
 from pathlib import Path
 from underwrite.instrument.ingest.accounting import audit_promptfoo_file
