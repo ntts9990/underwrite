@@ -9,10 +9,13 @@ import tarfile
 import tomllib
 import zipfile
 from email.parser import BytesParser
+from html.parser import HTMLParser
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 import pytest
 from _repo_paths import repo_root
+from readme_renderer.markdown import render
 
 ROOT = repo_root(Path(__file__).resolve())
 PACKAGED = Path("src/underwrite/_contracts")
@@ -60,6 +63,74 @@ def check_sdist(path: Path, name: str, expected: bytes) -> None:
             stream = archive.extractfile(matches[0])
             assert stream is not None
             assert stream.read() == expected, "RESOURCE_BYTES_DIFFER"
+
+
+def _metadata_bytes(path: Path) -> bytes:
+    if path.suffix == ".whl":
+        with zipfile.ZipFile(path) as archive:
+            names = [name for name in archive.namelist() if name.endswith(".dist-info/METADATA")]
+            assert len(names) == 1, "METADATA_MEMBER_POPULATION"
+            return archive.read(names[0])
+    with tarfile.open(path) as archive:
+        members = [
+            item
+            for item in archive.getmembers()
+            if item.name.count("/") == 1 and item.name.endswith("/PKG-INFO")
+        ]
+        assert len(members) == 1 and members[0].isfile(), "PKG_INFO_MEMBER_POPULATION"
+        stream = archive.extractfile(members[0])
+        assert stream is not None
+        return stream.read()
+
+
+def _readme_payload(metadata_bytes: bytes) -> str:
+    metadata = BytesParser().parsebytes(metadata_bytes)
+    assert metadata["Description-Content-Type"] == "text/markdown"
+    payload = metadata.get_payload(decode=True)
+    assert isinstance(payload, bytes), "README_PAYLOAD_MISSING"
+    return payload.decode("utf-8", errors="strict")
+
+
+class _RenderedLinks(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.ids: set[str] = set()
+        self.links: list[str] = []
+        self.images: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = dict(attrs)
+        if (identifier := values.get("id")) is not None:
+            self.ids.add(identifier)
+        if tag == "a" and (href := values.get("href")) is not None:
+            self.links.append(href)
+        if tag == "img":
+            self.images.append(values.get("src") or "")
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.handle_starttag(tag, attrs)
+
+
+def _absolute_url(value: str, *, image: bool) -> bool:
+    parsed = urlsplit(value)
+    if parsed.scheme in {"http", "https"}:
+        return bool(parsed.netloc)
+    return not image and parsed.scheme == "mailto" and bool(parsed.path)
+
+
+def _rendered_readme(text: str) -> tuple[str, _RenderedLinks]:
+    html = render(text)
+    assert html is not None and "\ufffd" not in html, "README_RENDER_FAILED"
+    links = _RenderedLinks()
+    links.feed(html)
+    for href in links.links:
+        if href.startswith("#"):
+            assert unquote(href[1:]) in links.ids, "UNRESOLVED_README_FRAGMENT"
+        else:
+            assert _absolute_url(href, image=False), "RELATIVE_README_LINK"
+    for src in links.images:
+        assert _absolute_url(src, image=True), "RELATIVE_README_IMAGE"
+    return html, links
 
 
 @pytest.fixture(scope="session")
@@ -165,23 +236,75 @@ def test_app_wheel_and_sdist_keep_authored_core_requirement(built: tuple[Path, P
     requirement = next(
         dependency for dependency in app["dependencies"] if dependency.startswith("underwrite-core")
     )
-    with zipfile.ZipFile(built[0]) as archive:
-        metadata_file = next(
-            name for name in archive.namelist() if name.endswith(".dist-info/METADATA")
-        )
-        wheel_metadata = BytesParser().parsebytes(archive.read(metadata_file))
-    with tarfile.open(built[1]) as archive:
-        member = next(
-            item
-            for item in archive.getmembers()
-            if item.name.count("/") == 1 and item.name.endswith("/PKG-INFO")
-        )
-        stream = archive.extractfile(member)
-        assert stream is not None
-        sdist_metadata = BytesParser().parsebytes(stream.read())
-    for metadata in (wheel_metadata, sdist_metadata):
+    for artifact in built:
+        metadata = BytesParser().parsebytes(_metadata_bytes(artifact))
         assert metadata["Version"] == app["version"]
-        assert requirement in (metadata.get_all("Requires-Dist") or [])
+        dependencies = metadata.get_all("Requires-Dist") or []
+        assert requirement in dependencies
+
+
+@pytest.mark.parametrize("project_root", [Path("."), Path("packages/underwrite-core")])
+def test_built_readmes_are_authored_utf8_and_render_with_usable_links(
+    distributions: Path, project_root: Path
+) -> None:
+    project = tomllib.loads((ROOT / project_root / "pyproject.toml").read_text())["project"]
+    authored = (ROOT / project_root / project["readme"]).read_bytes()
+    archive_name = f"{project['name'].replace('-', '_')}-{project['version']}"
+    for suffix in ("-py3-none-any.whl", ".tar.gz"):
+        metadata_bytes = _metadata_bytes(distributions / f"{archive_name}{suffix}")
+        metadata = BytesParser().parsebytes(metadata_bytes)
+        assert not any(
+            item.startswith("readme-renderer") for item in metadata.get_all("Requires-Dist") or []
+        ), "RENDERER_RUNTIME_DEPENDENCY"
+        text = _readme_payload(metadata_bytes)
+        assert text.encode("utf-8") == authored, "README_METADATA_DIFFERS_FROM_SOURCE"
+        _html, rendered = _rendered_readme(text)
+        if project_root == Path("."):
+            assert any(
+                src.endswith("/assets/brand/underwrite-logo.png") for src in rendered.images
+            ), "README_LOGO_MISSING"
+
+
+def test_korean_readme_renders_unicode_and_links() -> None:
+    source = (ROOT / "README.ko.md").read_text(encoding="utf-8")
+    html, _ = _rendered_readme(source)
+    assert any("가" <= character <= "힣" for character in html)
+
+
+def test_readme_metadata_payload_needs_strict_utf8() -> None:
+    metadata = b"Metadata-Version: 2.4\nDescription-Content-Type: text/markdown\n\n"
+    assert _readme_payload(metadata + "빠른 시작\n".encode()) == "빠른 시작\n"
+    with pytest.raises(UnicodeDecodeError):
+        _readme_payload(metadata + bytes([0xFF]))
+
+
+@pytest.mark.parametrize(
+    ("markdown", "reason"),
+    [
+        (
+            "[![License](https://img.shields.io/badge/license-blue)](LICENSE)",
+            "RELATIVE_README_LINK",
+        ),
+        ("![logo](assets/logo.png)", "RELATIVE_README_IMAGE"),
+        ("[Guide](AGENT_USAGE.md)", "RELATIVE_README_LINK"),
+        ("# Guide\n\n[Missing](#absent)", "UNRESOLVED_README_FRAGMENT"),
+    ],
+)
+def test_rendered_readme_rejects_broken_nested_and_relative_targets(
+    markdown: str, reason: str
+) -> None:
+    with pytest.raises(AssertionError, match=reason):
+        _rendered_readme(markdown)
+
+
+def test_rendered_readme_accepts_absolute_badge_and_unicode_fragment() -> None:
+    html, rendered = _rendered_readme(
+        "# 빠른 시작\n\n[이동](#빠른-시작)\n\n"
+        "[![License](https://img.shields.io/badge/license-blue)]"
+        "(https://github.com/ntts9990/underwrite/blob/main/LICENSE)"
+    )
+    assert "빠른 시작" in html
+    assert "https://github.com/ntts9990/underwrite/blob/main/LICENSE" in rendered.links
 
 
 def _tree(tmp_path: Path, names: tuple[str, ...], includes: tuple[str, ...]) -> Path:

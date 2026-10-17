@@ -105,6 +105,7 @@ dev = [
     "pyright",
     "import-linter",
     "deptry",
+    "readme-renderer[md]==46.0",
 ]
 pure = [
     "underwrite-core",
