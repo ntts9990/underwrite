@@ -29,7 +29,23 @@ The record's original reproduction claim is never rewritten.
 For a supported completed goppi P7 handoff, prefer the `review-handoff` command's
 explicit `--record-root` and `--record-id` options. It captures the same bytes
 used for analysis and returns independent analysis/storage outcomes. Use the
-manual composition below for other existing command paths.
+manual composition below only when no supported one-call path fits.
+
+For a supported completed goppi baseline exchange v2, when the caller requests
+private retention, use capabilities-listed `records audit-baseline --exchange DIR
+--root ROOT --id NEW_ID --json`. It captures all five exact source files once,
+then saves the descriptive result as `analysis/evidence_result.json`; recover it
+with `records read-json` and check the whole record with `records verify`. The
+source files can contain private answers and usage data, so choose an explicit
+private store. For `baseline_record.v1` stdout, exit 0 means result saved, 2
+means a captured input diagnostic saved, and 3 means storage failed; inspect
+its separate analysis/storage states. A pre-capture `evidence_error.v1` on
+stderr can also exit 2 without a saved record.
+If acquisition fails before all five files are captured, no partial record is
+saved and the ID remains available. Complete captured malformed input may save
+`analysis/error.json` and consume the ID. A null published-record field after
+storage failure does not prove absence; inspect the requested ID before retrying.
+Stored-byte integrity does not authenticate the producer or authorize a change.
 
 For a supported DeepEval TestRun, prefer the capabilities-listed
 `records audit-deepeval FILE --root ROOT --id NEW_ID --json` when the caller requests

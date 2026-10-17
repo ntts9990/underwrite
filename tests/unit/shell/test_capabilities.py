@@ -143,6 +143,109 @@ def test_advertised_audit_profile_runs_its_registered_fixture(
     _validator(schema).validate(result)
 
 
+@pytest.mark.parametrize(
+    "route",
+    [
+        (
+            "audit-promptfoo",
+            "promptfoo/results.json",
+            "0.123.0",
+            "promptfoo_record.v1",
+            "promptfoo_accounting.v1",
+        ),
+        (
+            "audit-promptfoo|0.124.1",
+            "promptfoo-0.124.1/results.json",
+            "0.124.1",
+            "promptfoo_record.v1",
+            "promptfoo_accounting.v1",
+        ),
+        (
+            "audit-deepeval",
+            "deepeval/test_run_20260914_132634.json",
+            "4.1.1",
+            "deepeval_record.v1",
+            "deepeval_accounting.v1",
+        ),
+        (
+            "audit-deepeval|4.2.8",
+            "deepeval-4.2.8/ordinary.json",
+            "4.2.8",
+            "deepeval_record.v2",
+            "deepeval_accounting.v2",
+        ),
+    ],
+)
+def test_advertised_record_profile_captures_and_verifies_its_selected_fixture(
+    route: tuple[str, str, str, str, str],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    name, fixture, version, schema, analysis_schema = route
+    assert main.main(["capabilities", "--json"]) == 0
+    catalog = json.loads(capsys.readouterr().out)
+    records = next(row for row in catalog["commands"] if row["command"] == "records")
+    selected = next(row for row in records["profiles"] if row["name"] == name)
+    required = ["file", "root", "id"] if "|" not in name else ["file", "version", "root", "id"]
+    assert selected["required_inputs"] == required
+    assert selected["output_schemas"] == [schema]
+
+    root = tmp_path / "private-records"
+    values = {
+        "file": str(ROOT / "fixtures/golden/external" / fixture),
+        "version": version,
+        "root": str(root),
+        "id": "selected",
+    }
+    argv = ["records", name.split("|", 1)[0]]
+    for field in selected["required_inputs"]:
+        if field == "file":
+            argv.append(values[field])
+        else:
+            argv.extend((f"--{field}", values[field]))
+    assert main.main([*argv, "--json"]) == 0
+    streams = capsys.readouterr()
+    assert streams.err == ""
+    report = json.loads(streams.out)
+    assert report["schema"] == schema
+    assert report["analysis"]["state"] == "result"
+    assert report["analysis"]["report"]["schema"] == analysis_schema
+    assert report["analysis"]["report"]["source"]["format_version"] == version
+    assert report["storage"]["state"] == "saved"
+    assert main.main(["records", "verify", "--root", str(root), "--id", "selected", "--json"]) == 0
+    verified = json.loads(capsys.readouterr().out)
+    assert verified["valid"] is True
+
+
+@pytest.mark.parametrize(
+    ("command", "fixture"),
+    [
+        ("audit-promptfoo", "promptfoo-0.124.1/results.json"),
+        ("audit-deepeval", "deepeval-4.2.8/ordinary.json"),
+    ],
+)
+def test_nondefault_record_input_without_version_remains_a_saved_diagnostic(
+    command: str,
+    fixture: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = ROOT / "fixtures/golden/external" / fixture
+    root = tmp_path / "private-records"
+    assert (
+        main.main(
+            ["records", command, str(source), "--root", str(root), "--id", "selected", "--json"]
+        )
+        == ERROR_EXIT
+    )
+    streams = capsys.readouterr()
+    assert streams.err == ""
+    report = json.loads(streams.out)
+    assert report["analysis"]["state"] == "error"
+    assert report["analysis"]["error"]["code"] == "INVALID_INPUT"
+    assert report["storage"]["state"] == "saved"
+
+
 def test_help_and_dispatch_names_come_from_each_descriptor(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -167,9 +270,7 @@ def test_required_inputs_exist_on_the_registered_parser_profile() -> None:
         children = _subcommands(parser)
         for profile in descriptor.profiles:
             owner_name = (
-                profile.name.split("|", 1)[0]
-                if descriptor.command == "records"
-                else profile.name
+                profile.name.split("|", 1)[0] if descriptor.command == "records" else profile.name
             )
             owner = children.get(owner_name, parser)
             destinations = _destinations(owner)
