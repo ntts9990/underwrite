@@ -52,10 +52,31 @@ a new record ID; do not relabel an old result or widen its source assertions.
 Row analysis minimizes exposed content, while capture still retains both full
 private source files. Analysis and storage outcomes remain separate.
 
+## Unreleased checkout: current DeepEval views and meaning packs
+
+Remove DeepEval audit/capture `--version` and public Python `version=` keywords.
+Accounting/capture use v3; trace/trace capture and owner pack/bound result/bound
+capture use v2. Real no-flaky/flaky field meanings remain distinct, and the
+unversioned input still does not establish a producer release. Low-level ingest
+and release-linkage input admission are unchanged.
+
+Old v1 binding packs are refused with `DEEPEVAL_BINDING_PACK_SCOPE_UNSUPPORTED`.
+The owner must review and reassert a fresh v2 declaration covering the supported
+ordinary occurrences; do not drop an old version restriction automatically.
+Direct bound-file analysis checks the pack before opening TestRun. Record capture
+attempts both roles first, retains complete buffers, and may save an invalid-pack
+diagnostic. It checks both source and pack hashes on success. Reopening old
+records needs neither retired result schemas nor a producer.
+
+The current generic `evidence_result.v2` is an authored contract consumed by
+DeepEval pack/record composition. Inspection remains unchanged in this slice;
+its separate consolidation follows in S5. Published 0.2.0 still retains the old
+DeepEval selectors and writers; the package metadata has not been bumped.
+
 ## Released history: migration from 0.1.1 to 0.2.0
 
 The remainder describes the **published 0.2.0 release**, including historical
-selectors that the development checkout above has removed for Promptfoo and Langfuse.
+selectors that the development checkout above has removed for Promptfoo, Langfuse and DeepEval.
 
 This guide targets **underwrite 0.2.0**. Upgrade the app; the unchanged core remains
 0.1.1 and the app keeps its compatible `underwrite-core>=0.1.0,<0.2` requirement.

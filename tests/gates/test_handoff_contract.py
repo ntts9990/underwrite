@@ -43,8 +43,7 @@ def test_promptfoo_current_source_identity_matches_composed_contract() -> None:
         "paired_handoff_review",
         "promptfoo_compat",
         "langfuse_record",
-        "deepeval_record",
-        "deepeval_record_v2",
+        "deepeval_compat",
     ],
 )
 def test_generated_handoff_contract_matches_owners(name: str) -> None:
@@ -64,8 +63,8 @@ def test_generated_handoff_contract_matches_owners(name: str) -> None:
         ("paired_handoff_review", "v1"),
         ("promptfoo_record", "v2"),
         ("langfuse_record", "v2"),
-        ("deepeval_record", "v1"),
-        ("deepeval_record", "v2"),
+        ("deepeval_record", "v3"),
+        ("deepeval_trace_record", "v2"),
     ],
 )
 def test_composite_contract_has_only_resolvable_local_references(name: str, version: str) -> None:
@@ -91,13 +90,19 @@ def test_composite_contract_has_only_resolvable_local_references(name: str, vers
 
 
 @pytest.mark.parametrize(
-    "producer,version", [("promptfoo", "v2"), ("deepeval", "v1"), ("deepeval", "v2")]
+    "producer,version,fixture",
+    [
+        ("promptfoo", "v2", ""),
+        ("deepeval", "v3", "deepeval/test_run_20260914_132634.json"),
+        ("deepeval", "v3", "deepeval-4.2.8/score_without_verdict.json"),
+    ],
 )
 @pytest.mark.parametrize("analysis_error", [False, True])
 @pytest.mark.parametrize("storage_error", [False, True])
 def test_single_source_record_exit_and_capture_states_are_bound(
     producer: str,
     version: str,
+    fixture: str,
     analysis_error: bool,
     storage_error: bool,
 ) -> None:
@@ -117,16 +122,9 @@ def test_single_source_record_exit_and_capture_states_are_bound(
     else:
         from underwrite.instrument.ingest.deepeval_accounting import audit_deepeval_file
 
-        report = audit_deepeval_file(
-            ROOT
-            / "fixtures/golden/external"
-            / (
-                "deepeval-4.2.8/score_without_verdict.json"
-                if version == "v2"
-                else "deepeval/test_run_20260914_132634.json"
-            ),
-            version="4.2.8" if version == "v2" else "4.1.1",
-        )
+        report = audit_deepeval_file(ROOT / "fixtures/golden/external" / fixture)
+        source = cast(dict[str, object], report["source"])
+        assert source["producer_version"] is None and source["claims_verified"] is False
     identity = {"record_id": "capture", "manifest_digest": "sha256:" + "0" * 64}
     storage: dict[str, Any] = (
         {
@@ -167,17 +165,9 @@ def test_single_source_record_exit_and_capture_states_are_bound(
         "storage": storage,
         "exit_code": exit_code,
     }
-    if producer == "deepeval" and version == "v2":
-        envelope["source_format_version"] = "4.2.8"
     validator.validate(envelope)
-    if producer == "deepeval" and version == "v2":
-        with pytest.raises(ValidationError):
-            validator.validate({**envelope, "source_format_version": "4.1.1"})
-        without_version = {
-            key: value for key, value in envelope.items() if key != "source_format_version"
-        }
-        with pytest.raises(ValidationError):
-            validator.validate(without_version)
+    with pytest.raises(ValidationError):
+        validator.validate({**envelope, "source_format_version": "4.2.8"})
     with pytest.raises(ValidationError):
         validator.validate({**envelope, "unexpected": True})
     with pytest.raises(ValidationError):

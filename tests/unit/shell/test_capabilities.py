@@ -87,17 +87,17 @@ def test_capability_command_validates_and_is_registration_derived(
     [
         (
             "audit-deepeval",
-            "deepeval.test-run|4.1.1",
+            "deepeval.test-run|auto",
             "deepeval/test_run_20260914_132634.json",
             "4.1.1",
-            "deepeval_accounting.v1",
+            "deepeval_accounting.v3",
         ),
         (
             "audit-deepeval",
-            "deepeval.test-run|4.2.8",
+            "deepeval.test-run|auto",
             "deepeval-4.2.8/ordinary.json",
             "4.2.8",
-            "deepeval_accounting.v2",
+            "deepeval_accounting.v3",
         ),
         (
             "audit-promptfoo",
@@ -127,20 +127,20 @@ def test_advertised_audit_profile_runs_its_registered_fixture(
     capabilities_report = json.loads(capsys.readouterr().out)
     descriptor = next(row for row in capabilities_report["commands"] if row["command"] == command)
     selected = next(row for row in descriptor["profiles"] if row["name"] == name)
-    required = ["file"] if command == "audit-promptfoo" else ["file", "version"]
+    required = ["file"]
     assert selected["required_inputs"] == required
     assert selected["output_schemas"] == [schema]
 
     argv = [command, str(ROOT / "fixtures/golden/external" / fixture)]
-    if "version" in selected["required_inputs"]:
-        argv.extend(("--version", version))
     assert main.main([*argv, "--json"]) == 0
     streams = capsys.readouterr()
     assert streams.err == ""
     result = json.loads(streams.out)
     assert result["schema"] == schema
-    version_field = "producer_version" if command == "audit-promptfoo" else "format_version"
-    assert result["source"][version_field] == version
+    assert result["source"]["producer_version"] == (
+        version if command == "audit-promptfoo" else None
+    )
+    assert result["source"]["claims_verified"] is False
     _validator(schema).validate(result)
 
 
@@ -169,18 +169,11 @@ def test_advertised_audit_profile_runs_its_registered_fixture(
             "deepeval_accounting.v3",
         ),
         (
-            "audit-deepeval|4.1.1",
-            "deepeval/test_run_20260914_132634.json",
-            "4.1.1",
-            "deepeval_record.v1",
-            "deepeval_accounting.v1",
-        ),
-        (
-            "audit-deepeval|4.2.8",
+            "audit-deepeval",
             "deepeval-4.2.8/ordinary.json",
             "4.2.8",
-            "deepeval_record.v2",
-            "deepeval_accounting.v2",
+            "deepeval_record.v3",
+            "deepeval_accounting.v3",
         ),
     ],
 )
@@ -194,7 +187,7 @@ def test_advertised_record_profile_captures_and_verifies_its_selected_fixture(
     catalog = json.loads(capsys.readouterr().out)
     records = next(row for row in catalog["commands"] if row["command"] == "records")
     selected = next(row for row in records["profiles"] if row["name"] == name)
-    required = ["file", "root", "id"] if "|" not in name else ["file", "version", "root", "id"]
+    required = ["file", "root", "id"]
     assert selected["required_inputs"] == required
     assert selected["output_schemas"] == [schema]
 
@@ -229,8 +222,6 @@ def test_advertised_record_profile_captures_and_verifies_its_selected_fixture(
         assert identity["producer_version"] is None
         assert identity["producer_version_state"] == "unknown"
         assert identity["claims_verified"] is False
-    else:
-        assert identity["format_version"] == version
     assert report["storage"]["state"] == "saved"
     assert main.main(["records", "verify", "--root", str(root), "--id", "selected", "--json"]) == 0
     verified = json.loads(capsys.readouterr().out)
@@ -244,7 +235,7 @@ def test_advertised_record_profile_captures_and_verifies_its_selected_fixture(
         ("audit-deepeval", "deepeval-4.2.8/ordinary.json", "4.1.1"),
     ],
 )
-def test_explicit_older_record_profile_does_not_fallback(
+def test_removed_record_version_flag_is_usage_failure(
     command: str,
     fixture: str,
     older_version: str,
@@ -271,16 +262,9 @@ def test_explicit_older_record_profile_does_not_fallback(
         == ERROR_EXIT
     )
     streams = capsys.readouterr()
-    if command == "audit-promptfoo":
-        assert streams.out == ""
-        assert json.loads(streams.err)["code"] == "USAGE_ERROR"
-        assert not root.exists()
-        return
-    assert streams.err == ""
-    report = json.loads(streams.out)
-    assert report["analysis"]["state"] == "error"
-    assert report["analysis"]["error"]["code"] == "INVALID_INPUT"
-    assert report["storage"]["state"] == "saved"
+    assert streams.out == ""
+    assert json.loads(streams.err)["code"] == "USAGE_ERROR"
+    assert not root.exists()
 
 
 @pytest.mark.parametrize("view", ["accounting", "trace-index"])

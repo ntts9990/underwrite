@@ -188,17 +188,13 @@ def test_auto_bound_record_v1_pack_diagnostic_has_no_applied_reader(
     assert "reader_profile" not in metadata
 
 
-def test_v2_pack_on_explicit_route_refuses_before_direct_source_read(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def forbidden(_: Path, *, version: str | None = None) -> dict[str, object]:
-        del version
-        pytest.fail("TestRun opened after incompatible pack")
+def test_removed_version_refuses_before_direct_source_read(monkeypatch: pytest.MonkeyPatch) -> None:
+    def forbidden(_: Path) -> dict[str, object]:
+        pytest.fail("TestRun opened after removed version selection")
 
     monkeypatch.setattr(deepeval_binding, "audit_deepeval_file", forbidden)
-    with pytest.raises(deepeval_binding.DeepevalBindingError) as caught:
-        deepeval_binding.audit_deepeval_bound_file(SOURCE, AUTO_PACK, version="4.2.8")
-    assert (caught.value.code, caught.value.location) == ("UNSUPPORTED_PROFILE", "/bindings/schema")
+    with pytest.raises(TypeError, match="version"):
+        cast(Any, deepeval_binding.audit_deepeval_bound_file)(SOURCE, AUTO_PACK, version="4.2.8")
 
 
 def test_auto_bound_record_uses_each_capture_once_after_paths_change(
@@ -335,8 +331,8 @@ def test_auto_bound_record_rejects_pack_hash_mismatch_before_store(
 ) -> None:
     original = record_deepeval_bound.audit_deepeval_bound_bytes
 
-    def mismatched(source: bytes, pack: bytes, *, version: str | None = None) -> dict[str, object]:
-        report = original(source, pack, version=version)
+    def mismatched(source: bytes, pack: bytes) -> dict[str, object]:
+        report = original(source, pack)
         declaration = cast(dict[str, object], report["declaration_source"])
         return {**report, "declaration_source": {**declaration, "raw_hash": "sha256:" + "0" * 64}}
 

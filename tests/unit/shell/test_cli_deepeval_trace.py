@@ -14,6 +14,7 @@ from underwrite_core.canonical import canonical_bytes, digest_bytes
 from underwrite.cli import audit_deepeval
 from underwrite.instrument.evidence.deepeval_accounting import MAX_CASES
 from underwrite.instrument.evidence.deepeval_trace import MAX_SPANS
+from underwrite.instrument.ingest import deepeval_compat as current
 from underwrite.instrument.ingest import deepeval_trace as adapter
 from underwrite.instrument.ingest.application import DEFAULT_MAX_BYTES, DEFAULT_MAX_DEPTH
 from underwrite.instrument.ingest.deepeval_accounting import DeepevalFileError
@@ -40,26 +41,25 @@ def test_native_trace_has_explicit_minimized_machine_route(
     capsys: pytest.CaptureFixture[str], name: str
 ) -> None:
     path = FIXTURES / f"{name}.json"
-    exit_code, report, stdout, stderr = _invoke(
-        capsys, path, "--version", "4.2.8", "--view", "trace-index"
-    )
+    exit_code, report, stdout, stderr = _invoke(capsys, path, "--view", "trace-index")
     assert exit_code == 0 and stderr == ""
     assert stdout.encode() == canonical_bytes(report) + b"\n"
-    assert report["schema"] == "deepeval_trace_index.v1"
+    assert report["schema"] == "deepeval_trace_index.v2"
     assert report["source"] == {
         "format": "deepeval.test-run",
-        "format_version": "4.2.8",
+        "producer_version": None,
+        "producer_version_state": "unknown",
         "claims_verified": False,
     }
     assert report["raw_hash"] == digest_bytes(path.read_bytes())
-    assert report == adapter.audit_deepeval_trace_bytes(path.read_bytes(), version="4.2.8")
+    assert report == adapter.audit_deepeval_trace_bytes(path.read_bytes())
     assert report["counts"]["cases"]["total"] == 1
     assert report["counts"]["spans"]["total"] == SPAN_COUNT
     assert report["cases"][0]["source_success"] is True
     assert report["cases"][0]["trace_status"] == "SUCCESS"
     assert report["counts"]["spans"]["status_errored"] == (1 if name == "recovery" else 0)
     assert report["counts"]["spans"]["parent_resolved"] == RESOLVED_PARENT_COUNT
-    packaged_validator("deepeval_trace_index.v1").validate(report)  # pyright: ignore[reportUnknownMemberType]
+    packaged_validator("deepeval_trace_index.v2").validate(report)  # pyright: ignore[reportUnknownMemberType]
     source = json.loads(path.read_bytes())
     trace = source["testCases"][0]["trace"]
     assert trace["uuid"] not in stdout
@@ -71,9 +71,9 @@ def test_native_trace_has_explicit_minimized_machine_route(
 @pytest.mark.parametrize(
     ("options", "reason"),
     [
-        (("--version", "4.1.1", "--view", "trace-index"), "DEEPEVAL_TRACE_VERSION_UNSUPPORTED"),
+        (("--version", "4.1.1", "--view", "trace-index"), "INVALID_ARGUMENTS_SEE_HELP"),
         (
-            ("--version", "4.2.8", "--view", "trace-index", "--bindings", "missing"),
+            ("--view", "trace-index", "--bindings", "missing"),
             "DEEPEVAL_TRACE_BINDINGS_UNSUPPORTED",
         ),
     ],
@@ -88,7 +88,7 @@ def test_invalid_route_refused_before_source_read(
     exit_code, error, stdout, stderr = _invoke(capsys, path, *options)
     assert exit_code == ERROR_EXIT and stdout == ""
     assert error["schema"] == "evidence_error.v1"
-    assert error["code"] == "UNSUPPORTED_FORMAT"
+    assert error["code"] == ("USAGE_ERROR" if "--version" in options else "UNSUPPORTED_FORMAT")
     assert error["reason"] == reason
     assert "PRIVATE_SENTINEL" not in stderr
 
@@ -97,13 +97,13 @@ def test_native_recovery_human_output_is_status_only(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     success = FIXTURES / "success.json"
-    assert audit_deepeval.main([str(success), "--version", "4.2.8", "--view", "trace-index"]) == 0
+    assert audit_deepeval.main([str(success), "--view", "trace-index"]) == 0
     success_streams = capsys.readouterr()
     assert success_streams.err == ""
     assert "Next:" not in success_streams.out
 
     path = FIXTURES / "recovery.json"
-    assert audit_deepeval.main([str(path), "--version", "4.2.8", "--view", "trace-index"]) == 0
+    assert audit_deepeval.main([str(path), "--view", "trace-index"]) == 0
     streams = capsys.readouterr()
     assert streams.err == ""
     assert "ERRORED" in streams.out
@@ -118,7 +118,7 @@ def test_explicit_accounting_view_preserves_default_bytes(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     path = ROOT / "fixtures/golden/external/deepeval-4.2.8/ordinary.json"
-    args = [str(path), "--version", "4.2.8", "--json"]
+    args = [str(path), "--json"]
     assert audit_deepeval.main(args) == 0
     default = capsys.readouterr()
     assert audit_deepeval.main([*args, "--view", "accounting"]) == 0
@@ -128,16 +128,16 @@ def test_explicit_accounting_view_preserves_default_bytes(
 
 def test_file_api_reads_source_once_and_matches_bytes_api(monkeypatch: pytest.MonkeyPatch) -> None:
     path = FIXTURES / "recovery.json"
-    original = adapter.read_deepeval_file
+    original = current.read_deepeval_file
     reads: list[Path] = []
 
     def counted(source: Path) -> bytes:
         reads.append(source)
         return original(source)
 
-    monkeypatch.setattr(adapter, "read_deepeval_file", counted)
-    assert adapter.audit_deepeval_trace_file(path, version="4.2.8") == (
-        adapter.audit_deepeval_trace_bytes(path.read_bytes(), version="4.2.8")
+    monkeypatch.setattr(current, "read_deepeval_file", counted)
+    assert adapter.audit_deepeval_trace_file(path) == (
+        adapter.audit_deepeval_trace_bytes(path.read_bytes())
     )
     assert reads == [path]
 
@@ -148,9 +148,7 @@ def test_strict_json_refusal_has_empty_stdout_and_no_source_echo(
 ) -> None:
     path = tmp_path / "PRIVATE_SENTINEL.json"
     path.write_bytes(raw)
-    exit_code, error, stdout, stderr = _invoke(
-        capsys, path, "--version", "4.2.8", "--view", "trace-index"
-    )
+    exit_code, error, stdout, stderr = _invoke(capsys, path, "--view", "trace-index")
     assert exit_code == ERROR_EXIT and stdout == ""
     assert error["code"] == "INVALID_INPUT"
     assert error["location"] == "/file"
@@ -162,9 +160,7 @@ def test_decoder_depth_limit_preserves_shared_diagnostic(
 ) -> None:
     path = tmp_path / "PRIVATE_SENTINEL.json"
     path.write_bytes(b"[" * (DEFAULT_MAX_DEPTH + 1) + b"0" + b"]" * (DEFAULT_MAX_DEPTH + 1))
-    exit_code, error, stdout, stderr = _invoke(
-        capsys, path, "--version", "4.2.8", "--view", "trace-index"
-    )
+    exit_code, error, stdout, stderr = _invoke(capsys, path, "--view", "trace-index")
     assert exit_code == ERROR_EXIT and stdout == ""
     assert (error["code"], error["reason"], error["location"]) == (
         "INPUT_LIMIT_EXCEEDED",
@@ -183,9 +179,7 @@ def test_nonregular_source_is_bounded_and_private(
         path.mkdir()
     else:
         os.mkfifo(path)
-    exit_code, error, stdout, stderr = _invoke(
-        capsys, path, "--version", "4.2.8", "--view", "trace-index"
-    )
+    exit_code, error, stdout, stderr = _invoke(capsys, path, "--view", "trace-index")
     assert exit_code == ERROR_EXIT and stdout == ""
     assert error["code"] == "SOURCE_READ_FAILED"
     assert "PRIVATE_SENTINEL" not in stderr
@@ -200,10 +194,10 @@ def test_packaged_contract_is_required_before_source_read(
     def forbidden(_: Path) -> bytes:
         pytest.fail("source read before selected contract")
 
-    monkeypatch.setattr(adapter, "packaged_validator", missing)
-    monkeypatch.setattr(adapter, "read_deepeval_file", forbidden)
+    monkeypatch.setattr(current, "packaged_validator", missing)
+    monkeypatch.setattr(current, "read_deepeval_file", forbidden)
     with pytest.raises(DeepevalFileError) as caught:
-        adapter.audit_deepeval_trace_file(tmp_path / "PRIVATE_SENTINEL", version="4.2.8")
+        adapter.audit_deepeval_trace_file(tmp_path / "PRIVATE_SENTINEL")
     assert (caught.value.code, caught.value.reason) == (
         "SCHEMA_CONFIGURATION_ERROR",
         "INVALID_PACKAGED_CONTRACT",
@@ -217,9 +211,7 @@ def test_selected_private_enum_refuses_without_leaking_source_value(
     source["testCases"][0]["trace"]["toolSpans"][0]["status"] = "PRIVATE_SENTINEL"
     path = tmp_path / "PRIVATE_SENTINEL.json"
     path.write_text(json.dumps(source), encoding="utf-8")
-    exit_code, error, stdout, stderr = _invoke(
-        capsys, path, "--version", "4.2.8", "--view", "trace-index"
-    )
+    exit_code, error, stdout, stderr = _invoke(capsys, path, "--view", "trace-index")
     assert exit_code == ERROR_EXIT and stdout == ""
     assert error["schema"] == "evidence_error.v1"
     assert "PRIVATE_SENTINEL" not in stderr
@@ -230,9 +222,7 @@ def test_real_cli_enforces_file_byte_and_global_span_caps(
 ) -> None:
     path = tmp_path / "input.json"
     path.write_bytes(b" " * (DEFAULT_MAX_BYTES + 1))
-    exit_code, error, stdout, _ = _invoke(
-        capsys, path, "--version", "4.2.8", "--view", "trace-index"
-    )
+    exit_code, error, stdout, _ = _invoke(capsys, path, "--view", "trace-index")
     assert exit_code == ERROR_EXIT and stdout == ""
     assert error["code"] == "INPUT_LIMIT_EXCEEDED"
 
@@ -250,9 +240,7 @@ def test_real_cli_enforces_file_byte_and_global_span_caps(
         ]
     }
     path.write_text(json.dumps(source), encoding="utf-8")
-    exit_code, error, stdout, _ = _invoke(
-        capsys, path, "--version", "4.2.8", "--view", "trace-index"
-    )
+    exit_code, error, stdout, _ = _invoke(capsys, path, "--view", "trace-index")
     assert exit_code == ERROR_EXIT and stdout == ""
     assert error["code"] == "INPUT_LIMIT_EXCEEDED"
 
@@ -302,9 +290,7 @@ def test_real_cli_emits_maximal_accepted_report_with_newline_and_no_source_conte
     source = {"testCases": cases}
     path = tmp_path / "PRIVATE_SENTINEL.json"
     path.write_text(json.dumps(source), encoding="utf-8")
-    exit_code, report, stdout, stderr = _invoke(
-        capsys, path, "--version", "4.2.8", "--view", "trace-index"
-    )
+    exit_code, report, stdout, stderr = _invoke(capsys, path, "--view", "trace-index")
     assert exit_code == 0 and stderr == ""
     assert stdout.encode() == canonical_bytes(report) + b"\n"
     assert len(stdout.encode()) <= 1024 * 1024

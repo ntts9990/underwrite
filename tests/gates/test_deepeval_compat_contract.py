@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -15,6 +16,7 @@ import pytest
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
+from scripts import build_deepeval_compat
 from underwrite.cli.evidence import EvidenceError
 from underwrite.cli.record_capture import saved_record
 from underwrite.cli.record_deepeval import (
@@ -38,14 +40,6 @@ OLD = ROOT / "fixtures/golden/external/deepeval/test_run_20260914_132634.json"
 FIXTURE_SHA256 = {
     "ordinary.json": "7c08d852bc0660810ae6387b7eb858b11675dc9e8ff58d6a975e787134a31316",
     "recovery.json": "b9a90b7a6af901d6ba27d9dcb7afafb88117bcf075b3aa098aeeb31e33ec7894",
-}
-LEGACY_SHA256 = {
-    "deepeval_accounting.v1": "3ebb57c2c7a53d6c6cd5ce124ef007efbfff8e43101258494332d160788d368f",
-    "deepeval_accounting.v2": "0240379545e89c86188b49fc7c40e889678b19ebc0e84bf8b79a972d8fc3226b",
-    "deepeval_trace_index.v1": "ff9d674150b69423cdc185c490eda5b06a4ce6be6e530f7f264576fb4c06afd8",
-    "deepeval_record.v1": "e94f25c51a43682ed0ba7d5d9c009f8a48bb0edc465896427083123b84722f32",
-    "deepeval_record.v2": "296c3fc49fa57b75bf1eca23027b37374bc8960e29db148f43de338a570d8576",
-    "deepeval_trace_record.v1": "66540fc5e075df4a34790a356ad0f0390b6cde1e229c3a81b8ec4f5355e2a6ae",
 }
 DIGEST = "sha256:" + "0" * 64
 
@@ -73,7 +67,38 @@ def _native(filename: str) -> dict[str, object]:
     return json.loads((EXAMPLES / filename).read_bytes())
 
 
-def test_generated_packaged_contracts_and_unchanged_prior_bytes() -> None:
+def test_current_generation_needs_no_old_or_existing_generated_contracts(tmp_path: Path) -> None:
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    for name in (
+        "build_deepeval_accounting.py",
+        "build_deepeval_trace_index.py",
+        "build_deepeval_compat.py",
+        "_record_schema.py",
+        "_schema_compose.py",
+    ):
+        shutil.copyfile(ROOT / "scripts" / name, scripts / name)
+    contracts = tmp_path / "contracts"
+    contracts.mkdir()
+    for name in ("evidence_error", "record_error", "record_verification"):
+        filename = f"{name}.v1.schema.json"
+        shutil.copyfile(ROOT / "contracts" / filename, contracts / filename)
+    expected = {
+        f"{name}.schema.json": (ROOT / "contracts" / f"{name}.schema.json").read_bytes()
+        for name in (ACCOUNTING_SCHEMA, TRACE_SCHEMA, AUTO_RECORD_SCHEMA, AUTO_TRACE_RECORD_SCHEMA)
+    }
+    command = [sys.executable, str(scripts / "build_deepeval_compat.py")]
+    built = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True, check=False)
+    assert built.returncode == 0, built.stdout + built.stderr
+    for name, raw in expected.items():
+        assert (contracts / name).read_bytes() == raw
+    checked = subprocess.run(
+        [*command, "--check"], cwd=tmp_path, capture_output=True, text=True, check=False
+    )
+    assert checked.returncode == 0, checked.stdout + checked.stderr
+
+
+def test_generated_packaged_contracts_and_original_source_bytes() -> None:
     check = subprocess.run(
         [sys.executable, "scripts/build_deepeval_compat.py", "--check"],
         cwd=ROOT,
@@ -92,11 +117,13 @@ def test_generated_packaged_contracts_and_unchanged_prior_bytes() -> None:
         assert packaged.read_bytes() == authored.read_bytes()
         assert f"contracts/{authored.name}" in includes
         _validator(name)
-    for name, expected in LEGACY_SHA256.items():
-        assert (
-            hashlib.sha256((ROOT / "contracts" / f"{name}.schema.json").read_bytes()).hexdigest()
-            == expected
-        )
+    for name, build in (
+        (ACCOUNTING_SCHEMA, build_deepeval_compat.build_accounting),
+        (TRACE_SCHEMA, build_deepeval_compat.build_trace),
+    ):
+        assert (ROOT / "contracts" / f"{name}.schema.json").read_bytes() == (
+            json.dumps(build(), ensure_ascii=False, indent=2) + "\n"
+        ).encode()
     for name, expected in FIXTURE_SHA256.items():
         assert hashlib.sha256((EXAMPLES / name).read_bytes()).hexdigest() == expected
 

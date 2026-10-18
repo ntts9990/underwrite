@@ -25,9 +25,8 @@ from underwrite.instrument.evidence.deepeval_binding import (
     AUTO_RESULT_SCHEMA,
     DeepevalBindingError,
 )
-from underwrite.instrument.evidence.deepeval_compat import ACCOUNTING_SCHEMA
+from underwrite.instrument.evidence.deepeval_compat import ACCOUNTING_SCHEMA, SOURCE_FORMAT
 from underwrite.instrument.ingest.deepeval_accounting import (
-    SOURCE,
     DeepevalFileError,
     read_deepeval_file,
 )
@@ -44,10 +43,8 @@ from underwrite.service.records import (
     RecordError,
 )
 
-SCHEMA = "deepeval_bound_record.v1"
 AUTO_SCHEMA = "deepeval_bound_record.v2"
 COMMAND = "records audit-deepeval"
-VERSION = "4.2.8"
 
 
 @dataclass(frozen=True)
@@ -60,18 +57,15 @@ class _Contracts:
     verification: Validator
 
 
-def _contracts(version: str | None) -> _Contracts:
-    aggregate = packaged_validator(AUTO_SCHEMA if version is None else SCHEMA)
+def _contracts() -> _Contracts:
+    aggregate = packaged_validator(AUTO_SCHEMA)
     storage = storage_validator(aggregate)
-    packaged_validator(ACCOUNTING_SCHEMA if version is None else "observation.v1")
-    packaged_validator(AUTO_PACK_SCHEMA if version is None else "deepeval_metric_bindings.v1")
+    packaged_validator(ACCOUNTING_SCHEMA)
+    packaged_validator(AUTO_PACK_SCHEMA)
     return _Contracts(
         cast(Validator, aggregate),
         storage,
-        cast(
-            Validator,
-            packaged_validator(AUTO_RESULT_SCHEMA if version is None else "evidence_result.v1"),
-        ),
+        cast(Validator, packaged_validator(AUTO_RESULT_SCHEMA)),
         cast(Validator, packaged_validator("evidence_error.v1")),
         cast(Validator, packaged_validator("record_error.v1")),
         cast(Validator, packaged_validator("record_verification.v1")),
@@ -108,26 +102,22 @@ def _acquire(
 
 def _analyze(
     paths: dict[str, Path],
-    version: str | None,
 ) -> tuple[dict[str, bytes], dict[str, object], dict[str, Any]]:
     captured, sources, errors = _acquire(paths)
     if errors:
         primary = errors.get("bindings") or errors["deepeval"]
         return captured, sources, {"state": "error", "phase": "acquisition", "error": primary}
     try:
-        result = audit_deepeval_bound_bytes(
-            captured["deepeval"], captured["bindings"], version=version
-        )
+        result = audit_deepeval_bound_bytes(captured["deepeval"], captured["bindings"])
         source = cast(dict[str, Any], result["source"])
         identity = cast(dict[str, object], source["identity"])
         selected = cast(dict[str, object], sources["deepeval"])
         if identity["raw_hash"] != selected["raw_hash"]:
             raise EvidenceError("INTERNAL_ERROR", "RAW_IDENTITY_MISMATCH")
-        if version is None:
-            declaration = cast(dict[str, object], result["declaration_source"])
-            bindings = cast(dict[str, object], sources["bindings"])
-            if declaration["raw_hash"] != bindings["raw_hash"]:
-                raise EvidenceError("INTERNAL_ERROR", "RAW_IDENTITY_MISMATCH")
+        declaration = cast(dict[str, object], result["declaration_source"])
+        bindings = cast(dict[str, object], sources["bindings"])
+        if declaration["raw_hash"] != bindings["raw_hash"]:
+            raise EvidenceError("INTERNAL_ERROR", "RAW_IDENTITY_MISMATCH")
         analysis: dict[str, Any] = {"state": "result", "report": result}
     except DeepevalBindingError as exc:
         if exc.code == "SCHEMA_CONFIGURATION_ERROR":
@@ -168,13 +158,10 @@ def _files(
         "bindings_path_display": unicodedata.normalize("NFC", str(paths["bindings"])),
         "root_display": unicodedata.normalize("NFC", str(root)),
         "record_id": identifier,
+        "selection_mode": "auto",
     }
-    if envelope["schema"] == AUTO_SCHEMA:
-        arguments["selection_mode"] = "auto"
-        if result:
-            arguments["reader_profile"] = document["source"]["reader_profile"]
-    else:
-        arguments["format_version"] = VERSION
+    if result:
+        arguments["reader_profile"] = document["source"]["reader_profile"]
     invocation = {
         "command": COMMAND,
         "execution_mode": "in_process",
@@ -211,11 +198,7 @@ def _analysis_text(analysis: dict[str, Any]) -> str:
         f"Bound DeepEval result: {population['observed_count']} metric occurrences. "
         "Name meanings are owner asserted; source claims remain unverified. No approval authority."
     )
-    return (
-        summary + " " + AUTO_BOUND_HUMAN_LIMIT
-        if analysis["report"]["schema"] == AUTO_RESULT_SCHEMA
-        else summary
-    )
+    return summary + " " + AUTO_BOUND_HUMAN_LIMIT
 
 
 def render_human(report: dict[str, object]) -> str:
@@ -230,29 +213,22 @@ def run_record_bound_deepeval(
     root: Path,
     identifier: str,
     *,
-    version: str | None = None,
     as_json: bool = True,
 ) -> dict[str, object]:
     try:
         record_id(identifier)
     except FormatError:
         raise EvidenceError("USAGE_ERROR", "INVALID_ARGUMENTS_SEE_HELP") from None
-    if version is not None and version != VERSION:
-        raise EvidenceError(
-            "UNSUPPORTED_FORMAT", "DEEPEVAL_BINDING_VERSION_UNSUPPORTED", "/version"
-        )
-    contracts = _contracts(version)
+    contracts = _contracts()
     paths = {"bindings": bindings, "deepeval": path}
-    captured, sources, analysis = _analyze(paths, version)
+    captured, sources, analysis = _analyze(paths)
     envelope: dict[str, Any] = {
-        "schema": AUTO_SCHEMA if version is None else SCHEMA,
+        "schema": AUTO_SCHEMA,
         "command": COMMAND,
         "sources": sources,
         "analysis": analysis,
         "exit_code": 0 if analysis["state"] == "result" else 2,
     }
-    if version is not None:
-        envelope["source_format_version"] = VERSION
     try:
         files = _files(paths, root, identifier, captured, envelope, contracts)
     except CanonicalizationError:
@@ -283,20 +259,12 @@ def run_record_bound_deepeval(
         as_json=as_json,
         max_bytes=OUTPUT_MAX_BYTES,
     )
-    metadata = (
-        {
-            "format": SOURCE[0],
-            "format_version": VERSION,
-            "analysis_state": analysis["state"],
-        }
-        if version is not None
-        else {
-            "format": SOURCE[0],
-            "analysis_state": analysis["state"],
-            "selection_mode": "auto",
-        }
-    )
-    if version is None and analysis["state"] == "result":
+    metadata = {
+        "format": SOURCE_FORMAT,
+        "analysis_state": analysis["state"],
+        "selection_mode": "auto",
+    }
+    if analysis["state"] == "result":
         metadata["reader_profile"] = analysis["report"]["source"]["reader_profile"]
     spec = CapturedRecordSpec(
         record_id=identifier,

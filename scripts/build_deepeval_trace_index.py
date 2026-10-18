@@ -4,10 +4,24 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from _record_schema import schema_main
-from _schema_compose import object_schema as _object
+if __package__:
+    from ._record_schema import schema_main
+    from ._schema_compose import object_schema as _object
+    from .build_deepeval_accounting import source_identity
+else:
+    from _record_schema import schema_main
+    from _schema_compose import object_schema as _object
+    from build_deepeval_accounting import source_identity
 
 from underwrite.instrument.evidence.deepeval_accounting import MAX_CASES
+from underwrite.instrument.evidence.deepeval_compat import (
+    TRACE_LIMITATIONS_EXTRA,
+    TRACE_READER,
+    TRACE_SCOPE_EXTRA,
+)
+from underwrite.instrument.evidence.deepeval_compat import (
+    TRACE_SCHEMA as SCHEMA,
+)
 from underwrite.instrument.evidence.deepeval_trace import (
     GROUP_AVAILABILITY,
     GROUP_TYPES,
@@ -16,10 +30,7 @@ from underwrite.instrument.evidence.deepeval_trace import (
     NEXT_ACTIONS,
     PARENT_STATES,
     RULE_PROFILE,
-    SCHEMA,
     SCOPE,
-    SOURCE_FORMAT,
-    SOURCE_VERSION,
     SPAN_TYPES,
     STATUSES,
     TRACE_AVAILABILITY,
@@ -154,29 +165,26 @@ def build_schema() -> dict[str, object]:
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": f"urn:underwrite:contract:{SCHEMA}",
         "title": SCHEMA,
-        "description": "Selected case and span structure; no metric or causal judgment.",
+        "description": "Selected DeepEval case and span structure; producer version unknown.",
         **_object(
             {
                 "schema": {"const": SCHEMA},
-                "source": _object(
-                    {
-                        "format": {"const": SOURCE_FORMAT},
-                        "format_version": {"const": SOURCE_VERSION},
-                        "claims_verified": {"const": False},
-                    }
-                ),
+                "source": source_identity(),
                 "raw_hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}(?![\\s\\S])"},
                 "rule_profile": {"const": RULE_PROFILE},
-                "scope": _object({key: {"const": value} for key, value in SCOPE.items()}),
+                "scope": _object(
+                    {key: {"const": value} for key, value in {**SCOPE, **TRACE_SCOPE_EXTRA}.items()}
+                ),
                 "cases": {"type": "array", "maxItems": MAX_CASES, "items": _case()},
                 "counts": _counts(),
-                "limitations": {"const": list(LIMITATIONS)},
+                "limitations": {"const": [*LIMITATIONS, *TRACE_LIMITATIONS_EXTRA]},
                 "next_actions": {
                     "type": "array",
                     "maxItems": len(NEXT_ACTIONS),
                     "items": {"enum": list(NEXT_ACTIONS)},
                     "uniqueItems": True,
                 },
+                "reader_profile": {"const": TRACE_READER},
             }
         ),
     }

@@ -10,7 +10,7 @@ from pathlib import Path
 from jsonschema import Draft202012Validator
 
 ROOT = Path(__file__).resolve().parents[2]
-NAME = "deepeval_bound_record.v1.schema.json"
+NAME = "deepeval_bound_record.v2.schema.json"
 
 
 def test_generated_bound_record_contract_is_current_and_installed() -> None:

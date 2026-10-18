@@ -15,13 +15,9 @@ from underwrite.instrument.evidence.deepeval_compat import (
     ACCOUNTING_SCHEMA as AUTO_ACCOUNTING_SCHEMA,
 )
 from underwrite.instrument.evidence.deepeval_compat import TRACE_SCHEMA as AUTO_TRACE_SCHEMA
-from underwrite.instrument.evidence.deepeval_trace import SCHEMA as TRACE_SCHEMA
-from underwrite.instrument.evidence.deepeval_trace import SOURCE_VERSION as TRACE_VERSION
 from underwrite.instrument.ingest.deepeval_accounting import (
-    PROFILES,
     DeepevalFileError,
     audit_deepeval_file,
-    profile_for,
 )
 from underwrite.instrument.ingest.deepeval_binding import audit_deepeval_bound_file
 from underwrite.instrument.ingest.deepeval_trace import audit_deepeval_trace_file
@@ -43,19 +39,10 @@ def configure(parser: argparse.ArgumentParser) -> None:
         help="Local DeepEval TestRun JSON.",
     )
     parser.add_argument(
-        "--version",
-        choices=tuple(PROFILES),
-        default=None,
-        help="Optional historical source version; omitted selects local automatic rules.",
-    )
-    parser.add_argument(
         "--bindings",
         type=Path,
         default=None,
-        help=(
-            "Owner-asserted metric pack: format-only v2 without --version; "
-            "v1 with --version 4.2.8."
-        ),
+        help=("Owner-asserted format-only deepeval_metric_bindings.v2 pack."),
     )
     parser.add_argument(
         "--view",
@@ -75,7 +62,7 @@ def configure(parser: argparse.ArgumentParser) -> None:
         "parent links; instrumentation coverage and causality remain unknown. "
         "No manifest or evaluator execution is needed. "
         "An accounting report exits 0 even when source counts disagree or metrics contain errors. "
-        "Without --version, a selected local reader does not establish a producer release. "
+        "A selected local reader does not establish a producer release. "
         "If missing-execution accounting is required, the inventory next action asks for "
         "external planned evidence from the evaluation owner. This command has no inventory "
         "input; planned and missing-execution counts remain unknown."
@@ -85,24 +72,14 @@ def configure(parser: argparse.ArgumentParser) -> None:
 def produce(args: argparse.Namespace) -> dict[str, object]:
     try:
         if args.view == "trace-index":
-            if args.version is not None and args.version != TRACE_VERSION:
-                raise EvidenceError(
-                    "UNSUPPORTED_FORMAT", "DEEPEVAL_TRACE_VERSION_UNSUPPORTED", "/version"
-                )
             if args.bindings is not None:
                 raise EvidenceError(
                     "UNSUPPORTED_FORMAT", "DEEPEVAL_TRACE_BINDINGS_UNSUPPORTED", "/bindings"
                 )
-            return audit_deepeval_trace_file(cast(Path, args.file), version=args.version)
+            return audit_deepeval_trace_file(cast(Path, args.file))
         if args.bindings is not None:
-            if args.version is not None and args.version != "4.2.8":
-                raise EvidenceError(
-                    "UNSUPPORTED_FORMAT", "DEEPEVAL_BINDING_EXPLICIT_VERSION_REQUIRED", "/version"
-                )
-            return audit_deepeval_bound_file(
-                cast(Path, args.file), cast(Path, args.bindings), version=args.version
-            )
-        return audit_deepeval_file(cast(Path, args.file), version=args.version)
+            return audit_deepeval_bound_file(cast(Path, args.file), cast(Path, args.bindings))
+        return audit_deepeval_file(cast(Path, args.file))
     except (DeepevalFileError, DeepevalBindingError) as exc:
         raise EvidenceError(exc.code, exc.reason, exc.location) from None
 
@@ -124,19 +101,15 @@ def render_bound_human(report: dict[str, object]) -> str:
         "Planned evaluations unknown; source claims and owner name meanings unverified. "
         "No statistical or approval authority."
     )
-    return (
-        summary + " " + AUTO_BOUND_HUMAN_LIMIT
-        if report["schema"] == AUTO_RESULT_SCHEMA
-        else summary
-    )
+    return summary + " " + AUTO_BOUND_HUMAN_LIMIT
 
 
 def _render(report: dict[str, object]) -> str:
-    if report["schema"] in (TRACE_SCHEMA, AUTO_TRACE_SCHEMA):
+    if report["schema"] == AUTO_TRACE_SCHEMA:
         return render_trace_human(report)
     return (
         render_bound_human(report)
-        if report["schema"] in ("evidence_result.v1", AUTO_RESULT_SCHEMA)
+        if report["schema"] == AUTO_RESULT_SCHEMA
         else render_human(report)
     )
 
@@ -146,19 +119,14 @@ def render_trace_human(report: dict[str, object]) -> str:
     actions = cast(list[str], report["next_actions"])
     counts = cast(dict[str, dict[str, object]], report["counts"])
     cases, traces, spans = counts["cases"], counts["traces"], counts["spans"]
-    auto_limit = (
-        " Metrics and expectation outcomes are not analyzed; "
-        "source case success may include unexamined evaluations."
-        if report["schema"] == AUTO_TRACE_SCHEMA
-        else ""
-    )
     return (
         f"Cases: {cases['total']}; traces present {traces['present']}; "
         f"observed spans {spans['total']}; source ERRORED spans {spans['status_errored']}.\n"
         "Case, trace and step statuses are separate source claims. "
         "Planned steps and instrumentation coverage unknown; parent links do not establish "
-        "causality, chronology or recovery."
-        + auto_limit
+        "causality, chronology or recovery. "
+        "Metrics and expectation outcomes are not analyzed; "
+        "source case success may include unexamined evaluations."
         + ("\nNext: " + "; ".join(actions) if actions else "")
     )
 
@@ -194,8 +162,7 @@ def render_human(report: dict[str, object]) -> str:
                 "These declarations do not establish CI outcomes or measured instability.",
             ]
         )
-    if report["schema"] == AUTO_ACCOUNTING_SCHEMA:
-        lines.append(AUTO_ORDINARY_HUMAN_LIMIT)
+    lines.append(AUTO_ORDINARY_HUMAN_LIMIT)
     return "\n".join(lines)
 
 
@@ -207,13 +174,11 @@ def main(argv: list[str]) -> int:
         produce,
         ReportOutput(
             lambda args: (
-                (AUTO_TRACE_SCHEMA if args.version is None else TRACE_SCHEMA)
+                AUTO_TRACE_SCHEMA
                 if args.view == "trace-index"
-                else (AUTO_RESULT_SCHEMA if args.version is None else "evidence_result.v1")
+                else AUTO_RESULT_SCHEMA
                 if args.bindings is not None
                 else AUTO_ACCOUNTING_SCHEMA
-                if args.version is None
-                else profile_for(args.version).accounting_schema
             ),
             human=_render,
         ),

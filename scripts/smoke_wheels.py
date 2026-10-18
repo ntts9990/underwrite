@@ -601,42 +601,31 @@ def _evidence_pilots(cli: Path, fixtures: Path, work: Path) -> None:
 
 
 def _bound_deepeval_record_pilot(
-    cli: Path, work: Path, capabilities: dict[str, object], *, automatic: bool = False
+    cli: Path, work: Path, capabilities: dict[str, object], *, source_fixture: Path
 ) -> None:
     commands = cast(list[dict[str, object]], capabilities["commands"])
     records_entry = next(item for item in commands if item["command"] == "records")
     profiles = cast(list[dict[str, object]], records_entry["profiles"])
-    selector = (
-        "audit-deepeval|" + ("" if automatic else "4.2.8|") + "owner-asserted-metric-bindings"
-    )
+    selector = "audit-deepeval|owner-asserted-metric-bindings"
     selected = next(item for item in profiles if item["name"] == selector)
-    version = "v2" if automatic else "v1"
-    required = ["file", *([] if automatic else ["version"]), "bindings", "root", "id"]
+    required = ["file", "bindings", "root", "id"]
     wheel.require(
         selected["required_inputs"] == required
-        and selected["input_schemas"] == [f"deepeval_metric_bindings.{version}"]
-        and selected["output_schemas"] == [f"deepeval_bound_record.{version}"],
+        and selected["input_schemas"] == ["deepeval_metric_bindings.v2"]
+        and selected["output_schemas"] == ["deepeval_bound_record.v2"],
         "installed bound DeepEval capability does not describe its executable route",
     )
     output_schemas = cast(list[str], selected["output_schemas"])
     source = work / "bound-deepeval-source.json"
-    source_fixture = (
-        "fixtures/examples/deepeval-auto-4.3.1/ordinary.json"
-        if automatic
-        else "fixtures/golden/external/deepeval-4.2.8/ordinary.json"
-    )
-    source_raw = (wheel.ROOT / source_fixture).read_bytes()
+    source_raw = source_fixture.read_bytes()
     source.write_bytes(source_raw)
     bindings = work / "bound-deepeval-bindings.json"
-    pack_name = (
-        "synthetic-deepeval.bindings.v2.json"
-        if automatic
-        else "synthetic-deepeval-4.2.8.bindings.json"
-    )
-    pack_raw = (wheel.ROOT / "fixtures/examples/evidence" / pack_name).read_bytes()
+    pack_raw = (
+        wheel.ROOT / "fixtures/examples/evidence/synthetic-deepeval.bindings.v2.json"
+    ).read_bytes()
     bindings.write_bytes(pack_raw)
     store = work / "bound-deepeval-store"
-    values = {"version": "4.2.8", "bindings": str(bindings), "root": str(store), "id": "bound"}
+    values = {"bindings": str(bindings), "root": str(store), "id": "bound"}
     args = ["records", "audit-deepeval", str(source)]
     for requirement in cast(list[str], selected["required_inputs"])[1:]:
         args.extend(("--" + requirement, values[requirement]))
@@ -649,7 +638,6 @@ def _bound_deepeval_record_pilot(
     verification = cast(dict[str, object], storage["verification"])
     wheel.require(
         report["schema"] == output_schemas[0]
-        and (automatic or report["source_format_version"] == "4.2.8")
         and source_identity["raw_hash"]
         == sources["deepeval"]["raw_hash"]
         == "sha256:" + hashlib.sha256(source_raw).hexdigest()
@@ -657,36 +645,35 @@ def _bound_deepeval_record_pilot(
         and verification["files_checked"] == 2 + len(sources),
         "installed bound DeepEval capture changed source identity or retained file count",
     )
-    if automatic:
-        identity = cast(dict[str, object], result["source"])
-        declaration = cast(dict[str, object], result["declaration_source"])
-        wheel.require(
-            result["schema"] == "evidence_result.v2"
-            and identity["producer_version"] is None
-            and identity["producer_version_state"] == "unknown"
-            and declaration["raw_hash"] == sources["bindings"]["raw_hash"],
-            "automatic bound result invented a producer version or lost its declaration bytes",
-        )
-        direct = _cli_json(
+    identity = cast(dict[str, object], result["source"])
+    declaration = cast(dict[str, object], result["declaration_source"])
+    wheel.require(
+        result["schema"] == "evidence_result.v2"
+        and identity["producer_version"] is None
+        and identity["producer_version_state"] == "unknown"
+        and declaration["raw_hash"] == sources["bindings"]["raw_hash"],
+        "automatic bound result invented a producer version or lost its declaration bytes",
+    )
+    direct = _cli_json(
+        cli,
+        ["audit-deepeval", str(source), "--bindings", str(bindings)],
+        work / "bound-direct.json",
+        work,
+    )
+    wheel.require(direct == result, "automatic direct and retained bound results differ")
+    for view, schema in (
+        ("summary", "common_result_inspection.v2"),
+        ("actions", "common_result_inspection_actions.v2"),
+    ):
+        inspection = _cli_json(
             cli,
-            ["audit-deepeval", str(source), "--bindings", str(bindings)],
-            work / "bound-direct.json",
+            ["inspect-result", str(work / "bound-direct.json"), "--view", view],
+            work / f"bound-inspected-{view}.json",
             work,
         )
-        wheel.require(direct == result, "automatic direct and retained bound results differ")
-        for view, schema in (
-            ("summary", "common_result_inspection.v2"),
-            ("actions", "common_result_inspection_actions.v2"),
-        ):
-            inspection = _cli_json(
-                cli,
-                ["inspect-result", str(work / "bound-direct.json"), "--view", view],
-                work / f"bound-inspected-{view}.json",
-                work,
-            )
-            wheel.require(
-                inspection["schema"] == schema, "automatic bound result used wrong inspection"
-            )
+        wheel.require(
+            inspection["schema"] == schema, "automatic bound result used wrong inspection"
+        )
     source.unlink()
     bindings.unlink()
     verified = _cli_json(
@@ -729,6 +716,81 @@ def _bound_deepeval_record_pilot(
         == {role: captured["raw_hash"] for role, captured in sources.items()},
         "bound record did not recover both original source byte identities",
     )
+
+
+def _deepeval_legacy_pack_refusals(cli: Path, work: Path) -> None:
+    """Keep old scope assertions intact and test direct versus capture admission order."""
+    selected = work / "rejected-owner-pack"
+    selected.mkdir()
+    old_pack = wheel.ROOT / "fixtures/examples/evidence/synthetic-deepeval-4.2.8.bindings.json"
+    refused = wheel.command(
+        [
+            str(cli),
+            "audit-deepeval",
+            str(selected / "missing-source.json"),
+            "--bindings",
+            str(old_pack),
+            "--json",
+        ],
+        selected,
+    )
+    error = json.loads(refused.stderr)
+    wheel.require(
+        refused.returncode == EVIDENCE_ERROR_EXIT
+        and refused.stdout == ""
+        and error["code"] == "UNSUPPORTED_PROFILE"
+        and error["reason"] == "DEEPEVAL_BINDING_PACK_SCOPE_UNSUPPORTED"
+        and error["location"] == "/bindings/schema",
+        "old pack was widened or direct binding read its missing TestRun before pack admission",
+    )
+    source = selected / "source.json"
+    source_raw = (wheel.ROOT / "fixtures/examples/deepeval-auto-4.3.1/ordinary.json").read_bytes()
+    source.write_bytes(source_raw)
+    pack_raw = old_pack.read_bytes()
+    store = selected / "records"
+    captured = wheel.command(
+        [
+            str(cli),
+            "records",
+            "audit-deepeval",
+            str(source),
+            "--bindings",
+            str(old_pack),
+            "--root",
+            str(store),
+            "--id",
+            "old-pack-refused",
+            "--json",
+        ],
+        selected,
+    )
+    report = json.loads(captured.stdout)
+    diagnostic_files = (
+        "source/deepeval.bin",
+        "source/bindings.bin",
+        "analysis/error.json",
+        "invocation.json",
+    )
+    wheel.require(
+        captured.returncode == EVIDENCE_ERROR_EXIT
+        and captured.stderr == ""
+        and report["schema"] == "deepeval_bound_record.v2"
+        and report["analysis"] == {"state": "error", "phase": "analysis", "error": error}
+        and report["storage"]["state"] == "saved"
+        and report["storage"]["verification"]["valid"] is True
+        and report["storage"]["verification"]["files_checked"] == len(diagnostic_files),
+        "old-pack capture lost its distinct retained analysis diagnostic semantics",
+    )
+    for role, raw in (("deepeval", source_raw), ("bindings", pack_raw)):
+        wheel.require(
+            report["sources"][role]["state"] == "captured"
+            and report["sources"][role]["raw_hash"] == "sha256:" + hashlib.sha256(raw).hexdigest()
+            and (store / "records/old-pack-refused/files/source" / f"{role}.bin").read_bytes()
+            == raw,
+            "old-pack diagnostic capture changed or lost a complete original input",
+        )
+
+
 def _record_pilots(cli: Path, fixtures: Path, work: Path) -> None:
     installed_capabilities = _cli_json(cli, ["capabilities"], work / "capabilities.json", work)
     checkout_capabilities = wheel.success(
@@ -738,18 +800,27 @@ def _record_pilots(cli: Path, fixtures: Path, work: Path) -> None:
         installed_capabilities == json.loads(checkout_capabilities.stdout),
         "checkout and installed capabilities differ",
     )
-    _bound_deepeval_record_pilot(cli, work, installed_capabilities)
-    auto_bound = work / "automatic-bound"
-    auto_bound.mkdir()
-    _bound_deepeval_record_pilot(cli, auto_bound, installed_capabilities, automatic=True)
+    for name, source_fixture in (
+        (
+            "bound-source-4.2.8",
+            wheel.ROOT / "fixtures/golden/external/deepeval-4.2.8/ordinary.json",
+        ),
+        ("bound-source-4.3.1", wheel.ROOT / "fixtures/examples/deepeval-auto-4.3.1/ordinary.json"),
+    ):
+        selected_work = work / name
+        selected_work.mkdir()
+        _bound_deepeval_record_pilot(
+            cli, selected_work, installed_capabilities, source_fixture=source_fixture
+        )
+    _deepeval_legacy_pack_refusals(cli, work)
     commands = cast(list[dict[str, object]], installed_capabilities["commands"])
     for command, name, fixture, version, schema in (
         (
             "audit-deepeval",
-            "deepeval.test-run|4.2.8",
+            "deepeval.test-run|auto",
             "deepeval-4.2.8/ordinary.json",
-            "4.2.8",
-            "deepeval_accounting.v2",
+            None,
+            "deepeval_accounting.v3",
         ),
         (
             "audit-promptfoo",
@@ -763,21 +834,16 @@ def _record_pilots(cli: Path, fixtures: Path, work: Path) -> None:
         profiles = cast(list[dict[str, object]], descriptor["profiles"])
         selected = next(item for item in profiles if item["name"] == name)
         wheel.require(
-            selected["required_inputs"]
-            == (["file"] if command == "audit-promptfoo" else ["file", "version"])
-            and selected["output_schemas"] == [schema],
+            selected["required_inputs"] == ["file"] and selected["output_schemas"] == [schema],
             f"installed {name} capability selector changed",
         )
-        required = cast(list[str], selected["required_inputs"])
         args = [command, str(wheel.ROOT / "fixtures/golden/external" / fixture)]
-        if "version" in required:
-            args.extend(("--version", version))
         observed = _cli_json(cli, args, work / f"{command}-advertised.json", work)
         source = cast(dict[str, object], observed["source"])
         wheel.require(
             observed["schema"] == schema
-            and source["producer_version" if command == "audit-promptfoo" else "format_version"]
-            == version,
+            and source["producer_version"] == version
+            and source["producer_version_state"] == ("unknown" if version is None else "declared"),
             f"installed {name} capability selected the wrong source profile",
         )
     audit = _cli_json(
@@ -911,7 +977,6 @@ def _deepeval_record_pilot(
     source: Path,
     expected: dict[str, object],
     *,
-    version: str | None = "4.1.1",
     view: str = "accounting",
 ) -> None:
     selected = work / "deepeval-selected.json"
@@ -919,14 +984,17 @@ def _deepeval_record_pilot(
     selected.write_bytes(raw)
     store = work / "deepeval-records"
     arguments = ["records", "audit-deepeval", str(selected), "--root", str(store)]
-    if version is not None:
-        arguments.extend(["--version", version])
     if view != "accounting":
         arguments.extend(["--view", view])
     report = _cli_json(cli, [*arguments, "--id", "captured"], work / "deepeval-record.json", work)
     analysis = cast(dict[str, object], report["analysis"])
     storage = cast(dict[str, object], report["storage"])
-    wheel.require(analysis["report"] == expected, "DeepEval capture changed accounting")
+    wheel.require(
+        report["schema"]
+        == ("deepeval_record.v3" if view == "accounting" else "deepeval_trace_record.v2")
+        and analysis["report"] == expected,
+        "DeepEval capture changed current analysis contract",
+    )
     wheel.require(storage["state"] == "saved", "DeepEval capture failed to save")
     wheel.require(
         (store / "records/captured/files/source/deepeval.bin").read_bytes() == raw,
@@ -987,11 +1055,19 @@ def _deepeval_record_pilot(
         "DeepEval diagnostic capture used the wrong channel or exit",
     )
     diagnostic = json.loads(failed.stdout)
-    if version is not None and version != "4.1.1":
-        wheel.require(
-            diagnostic["source_format_version"] == version,
-            "DeepEval diagnostic lost selected producer version",
-        )
+    shown = _cli_json(
+        cli,
+        ["records", "show", "--root", str(store), "--id", "unavailable"],
+        work / "deepeval-unavailable-record.json",
+        work,
+    )
+    metadata = cast(dict[str, object], cast(dict[str, object], shown["record"])["metadata"])
+    wheel.require(
+        "source_format_version" not in diagnostic
+        and not {"format_version", "producer_version", "producer_version_state", "reader_profile"}
+        & metadata.keys(),
+        "failed DeepEval capture invented a producer version or applied reader",
+    )
     wheel.require(
         diagnostic["source"]["state"] == "unavailable"
         and diagnostic["analysis"]["phase"] == "acquisition"
@@ -1072,7 +1148,7 @@ def _deepeval_pilot(cli: Path, work: Path) -> None:
 
     accounting = _cli_json(
         cli,
-        ["audit-deepeval", str(source), "--version", "4.1.1"],
+        ["audit-deepeval", str(source)],
         work / "deepeval-accounting.json",
         work,
     )
@@ -1091,10 +1167,10 @@ def _deepeval_pilot(cli: Path, work: Path) -> None:
     )
 
 
-def _deepeval_v2_pilot(cli: Path, work: Path) -> None:
+def _deepeval_flaky_fields_pilot(cli: Path, work: Path) -> None:
     golden = wheel.ROOT / "fixtures/golden/external/deepeval-4.2.8"
     for scenario in ("ordinary", "flaky_metric", "flaky_case", "score_without_verdict"):
-        directory = work / f"deepeval-v2-{scenario}"
+        directory = work / f"deepeval-flaky-fields-{scenario}"
         directory.mkdir()
         source = directory / "source.json"
         source.write_bytes((golden / f"{scenario}.json").read_bytes())
@@ -1115,12 +1191,15 @@ def _deepeval_v2_pilot(cli: Path, work: Path) -> None:
         )
         report = _cli_json(
             cli,
-            ["audit-deepeval", str(source), "--version", "4.2.8"],
+            ["audit-deepeval", str(source)],
             directory / "accounting.json",
             directory,
         )
         wheel.require(
-            report["schema"] == "deepeval_accounting.v2", "wrong selected DeepEval schema"
+            report["schema"] == "deepeval_accounting.v3"
+            and cast(dict[str, object], report["source"])["producer_version_state"] == "unknown"
+            and cast(dict[str, object], report["source"])["producer_version"] is None,
+            "wrong current DeepEval contract or invented producer release",
         )
         case = cast(list[dict[str, object]], report["cases"])[0]
         metrics = cast(list[dict[str, object]], case["metrics"])
@@ -1129,7 +1208,7 @@ def _deepeval_v2_pilot(cli: Path, work: Path) -> None:
                 metrics[1]["score"] == 0
                 and metrics[2]["state"] == "error"
                 and "score" not in metrics[2],
-                "DeepEval v2 collapsed zero and evaluator error",
+                "DeepEval field-era accounting collapsed zero and evaluator error",
             )
         elif scenario == "flaky_metric":
             wheel.require(
@@ -1168,17 +1247,17 @@ def _deepeval_v2_pilot(cli: Path, work: Path) -> None:
                 refused.returncode == EVIDENCE_ERROR_EXIT
                 and refused.stdout == ""
                 and json.loads(refused.stderr)["code"] == "UNSUPPORTED_PROFILE",
-                "DeepEval v2 ingestion bypassed native measurement boundary",
+                "DeepEval source ingestion bypassed native measurement boundary",
             )
         if scenario in {"flaky_case", "score_without_verdict"}:
-            _deepeval_record_pilot(cli, directory, source, report, version="4.2.8")
+            _deepeval_record_pilot(cli, directory, source, report)
 
 
 def _deepeval_trace_refusals(cli: Path, source: Path, work: Path) -> None:
-    for options in (
-        ["--version", "4.1.1"],
-        ["--version", "4.2.8", "--bindings", "missing"],
-        ["--bindings", "missing"],
+    for options, code in (
+        (["--version", "4.1.1"], "USAGE_ERROR"),
+        (["--version", "4.2.8", "--bindings", "missing"], "USAGE_ERROR"),
+        (["--bindings", "missing"], "UNSUPPORTED_FORMAT"),
     ):
         refused = wheel.command(
             [str(cli), "audit-deepeval", "missing", "--view", "trace-index", *options, "--json"],
@@ -1187,7 +1266,7 @@ def _deepeval_trace_refusals(cli: Path, source: Path, work: Path) -> None:
         wheel.require(
             refused.returncode == EVIDENCE_ERROR_EXIT
             and refused.stdout == ""
-            and json.loads(refused.stderr)["code"] == "UNSUPPORTED_FORMAT",
+            and json.loads(refused.stderr)["code"] == code,
             "trace selection must refuse unsupported combinations before file acquisition",
         )
     missing = wheel.command(
@@ -1199,9 +1278,7 @@ def _deepeval_trace_refusals(cli: Path, source: Path, work: Path) -> None:
         and json.loads(missing.stderr)["code"] == "SOURCE_READ_FAILED",
         "automatic trace intake did not preserve missing-source acquisition failure",
     )
-    ordinary = wheel.command(
-        [str(cli), "audit-deepeval", str(source), "--version", "4.2.8", "--json"], work
-    )
+    ordinary = wheel.command([str(cli), "audit-deepeval", str(source), "--json"], work)
     wheel.require(
         ordinary.returncode == EVIDENCE_ERROR_EXIT
         and ordinary.stdout == ""
@@ -1219,12 +1296,12 @@ def _deepeval_trace_pilot(cli: Path, work: Path) -> None:
         source.write_bytes(raw)
         report = _cli_json(
             cli,
-            ["audit-deepeval", str(source), "--version", "4.2.8", "--view", "trace-index"],
+            ["audit-deepeval", str(source), "--view", "trace-index"],
             work / f"deepeval-trace-{scenario}-index.json",
             work,
         )
         wheel.require(
-            report["schema"] == "deepeval_trace_index.v1"
+            report["schema"] == "deepeval_trace_index.v2"
             and report["raw_hash"] == "sha256:" + hashlib.sha256(raw).hexdigest(),
             "trace index lost original byte identity or schema",
         )
@@ -1258,20 +1335,34 @@ def _deepeval_trace_pilot(cli: Path, work: Path) -> None:
                 "import json,sys; from pathlib import Path; "
                 "from underwrite.instrument.ingest.deepeval_trace "
                 "import audit_deepeval_trace_bytes; "
-                "print(json.dumps(audit_deepeval_trace_bytes(Path(sys.argv[1]).read_bytes(), "
-                "version='4.2.8')))",
+                "print(json.dumps(audit_deepeval_trace_bytes(Path(sys.argv[1]).read_bytes())))",
                 str(source),
             ],
             work,
         )
         wheel.require(json.loads(check.stdout) == report, "installed trace API and CLI disagree")
     _deepeval_trace_refusals(cli, source, work)
-    retained = work / "deepeval-trace-retention"
-    retained.mkdir()
-    _deepeval_record_pilot(cli, retained, source, report, version="4.2.8", view="trace-index")
 
 
 def _deepeval_auto_pilot(cli: Path, work: Path) -> None:
+    retired_assets = (
+        "deepeval_accounting.v1",
+        "deepeval_accounting.v2",
+        "deepeval_record.v1",
+        "deepeval_record.v2",
+        "deepeval_trace_index.v1",
+        "deepeval_trace_record.v1",
+        "deepeval_metric_bindings.v1",
+        "deepeval_bound_record.v1",
+    )
+    retired_filenames = [name + ".schema.json" for name in retired_assets]
+    check_assets = (
+        "import json; from importlib.resources import files; "
+        "names={item.name for item in files('underwrite').joinpath('_contracts').iterdir()}; "
+        f"print(json.dumps(sorted(names.intersection({retired_filenames!r}))))"
+    )
+    resources = wheel.success([str(cli.with_name("python")), "-c", check_assets], work)
+    wheel.require(json.loads(resources.stdout) == [], "retired DeepEval contracts remain installed")
     golden = wheel.ROOT / "fixtures/golden/external"
     native = wheel.ROOT / "fixtures/examples/deepeval-auto-4.3.1"
     scenarios = (
@@ -1308,7 +1399,7 @@ def _deepeval_auto_pilot(cli: Path, work: Path) -> None:
         wheel.require(
             json.loads(api.stdout) == report, "automatic DeepEval API/CLI outcomes differ"
         )
-        _deepeval_record_pilot(cli, selected, source, report, version=None, view=view)
+        _deepeval_record_pilot(cli, selected, source, report, view=view)
     invalid = json.loads((native / "ordinary.json").read_bytes())
     invalid["testCases"][0]["metricsData"][0]["expectationsData"] = {
         "private": "EXPECTATION_CANARY"
@@ -2503,7 +2594,7 @@ def _smoke(dist: Path) -> None:
         _record_pilots(cli, fixtures, work)
         _handoff_pilot(cli, work)
         _deepeval_pilot(cli, work)
-        _deepeval_v2_pilot(cli, work)
+        _deepeval_flaky_fields_pilot(cli, work)
         _deepeval_trace_pilot(cli, work)
         _deepeval_auto_pilot(cli, work)
         _langfuse_pilot(cli, work)

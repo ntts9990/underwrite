@@ -25,8 +25,8 @@ availability is not evidence that an arbitrary export satisfies a profile.
 
 For released changes and current checkout differences, see [migration](MIGRATION.md).
 Published 0.2.0 retains historical selectors alongside automatic input. The
-unreleased checkout removes Promptfoo and Langfuse audit/capture selectors
-and uses their current v2 result families. Existing stored bytes retain their original meanings.
+unreleased checkout removes producer-version/profile audit/capture selectors
+and uses each producer family’s current result contracts. Existing stored bytes retain their original meanings.
 
 Choose the input path first. An `underwrite.evidence-bundle` v1 observation can
 enter the native `ingest` → `measure` → `accept` workflow with an explicit policy
@@ -459,8 +459,9 @@ expectation evaluation. Do not treat it as an independently checked outcome. The
 index cannot align runs by name, UUID or ordinal. Obtain explicit correspondence
 before a cross-run comparison. The source's declarations remain unverified.
 
-This view cannot be combined with `--bindings`. Explicit `--version 4.2.8`
-retains the historical `deepeval_trace_index.v1` contract. Ordinary accounting
+This view cannot be combined with `--bindings`. The current checkout rejects
+DeepEval `--version` and Python `version=`; published 0.2.0 still retains its
+historical selectors. See [migration](MIGRATION.md). Ordinary accounting
 still refuses populated traces. See the [4.2.8 native examples](fixtures/golden/external/deepeval-4.2.8/traces/SOURCE.md)
 and [4.3.1 native examples](fixtures/examples/deepeval-auto-4.3.1/SOURCE.md)
 for producer capture provenance and the limits of a successful case containing
@@ -491,8 +492,9 @@ still work from the store. To read original `source/deepeval.bin` bytes through
 `underwrite.service.records.read_record_file`, explicitly allow the 4 MiB source
 budget when needed; selected reads default to 1 MiB. Stored-byte verification does
 not establish producer execution, source truth or complete instrumentation.
-Published 0.1.1 predates this composed trace route too. Explicit
-`--version 4.2.8` keeps the old trace record and stored-byte contract.
+Published 0.1.1 predates this composed trace route too.
+Only published 0.2.0 retains the old trace selector. Existing stored records keep
+their original bytes and remain readable without the retired schema resources.
 
 ## Account for DeepEval scores and evaluator errors
 
@@ -569,20 +571,13 @@ reserved. The saved result retains the existing zero/error/sibling and unknown
 population meanings; storage verification grants no producer or approval authority.
 Use analysis-only `audit-deepeval` when storage is not requested.
 
-For exact historical output, select a supported producer profile explicitly:
-
-```sh
-underwrite audit-deepeval test_run.json --version 4.2.8 --json
-underwrite records audit-deepeval test_run.json --version 4.2.8 \
-  --root /private/review-store --id deepeval.review-002 --json
-```
-
-The shown explicit 4.2.8 calls return `deepeval_accounting.v2` and
-`deepeval_record.v2`, respectively. Explicit 4.1.1 retains its v1 result and
-record contracts; valid old stored bytes remain unchanged. The same selection
-works with `ingest --format deepeval.test-run --version 4.2.8`.
-No version is detected from this unversioned file; selecting a profile does not
-authenticate its producer. Automatic intake does not widen low-level `ingest`.
+The current checkout has no DeepEval `--version` or Python `version=` selector.
+Ordinary accounting and capture always use v3; trace results/capture use v2.
+Published 0.2.0 still retains old selectors, as documented in [migration](MIGRATION.md).
+Old records remain immutable and readable. Low-level source admission still uses
+`ingest --format deepeval.test-run --version 4.2.8`; this does not choose an old
+accounting output or authenticate the producer. Current intake does not widen
+that codec or the separate release-linkage boundary.
 
 In 0.2.0, use the advertised neutral DeepEval binding with one
 owner-authored `deepeval_metric_bindings.v2` pack with the local TestRun. Omit
@@ -599,7 +594,7 @@ underwrite inspect-result /private/path/deepeval-evidence.v2.json \
 ```
 
 The importable `audit_deepeval_bound_file(source_path, pack_path)` follows the
-same v2 route when `version` is omitted; neither entry point needs a reader hint.
+same v2 route and accepts no `version` keyword in the current checkout.
 
 The v2 pack's `source` contains only `{"format":"deepeval.test-run"}` and keeps
 `name_binding_authority` as `owner_asserted_stable_name_not_verified`. Each
@@ -610,8 +605,8 @@ names, unit, numeric type, declared identity, bounds and digest integrity; it
 cannot verify evaluator configuration, stability across unseen releases or the
 truth of the owner's claim. The v2 pack needs no producer-version field and no
 list of Underwrite reader profiles. Do not invent definitions from metric names.
-A v1 pack is refused on the no-version route; do not strip its 4.2.8 assertion
-or silently broaden it. An explicit old route likewise refuses a v2 pack.
+A v1 pack is refused; do not strip its 4.2.8 assertion or silently broaden it.
+The declaration owner must review and reassert the applicability of a new v2 pack.
 The [synthetic v2 example pack](fixtures/examples/evidence/synthetic-deepeval.bindings.v2.json)
 binds the `zero` metric in the included 4.2.8 and 4.3.1 ordinary examples.
 It does not match the older 4.1.1 example's names. Its definitions are not
@@ -650,19 +645,10 @@ an applied reader only after successful analysis. Whole verification and
 selected-file reads check stored bytes, not producer execution, pack meaning
 or approval. The complete TestRun and pack remain private and unredacted.
 
-For exact historical `evidence_result.v1` output, keep the owner-authored
-`deepeval_metric_bindings.v1` pack and explicit `--version 4.2.8`:
-
-```sh
-underwrite audit-deepeval /path/to/test_run.json --version 4.2.8 \
-  --bindings /private/path/deepeval-bindings.json --json \
-  > /private/path/deepeval-evidence.json
-```
-
-The pack has this shape. Create a complete `metric_definition.v1` object for
-each selected name using the [definition contract](contracts/metric_definition.v1.schema.json),
-then place it under `definition`; the [pack contract](contracts/deepeval_metric_bindings.v1.schema.json)
-fixes the exact DeepEval profile and authority string:
+To create a **new owner-reviewed v2 pack**, first provide complete definitions
+using the [definition contract](contracts/metric_definition.v1.schema.json).
+The [current pack contract](contracts/deepeval_metric_bindings.v2.schema.json)
+binds names to those declarations without claiming a producer release:
 
 ```python
 import json
@@ -672,94 +658,42 @@ from underwrite_core.canonical import content_digest
 definition = json.loads(Path("/private/path/metric-definition.json").read_text())
 definition["semantic_digest"] = content_digest(definition["semantic"])
 pack = {
-    "schema": "deepeval_metric_bindings.v1",
-    "source": {"format": "deepeval.test-run", "format_version": "4.2.8"},
+    "schema": "deepeval_metric_bindings.v2",
+    "source": {"format": "deepeval.test-run"},
     "name_binding_authority": "owner_asserted_stable_name_not_verified",
     "bindings": [{"source_metric_name": "my_metric", "definition": definition}],
 }
-Path("/private/path/deepeval-bindings.json").write_text(json.dumps(pack))
+Path("/private/path/deepeval-bindings.v2.json").write_text(json.dumps(pack))
 ```
 
-The v1 pack's 4.2.8 scope remains an owner assertion, never proof that an
-unversioned TestRun came from that release. Keep this route for exact old
-result, invocation, manifest and stored-member bytes.
+This constructs a fresh declaration after owner review, not a conversion of an
+old version-scoped pack. Each definition has `method` and `policy` null, numeric
+value type, `sampling.unit` equal to `metric_occurrence`, and coordinates
+`["case_index", "metric_index"]`. A semantic digest checks declared content,
+not the truth of the meaning or equivalence of same-named evaluators. Leave a
+name unbound or supply a separately reviewed pack when that assertion cannot be
+made. A selected name absent from the source is refused; unselected occurrences
+remain visible as unbound items.
 
-Each definition must have `method` and `policy` set to null, numeric value
-type, `sampling.unit` of `metric_occurrence`, coordinates
-`["case_index", "metric_index"]`, and a `semantic_digest` recomputed from its
-`semantic` object. The pack contains no per-run values and can be reused across
-runs where the owner asserts that the selected source name has the same meaning.
-The digest checks declared content integrity, not whether that meaning is true.
-Underwrite checks exact names and declaration integrity; it cannot establish
-that two same-named metrics use the same rubric or evaluator configuration.
-Use a separate pack/profile or leave a homonymous name unbound when that owner
-assertion cannot be made. A selected name absent from the source is refused;
-unselected occurrences remain visible as unbound items.
+Direct bound-file analysis validates the pack before opening the TestRun. Record
+capture instead attempts both source roles, retains complete buffers and then
+validates: an old/invalid pack can therefore produce a saved diagnostic. Acquisition
+errors take precedence, bindings before TestRun. Neither path silently broadens
+an old assertion. Both original raw hashes are checked on successful capture;
+whole-record and selected-file verification do not authenticate their meaning.
 
-The historical importable API returns the same validated v1 result and typed
-refusals:
+Bound results expose ordinal occurrences, source/pack identities and declared
+metric IDs, versions and semantic digests. Source names and declaration prose
+stay in the private inputs. `planned_count` remains null and values remain
+source claims. JSON output is bounded at 1 MiB; oversized output gets a finite
+`OUTPUT_LIMIT_EXCEEDED` error with no partial stdout.
 
-```python
-from pathlib import Path
-from underwrite.instrument.ingest.deepeval_binding import audit_deepeval_bound_file
-
-result = audit_deepeval_bound_file(
-    Path("/path/to/test_run.json"),
-    Path("/private/path/deepeval-bindings.json"),
-    version="4.2.8",
-)
-```
-
-To retain the historical v1 bound result and both exact inputs in one call,
-use the explicit record route:
-
-```sh
-underwrite records audit-deepeval /path/to/test_run.json --version 4.2.8 \
-  --bindings /private/path/deepeval-bindings.json \
-  --root /private/review-store --id deepeval.bound-001 --json
-underwrite records verify --root /private/review-store --id deepeval.bound-001 --json
-underwrite records read-json --root /private/review-store --id deepeval.bound-001 \
-  --name analysis/evidence_result.json --json
-```
-
-The `deepeval_bound_record.v1` response separates both acquisition states,
-analysis, and storage. It captures the pack and source independently once, then
-validates the pack, analyzes the source, and binds a complete pair. A complete
-malformed input is retained with its diagnostic; an oversized or unreadable input
-has no partial saved bytes. Acquisition errors take precedence, pack before
-source. The selected source hash must match the bound result's source identity.
-The pack's raw hash identifies its captured bytes; each item's semantic digest
-identifies an owner declaration. Neither authenticates the declared meaning or
-producer. Paths appear only in the private invocation file, never in this
-response. Exit 0 means a result saved, 2 a diagnostic saved, and 3 storage
-failed. Explicit historical no-bindings routes keep their existing accounting
-contracts; omitted `--version` intentionally uses the new automatic contract.
-
-The result lists ordinal metric occurrences, source-byte hash, score/error/missing
-availability, and any bound namespace, metric ID, version, and semantic digest.
-Source metric names and declaration prose stay in the private pack; bound IDs are
-visible in the result and should be nonsensitive. `planned_count` stays null,
-source values remain `source_claim`, and the result grants no statistical,
-acceptance, or approval authority. JSON output is limited to 1 MiB; a larger
-otherwise valid population returns a typed `OUTPUT_LIMIT_EXCEEDED` error with
-no partial stdout. The explicit bound result retains its existing contract;
-automatic unbound accounting has a new v3 contract.
-
-In v2, `source_flaky` is the producer's boolean declaration at case and metric
-level, not measured instability or a computed CI outcome. A failed flaky case
-stays source-false; a failed flaky metric can coexist with a passing case.
-Scores with no source verdict remain scored, with `source_success: null` and a
-separate `scored_source_success_absent` count. An absent threshold is also null;
-neither missing value is inferred from the score. Present null input fields are
-refused, and the profile requires explicit boolean `flaky` fields.
-
-Producer aggregate summaries remain unchecked, even when they label a score-only
-row as an aggregate error. The explicit v2 route does not interpret new case token
-metadata, expectations or classifiers; automatic ordinary intake refuses visible
-non-null expectation markers as described above. Nonempty conversational/trace
-ordinary accounting remains unsupported. Do not delete fields to force acceptance.
-The explicit 4.2.8 accounting record preserves the selected version even for
-acquisition diagnostics; its storage and exit meanings are the same as v1.
+The flaky-field reader keeps `source_flaky` as a producer declaration, not measured
+instability. A failed flaky metric may coexist with a passing case. Missing source
+verdict and threshold stay null, never inferred from a score. Present invalid null
+or non-boolean flaky fields refuse. Producer aggregate summaries remain unchecked;
+ordinary intake refuses visible non-null expectation markers and populated
+conversational/trace populations rather than deleting fields to force acceptance.
 
 <a id="source-checkout-pilot-audit-promptfoo-counts"></a>
 

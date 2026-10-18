@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -15,8 +16,9 @@ import pytest
 from jsonschema import Draft202012Validator, ValidationError
 from underwrite_core.canonical import digest_bytes
 
+from scripts import build_deepeval_neutral_binding
 from underwrite.cli.evidence import EvidenceError
-from underwrite.cli.inspect_result import inspect_result_file
+from underwrite.cli.inspect_result import View, inspect_result_file
 from underwrite.cli.record_capture import saved_record
 from underwrite.cli.record_deepeval_bound import AUTO_SCHEMA as RECORD_SCHEMA
 from underwrite.cli.records import record_error_payload
@@ -35,19 +37,15 @@ ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "fixtures/examples/deepeval-auto-4.3.1/ordinary.json"
 PACK = ROOT / "fixtures/examples/evidence/synthetic-deepeval.bindings.v2.json"
 INSPECTION_SOURCE = ROOT / "fixtures/examples/evidence/common-result-c55.json"
-NEW_NAMES = (
+INSTALLED_NAMES = (
     AUTO_PACK_SCHEMA,
     AUTO_RESULT_SCHEMA,
     "common_result_inspection.v2",
     "common_result_inspection_actions.v2",
     RECORD_SCHEMA,
 )
-OLD_HASHES = {
-    "deepeval_metric_bindings.v1": (
-        "7d6b32f69c351efabab142f7813ecfa0b3147ef7fe16036db7d510ccfb6e1b4c"
-    ),
+S5_FROZEN_HASHES = {
     "evidence_result.v1": "d36d9179ffdc28f6be43727dc5ed6ff3c006f100f523c5f3a2e8677c5b019631",
-    "deepeval_bound_record.v1": "00f4dcc616116bb411893cb187fa556dbd2d141bd346458b468d8d2c99cde7f7",
     "common_result_inspection.v1": (
         "8e4527b045097aa3f91a0d5befe15950b4631bec66ff05b8871f11fba4b26786"
     ),
@@ -93,7 +91,45 @@ def _result() -> tuple[dict[str, object], bytes, bytes]:
     )
 
 
-def test_generated_installed_contracts_and_legacy_bytes() -> None:
+def test_current_binding_generation_uses_only_authored_current_inputs(tmp_path: Path) -> None:
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    for name in (
+        "build_deepeval_metric_bindings.py",
+        "build_deepeval_bound_record.py",
+        "build_deepeval_neutral_binding.py",
+        "_record_schema.py",
+        "_schema_compose.py",
+    ):
+        shutil.copyfile(ROOT / "scripts" / name, scripts / name)
+    contracts = tmp_path / "contracts"
+    contracts.mkdir()
+    authored = (
+        "metric_definition.v1",
+        AUTO_RESULT_SCHEMA,
+        "evidence_error.v1",
+        "record_error.v1",
+        "record_verification.v1",
+    )
+    for name in authored:
+        filename = f"{name}.schema.json"
+        shutil.copyfile(ROOT / "contracts" / filename, contracts / filename)
+    expected = {
+        f"{name}.schema.json": (ROOT / "contracts" / f"{name}.schema.json").read_bytes()
+        for name in (AUTO_PACK_SCHEMA, RECORD_SCHEMA)
+    }
+    before = {path.name: path.read_bytes() for path in contracts.iterdir()}
+    command = [sys.executable, str(scripts / "build_deepeval_neutral_binding.py")]
+    built = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True, check=False)
+    assert built.returncode == 0, built.stdout + built.stderr
+    assert {path.name: path.read_bytes() for path in contracts.iterdir()} == {**before, **expected}
+    checked = subprocess.run(
+        [*command, "--check"], cwd=tmp_path, capture_output=True, text=True, check=False
+    )
+    assert checked.returncode == 0, checked.stdout + checked.stderr
+
+
+def test_generated_targets_authored_owner_and_frozen_inspector_assets() -> None:
     result = subprocess.run(
         [sys.executable, "scripts/build_deepeval_neutral_binding.py", "--check"],
         cwd=ROOT,
@@ -105,7 +141,7 @@ def test_generated_installed_contracts_and_legacy_bytes() -> None:
     source_includes = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]["uv"][
         "build-backend"
     ]["source-include"]
-    for name in NEW_NAMES:
+    for name in INSTALLED_NAMES:
         authored = ROOT / "contracts" / f"{name}.schema.json"
         packaged = ROOT / "src/underwrite/_contracts" / authored.name
         assert packaged.is_symlink()
@@ -113,19 +149,18 @@ def test_generated_installed_contracts_and_legacy_bytes() -> None:
         assert packaged.read_bytes() == authored.read_bytes()
         assert f"contracts/{authored.name}" in source_includes
         _validator(name)
-    for name, digest in OLD_HASHES.items():
+    for name, digest in S5_FROZEN_HASHES.items():
         assert (
             hashlib.sha256((ROOT / "contracts" / f"{name}.schema.json").read_bytes()).hexdigest()
             == digest
         )
-    old_action = subprocess.run(
-        [sys.executable, "scripts/build_common_result_inspection_actions.py", "--check"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert old_action.returncode == 0, old_action.stdout + old_action.stderr
+    for name, build in (
+        (AUTO_PACK_SCHEMA, build_deepeval_neutral_binding.build_pack_v2),
+        (RECORD_SCHEMA, build_deepeval_neutral_binding.build_record_v2),
+    ):
+        assert (ROOT / "contracts" / f"{name}.schema.json").read_bytes() == (
+            json.dumps(build(), ensure_ascii=False, indent=2) + "\n"
+        ).encode()
 
 
 def test_pack_requires_one_authority_declaration_without_reader_setup() -> None:
@@ -139,8 +174,6 @@ def test_pack_requires_one_authority_declaration_without_reader_setup() -> None:
     ):
         with pytest.raises(ValidationError):
             validator.validate(mutation)
-    with pytest.raises(ValidationError):
-        _validator("deepeval_metric_bindings.v1").validate(pack)
 
 
 def test_result_requires_separate_source_and_declaration_identities() -> None:
@@ -176,7 +209,7 @@ def test_result_requires_separate_source_and_declaration_identities() -> None:
         validator.validate(declared)
 
 
-def test_v2_inspection_contracts_derive_v1_shape_and_v2_vocabulary() -> None:
+def test_frozen_inspection_contracts_keep_shape_and_actual_input_identity(tmp_path: Path) -> None:
     owner = _schema(AUTO_RESULT_SCHEMA)
     for name, old_name in (
         ("common_result_inspection.v2", "common_result_inspection.v1"),
@@ -191,20 +224,20 @@ def test_v2_inspection_contracts_derive_v1_shape_and_v2_vocabulary() -> None:
         for key in old["properties"]:
             if key not in {"schema", "selected_result"}:
                 assert contract["properties"][key] == old["properties"][key]
-    old_report = inspect_result_file(INSPECTION_SOURCE, view="actions")
-    for name, old_name in (
-        ("common_result_inspection.v2", "common_result_inspection.v1"),
-        ("common_result_inspection_actions.v2", "common_result_inspection_actions.v1"),
-    ):
-        report = deepcopy(old_report)
-        if name.endswith("inspection.v2"):
-            report.pop("item_next_action_counts")
-            report.pop("declared_semantic_binding_counts")
-        report["schema"] = name
-        cast(dict[str, Any], report["selected_result"])["format"] = AUTO_RESULT_SCHEMA
-        _validator(name).validate(report)
-        with pytest.raises(ValidationError):
-            _validator(old_name).validate(report)
+    current_path = tmp_path / "current-result.json"
+    current_path.write_text(json.dumps(_result()[0]), encoding="utf-8")
+    views: tuple[tuple[View, str], ...] = (
+        ("summary", "common_result_inspection"),
+        ("actions", "common_result_inspection_actions"),
+    )
+    for path, generation in ((INSPECTION_SOURCE, "v1"), (current_path, "v2")):
+        for view, family in views:
+            report = inspect_result_file(path, view=view)
+            _validator(f"{family}.{generation}").validate(report)
+            assert report["selected_result"] == {
+                "format": f"evidence_result.{generation}",
+                "raw_hash": digest_bytes(path.read_bytes()),
+            }
 
 
 def test_two_source_v2_record_keeps_four_storage_outcomes_without_version_claim() -> None:

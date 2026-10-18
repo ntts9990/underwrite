@@ -2,9 +2,13 @@
 
 These JSON files are **hand-authored expected results for contract review**.
 `audit-baseline` emits `evidence_result.v1` for the pinned goppi exchange, and
-`audit-deepeval --version 4.2.8 --bindings PACK` emits it for DeepEval metrics
-using a separately supplied, owner-asserted `metric_definition.v1` pack.
-Neither path makes source claims independent truth. A conforming adapter must
+the published 0.2.0 `audit-deepeval --version 4.2.8 --bindings PACK` route
+also emitted it using an owner-asserted `deepeval_metric_bindings.v1` pack.
+The current checkout instead emits `evidence_result.v2` from a reviewed
+`deepeval_metric_bindings.v2` pack containing complete `metric_definition.v1`
+items. It rejects old packs rather than widening their assertions. These v1
+vectors remain historical data. Neither path makes source claims independent
+truth. A conforming adapter must
 derive each item from its source, validate the result, and independently
 establish every check it claims. Schema validation alone is not verification.
 
@@ -29,8 +33,9 @@ unique object keys after a strict duplicate-key JSON decode.
 `verification[].evidence_ref` values in these examples are local test labels,
 not portable retrieval locations or self-authenticating receipts. A consumer
 must resolve each label to a trusted check and reperform it before claiming that
-scope was verified. Defining a portable evidence-reference binding belongs to a
-future adapter/interop milestone, not to this schema-only release.
+scope was verified. These labels document the original schema-review expectations;
+they do not prove that the [current adapter checks](../../../AGENT_USAGE.md)
+ran or supply portable proof of their results.
 
 If there is no input or the format cannot be identified, a non-analyzed result
 uses `source: null`, `population: null`, and no interpreted items. If bytes exist

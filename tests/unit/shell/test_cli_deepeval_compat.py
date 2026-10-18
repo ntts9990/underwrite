@@ -257,9 +257,10 @@ def test_trace_index_keeps_steps_but_does_not_interpret_expectations() -> None:
     baseline = audit_deepeval_trace_bytes(NATIVE_TRACE.read_bytes())
     payload["testCases"][0]["expectationsData"] = {"PRIVATE_CANARY": "uninterpreted"}
     report = audit_deepeval_trace_bytes(json.dumps(payload).encode())
-    assert cast(dict[str, object], report["counts"])["spans"] == cast(
-        dict[str, object], baseline["counts"]
-    )["spans"]
+    assert (
+        cast(dict[str, object], report["counts"])["spans"]
+        == cast(dict[str, object], baseline["counts"])["spans"]
+    )
     limitations = cast(list[str], report["limitations"])
     assert "EXPECTATIONS_NOT_ANALYZED" in limitations
     assert "SOURCE_CASE_SUCCESS_UNINTERPRETED" in limitations
@@ -339,17 +340,20 @@ def test_auto_ordinary_human_and_record_human_state_selected_population_limit(
     assert direct.err == ""
     assert "Only supplied serialized metricsData rows are counted" in direct.out
     assert "expectation population is unknown" in direct.out
-    assert main(
-        [
-            "records",
-            "audit-deepeval",
-            str(NATIVE_ORDINARY),
-            "--root",
-            str(tmp_path / "store"),
-            "--id",
-            "sample",
-        ]
-    ) == 0
+    assert (
+        main(
+            [
+                "records",
+                "audit-deepeval",
+                str(NATIVE_ORDINARY),
+                "--root",
+                str(tmp_path / "store"),
+                "--id",
+                "sample",
+            ]
+        )
+        == 0
+    )
     retained = capsys.readouterr()
     assert retained.err == ""
     assert "Only supplied serialized metricsData rows are counted" in retained.out
@@ -388,3 +392,12 @@ def test_auto_trace_human_withholds_expectation_payload_and_interpretation(
     assert retained.err == "" and "PRIVATE_CANARY" not in retained.out
     assert "Metrics and expectation outcomes are not analyzed" in retained.out
     assert "source case success may include unexamined evaluations" in retained.out
+
+
+@pytest.mark.parametrize("version", ["4.1.1", "4.2.8"])
+def test_retired_version_flag_is_usage_error(
+    capsys: pytest.CaptureFixture[str], version: str
+) -> None:
+    assert main(["audit-deepeval", str(ORDINARY), "--version", version, "--json"]) == ERROR_EXIT
+    streams = capsys.readouterr()
+    assert streams.out == "" and json.loads(streams.err)["code"] == "USAGE_ERROR"

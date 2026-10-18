@@ -46,13 +46,14 @@ the recipe does not promise byte-identical regeneration.
 
 ## Review recorded steps
 
-From a development checkout advertising `deepeval.test-run|4.2.8|trace-index` in
-`underwrite capabilities --json`:
+From a checkout advertising `deepeval.test-run|auto|trace-index` in
+`underwrite capabilities --json`, use the current reader without a version flag.
+The pinned producer context above remains separate from the file's own claims:
 
 ```sh
 uv run --frozen --no-sync underwrite audit-deepeval \
   fixtures/golden/external/deepeval-4.2.8/traces/recovery.json \
-  --version 4.2.8 --view trace-index --json
+  --view trace-index --json
 ```
 
 Published `underwrite==0.1.1` predates this route. The selected index reports

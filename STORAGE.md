@@ -97,15 +97,12 @@ Use `records read-json` with `analysis/accounting.json` or `analysis/error.json`
 for later reuse. Raw TestRun content is not redacted. See
 [the DeepEval workflow](AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors).
 
-Published `0.1.1` defaults to the strict 4.1.1 `deepeval_record.v1`. Explicit
-`--version 4.1.1` or `--version 4.2.8` preserves the historical v1 or v2
-record/result and stored-byte contracts. The saved manifest identifies the
-explicit selection even when acquisition fails; the nondefault 4.2.8 response
-also includes `source_format_version`. Automatic records use
-`selection_mode:auto`, naming an applied reader only after successful analysis.
-Missing metric verdicts and source flaky
-declarations retain distinct meanings. Logical file names and retrieval
-commands stay the same; never relabel an existing stored report.
+Published 0.1.1 and explicit published-0.2.0 selectors can produce old v1/v2
+records. The current checkout removes `--version` and Python `version=` and
+writes only current v3 accounting records. Old manifests/invocations preserve
+their original selection as data and remain readable without retired schemas.
+Current metadata names automatic selection and an applied reader only on success.
+Missing verdicts and flaky declarations remain distinct; never relabel a record.
 
 For a selected trace review, a 0.2.0 installation advertising automatic
 trace intake supports `records audit-deepeval FILE --view trace-index --root ROOT
@@ -116,7 +113,8 @@ invocation and manifest identify automatic selection and the trace view. It
 cannot be combined with `--bindings`; wrong selections and schema faults stop
 before storage. Visible expectation data does not block selected step review,
 but metric/expectation evaluation and the meaning of source case success remain
-unexamined. Explicit `--version 4.2.8` retains the old trace v1 contracts.
+unexamined. Only published 0.2.0 retains the old explicit trace selector; the
+current checkout writes trace v2 only and reads old stored bytes unchanged.
 
 The index omits source contents, but **the stored TestRun and invocation remain
 private and unredacted**. Exits 0/2/3 and consumed diagnostic IDs keep their existing
@@ -150,12 +148,11 @@ retain the result, diagnostic, and storage-failure meanings above. Saved auto
 diagnostics name requested selection, never an unapplied reader. A null returned
 publication identity does not prove that the new ID is free.
 
-For historical output, use explicit `--version 4.2.8 --bindings PACK.v1.json`
-with the pinned `deepeval_metric_bindings.v1` pack. This keeps
-`deepeval_bound_record.v1`, `evidence_result.v1` and valid stored bytes unchanged.
-The auto route refuses a v1 pack, and the explicit route refuses v2; there is
-no implicit pack migration. Explicit no-bindings routes and logical names remain
-unchanged.
+The current checkout refuses v1 packs and accepts no DeepEval version selector.
+A new v2 pack requires the owner's explicit review and reassertion; changing the
+old schema label or deleting its version assertion is not a migration. Published
+0.2.0 still supports the old route; see [migration](MIGRATION.md). Existing bound
+records retain their exact old payloads, pack bytes, source bytes and hashes.
 
 In a 0.2.0 installation advertising automatic Langfuse intake, use
 `records audit-langfuse --observations FILE --scores FILE --root ROOT --id NEW_ID --json`.

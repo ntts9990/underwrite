@@ -154,32 +154,6 @@ def _checked(result: dict[str, object]) -> dict[str, object]:
     return result
 
 
-def bind_deepeval_accounting(
-    accounting: dict[str, object], pack: dict[str, object]
-) -> dict[str, object]:
-    """Map accounted occurrences using a schema-validated pack with checked identities."""
-    if accounting.get("schema") != "deepeval_accounting.v2":
-        _refuse("DEEPEVAL_BINDING_VERSION_UNSUPPORTED", "/source", "UNSUPPORTED_FORMAT")
-    items = _items(accounting, pack)
-    result: dict[str, object] = {
-        "schema": "evidence_result.v1",
-        "source": {
-            "format": "deepeval.test-run",
-            "format_version": "4.2.8",
-            "identity": {"kind": "single_file", "raw_hash": accounting["raw_hash"]},
-        },
-        "processing": {"state": "analyzed", "reason": None, "next_action": "none"},
-        "population": {
-            "unit": "metric_occurrence",
-            "observed_count": len(items),
-            "planned_count": None,
-        },
-        "items": items,
-        "verification": [],
-    }
-    return _checked(result)
-
-
 def bind_deepeval_accounting_auto(
     accounting: dict[str, object], pack: dict[str, object], *, pack_raw_hash: str
 ) -> dict[str, object]:

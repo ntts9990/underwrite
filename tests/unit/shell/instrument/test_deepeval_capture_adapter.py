@@ -1,10 +1,12 @@
 """DeepEval buffered accounting retains the existing file adapter's contracts."""
 
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
 from underwrite.instrument.ingest import deepeval_accounting as adapter
+from underwrite.instrument.ingest import deepeval_compat as current
 from underwrite.instrument.ingest.transport import TransportError
 
 GOLDEN = (
@@ -30,9 +32,9 @@ def test_buffered_keeps_file_refusals(tmp_path: Path, raw: bytes) -> None:
 
 @pytest.mark.parametrize("axis", ["DEFAULT_MAX_BYTES", "DEFAULT_MAX_DEPTH"])
 def test_buffered_enforces_existing_limits(axis: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(adapter, axis, 1)
+    monkeypatch.setattr(current, axis, 1)
     with pytest.raises(adapter.DeepevalFileError) as caught:
-        adapter.audit_deepeval_bytes(GOLDEN.read_bytes(), version="4.1.1")
+        adapter.audit_deepeval_bytes(GOLDEN.read_bytes())
     assert caught.value.code == "INPUT_LIMIT_EXCEEDED"
     assert caught.value.location == "/file"
 
@@ -61,46 +63,39 @@ def test_capture_read_reason_is_finite(
     assert caught.value.location == "/file"
 
 
-def test_explicit_old_profile_file_and_bytes_are_identical() -> None:
+def test_old_source_file_and_bytes_are_identical() -> None:
     raw = GOLDEN.read_bytes()
-    assert adapter.audit_deepeval_file(GOLDEN, version="4.1.1") == adapter.audit_deepeval_bytes(
-        raw, version="4.1.1"
-    )
+    assert adapter.audit_deepeval_file(GOLDEN) == adapter.audit_deepeval_bytes(raw)
 
 
-@pytest.mark.parametrize("version", ["4.2.7", "latest", "private/version"])
-def test_unknown_version_refuses_before_ingestion(
+@pytest.mark.parametrize("version", ["4.1.1", "4.2.8", "latest", "private/version"])
+def test_removed_version_refuses_before_ingestion(
     version: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def forbidden(**kwargs: object) -> object:
-        del kwargs
-        pytest.fail("ingestion configured before profile refusal")
+    def forbidden(*args: object) -> bytes:
+        pytest.fail("removed selector caused source read")
 
-    monkeypatch.setattr(adapter, "packaged_ingestor", forbidden)
-    for action in (
-        lambda: adapter.audit_deepeval_file(GOLDEN, version=version),
-        lambda: adapter.audit_deepeval_bytes(b"{}", version=version),
+    monkeypatch.setattr(current, "read_deepeval_file", forbidden)
+    for operation, argument in (
+        (adapter.audit_deepeval_file, GOLDEN),
+        (adapter.audit_deepeval_bytes, b"{}"),
     ):
-        with pytest.raises(adapter.DeepevalFileError) as caught:
-            action()
-        assert caught.value.code == "UNSUPPORTED_FORMAT"
-        assert caught.value.reason == "UNSUPPORTED_DEEPEVAL_VERSION"
-        assert version not in str(caught.value)
+        with pytest.raises(TypeError, match="version"):
+            cast(Any, operation)(argument, version=version)
 
 
 @pytest.mark.parametrize(
     "name", ["ordinary", "flaky_metric", "flaky_case", "score_without_verdict"]
 )
-def test_actual_new_profile_file_and_bytes_parity(name: str) -> None:
+def test_actual_field_era_file_and_bytes_parity(name: str) -> None:
     path = GOLDEN.parent.parent / "deepeval-4.2.8" / (name + ".json")
     raw = path.read_bytes()
-    expected = adapter.audit_deepeval_file(path, version="4.2.8")
-    assert adapter.audit_deepeval_bytes(raw, version="4.2.8") == expected
-    assert expected["schema"] == "deepeval_accounting.v2"
+    expected = adapter.audit_deepeval_file(path)
+    assert adapter.audit_deepeval_bytes(raw) == expected
+    assert expected["schema"] == "deepeval_accounting.v3"
     assert expected["source"] == {
         "format": "deepeval.test-run",
-        "format_version": "4.2.8",
+        "producer_version": None,
+        "producer_version_state": "unknown",
         "claims_verified": False,
     }
-    with pytest.raises(adapter.DeepevalFileError):
-        adapter.audit_deepeval_file(path, version="4.1.1")
