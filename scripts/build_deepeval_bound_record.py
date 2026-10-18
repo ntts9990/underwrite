@@ -5,14 +5,21 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from _record_schema import schema_main
-from _schema_compose import embed_contracts, nullable, object_schema, reference, tagged
+if __package__:
+    from ._record_schema import schema_main
+    from ._schema_compose import embed_contracts, nullable, object_schema, reference, tagged
+else:
+    from _record_schema import schema_main
+    from _schema_compose import embed_contracts, nullable, object_schema, reference, tagged
 
+from underwrite.cli.record_deepeval_bound import AUTO_SCHEMA
+from underwrite.instrument.evidence.deepeval_binding import AUTO_PACK_SCHEMA, AUTO_RESULT_SCHEMA
+from underwrite.instrument.evidence.deepeval_compat import ACCOUNTING_READERS
 from underwrite.instrument.ingest.application import DEFAULT_MAX_BYTES
 from underwrite.instrument.ingest.deepeval_binding import PACK_MAX_BYTES
 
 ROOT = Path(__file__).resolve().parents[1]
-TARGET = ROOT / "contracts/deepeval_bound_record.v1.schema.json"
+TARGET = ROOT / f"contracts/{AUTO_SCHEMA}.schema.json"
 
 
 def _at(path: str, value: dict[str, Any]) -> dict[str, Any]:
@@ -27,7 +34,7 @@ def _state(path: str, state: str) -> dict[str, Any]:
 
 def build_schema() -> dict[str, Any]:
     definitions, _ = embed_contracts(
-        ROOT, ("evidence_result", "evidence_error", "record_error", "record_verification")
+        ROOT, ("evidence_error", "record_error", "record_verification")
     )
     for role, maximum in (("bindings", PACK_MAX_BYTES), ("deepeval", DEFAULT_MAX_BYTES)):
         definitions[role] = tagged(
@@ -151,20 +158,38 @@ def build_schema() -> dict[str, Any]:
                     "then": _at("storage/verification/files_checked", {"const": count}),
                 }
             )
+    owner, version = AUTO_RESULT_SCHEMA.rsplit(".", 1)
+    result_definitions, _ = embed_contracts(ROOT, (owner,), versions={owner: version})
+    definitions.update(result_definitions)
+    rules.append(
+        {
+            "if": _state("analysis", "result"),
+            "then": _at(
+                "analysis/report",
+                {
+                    "properties": {
+                        "source": _at("reader_profile", {"enum": list(ACCOUNTING_READERS)}),
+                        "declaration_source": {
+                            "type": "object",
+                            "properties": {"format": {"const": AUTO_PACK_SCHEMA}},
+                        },
+                    },
+                },
+            ),
+        }
+    )
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "urn:underwrite:contract:deepeval_bound_record.v1",
-        "title": "deepeval_bound_record.v1",
+        "$id": "urn:underwrite:contract:" + AUTO_SCHEMA,
+        "title": AUTO_SCHEMA,
         "description": (
-            "Opt-in DeepEval source and owner binding pack capture. Raw pack hash identifies "
-            "bytes; metric semantic digests identify owner declarations, not authenticated truth. "
-            "Stored-byte integrity does not establish source provenance or approval."
+            "Two captured DeepEval inputs with version-neutral owner-declared meanings; "
+            "stored-byte integrity grants no producer or approval authority."
         ),
         **object_schema(
             {
-                "schema": {"const": "deepeval_bound_record.v1"},
+                "schema": {"const": AUTO_SCHEMA},
                 "command": {"const": "records audit-deepeval"},
-                "source_format_version": {"const": "4.2.8"},
                 "sources": object_schema(
                     {"bindings": reference("bindings"), "deepeval": reference("deepeval")}
                 ),

@@ -10,7 +10,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-from _schema_compose import embed_contracts, nullable, object_schema, reference, tagged
+if __package__:
+    from ._schema_compose import embed_contracts, nullable, object_schema, reference, tagged
+else:
+    from _schema_compose import embed_contracts, nullable, object_schema, reference, tagged
 
 from underwrite.instrument.ingest.application import DEFAULT_MAX_BYTES
 

@@ -188,8 +188,9 @@ does not identify the available workflows.
 Python callers can use
 `underwrite.instrument.ingest.accounting.audit_promptfoo_file(Path(...))` in
 the chosen environment. Automatic intake selects a supported reader from the
-input shape without guessing a producer release. Use explicit historical selectors
-when reproducing an older contract, as described in the migration guide.
+input shape without guessing a producer release. Published 0.2.0 retains
+historical selectors; the current checkout removes them and uses current result
+contracts. See the migration guide for that distinction and immutable record reuse.
 
 Example task for an agent with terminal access:
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import subprocess
 import sys
@@ -17,24 +16,16 @@ from jsonschema.exceptions import ValidationError
 
 from underwrite.cli.evidence import EvidenceError
 from underwrite.cli.record_capture import saved_record
-from underwrite.cli.record_deepeval import COMMAND, TRACE_RECORD_SCHEMA
+from underwrite.cli.record_deepeval import AUTO_TRACE_RECORD_SCHEMA as TRACE_RECORD_SCHEMA
+from underwrite.cli.record_deepeval import COMMAND
 from underwrite.cli.records import record_error_payload
-from underwrite.instrument.evidence.deepeval_trace import SCHEMA as TRACE_SCHEMA
-from underwrite.instrument.evidence.deepeval_trace import SOURCE_VERSION
+from underwrite.instrument.evidence.deepeval_compat import TRACE_SCHEMA
 from underwrite.instrument.ingest.deepeval_trace import audit_deepeval_trace_bytes
 from underwrite.service.records import RecordError
 
 ROOT = Path(__file__).resolve().parents[2]
 NAME = f"{TRACE_RECORD_SCHEMA}.schema.json"
 FIXTURE = ROOT / "fixtures/golden/external/deepeval-4.2.8/traces/recovery.json"
-OLD_CONTRACT_SHA256 = {
-    "deepeval_record.v1.schema.json": (
-        "e94f25c51a43682ed0ba7d5d9c009f8a48bb0edc465896427083123b84722f32"
-    ),
-    "deepeval_record.v2.schema.json": (
-        "296c3fc49fa57b75bf1eca23027b37374bc8960e29db148f43de338a570d8576"
-    ),
-}
 DIGEST = "sha256:" + "0" * 64
 
 
@@ -57,11 +48,10 @@ def _error() -> dict[str, object]:
 
 
 def _result() -> dict[str, Any]:
-    report = audit_deepeval_trace_bytes(FIXTURE.read_bytes(), version=SOURCE_VERSION)
+    report = audit_deepeval_trace_bytes(FIXTURE.read_bytes())
     return {
         "schema": TRACE_RECORD_SCHEMA,
         "command": COMMAND,
-        "source_format_version": SOURCE_VERSION,
         "source": _captured(),
         "analysis": {"state": "result", "report": report},
         "storage": saved_record("trace-capture", DIGEST, 3),
@@ -71,7 +61,7 @@ def _result() -> dict[str, Any]:
 
 def test_generated_contract_is_current_packaged_and_keeps_ordinary_bytes() -> None:
     check = subprocess.run(
-        [sys.executable, "scripts/build_deepeval_trace_record.py", "--check"],
+        [sys.executable, "scripts/build_deepeval_compat.py", "--check"],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -88,8 +78,6 @@ def test_generated_contract_is_current_packaged_and_keeps_ordinary_bytes() -> No
     ]
     assert "contracts/" + NAME in includes
     _validator()
-    for name, expected in OLD_CONTRACT_SHA256.items():
-        assert hashlib.sha256((ROOT / "contracts" / name).read_bytes()).hexdigest() == expected
 
 
 def test_trace_record_contract_accepts_saved_result_and_finite_diagnostics() -> None:
@@ -152,10 +140,10 @@ def test_trace_record_contract_refuses_false_claims(path: tuple[str, ...], value
         _validator().validate(invalid)
 
 
-def test_trace_record_requires_selected_version_and_coherent_error_phase() -> None:
+def test_trace_record_requires_current_reader_and_coherent_error_phase() -> None:
     validator = _validator()
     missing = _result()
-    del missing["source_format_version"]
+    del missing["analysis"]["report"]["reader_profile"]
     with pytest.raises(ValidationError):
         validator.validate(missing)
 

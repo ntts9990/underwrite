@@ -14,7 +14,7 @@ from jsonschema import Draft202012Validator, ValidationError
 from underwrite_core.canonical import content_digest
 
 ROOT = Path(__file__).resolve().parents[2]
-NAME = "deepeval_metric_bindings.v1.schema.json"
+NAME = "deepeval_metric_bindings.v2.schema.json"
 
 
 class Validator(Protocol):
@@ -65,8 +65,8 @@ def _pack() -> dict[str, Any]:
     semantic["required_coordinates"] = ["case_index", "metric_index"]
     definition["semantic_digest"] = content_digest(semantic)
     return {
-        "schema": "deepeval_metric_bindings.v1",
-        "source": {"format": "deepeval.test-run", "format_version": "4.2.8"},
+        "schema": "deepeval_metric_bindings.v2",
+        "source": {"format": "deepeval.test-run"},
         "name_binding_authority": "owner_asserted_stable_name_not_verified",
         "bindings": [{"source_metric_name": "zero", "definition": definition}],
     }
@@ -106,7 +106,7 @@ def test_owner_embedded_pack_accepts_complete_numeric_definition() -> None:
         "too_many_bindings",
     ],
 )
-def test_pack_schema_refuses_wrong_profile_or_definition_shape(mutation: str) -> None:
+def test_pack_schema_refuses_extra_version_scope_or_definition_shape(mutation: str) -> None:
     pack = copy.deepcopy(_pack())
     binding = pack["bindings"][0]
     definition = binding["definition"]

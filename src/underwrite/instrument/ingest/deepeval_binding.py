@@ -12,7 +12,6 @@ from underwrite.instrument.evidence.deepeval_binding import (
     AUTO_PACK_SCHEMA,
     AUTO_RESULT_SCHEMA,
     DeepevalBindingError,
-    bind_deepeval_accounting,
     bind_deepeval_accounting_auto,
 )
 from underwrite.instrument.ingest.deepeval_accounting import (
@@ -48,7 +47,7 @@ def read_pack_bytes(bindings_path: Path) -> bytes:
         raise DeepevalBindingError(code, "DEEPEVAL_BINDING_READ_FAILED", "/bindings") from None
 
 
-def decode_validate_pack_bytes(raw: bytes, *, version: str | None = None) -> dict[str, object]:
+def decode_validate_pack_bytes(raw: bytes) -> dict[str, object]:
     """Apply the same byte, depth, and schema admission to captured pack bytes."""
     if len(raw) > PACK_MAX_BYTES:
         raise DeepevalBindingError(
@@ -62,18 +61,17 @@ def decode_validate_pack_bytes(raw: bytes, *, version: str | None = None) -> dic
     if type(pack) is not dict:
         raise DeepevalBindingError("INVALID_INPUT", "DEEPEVAL_BINDING_OBJECT_REQUIRED", "/bindings")
     document = cast(dict[str, object], pack)
-    selected_schema = AUTO_PACK_SCHEMA if version is None else "deepeval_metric_bindings.v1"
     if type(document.get("schema")) is not str:
         raise DeepevalBindingError(
             "INVALID_INPUT", "DEEPEVAL_BINDING_SCHEMA_INVALID", "/bindings/schema"
         )
-    if document["schema"] != selected_schema:
+    if document["schema"] != AUTO_PACK_SCHEMA:
         raise DeepevalBindingError(
             "UNSUPPORTED_PROFILE", "DEEPEVAL_BINDING_PACK_SCOPE_UNSUPPORTED", "/bindings/schema"
         )
     _validate_document(
         document,
-        selected_schema,
+        AUTO_PACK_SCHEMA,
         "INVALID_INPUT",
         "DEEPEVAL_BINDING_SCHEMA_INVALID",
         "/bindings",
@@ -103,24 +101,13 @@ def _validate_document(
         ) from None
 
 
-def _check_version(version: str | None) -> None:
-    if version is not None and version != "4.2.8":
-        raise DeepevalBindingError(
-            "UNSUPPORTED_FORMAT", "DEEPEVAL_BINDING_VERSION_UNSUPPORTED", "/version"
-        )
-
-
 def _bind(
-    accounting: dict[str, object], pack: dict[str, object], pack_raw_hash: str, version: str | None
+    accounting: dict[str, object], pack: dict[str, object], pack_raw_hash: str
 ) -> dict[str, object]:
-    result = (
-        bind_deepeval_accounting_auto(accounting, pack, pack_raw_hash=pack_raw_hash)
-        if version is None
-        else bind_deepeval_accounting(accounting, pack)
-    )
+    result = bind_deepeval_accounting_auto(accounting, pack, pack_raw_hash=pack_raw_hash)
     _validate_document(
         result,
-        AUTO_RESULT_SCHEMA if version is None else "evidence_result.v1",
+        AUTO_RESULT_SCHEMA,
         "INTERNAL_ERROR",
         "DEEPEVAL_BINDING_RESULT_INVALID",
         "/result",
@@ -128,28 +115,22 @@ def _bind(
     return result
 
 
-def audit_deepeval_bound_bytes(
-    source_raw: bytes, pack_raw: bytes, *, version: str | None = None
-) -> dict[str, object]:
+def audit_deepeval_bound_bytes(source_raw: bytes, pack_raw: bytes) -> dict[str, object]:
     """Analyze one complete captured pair without reopening either input."""
-    _check_version(version)
-    pack = decode_validate_pack_bytes(pack_raw, version=version)
+    pack = decode_validate_pack_bytes(pack_raw)
     try:
-        accounting = audit_deepeval_bytes(source_raw, version=version)
+        accounting = audit_deepeval_bytes(source_raw)
     except DeepevalFileError as exc:
         raise DeepevalBindingError(exc.code, exc.reason, exc.location) from None
-    return _bind(accounting, pack, digest_bytes(pack_raw), version)
+    return _bind(accounting, pack, digest_bytes(pack_raw))
 
 
-def audit_deepeval_bound_file(
-    path: Path, bindings_path: Path, *, version: str | None = None
-) -> dict[str, object]:
-    """Validate the owner pack before opening the pinned TestRun file."""
-    _check_version(version)
+def audit_deepeval_bound_file(path: Path, bindings_path: Path) -> dict[str, object]:
+    """Validate the owner pack before opening the TestRun file."""
     pack_raw = read_pack_bytes(bindings_path)
-    pack = decode_validate_pack_bytes(pack_raw, version=version)
+    pack = decode_validate_pack_bytes(pack_raw)
     try:
-        accounting = audit_deepeval_file(path, version=version)
+        accounting = audit_deepeval_file(path)
     except DeepevalFileError as exc:
         raise DeepevalBindingError(exc.code, exc.reason, exc.location) from None
-    return _bind(accounting, pack, digest_bytes(pack_raw), version)
+    return _bind(accounting, pack, digest_bytes(pack_raw))

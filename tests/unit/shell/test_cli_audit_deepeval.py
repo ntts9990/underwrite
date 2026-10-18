@@ -8,14 +8,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from underwrite_core.canonical import canonical_bytes, content_digest, digest_bytes
+from underwrite_core.canonical import canonical_bytes, digest_bytes
 
 from underwrite.cli import audit_deepeval
 from underwrite.cli.evidence import ReportOutput, run_cli
 from underwrite.instrument.ingest import deepeval_accounting as adapter
+from underwrite.instrument.ingest import deepeval_compat as current
 from underwrite.instrument.ingest import transport
-from underwrite.instrument.ingest.application import packaged_ingestor
-from underwrite.instrument.ingest.project import Source
 
 ERROR_EXIT = 2
 
@@ -69,7 +68,7 @@ def source_file(tmp_path: Path, value: object | None = None) -> Path:
 
 
 def invoke(path: Path, capsys: pytest.CaptureFixture[str]) -> tuple[int, dict[str, Any], str, str]:
-    code = audit_deepeval.main([str(path), "--version", "4.1.1", "--json"])
+    code = audit_deepeval.main([str(path), "--json"])
     streams = capsys.readouterr()
     return code, json.loads(streams.out if code == 0 else streams.err), streams.out, streams.err
 
@@ -83,17 +82,13 @@ def test_one_file_reports_mixed_metrics_and_bound_identities(
     assert code == 0 and stderr == ""
     assert stdout.encode() == canonical_bytes(report) + b"\n"
     assert report["source"] == {
-        "format": adapter.SOURCE[0],
-        "format_version": adapter.SOURCE[1],
+        "format": "deepeval.test-run",
+        "producer_version": None,
+        "producer_version_state": "unknown",
         "claims_verified": False,
     }
     assert report["raw_hash"] == digest_bytes(raw)
-    observed = (
-        packaged_ingestor(max_bytes=len(raw), max_depth=64)
-        .file(path, Source(*adapter.SOURCE, None))
-        .observation
-    )
-    assert report["observation_digest"] == content_digest(observed)
+    assert "observation_digest" not in report
     assert report["counts"]["cases"] == {
         "total": 3,
         "source_true": 1,
@@ -165,7 +160,11 @@ def test_ingestion_resource_limits_remain_typed(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, axis: str
 ) -> None:
     path = source_file(tmp_path)
-    monkeypatch.setattr(adapter, "DEFAULT_MAX_BYTES" if axis == "bytes" else "DEFAULT_MAX_DEPTH", 1)
+    monkeypatch.setattr(
+        adapter if axis == "bytes" else current,
+        "DEFAULT_MAX_BYTES" if axis == "bytes" else "DEFAULT_MAX_DEPTH",
+        1,
+    )
     code, error, stdout, _ = invoke(path, capsys)
     assert code == ERROR_EXIT and stdout == ""
     assert error["code"] == "INPUT_LIMIT_EXCEEDED"
@@ -179,18 +178,32 @@ def test_raw_metric_score_type_is_checked_before_common_normalization(
     body["testCases"][0]["metricsData"][0]["score"] = value
     code, error, stdout, _ = invoke(source_file(tmp_path, body), capsys)
     assert code == ERROR_EXIT and stdout == ""
-    assert error["reason"] == "MALFORMED_DEEPEVAL_PAYLOAD"
+    assert error["reason"] == "DEEPEVAL_NUMBER_INVALID"
+    assert error["location"] == "/testCases/0/metricsData/0/score"
 
 
-def test_new_instrument_numeric_diagnostic_maps_to_existing_evidence_code(
+def test_selected_numeric_range_refusal_and_unconsumed_duration_scope(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     body = payload()
+    code, baseline, _, _ = invoke(source_file(tmp_path, body), capsys)
+    assert code == 0
     body["runDuration"] = 2**54
+    code, report, _, stderr = invoke(source_file(tmp_path, body), capsys)
+    assert code == 0 and stderr == ""
+    assert report["raw_hash"] != baseline["raw_hash"]
+    assert {key: value for key, value in report.items() if key != "raw_hash"} == {
+        key: value for key, value in baseline.items() if key != "raw_hash"
+    }
+    assert "runDuration" not in report
+    body["testCases"][0]["metricsData"][0]["score"] = 2**54
     code, error, stdout, _ = invoke(source_file(tmp_path, body), capsys)
     assert code == ERROR_EXIT and stdout == ""
-    assert error["code"] == "INVALID_INPUT"
-    assert error["reason"] == "INT_OUT_OF_SAFE_RANGE"
+    assert (error["code"], error["reason"], error["location"]) == (
+        "INVALID_INPUT",
+        "DEEPEVAL_NUMBER_INVALID",
+        "/testCases/0/metricsData/0/score",
+    )
 
 
 def test_nonempty_conversational_scope_is_not_reported_as_complete(
@@ -220,10 +233,10 @@ def test_output_limit_refuses_without_stdout_prefix(
     path = source_file(tmp_path)
     code = run_cli(
         "audit-deepeval",
-            [str(path), "--version", "4.1.1", "--json"],
+        [str(path), "--json"],
         audit_deepeval.configure,
         audit_deepeval.produce,
-        ReportOutput("deepeval_accounting.v1", max_bytes=1),
+        ReportOutput("deepeval_accounting.v3", max_bytes=1),
     )
     streams = capsys.readouterr()
     assert code == ERROR_EXIT and streams.out == ""
@@ -277,15 +290,15 @@ def test_packaged_schema_failure_is_not_reported_as_source_content_error(
 ) -> None:
     from underwrite.instrument.ingest.schema import SchemaConfigurationError
 
-    def fail(*, max_bytes: int, max_depth: int) -> Any:
-        del max_bytes, max_depth
+    def fail(name: str) -> Any:
+        del name
         raise SchemaConfigurationError("INVALID_OBSERVATION_SCHEMA")
 
-    monkeypatch.setattr(adapter, "packaged_ingestor", fail)
+    monkeypatch.setattr(current, "packaged_validator", fail)
     code, error, stdout, stderr = invoke(source_file(tmp_path), capsys)
     assert code == ERROR_EXIT and stdout == ""
     assert error["code"] == "SCHEMA_CONFIGURATION_ERROR"
-    assert error["reason"] == "INVALID_OBSERVATION_SCHEMA"
+    assert error["reason"] == "INVALID_PACKAGED_CONTRACT"
     assert error["location"] == "" and str(tmp_path) not in stderr
 
 
@@ -316,4 +329,4 @@ def test_numeric_spelling_and_empty_trace_groups_share_domain_results_not_raw_id
     for key in ("cases", "counts", "declared_case_counts", "scope", "next_actions"):
         assert reports[0][key] == reports[1][key]
     assert reports[0]["raw_hash"] != reports[1]["raw_hash"]
-    assert reports[0]["observation_digest"] != reports[1]["observation_digest"]
+    assert all("observation_digest" not in report for report in reports)

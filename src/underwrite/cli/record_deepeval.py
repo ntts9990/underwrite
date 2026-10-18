@@ -1,4 +1,4 @@
-"""Card: record-reuse | Paper: deepeval_record.v1 | Stage: storage-capture.
+"""Card: record-reuse | Paper: deepeval_record.v3 | Stage: storage-capture.
 
 In-process accounting and capture of the same selected bytes.
 """
@@ -32,27 +32,13 @@ from underwrite.cli.records import OUTPUT_MAX_BYTES, record_error_payload
 from underwrite.instrument.evidence.deepeval_compat import (
     ACCOUNTING_SCHEMA as AUTO_ACCOUNTING_SCHEMA,
 )
+from underwrite.instrument.evidence.deepeval_compat import SOURCE_FORMAT
 from underwrite.instrument.evidence.deepeval_compat import TRACE_SCHEMA as AUTO_TRACE_INDEX_SCHEMA
-from underwrite.instrument.evidence.deepeval_trace import (
-    RULE_PROFILE as TRACE_RULE_PROFILE,
-)
-from underwrite.instrument.evidence.deepeval_trace import (
-    SCHEMA as TRACE_INDEX_SCHEMA,
-)
-from underwrite.instrument.evidence.deepeval_trace import (
-    SOURCE_VERSION as TRACE_SOURCE_VERSION,
-)
 from underwrite.instrument.ingest.deepeval_accounting import (
-    PROFILES,
-    SOURCE,
     DeepevalFileError,
-    DeepevalProfile,
-    audit_deepeval_bytes,
-    profile_for,
     read_deepeval_file,
 )
 from underwrite.instrument.ingest.deepeval_compat import View, audit_deepeval_compatible_bytes
-from underwrite.instrument.ingest.deepeval_trace import audit_deepeval_trace_bytes
 from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
 from underwrite.service._record_format import FormatError, record_id
 from underwrite.service.records import (
@@ -62,8 +48,6 @@ from underwrite.service.records import (
     RecordError,
 )
 
-SCHEMA = "deepeval_record.v1"
-TRACE_RECORD_SCHEMA = "deepeval_trace_record.v1"
 AUTO_RECORD_SCHEMA = "deepeval_record.v3"
 AUTO_TRACE_RECORD_SCHEMA = "deepeval_trace_record.v2"
 COMMAND = "records audit-deepeval"
@@ -72,8 +56,7 @@ TRACE_VIEW = "trace-index"
 
 @dataclass(frozen=True)
 class _Selection:
-    profile: DeepevalProfile | None
-    view: str
+    view: View
     record_schema: str
     analysis_schema: str
     result_member: str
@@ -81,53 +64,21 @@ class _Selection:
     label: str
 
 
-def _selection(version: str | None, view: str) -> _Selection:
-    if version is None:
-        if view == "accounting":
-            return _Selection(
-                None,
-                view,
-                AUTO_RECORD_SCHEMA,
-                AUTO_ACCOUNTING_SCHEMA,
-                "analysis/accounting.json",
-                "deepeval.accounting",
-                "DeepEval accounting capture",
-            )
-        if view == TRACE_VIEW:
-            return _Selection(
-                None,
-                view,
-                AUTO_TRACE_RECORD_SCHEMA,
-                AUTO_TRACE_INDEX_SCHEMA,
-                "analysis/trace-index.json",
-                "deepeval.trace-index",
-                "DeepEval trace-index capture",
-            )
-        raise EvidenceError("UNSUPPORTED_FORMAT", "DEEPEVAL_RECORD_VIEW_UNSUPPORTED", "/view")
-    try:
-        profile = profile_for(version)
-    except DeepevalFileError as exc:
-        raise EvidenceError(exc.code, exc.reason, exc.location) from None
+def _selection(view: str) -> _Selection:
     if view == "accounting":
         return _Selection(
-            profile,
             view,
-            profile.record_schema,
-            profile.accounting_schema,
+            AUTO_RECORD_SCHEMA,
+            AUTO_ACCOUNTING_SCHEMA,
             "analysis/accounting.json",
             "deepeval.accounting",
             "DeepEval accounting capture",
         )
     if view == TRACE_VIEW:
-        if version != TRACE_SOURCE_VERSION:
-            raise EvidenceError(
-                "UNSUPPORTED_FORMAT", "DEEPEVAL_TRACE_VERSION_UNSUPPORTED", "/version"
-            )
         return _Selection(
-            profile,
             view,
-            TRACE_RECORD_SCHEMA,
-            TRACE_INDEX_SCHEMA,
+            AUTO_TRACE_RECORD_SCHEMA,
+            AUTO_TRACE_INDEX_SCHEMA,
             "analysis/trace-index.json",
             "deepeval.trace-index",
             "DeepEval trace-index capture",
@@ -149,8 +100,6 @@ class _Contracts:
 def _contracts(selection: _Selection) -> _Contracts:
     aggregate = packaged_validator(selection.record_schema)
     storage = storage_validator(aggregate)
-    if selection.view == "accounting" and selection.profile is not None:
-        packaged_validator("observation.v1")
     return _Contracts(
         selection,
         cast(Validator, aggregate),
@@ -181,19 +130,10 @@ def configure(parser: argparse.ArgumentParser) -> None:
         help="Entire local DeepEval TestRun JSON to retain.",
     )
     parser.add_argument(
-        "--version",
-        choices=tuple(PROFILES),
-        default=None,
-        help="Optional historical source version; omitted selects local automatic rules.",
-    )
-    parser.add_argument(
         "--bindings",
         type=Path,
         default=None,
-        help=(
-            "Owner-asserted metric pack: format-only v2 without --version; "
-            "v1 with --version 4.2.8."
-        ),
+        help=("Owner-asserted format-only deepeval_metric_bindings.v2 pack."),
     )
     parser.add_argument(
         "--view",
@@ -226,13 +166,7 @@ def _analyze(
     try:
         raw = read_deepeval_file(path)
         source = {"state": "captured", "raw_hash": digest_bytes(raw), "bytes": len(raw)}
-        if selection.profile is None:
-            report = audit_deepeval_compatible_bytes(raw, view=cast(View, selection.view))
-        else:
-            audit = (
-                audit_deepeval_trace_bytes if selection.view == TRACE_VIEW else audit_deepeval_bytes
-            )
-            report = audit(raw, version=selection.profile.format_version)
+        report = audit_deepeval_compatible_bytes(raw, view=selection.view)
         if report["raw_hash"] != source["raw_hash"]:
             raise EvidenceError("INTERNAL_ERROR", "RAW_IDENTITY_MISMATCH")
         analysis: dict[str, Any] = {"state": "result", "report": report}
@@ -273,17 +207,12 @@ def _files(
         "source_path_display": unicodedata.normalize("NFC", str(path)),
         "root_display": unicodedata.normalize("NFC", str(root)),
         "record_id": identifier,
+        "selection_mode": "auto",
     }
-    if contracts.selection.profile is None:
-        arguments["selection_mode"] = "auto"
-        if result:
-            arguments["reader_profile"] = document["reader_profile"]
-    elif contracts.selection.profile.format_version != SOURCE[1]:
-        arguments["format_version"] = contracts.selection.profile.format_version
+    if result:
+        arguments["reader_profile"] = document["reader_profile"]
     if contracts.selection.view == TRACE_VIEW:
         arguments["view"] = TRACE_VIEW
-        if contracts.selection.profile is not None:
-            arguments["rule_profile"] = TRACE_RULE_PROFILE
     invocation = {
         "command": COMMAND,
         "execution_mode": "in_process",
@@ -323,11 +252,7 @@ def _analysis_text(analysis: dict[str, Any], *, trace: bool = False) -> str:
         f"unscored {metrics['unscored']}; numeric zeros {metrics['observed_zero']}. "
         "Planned evaluations unknown; source claims unverified; counts do not establish approval."
     )
-    return (
-        text + " " + AUTO_ORDINARY_HUMAN_LIMIT
-        if analysis["report"]["schema"] == AUTO_ACCOUNTING_SCHEMA
-        else text
-    )
+    return text + " " + AUTO_ORDINARY_HUMAN_LIMIT
 
 
 def render_human(report: dict[str, object]) -> str:
@@ -335,7 +260,7 @@ def render_human(report: dict[str, object]) -> str:
         report,
         analysis_text=_analysis_text(
             cast(dict[str, Any], report["analysis"]),
-            trace=report["schema"] in (TRACE_RECORD_SCHEMA, AUTO_TRACE_RECORD_SCHEMA),
+            trace=report["schema"] == AUTO_TRACE_RECORD_SCHEMA,
         ),
     )
 
@@ -346,14 +271,13 @@ def run_record_deepeval(
     identifier: str,
     *,
     as_json: bool = True,
-    version: str | None = None,
     view: str = "accounting",
 ) -> dict[str, object]:
     try:
         record_id(identifier)
     except FormatError:
         raise EvidenceError("USAGE_ERROR", "INVALID_ARGUMENTS_SEE_HELP") from None
-    selection = _selection(version, view)
+    selection = _selection(view)
     contracts = _contracts(selection)
     raw, source, analysis = _analyze(path, selection)
     envelope: dict[str, Any] = {
@@ -363,8 +287,6 @@ def run_record_deepeval(
         "analysis": analysis,
         "exit_code": 0 if analysis["state"] == "result" else 2,
     }
-    if selection.profile is not None and selection.profile.format_version != SOURCE[1]:
-        envelope["source_format_version"] = selection.profile.format_version
     try:
         files = _files(path, root, identifier, raw, analysis, contracts)
     except CanonicalizationError:
@@ -395,17 +317,15 @@ def run_record_deepeval(
         as_json=as_json,
         max_bytes=OUTPUT_MAX_BYTES,
     )
-    metadata = {"format": SOURCE[0], "analysis_state": analysis["state"]}
-    if selection.profile is None:
-        metadata["selection_mode"] = "auto"
-        if analysis["state"] == "result":
-            metadata["reader_profile"] = analysis["report"]["reader_profile"]
-    else:
-        metadata["format_version"] = selection.profile.format_version
+    metadata = {
+        "format": SOURCE_FORMAT,
+        "analysis_state": analysis["state"],
+        "selection_mode": "auto",
+    }
+    if analysis["state"] == "result":
+        metadata["reader_profile"] = analysis["report"]["reader_profile"]
     if selection.view == TRACE_VIEW:
         metadata["view"] = TRACE_VIEW
-        if selection.profile is not None:
-            metadata["rule_profile"] = TRACE_RULE_PROFILE
     spec = CapturedRecordSpec(
         record_id=identifier,
         kind=selection.kind,
@@ -436,7 +356,6 @@ def produce(args: argparse.Namespace) -> dict[str, object]:
             cast(Path, args.root),
             cast(str, args.id),
             as_json=cast(bool, args.json),
-            version=cast(str | None, args.version),
             view=TRACE_VIEW,
         )
     if args.bindings is not None:
@@ -446,14 +365,12 @@ def produce(args: argparse.Namespace) -> dict[str, object]:
             cast(Path, args.root),
             cast(str, args.id),
             as_json=cast(bool, args.json),
-            version=cast(str | None, args.version),
         )
     return run_record_deepeval(
         cast(Path, args.file),
         cast(Path, args.root),
         cast(str, args.id),
         as_json=cast(bool, args.json),
-        version=cast(str | None, args.version),
     )
 
 
@@ -463,14 +380,10 @@ def _output_schema(args: argparse.Namespace) -> str:
             raise EvidenceError(
                 "UNSUPPORTED_FORMAT", "DEEPEVAL_TRACE_BINDINGS_UNSUPPORTED", "/bindings"
             )
-        return _selection(cast(str | None, args.version), TRACE_VIEW).record_schema
+        return _selection(TRACE_VIEW).record_schema
     if args.bindings is not None:
-        return (
-            record_deepeval_bound.AUTO_SCHEMA
-            if args.version is None
-            else record_deepeval_bound.SCHEMA
-        )
-    return _selection(cast(str | None, args.version), "accounting").record_schema
+        return record_deepeval_bound.AUTO_SCHEMA
+    return _selection("accounting").record_schema
 
 
 def main(argv: list[str]) -> int:
@@ -484,8 +397,7 @@ def main(argv: list[str]) -> int:
             max_bytes=OUTPUT_MAX_BYTES,
             human=lambda report: (
                 record_deepeval_bound.render_human(report)
-                if report["schema"]
-                in (record_deepeval_bound.SCHEMA, record_deepeval_bound.AUTO_SCHEMA)
+                if report["schema"] == record_deepeval_bound.AUTO_SCHEMA
                 else render_human(report)
             ),
             exit_status=lambda report: cast(int, report["exit_code"]),

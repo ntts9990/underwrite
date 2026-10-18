@@ -1,10 +1,11 @@
-"""Generate the descriptive accounting contract from its owned rules and limits."""
+"""Construct current DeepEval accounting branches from actual serialized metric shapes."""
 
 from __future__ import annotations
 
-import argparse
-import json
-from pathlib import Path
+if __package__:
+    from ._schema_compose import object_schema as _object
+else:
+    from _schema_compose import object_schema as _object
 
 from underwrite_core.canonical import SAFE_INT_MAX
 
@@ -16,21 +17,35 @@ from underwrite.instrument.evidence.deepeval_accounting import (
     MAX_METRICS,
     MAX_NAME_LENGTH,
     NEXT_ACTIONS,
+    RULE_PROFILE,
+    RULE_PROFILE_V2,
     RULES,
     SCOPE,
 )
-from underwrite.instrument.ingest.deepeval_accounting import PROFILES, SOURCE
+from underwrite.instrument.evidence.deepeval_compat import (
+    ACCOUNTING_LIMITATIONS_EXTRA,
+    ACCOUNTING_SCHEMA,
+    ACCOUNTING_SCOPE_EXTRA,
+    EMPTY_LIMITATION,
+    FLAKY_READER,
+    NO_FLAKY_READER,
+    SOURCE_FORMAT,
+)
 
-ROOT = Path(__file__).resolve().parents[1]
+
+def source_identity() -> dict[str, object]:
+    return _object(
+        {
+            "format": {"const": SOURCE_FORMAT},
+            "producer_version": {"type": "null"},
+            "producer_version_state": {"const": "unknown"},
+            "claims_verified": {"const": False},
+        }
+    )
 
 
-def _object(properties: dict[str, object]) -> dict[str, object]:
-    return {
-        "type": "object",
-        "additionalProperties": False,
-        "required": list(properties),
-        "properties": properties,
-    }
+def _limitations(values: list[str]) -> dict[str, object]:
+    return {"type": "array", "const": values, "maxItems": len(values), "items": {"enum": values}}
 
 
 def _count(maximum: int = SAFE_INT_MAX) -> dict[str, object]:
@@ -46,10 +61,10 @@ def _presence() -> dict[str, object]:
     }
 
 
-def build_schema(*, format_version: str = "4.1.1") -> dict[str, object]:
-    profile = PROFILES[format_version]
-    v2 = format_version == "4.2.8"
-    limitations = LIMITATIONS_V2 if v2 else LIMITATIONS
+def build_branch(*, flaky: bool) -> dict[str, object]:
+    limitations = [*(LIMITATIONS_V2 if flaky else LIMITATIONS), *ACCOUNTING_LIMITATIONS_EXTRA]
+    reader = FLAKY_READER if flaky else NO_FLAKY_READER
+    selected_rule = RULE_PROFILE_V2 if flaky else RULE_PROFILE
     name = {"type": "string", "minLength": 1, "maxLength": MAX_NAME_LENGTH}
     metric_branches: list[dict[str, object]] = []
     for state, rule in RULES.items():
@@ -61,7 +76,7 @@ def build_schema(*, format_version: str = "4.1.1") -> dict[str, object]:
             "source_success": {"type": "boolean"},
             "threshold": {"type": "number"},
         }
-        if v2:
+        if flaky:
             fields["source_success"] = {
                 "type": ["boolean", "null"],
                 "description": "null denotes an absent source success key, not a false verdict.",
@@ -95,7 +110,7 @@ def build_schema(*, format_version: str = "4.1.1") -> dict[str, object]:
             "items": {"oneOf": metric_branches},
         },
     }
-    if v2:
+    if flaky:
         case_fields["source_flaky"] = {
             "type": "boolean",
             "description": "Producer gating declaration, not measured nondeterminism.",
@@ -111,25 +126,23 @@ def build_schema(*, format_version: str = "4.1.1") -> dict[str, object]:
         "scored_source_true",
         "scored_source_false",
     )
-    if v2:
+    if flaky:
         case_counts += ("source_flaky_true",)
         metric_counts += ("scored_source_success_absent", "source_flaky_true")
     digest = {"type": "string", "pattern": "^sha256:[a-f0-9]{64}(?![\\s\\S])"}
     relation = {"enum": ["matches", "differs", "not_declared", "not_comparable"]}
     schema = _object(
         {
-            "schema": {"const": profile.accounting_schema},
-            "rule_profile": {"const": profile.rule_profile},
-            "source": _object(
+            "schema": {"const": ACCOUNTING_SCHEMA},
+            "rule_profile": {"const": selected_rule},
+            "source": source_identity(),
+            "raw_hash": digest,
+            "scope": _object(
                 {
-                    "format": {"const": SOURCE[0]},
-                    "format_version": {"const": profile.format_version},
-                    "claims_verified": {"const": False},
+                    key: {"const": value}
+                    for key, value in {**SCOPE, **ACCOUNTING_SCOPE_EXTRA}.items()
                 }
             ),
-            "raw_hash": digest,
-            "observation_digest": digest,
-            "scope": _object({key: {"const": value} for key, value in SCOPE.items()}),
             "cases": {"type": "array", "maxItems": MAX_CASES, "items": case},
             "counts": _object(
                 {
@@ -144,11 +157,12 @@ def build_schema(*, format_version: str = "4.1.1") -> dict[str, object]:
                     "comparison": _object({"passed": relation, "failed": relation}),
                 }
             ),
-            "limitations": {
+            "limitations": _limitations(limitations)
+            if flaky
+            else {
                 "type": "array",
-                "const": list(limitations),
-                "maxItems": len(limitations),
-                "items": {"enum": list(limitations)},
+                "maxItems": len(limitations) + 1,
+                "items": {"enum": [*limitations, EMPTY_LIMITATION]},
             },
             "next_actions": {
                 "type": "array",
@@ -156,28 +170,25 @@ def build_schema(*, format_version: str = "4.1.1") -> dict[str, object]:
                 "items": {"type": "string", "enum": list(NEXT_ACTIONS)},
                 "uniqueItems": True,
             },
+            "reader_profile": {"const": reader},
         }
     )
-    return {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "urn:underwrite:contract:" + profile.accounting_schema,
-        "title": profile.accounting_schema,
-        "description": "Descriptive source accounting; no measurement or approval authority.",
-        **schema,
-    }
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true")
-    args = parser.parse_args()
-    target = ROOT / "contracts/deepeval_accounting.v1.schema.json"
-    rendered = json.dumps(build_schema(), indent=2, ensure_ascii=False) + "\n"
-    if args.check:
-        return 0 if target.exists() and target.read_text(encoding="utf-8") == rendered else 1
-    target.write_text(rendered, encoding="utf-8")
-    return 0
+    if not flaky:
+        schema["allOf"] = [
+            {
+                "if": {
+                    "properties": {
+                        "counts": {"properties": {"cases": {"properties": {"total": {"const": 0}}}}}
+                    }
+                },
+                "then": {
+                    "properties": {"limitations": _limitations([*limitations, EMPTY_LIMITATION])}
+                },
+                "else": {"properties": {"limitations": _limitations(limitations)}},
+            }
+        ]
+    return schema
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit("Use build_deepeval_compat.py to generate current DeepEval contracts.")

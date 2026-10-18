@@ -14,12 +14,8 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 from underwrite_core.canonical import digest_bytes
 
-from underwrite.instrument.evidence.deepeval_trace import (
-    SCHEMA,
-    SOURCE_FORMAT,
-    SOURCE_VERSION,
-    index_deepeval_trace,
-)
+from underwrite.instrument.evidence.deepeval_compat import TRACE_SCHEMA as SCHEMA
+from underwrite.instrument.evidence.deepeval_compat import index_deepeval_compatible
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "fixtures/golden/external/deepeval-4.2.8/traces"
@@ -41,13 +37,8 @@ def _report(name: str) -> dict[str, Any]:
         dict[str, Any],
         {
             "schema": SCHEMA,
-            "source": {
-                "format": SOURCE_FORMAT,
-                "format_version": SOURCE_VERSION,
-                "claims_verified": False,
-            },
             "raw_hash": digest_bytes(raw),
-            **index_deepeval_trace(json.loads(raw)),
+            **index_deepeval_compatible(json.loads(raw)),
         },
     )
 

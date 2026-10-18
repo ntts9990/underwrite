@@ -5,30 +5,36 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from _record_schema import schema_main
-from _schema_compose import embed_contracts, object_schema, reference
+if __package__:
+    from ._record_schema import schema_main
+    from ._schema_compose import embed_contracts, object_schema, reference
+else:
+    from _record_schema import schema_main
+    from _schema_compose import embed_contracts, object_schema, reference
+
+from underwrite.instrument.evidence.deepeval_binding import AUTO_PACK_SCHEMA
+from underwrite.instrument.evidence.deepeval_compat import SOURCE_FORMAT
 
 ROOT = Path(__file__).resolve().parents[1]
-TARGET = ROOT / "contracts/deepeval_metric_bindings.v1.schema.json"
+TARGET = ROOT / f"contracts/{AUTO_PACK_SCHEMA}.schema.json"
 
 
 def build_schema() -> dict[str, Any]:
     definitions, _ = embed_contracts(ROOT, ("metric_definition",))
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "urn:underwrite:contract:deepeval_metric_bindings.v1",
-        "title": "deepeval_metric_bindings.v1",
+        "$id": "urn:underwrite:contract:" + AUTO_PACK_SCHEMA,
+        "title": AUTO_PACK_SCHEMA,
         "description": (
-            "Owner-asserted stable DeepEval source-name mapping for one pinned profile. "
-            "Names do not verify evaluator configuration or producer truth."
+            "Version-neutral owner-asserted metric-name meanings for supplied ordinary "
+            "DeepEval occurrences; no evaluator or producer-release verification."
         ),
         **object_schema(
             {
-                "schema": {"const": "deepeval_metric_bindings.v1"},
+                "schema": {"const": AUTO_PACK_SCHEMA},
                 "source": object_schema(
                     {
-                        "format": {"const": "deepeval.test-run"},
-                        "format_version": {"const": "4.2.8"},
+                        "format": {"const": SOURCE_FORMAT},
                     }
                 ),
                 "name_binding_authority": {"const": "owner_asserted_stable_name_not_verified"},

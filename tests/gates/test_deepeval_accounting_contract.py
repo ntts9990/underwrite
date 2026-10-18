@@ -14,16 +14,17 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
 from underwrite.cli.local_json import Validator
-from underwrite.instrument.evidence.deepeval_accounting import RULE_PROFILE_V2, account_deepeval
-from underwrite.instrument.ingest.deepeval_accounting import SOURCE
+from underwrite.instrument.evidence.deepeval_compat import (
+    ACCOUNTING_SCHEMA,
+    account_deepeval_compatible,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
-@pytest.mark.parametrize("version,suffix", [("v1", ""), ("v2", "_v2")])
-def test_generated_contract_is_current_and_valid(version: str, suffix: str) -> None:
+def test_generated_contract_is_current_and_valid() -> None:
     result = subprocess.run(
-        [sys.executable, f"scripts/build_deepeval_accounting{suffix}.py", "--check"],
+        [sys.executable, "scripts/build_deepeval_compat.py", "--check"],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -31,7 +32,7 @@ def test_generated_contract_is_current_and_valid(version: str, suffix: str) -> N
     )
     assert result.returncode == 0, result.stdout + result.stderr
     Draft202012Validator.check_schema(
-        json.loads((ROOT / f"contracts/deepeval_accounting.{version}.schema.json").read_bytes())
+        json.loads((ROOT / f"contracts/{ACCOUNTING_SCHEMA}.schema.json").read_bytes())
     )
 
 
@@ -39,16 +40,14 @@ def test_state_branches_prevent_score_error_and_absence_conflation() -> None:
     validator = cast(
         Validator,
         Draft202012Validator(
-            json.loads((ROOT / "contracts/deepeval_accounting.v1.schema.json").read_bytes())
+            json.loads((ROOT / "contracts/deepeval_accounting.v3.schema.json").read_bytes())
         ),
     )
     base = {"name": "example", "threshold": 0.5, "success": False}
     result: dict[str, Any] = {
-        "schema": "deepeval_accounting.v1",
-        "source": {"format": SOURCE[0], "format_version": SOURCE[1], "claims_verified": False},
+        "schema": ACCOUNTING_SCHEMA,
         "raw_hash": "sha256:" + "a" * 64,
-        "observation_digest": "sha256:" + "b" * 64,
-        **account_deepeval(
+        **account_deepeval_compatible(
             {
                 "testCases": [
                     {
@@ -76,19 +75,17 @@ def test_state_branches_prevent_score_error_and_absence_conflation() -> None:
             validator.validate(invalid)
 
 
-def test_v2_contract_preserves_absent_verdict_and_source_flaky() -> None:
+def test_current_flaky_branch_preserves_absent_verdict_and_source_flaky() -> None:
     validator = cast(
         Validator,
         Draft202012Validator(
-            json.loads((ROOT / "contracts/deepeval_accounting.v2.schema.json").read_bytes())
+            json.loads((ROOT / "contracts/deepeval_accounting.v3.schema.json").read_bytes())
         ),
     )
     result: dict[str, Any] = {
-        "schema": "deepeval_accounting.v2",
-        "source": {"format": SOURCE[0], "format_version": "4.2.8", "claims_verified": False},
+        "schema": ACCOUNTING_SCHEMA,
         "raw_hash": "sha256:" + "a" * 64,
-        "observation_digest": "sha256:" + "b" * 64,
-        **account_deepeval(
+        **account_deepeval_compatible(
             {
                 "testCases": [
                     {
@@ -103,7 +100,6 @@ def test_v2_contract_preserves_absent_verdict_and_source_flaky() -> None:
                     }
                 ]
             },
-            rule_profile=RULE_PROFILE_V2,
         ),
     }
     validator.validate(result)

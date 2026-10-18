@@ -41,11 +41,10 @@ from underwrite.cli.capabilities import CommandDescriptor, Handler, profile
 from underwrite.instrument.evidence.deepeval_compat import (
     ACCOUNTING_SCHEMA as DEEPEVAL_AUTO_ACCOUNTING_SCHEMA,
 )
+from underwrite.instrument.evidence.deepeval_compat import SOURCE_FORMAT as DEEPEVAL_SOURCE_FORMAT
 from underwrite.instrument.evidence.deepeval_compat import (
     TRACE_SCHEMA as DEEPEVAL_AUTO_TRACE_SCHEMA,
 )
-from underwrite.instrument.evidence.deepeval_trace import SCHEMA as DEEPEVAL_TRACE_SCHEMA
-from underwrite.instrument.evidence.deepeval_trace import SOURCE_VERSION as DEEPEVAL_TRACE_VERSION
 from underwrite.instrument.evidence.langfuse_compat import (
     ACCOUNTING_SCHEMA as LANGFUSE_ACCOUNTING_SCHEMA,
 )
@@ -58,8 +57,6 @@ from underwrite.instrument.evidence.promptfoo_compat import (
     ROW_INDEX_SCHEMA as PROMPTFOO_AUTO_ROW_INDEX_SCHEMA,
 )
 from underwrite.instrument.ingest.codecs.promptfoo import SUPPORTED_VERSIONS as PROMPTFOO_VERSIONS
-from underwrite.instrument.ingest.deepeval_accounting import PROFILES as DEEPEVAL_PROFILES
-from underwrite.instrument.ingest.deepeval_accounting import SOURCE as DEEPEVAL_SOURCE
 
 Standalone = Callable[[list[str]], int]
 
@@ -225,15 +222,6 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 (),
                 (record_deepeval.AUTO_RECORD_SCHEMA,),
             ),
-            *(
-                profile(
-                    f"audit-deepeval|{version}",
-                    ("file", "version", "root", "id"),
-                    (),
-                    (selected.record_schema,),
-                )
-                for version, selected in DEEPEVAL_PROFILES.items()
-            ),
             profile(
                 "audit-deepeval|owner-asserted-metric-bindings",
                 ("file", "bindings", "root", "id"),
@@ -241,22 +229,10 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 (record_deepeval_bound.AUTO_SCHEMA,),
             ),
             profile(
-                "audit-deepeval|4.2.8|owner-asserted-metric-bindings",
-                ("file", "version", "bindings", "root", "id"),
-                ("deepeval_metric_bindings.v1",),
-                ("deepeval_bound_record.v1",),
-            ),
-            profile(
                 "audit-deepeval|trace-index",
                 ("file", "view", "root", "id"),
                 (),
                 (record_deepeval.AUTO_TRACE_RECORD_SCHEMA,),
-            ),
-            profile(
-                f"audit-deepeval|{DEEPEVAL_TRACE_VERSION}|trace-index",
-                ("file", "version", "view", "root", "id"),
-                (),
-                (record_deepeval.TRACE_RECORD_SCHEMA,),
             ),
             profile(
                 "audit-langfuse",
@@ -343,45 +319,22 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
         audit_deepeval.configure,
         (
             profile(
-                f"{DEEPEVAL_SOURCE[0]}|auto",
+                f"{DEEPEVAL_SOURCE_FORMAT}|auto",
                 ("file",),
                 (),
                 (DEEPEVAL_AUTO_ACCOUNTING_SCHEMA,),
             ),
             profile(
-                f"{DEEPEVAL_SOURCE[0]}|auto|trace-index",
+                f"{DEEPEVAL_SOURCE_FORMAT}|auto|trace-index",
                 ("file", "view"),
                 (),
                 (DEEPEVAL_AUTO_TRACE_SCHEMA,),
-            ),
-        )
-        + tuple(
-            profile(
-                "|".join((DEEPEVAL_SOURCE[0], version)),
-                ("file", "version"),
-                (),
-                (selected.accounting_schema,),
-            )
-            for version, selected in DEEPEVAL_PROFILES.items()
-        )
-        + (
-            profile(
-                f"{DEEPEVAL_SOURCE[0]}|{DEEPEVAL_TRACE_VERSION}|trace-index",
-                ("file", "version", "view"),
-                (),
-                (DEEPEVAL_TRACE_SCHEMA,),
             ),
             profile(
                 "deepeval.test-run|auto|owner-asserted-metric-bindings",
                 ("file", "bindings"),
                 ("deepeval_metric_bindings.v2",),
                 ("evidence_result.v2",),
-            ),
-            profile(
-                "deepeval.test-run|4.2.8|owner-asserted-metric-bindings",
-                ("file", "version", "bindings"),
-                ("deepeval_metric_bindings.v1",),
-                ("evidence_result.v1",),
             ),
         ),
         _standalone(audit_deepeval.main),

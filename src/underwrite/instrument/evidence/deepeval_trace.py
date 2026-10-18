@@ -14,9 +14,7 @@ from underwrite.instrument.evidence.deepeval_accounting import (
     DeepevalAccountingError,
 )
 
-SCHEMA = "deepeval_trace_index.v1"
 SOURCE_FORMAT = "deepeval.test-run"
-SOURCE_VERSION = "4.2.8"
 RULE_PROFILE = "deepeval.trace-index.v1"
 MAX_SPANS = 1024
 MAX_ID_LENGTH = 256

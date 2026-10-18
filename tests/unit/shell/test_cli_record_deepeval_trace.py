@@ -31,8 +31,6 @@ def _args(path: Path, store: Path, *options: str) -> list[str]:
         str(store),
         "--id",
         "sample",
-        "--version",
-        "4.2.8",
         "--view",
         "trace-index",
         *options,
@@ -63,10 +61,10 @@ def test_native_recovery_source_and_index_are_saved_from_one_buffer(
     exit_code, report, stdout, stderr = _invoke(capsys, path, store)
     assert exit_code == 0 and stderr == ""
     assert stdout.encode() == canonical_bytes(report) + b"\n"
-    assert report["schema"] == "deepeval_trace_record.v1"
-    assert report["source_format_version"] == "4.2.8"
+    assert report["schema"] == "deepeval_trace_record.v2"
+    assert "source_format_version" not in report
     assert report["source"]["raw_hash"] == digest_bytes(raw)
-    index = cast(dict[str, Any], audit_deepeval_trace_bytes(raw, version="4.2.8"))
+    index = cast(dict[str, Any], audit_deepeval_trace_bytes(raw))
     assert report["analysis"] == {"state": "result", "report": index}
     assert index["cases"][0]["source_success"] is True
     assert index["counts"]["spans"]["status_errored"] == 1
@@ -77,12 +75,12 @@ def test_native_recovery_source_and_index_are_saved_from_one_buffer(
     assert json.loads(read_record_file(store, "sample", "analysis/trace-index.json").data) == index
     invocation = json.loads(read_record_file(store, "sample", "invocation.json").data)
     assert invocation["arguments"]["view"] == "trace-index"
-    assert invocation["arguments"]["format_version"] == "4.2.8"
-    assert invocation["arguments"]["rule_profile"] == index["rule_profile"]
+    assert invocation["arguments"]["selection_mode"] == "auto"
+    assert invocation["arguments"]["reader_profile"] == index["reader_profile"]
     manifest = cast(dict[str, Any], read_record(store, "sample").manifest)
     assert manifest["kind"] == "deepeval.trace-index"
     assert manifest["metadata"]["view"] == "trace-index"
-    assert manifest["metadata"]["rule_profile"] == index["rule_profile"]
+    assert manifest["metadata"]["reader_profile"] == index["reader_profile"]
     assert verify_record(store, "sample")["valid"] is True
     assert str(path) not in stdout and "primary_lookup" not in stdout
     path.unlink()
@@ -102,7 +100,7 @@ def test_invalid_trace_selection_refuses_before_source_and_store(
     path, store = tmp_path / "PRIVATE_SOURCE", tmp_path / "store"
     args = _args(path, store)
     if invalid == "old-version":
-        args[args.index("--version") + 1] = "4.1.1"
+        args.extend(("--version", "4.1.1"))
     elif invalid == "bindings":
         args.extend(("--bindings", str(tmp_path / "PRIVATE_BINDINGS")))
     else:
@@ -128,7 +126,7 @@ def test_direct_api_invalid_view_and_id_refuse_before_source_read(
     path, store = tmp_path / "source", tmp_path / "store"
     for identifier, view in (("sample", "PRIVATE_VIEW"), ("../bad", "trace-index")):
         with pytest.raises(command.EvidenceError):
-            command.run_record_deepeval(path, store, identifier, version="4.2.8", view=view)
+            command.run_record_deepeval(path, store, identifier, view=view)
     assert not store.exists()
 
 
@@ -138,7 +136,7 @@ def test_selected_record_contract_failure_precedes_source_read_and_store(
     original = command.packaged_validator
 
     def broken(name: str) -> Any:
-        if name == command.TRACE_RECORD_SCHEMA:
+        if name == command.AUTO_TRACE_RECORD_SCHEMA:
             raise SchemaConfigurationError("PRIVATE_SCHEMA_PATH")
         return original(name)
 
@@ -219,7 +217,7 @@ def test_source_replacement_after_capture_cannot_change_index_or_saved_bytes(
     monkeypatch.setattr(command, "read_deepeval_file", replace)
     report = cast(
         dict[str, Any],
-        command.run_record_deepeval(path, store, "sample", version="4.2.8", view="trace-index"),
+        command.run_record_deepeval(path, store, "sample", view="trace-index"),
     )
     assert report["exit_code"] == 0 and reads == [path]
     assert report["analysis"]["report"]["raw_hash"] == digest_bytes(original_raw)
@@ -235,15 +233,15 @@ def test_raw_identity_mismatch_refuses_before_publication(
     path, store = tmp_path / "source.json", tmp_path / "store"
     raw = NATIVE.read_bytes()
     path.write_bytes(raw)
-    real_audit = command.audit_deepeval_trace_bytes
+    real_audit = command.audit_deepeval_compatible_bytes
 
-    def mismatched(captured: bytes, *, version: str) -> dict[str, object]:
-        report = real_audit(captured, version=version)
+    def mismatched(captured: bytes, *, view: command.View) -> dict[str, object]:
+        report = real_audit(captured, view=view)
         return {**report, "raw_hash": "sha256:" + "0" * 64}
 
-    monkeypatch.setattr(command, "audit_deepeval_trace_bytes", mismatched)
+    monkeypatch.setattr(command, "audit_deepeval_compatible_bytes", mismatched)
     with pytest.raises(command.EvidenceError) as caught:
-        command.run_record_deepeval(path, store, "sample", version="4.2.8", view="trace-index")
+        command.run_record_deepeval(path, store, "sample", view="trace-index")
     assert caught.value.payload["reason"] == "RAW_IDENTITY_MISMATCH"
     assert not store.exists()
 
@@ -332,7 +330,5 @@ def test_interruption_propagates_without_publication(
     monkeypatch.setattr(command, "read_deepeval_file", interrupted)
     store = tmp_path / "store"
     with pytest.raises(KeyboardInterrupt):
-        command.run_record_deepeval(
-            tmp_path / "source", store, "sample", version="4.2.8", view="trace-index"
-        )
+        command.run_record_deepeval(tmp_path / "source", store, "sample", view="trace-index")
     assert not store.exists()
