@@ -19,7 +19,7 @@ from underwrite.instrument.evidence.accounting import audit_promptfoo_with_rows
 from underwrite.instrument.ingest.accounting import audit_promptfoo_row_index_file
 
 ROOT = Path(__file__).resolve().parents[2]
-SCHEMA = ROOT / "contracts/promptfoo_row_index.v1.schema.json"
+SCHEMA = ROOT / "contracts/promptfoo_row_index.v2.schema.json"
 SAMPLE = ROOT / "fixtures/golden/external/promptfoo-0.124.1/results.json"
 
 
@@ -31,7 +31,7 @@ def _validator() -> Draft202012Validator:
 
 def test_generated_and_packaged_contract_match() -> None:
     checked = subprocess.run(
-        [sys.executable, "scripts/build_promptfoo_row_index.py", "--check"],
+        [sys.executable, "scripts/build_promptfoo_compat.py", "--check"],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -44,14 +44,14 @@ def test_generated_and_packaged_contract_match() -> None:
 
 def test_contract_accepts_real_view_and_rejects_private_fields_and_false_classes() -> None:
     validator = _validator()
-    report = audit_promptfoo_row_index_file(SAMPLE, version="0.124.1")
+    report = audit_promptfoo_row_index_file(SAMPLE)
     validator.validate(report)  # pyright: ignore[reportUnknownMemberType]
     for section, field, value in (
         ("rows", "prompt", "private"),
         ("rows", "score", 0),
         ("rows", "category", "errors"),
         ("rows", "source_failure_reason", 3),
-        ("source", "format_version", "0.124.2"),
+        ("source", "claims_verified", True),
         ("scope", "planned_evaluations", "complete"),
     ):
         invalid = cast(dict[str, Any], deepcopy(report))
@@ -61,7 +61,7 @@ def test_contract_accepts_real_view_and_rejects_private_fields_and_false_classes
             validator.validate(invalid)  # pyright: ignore[reportUnknownMemberType]
 
 
-def test_capabilities_describe_auto_and_explicit_row_index_routes() -> None:
+def test_capabilities_describe_only_current_row_index_route() -> None:
     report = capabilities.report(main.COMMAND_DESCRIPTORS)
     commands = cast(list[dict[str, Any]], report["commands"])
     command = next(item for item in commands if item["command"] == "audit-promptfoo")
@@ -69,16 +69,9 @@ def test_capabilities_describe_auto_and_explicit_row_index_routes() -> None:
     row_profiles = [item for item in profiles if item["name"].endswith("|row-index")]
     assert [item["name"] for item in row_profiles] == [
         "promptfoo.eval-output|auto|row-index",
-        "promptfoo.eval-output|0.123.0|row-index",
-        "promptfoo.eval-output|0.124.1|row-index",
     ]
     assert row_profiles[0]["required_inputs"] == ["file", "view"]
     assert row_profiles[0]["output_schemas"] == ["promptfoo_row_index.v2"]
-    assert all(
-        item["required_inputs"] == ["file", "version", "view"]
-        and item["output_schemas"] == ["promptfoo_row_index.v1"]
-        for item in row_profiles[1:]
-    )
 
 
 @pytest.mark.parametrize(

@@ -101,17 +101,17 @@ def test_capability_command_validates_and_is_registration_derived(
         ),
         (
             "audit-promptfoo",
-            "promptfoo.eval-output|0.123.0",
+            "promptfoo.eval-output|auto",
             "promptfoo/results.json",
             "0.123.0",
-            "promptfoo_accounting.v1",
+            "promptfoo_accounting.v2",
         ),
         (
             "audit-promptfoo",
-            "promptfoo.eval-output|0.124.1",
+            "promptfoo.eval-output|auto",
             "promptfoo-0.124.1/results.json",
             "0.124.1",
-            "promptfoo_accounting.v1",
+            "promptfoo_accounting.v2",
         ),
     ],
 )
@@ -127,7 +127,7 @@ def test_advertised_audit_profile_runs_its_registered_fixture(
     capabilities_report = json.loads(capsys.readouterr().out)
     descriptor = next(row for row in capabilities_report["commands"] if row["command"] == command)
     selected = next(row for row in descriptor["profiles"] if row["name"] == name)
-    required = ["file", "version"]
+    required = ["file"] if command == "audit-promptfoo" else ["file", "version"]
     assert selected["required_inputs"] == required
     assert selected["output_schemas"] == [schema]
 
@@ -139,7 +139,8 @@ def test_advertised_audit_profile_runs_its_registered_fixture(
     assert streams.err == ""
     result = json.loads(streams.out)
     assert result["schema"] == schema
-    assert result["source"]["format_version"] == version
+    version_field = "producer_version" if command == "audit-promptfoo" else "format_version"
+    assert result["source"][version_field] == version
     _validator(schema).validate(result)
 
 
@@ -154,18 +155,11 @@ def test_advertised_audit_profile_runs_its_registered_fixture(
             "promptfoo_accounting.v2",
         ),
         (
-            "audit-promptfoo|0.123.0",
+            "audit-promptfoo",
             "promptfoo/results.json",
             "0.123.0",
-            "promptfoo_record.v1",
-            "promptfoo_accounting.v1",
-        ),
-        (
-            "audit-promptfoo|0.124.1",
-            "promptfoo-0.124.1/results.json",
-            "0.124.1",
-            "promptfoo_record.v1",
-            "promptfoo_accounting.v1",
+            "promptfoo_record.v2",
+            "promptfoo_accounting.v2",
         ),
         (
             "audit-deepeval",
@@ -277,6 +271,11 @@ def test_explicit_older_record_profile_does_not_fallback(
         == ERROR_EXIT
     )
     streams = capsys.readouterr()
+    if command == "audit-promptfoo":
+        assert streams.out == ""
+        assert json.loads(streams.err)["code"] == "USAGE_ERROR"
+        assert not root.exists()
+        return
     assert streams.err == ""
     report = json.loads(streams.out)
     assert report["analysis"]["state"] == "error"

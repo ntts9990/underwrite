@@ -7,26 +7,21 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import pytest
 from _inspection_cases import case, update
 from _repo_paths import repo_root
 from jsonschema import Draft202012Validator
-from underwrite_core.canonical import canonical_bytes, content_digest, digest_bytes
+from underwrite_core.canonical import canonical_bytes, digest_bytes
 
 from underwrite.cli import audit_counts
 from underwrite.cli.evidence import run_cli
 from underwrite.instrument.evidence.accounting import ROW_LIMIT
+from underwrite.instrument.evidence.promptfoo_compat import ACCOUNTING_SCHEMA, LIMITATIONS
 from underwrite.instrument.ingest import accounting as accounting_adapter
 from underwrite.instrument.ingest import inspection
 from underwrite.instrument.ingest.accounting import audit_case
-from underwrite.instrument.ingest.application import (
-    DEFAULT_MAX_BYTES,
-    DEFAULT_MAX_DEPTH,
-    packaged_ingestor,
-)
-from underwrite.instrument.ingest.project import Source
 
 ROOT = repo_root(Path(__file__).resolve())
 GOLDEN = ROOT / "fixtures/golden/external/promptfoo/results.json"
@@ -54,18 +49,13 @@ def test_golden_report_is_canonical_and_bound_to_original_bytes(
     before = (path.read_bytes(), (tmp_path / "artifact.json").read_bytes())
     code, report, stdout, stderr = _invoke(path, capsys)
     assert code == 0 and stderr == ""
-    schema = json.loads((ROOT / "contracts/promptfoo_accounting.v1.schema.json").read_bytes())
+    schema = json.loads((ROOT / "contracts/promptfoo_accounting.v2.schema.json").read_bytes())
     Draft202012Validator(schema).validate(report)  # pyright: ignore[reportUnknownMemberType]
     assert stdout.encode() == canonical_bytes(report) + b"\n"
-    assert report["schema"] == "promptfoo_accounting.v1"
-    assert report["source"] == SOURCE
+    assert report["schema"] == ACCOUNTING_SCHEMA
+    assert report["source"]["producer_version"] == SOURCE["format_version"]
+    assert report["source"]["claims_verified"] is False
     assert report["raw_hash"] == digest_bytes(before[1])
-    observation = (
-        packaged_ingestor(max_bytes=DEFAULT_MAX_BYTES, max_depth=DEFAULT_MAX_DEPTH)
-        .file(tmp_path / "artifact.json", Source("promptfoo.eval-output", "0.123.0", None))
-        .observation
-    )
-    assert report["observation_digest"] == content_digest(observation)
     assert (
         report["producer_stats"]
         == report["row_tallies"]
@@ -78,12 +68,7 @@ def test_golden_report_is_canonical_and_bound_to_original_bytes(
     )
     assert report["deltas"] == {"successes": 0, "failures": 0, "errors": 0, "total": 0}
     assert report["declared_relation"] == "consistent" and report["findings"] == []
-    assert report["limitations"] == [
-        "PLANNED_DENOMINATOR_UNKNOWN",
-        "CAUSE_UNKNOWN",
-        "SOURCE_CLAIMS_UNVERIFIED",
-        "NO_APPROVAL_AUTHORITY",
-    ]
+    assert report["limitations"] == list(LIMITATIONS)
     assert before == (path.read_bytes(), (tmp_path / "artifact.json").read_bytes())
 
 
@@ -304,7 +289,7 @@ def test_row_and_output_limits_are_typed(
             [str(path), "--json"],
             audit_counts.configure,
             audit_counts.produce,
-            "promptfoo_accounting.v1",
+            ACCOUNTING_SCHEMA,
             output_max_bytes=1,
         )
         == ERROR_EXIT
@@ -381,7 +366,7 @@ def test_integral_counter_spellings_keep_audit_coherent_with_original_projection
     for key in ("producer_stats", "row_tallies", "deltas", "declared_relation", "findings"):
         assert reports[0][key] == reports[1][key]
     assert reports[0]["raw_hash"] != reports[1]["raw_hash"]
-    assert reports[0]["observation_digest"] != reports[1]["observation_digest"]
+    assert "observation_digest" not in reports[0] and "observation_digest" not in reports[1]
 
 
 @pytest.mark.parametrize("version", ["0.123.0", "0.124.1"])
@@ -401,11 +386,11 @@ def test_hash_bound_manifest_profiles_preserve_inspected_identity(
     assert inspected["expected_hash_check"] == "matched"
     code, report, _, stderr = _invoke(path, capsys)
     assert code == 0 and not stderr
-    assert report["source"] == {"format": SOURCE["format"], "format_version": version}
+    assert report["source"]["producer_version"] == version
+    assert report["source"]["producer_version_state"] == "declared"
+    assert report["source"]["claims_verified"] is False
     assert report["raw_hash"] == inspected["raw_hash"] == digest_bytes(raw)
-    assert (
-        report["observation_digest"] == cast(dict[str, object], inspected["observation"])["digest"]
-    )
+    assert "observation_digest" not in report
     assert report["findings"] == []
     if version == "0.124.1":
         assert report["row_tallies"] == {"successes": 3, "failures": 1, "errors": 3, "total": 7}
@@ -425,10 +410,10 @@ def test_wrong_expected_hash_prevents_counting(
     update(path, "source", {"format": SOURCE["format"], "format_version": version})
     update(path, "artifact", {"expected_hash": "sha256:" + "0" * 64})
 
-    def forbidden(*_: object) -> dict[str, object]:
+    def forbidden(*_: object, **__: object) -> dict[str, object]:
         pytest.fail("counted mismatched buffer")
 
-    monkeypatch.setattr(accounting_adapter, "audit_promptfoo", forbidden)
+    monkeypatch.setattr(accounting_adapter, "account_promptfoo_compatible", forbidden)
     code, report, stdout, _ = _invoke(path, capsys)
     assert code == ERROR_EXIT and not stdout
     assert report["code"] == "EXPECTED_HASH_MISMATCH"
@@ -502,3 +487,25 @@ def test_counting_uses_one_inspected_buffer_after_artifact_replacement(
     assert code == 0 and report == expected
     assert inspected_calls == [path]
     assert seen == [["case.json"], ["artifact.json"]]
+
+
+def test_current_schema_failure_precedes_manifest_acquisition(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from underwrite.instrument.ingest.schema import SchemaConfigurationError
+
+    def broken(_: str) -> Any:
+        raise SchemaConfigurationError("PRIVATE_SCHEMA_DETAIL")
+
+    def forbidden(*_: object, **__: object) -> Any:
+        pytest.fail("manifest inspected before current schema admission")
+
+    monkeypatch.setattr(accounting_adapter, "packaged_validator", broken)
+    monkeypatch.setattr(accounting_adapter, "inspect_artifact_with_projection", forbidden)
+    with pytest.raises(accounting_adapter.AccountingCaseError) as caught:
+        audit_case(tmp_path / "missing.json")
+    assert (caught.value.code, caught.value.reason, caught.value.location) == (
+        "SCHEMA_CONFIGURATION_ERROR",
+        "INVALID_PACKAGED_CONTRACT",
+        "",
+    )

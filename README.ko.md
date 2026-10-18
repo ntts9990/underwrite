@@ -217,7 +217,7 @@ Claude Code에서 재사용할 수 있는 지침을 제공합니다.
 | **Goppi** | 완료된 baseline exchange manifest v2; P7 handoff; 채택된 paired trajectory | [`audit-baseline`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#audit-a-completed-goppi-baseline-as-common-evidence) · [`project-baseline`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#project-a-completed-goppi-baseline-into-event-observations) · [`review-handoff`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#review-a-completed-paired-handoff-in-one-call) · [`audit-trajectory`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#compare-a-goppi-paired-trajectory) |
 | **Langfuse** | 호환 blob 배열 또는 공식 CLI 목록 캡처; 파일 쌍 자동 선택 | [`audit-langfuse`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-langfuse-score-kinds-and-associations) |
 | **DeepEval** | 호환 TestRun 자동 집계; 선택형 trace 보기와 의미 바인딩 | [`audit-deepeval`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors) |
-| **Promptfoo** | SummaryV3 eval output 자동 입력; 이전 선택자 유지 | [`audit-promptfoo`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#audit-promptfoo-counts) |
+| **Promptfoo** | SummaryV3 eval output 자동 입력; 현재 v2 결과 | [`audit-promptfoo`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#audit-promptfoo-counts) |
 | **외부 공통 결과** | `evidence_result.v1` 또는 `evidence_result.v2` | [`inspect-result`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#inspect-an-external-common-result) |
 | **네이티브 근거** | `underwrite.evidence-bundle` / `v1` | `ingest` → `measure` → `accept` |
 | **Inspect AI** | `inspect.eval-log` / `0.3.263` | `ingest` |

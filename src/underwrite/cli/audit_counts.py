@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import cast
 
 from underwrite.cli.evidence import EvidenceError, run_cli
+from underwrite.instrument.evidence.promptfoo_compat import ACCOUNTING_SCHEMA
 from underwrite.instrument.ingest.accounting import AccountingCaseError, audit_case
 
 
@@ -34,4 +35,4 @@ def produce(args: argparse.Namespace) -> dict[str, object]:
 
 
 def main(argv: list[str]) -> int:
-    return run_cli("audit-counts", argv, configure, produce, "promptfoo_accounting.v1")
+    return run_cli("audit-counts", argv, configure, produce, ACCOUNTING_SCHEMA)

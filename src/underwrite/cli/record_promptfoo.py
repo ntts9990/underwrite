@@ -26,16 +26,14 @@ from underwrite.cli.record_capture import (
 )
 from underwrite.cli.records import OUTPUT_MAX_BYTES, record_error_payload
 from underwrite.instrument.evidence.promptfoo_compat import (
-    ACCOUNTING_SCHEMA as AUTO_ACCOUNTING_SCHEMA,
+    ACCOUNTING_SCHEMA,
+    SOURCE_FORMAT,
 )
 from underwrite.instrument.ingest.accounting import (
-    SOURCE,
     AccountingCaseError,
     audit_promptfoo_bytes,
     read_promptfoo_file,
-    validate_version,
 )
-from underwrite.instrument.ingest.codecs.promptfoo import SUPPORTED_VERSIONS
 from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
 from underwrite.service._record_format import FormatError, record_id
 from underwrite.service.records import (
@@ -44,14 +42,12 @@ from underwrite.service.records import (
     RecordError,
 )
 
-SCHEMA = "promptfoo_record.v1"
 AUTO_RECORD_SCHEMA = "promptfoo_record.v2"
 COMMAND = "records audit-promptfoo"
 
 
 @dataclass(frozen=True)
 class _Contracts:
-    version: str | None
     aggregate: Validator
     storage: Validator
     analysis: Validator
@@ -60,17 +56,13 @@ class _Contracts:
     verification: Validator
 
 
-def _contracts(version: str | None) -> _Contracts:
-    aggregate = packaged_validator(AUTO_RECORD_SCHEMA if version is None else SCHEMA)
+def _contracts() -> _Contracts:
+    aggregate = packaged_validator(AUTO_RECORD_SCHEMA)
     storage = storage_validator(aggregate)
-    if version is not None:
-        packaged_validator("observation.v1")
-    analysis_schema = AUTO_ACCOUNTING_SCHEMA if version is None else "promptfoo_accounting.v1"
     return _Contracts(
-        version,
         cast(Validator, aggregate),
         storage,
-        cast(Validator, packaged_validator(analysis_schema)),
+        cast(Validator, packaged_validator(ACCOUNTING_SCHEMA)),
         cast(Validator, packaged_validator("evidence_error.v1")),
         cast(Validator, packaged_validator("record_error.v1")),
         cast(Validator, packaged_validator("record_verification.v1")),
@@ -110,12 +102,6 @@ def configure(parser: argparse.ArgumentParser) -> None:
         metavar="FILE",
         help="Entire local Promptfoo export to retain.",
     )
-    parser.add_argument(
-        "--version",
-        choices=SUPPORTED_VERSIONS,
-        default=None,
-        help="Optional strict historical producer version; omitted uses selected SummaryV3 fields.",
-    )
     parser.add_argument("--root", type=Path, required=True, help="Explicit private record root.")
     parser.add_argument("--id", type=_identifier, required=True, help="New immutable record ID.")
     parser.add_argument(
@@ -125,21 +111,19 @@ def configure(parser: argparse.ArgumentParser) -> None:
         "Audit one local Promptfoo export in process and retain the exact complete input, "
         "result or diagnostic, and effective invocation. Malformed complete input is retained "
         "in full, including private source fields; a diagnostic record consumes the ID. "
-        "Without --version, selected SummaryV3 fields are analyzed and a producer version is "
+        "Selected SummaryV3 fields are analyzed and a producer version is "
         "only an unverified declaration when present. No producer or subprocess is run. "
         "Exit 0 means result saved, 2 analysis failed but diagnostic saved, and 3 storage failed."
     )
 
 
-def _analyze(
-    path: Path, version: str | None
-) -> tuple[bytes | None, dict[str, object], dict[str, Any]]:
+def _analyze(path: Path) -> tuple[bytes | None, dict[str, object], dict[str, Any]]:
     raw: bytes | None = None
     source: dict[str, object] = {"state": "unavailable"}
     try:
         raw = read_promptfoo_file(path)
         source = {"state": "captured", "raw_hash": digest_bytes(raw), "bytes": len(raw)}
-        report = audit_promptfoo_bytes(raw, version=version)
+        report = audit_promptfoo_bytes(raw)
         if report["raw_hash"] != source["raw_hash"]:
             raise EvidenceError("INTERNAL_ERROR", "RAW_IDENTITY_MISMATCH")
         analysis: dict[str, Any] = {"state": "result", "report": report}
@@ -180,12 +164,9 @@ def _files(
         "source_path_display": unicodedata.normalize("NFC", str(path)),
         "root_display": unicodedata.normalize("NFC", str(root)),
         "record_id": identifier,
+        "selection_mode": "auto",
+        **_applied_reader(analysis),
     }
-    if contracts.version is None:
-        arguments["selection_mode"] = "auto"
-        arguments.update(_applied_reader(analysis))
-    elif contracts.version != SOURCE[1]:
-        arguments["format_version"] = contracts.version
     invocation = {
         "command": COMMAND,
         "execution_mode": "in_process",
@@ -230,21 +211,16 @@ def render_human(report: dict[str, object]) -> str:
 
 
 def run_record_promptfoo(
-    path: Path, root: Path, identifier: str, *, as_json: bool = True, version: str | None = None
+    path: Path, root: Path, identifier: str, *, as_json: bool = True
 ) -> dict[str, object]:
     try:
         record_id(identifier)
     except FormatError:
         raise EvidenceError("USAGE_ERROR", "INVALID_ARGUMENTS_SEE_HELP") from None
-    if version is not None:
-        try:
-            validate_version(version)
-        except AccountingCaseError as exc:
-            raise EvidenceError(exc.code, exc.reason, exc.location) from None
-    contracts = _contracts(version)
-    raw, source, analysis = _analyze(path, version)
+    contracts = _contracts()
+    raw, source, analysis = _analyze(path)
     envelope: dict[str, Any] = {
-        "schema": AUTO_RECORD_SCHEMA if version is None else SCHEMA,
+        "schema": AUTO_RECORD_SCHEMA,
         "command": COMMAND,
         "source": source,
         "analysis": analysis,
@@ -281,14 +257,11 @@ def run_record_promptfoo(
         max_bytes=OUTPUT_MAX_BYTES,
     )
     metadata = {
-        "format": SOURCE[0],
+        "format": SOURCE_FORMAT,
         "analysis_state": analysis["state"],
+        "selection_mode": "auto",
+        **_applied_reader(analysis),
     }
-    if version is None:
-        metadata["selection_mode"] = "auto"
-        metadata.update(_applied_reader(analysis))
-    else:
-        metadata["format_version"] = version
     spec = CapturedRecordSpec(
         record_id=identifier,
         kind="promptfoo.accounting",
@@ -314,7 +287,6 @@ def produce(args: argparse.Namespace) -> dict[str, object]:
         cast(Path, args.root),
         cast(str, args.id),
         as_json=cast(bool, args.json),
-        version=cast(str | None, args.version),
     )
 
 
@@ -325,7 +297,7 @@ def main(argv: list[str]) -> int:
         configure,
         produce,
         ReportOutput(
-            lambda args: AUTO_RECORD_SCHEMA if args.version is None else SCHEMA,
+            AUTO_RECORD_SCHEMA,
             max_bytes=OUTPUT_MAX_BYTES,
             human=render_human,
             exit_status=lambda report: cast(int, report["exit_code"]),

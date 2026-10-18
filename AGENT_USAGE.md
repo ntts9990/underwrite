@@ -23,18 +23,19 @@ of inferring support from the package version alone. Published `0.1.0` has
 does not. Use help-based discovery with any installed version. Capability
 availability is not evidence that an arbitrary export satisfies a profile.
 
-For changes from published 0.1.1 to 0.2.0, see [migration](MIGRATION.md).
-Automatic reader selection changes some default JSON contracts; explicit
-historical selectors and existing stored bytes retain their original meanings.
+For released changes and current checkout differences, see [migration](MIGRATION.md).
+Published 0.2.0 retains historical selectors alongside automatic input. The
+unreleased checkout removes Promptfoo audit/capture selectors and uses only v2
+results. Existing stored bytes retain their original meanings.
 
 Choose the input path first. An `underwrite.evidence-bundle` v1 observation can
 enter the native `ingest` → `measure` → `accept` workflow with an explicit policy
 and declared claims. A supported external export can be ingested as source claims
 and byte identity; it does not produce a measurable read under the current profile.
 External observations do not enter `measure`. The direct `audit-promptfoo FILE`
-command in 0.2.0 reads SummaryV3 without a version option;
-explicit `--version` retains the older strict profiles. Neither creates a
-measurement read. The promptfoo example below deliberately calls `measure` to
+command reads SummaryV3 without a version option. Only the published 0.2.0
+release retains Promptfoo's explicit `--version`; the checkout rejects it.
+Neither creates a measurement read. The promptfoo example below calls `measure` to
 show that command's typed refusal.
 
 ## Optional artifact-review skill
@@ -804,8 +805,8 @@ anonymous; planned evaluations and export completeness stay unknown, and
 Automatic intake does not authenticate a producer, interpret omitted populations
 or verify an independently supplied expected hash. It uses bounded local-file reads.
 For expected-hash checks, explicit source references/locators, or contained relative
-artifact selection, retain the manifest route below. An explicitly selected legacy
-direct route and its matching manifest route retain their original canonical output.
+artifact selection, use the manifest route below. Direct and manifest accounting
+of the same captured raw bytes produce the same current v2 report.
 
 To retain the exact source buffer used by automatic accounting:
 
@@ -817,18 +818,17 @@ underwrite records audit-promptfoo results.json \
 The default record is `promptfoo_record.v2`; it preserves complete source bytes,
 the actual accounting or diagnostic, and automatic selection metadata. It retains
 private source contents even when the result omits them. The Python file/bytes APIs
-also default to automatic mode with `version=None`.
+take no producer-version selector; they use the current selected-field reader.
 
-For exact historical output, `--version 0.123.0` or `--version 0.124.1` keeps
-`promptfoo_accounting.v1`, `promptfoo_row_index.v1`, and `promptfoo_record.v1`.
-Generic `ingest`/`project` also accept `--format promptfoo.eval-output --version
-0.124.1`. The selected version must match `metadata.promptfooVersion`; no detection,
-rewriting or fallback occurs. `audit-counts` accepts both versions when explicitly
-selected by the supplied manifest; there is no CLI version override for that route.
-Explicit legacy direct profiles and stored record bytes remain unchanged. Omitted
-selectors intentionally use the new v2 outputs; consumers requiring the old JSON
-contract should use the explicit legacy selector. Existing stored records still read
-and verify normally.
+In this unreleased development checkout, Promptfoo audit/capture commands no
+longer accept `--version`, and their Python APIs no longer accept `version=`.
+Published 0.2.0 retains those historical selectors; use capabilities and
+[the migration guide](MIGRATION.md) to distinguish installed behavior. Do not
+retry a retired selector after a semantic refusal. Generic `ingest`/`project`
+still accept `--format promptfoo.eval-output --version 0.124.1`: those describe
+source codec admission, not a choice of output generation. `audit-counts` retains
+the explicit supported source selector in its manifest and emits current v2.
+Old saved records remain readable and verifiable as their original bytes.
 
 In the supported 0.124.1 capture, a numeric assertion score of 0.3 has a producer
 success flag; it is not an absent verdict. A zero-weight cost component can exceed
@@ -853,7 +853,7 @@ uv run --frozen --no-sync underwrite audit-counts \
 ```
 
 The fixture deliberately keeps the total row count equal while changing reported
-success/error counts. `promptfoo_accounting.v1` separates `producer_stats` from
+success/error counts. `promptfoo_accounting.v2` separates `producer_stats` from
 `row_tallies`, reports signed `row_tallies - producer_stats` deltas, and preserves
 source-internal contradictions as findings. `declared_relation` is `inconsistent`
 for this example, but exit `0` still means a report was produced. Missing or
@@ -878,6 +878,10 @@ category comparator, and unmeasured user-value claims are in
 The two audit reports and declarations below are synthetic local examples. The
 manifest binds each supplied report by its canonical JSON digest. It declares
 conditions and metric meaning; it does not discover them from the artifact.
+The current checkout accepts `promptfoo_accounting.v2` from the default direct
+or manifest audit. Published 0.2.0 still requires v1 here; see [migration](MIGRATION.md).
+Regenerate old reports from their original source and bind the new report digests;
+changing a schema label or retaining an old digest is not a conversion.
 
 ```sh
 uv run --frozen --no-sync underwrite compare-declarations \

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import shutil
 import subprocess
@@ -32,11 +31,6 @@ from underwrite.service.records import RecordError
 
 ROOT = Path(__file__).resolve().parents[2]
 EXTERNAL = ROOT / "fixtures/golden/external"
-OLD_CONTRACT_SHA256 = {
-    "promptfoo_accounting.v1": ("95c16ec0fa2b3ada86b1ccb829ba8530b9aa391e9a51517f12db03cb821cebdd"),
-    "promptfoo_row_index.v1": ("44d5e517d81b864edb305c1213b2a2bf193b48f645b51e29df98988aa82a08b6"),
-    "promptfoo_record.v1": "711423c0735363c7a5319dac5f60209f0574093be33cb755e152fa0f00bc8cfb",
-}
 DIGEST = "sha256:" + "0" * 64
 
 
@@ -74,7 +68,7 @@ def _record() -> dict[str, Any]:
     }
 
 
-def test_generated_packaged_contracts_are_current_and_old_bytes_stable() -> None:
+def test_generated_packaged_contracts_are_current() -> None:
     check = subprocess.run(
         [sys.executable, "scripts/build_promptfoo_compat.py", "--check"],
         cwd=ROOT,
@@ -95,11 +89,6 @@ def test_generated_packaged_contracts_are_current_and_old_bytes_stable() -> None
         assert packaged.read_bytes() == authored.read_bytes()
         assert "contracts/" + filename in includes
         _validator(name)
-    for name, expected in OLD_CONTRACT_SHA256.items():
-        assert (
-            hashlib.sha256((ROOT / "contracts" / f"{name}.schema.json").read_bytes()).hexdigest()
-            == expected
-        )
 
 
 def test_current_generation_needs_no_historical_or_existing_target_files(tmp_path: Path) -> None:
