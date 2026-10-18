@@ -240,13 +240,21 @@ record specification:
 underwrite records audit-promptfoo FILE --root PRIVATE_STORE --id NEW_ID --json
 ```
 
-The default is 0.123.0; select `--version 0.124.1` explicitly for that profile.
-Both emit `promptfoo_record.v1`. Updated packaged schemas admit both source
-versions; older schemas pinned to 0.123.0 reject new-profile reports.
-For a saved diagnostic, recover the selected version from record metadata using
+In development builds advertising the v2 default, omitted `--version` uses
+SummaryV3 selected-field accounting and returns `promptfoo_record.v2`. A producer
+version is only a declaration, or unknown if absent; it is not the selected reader
+profile or a condition requiring users to match package releases. New unconsumed
+fields are retained in source bytes without being interpreted. Unknown summary
+generations and malformed consumed fields produce finite diagnostics.
+
+Published 0.1.1 predates auto input. Explicit `--version 0.123.0` and
+`--version 0.124.1` retain the strict `promptfoo_record.v1` behavior in development
+builds too. For a saved explicit-profile diagnostic, recover the selection from record metadata using
 `records show` or from `arguments.format_version` in the new-profile invocation
 using `records read-json --name invocation.json`. The saved error alone does not
-identify that selection. If storage fails, such recovery is not promised; retain
+identify that selection. Auto records identify automatic selection separately;
+failed input selection does not claim a reader was successfully applied.
+If storage fails, such recovery is not promised; retain
 the explicit invocation and returned analysis/storage outcomes.
 
 This explicitly stores the **entire selected file**, the accounting result or
@@ -256,7 +264,7 @@ stores only the diagnostic and invocation. Even a diagnostic record consumes the
 new ID. Invocation path fields are canonical display metadata, not byte-exact
 argv or a claim that a subprocess ran.
 
-`promptfoo_record.v1` returns independent `analysis` and `storage` objects: exit 0
+Both Promptfoo record contracts return independent `analysis` and `storage` objects: exit 0
 means a result was produced and saved, exit 2 means analysis failed but its
 diagnostic was saved, and exit 3 means storage failed (inspect analysis separately).
 A count mismatch is a produced result, not approval or an invocation error.
@@ -264,7 +272,7 @@ Argument, configuration, or response-capacity failures emit `evidence_error.v1`
 on stderr with exit 2 before storing. A failed post-publication verification keeps
 its known record identity in `storage.published_record`; null means no identity
 was returned, not proof that the requested ID is absent. Never overwrite or
-silently retry a reserved ID. Analysis-only `audit-promptfoo` remains unchanged.
+silently retry a reserved ID. Analysis-only `audit-promptfoo` never saves a record.
 
 For manual selection of arbitrary supported evidence, use an explicit spec:
 

@@ -28,8 +28,8 @@ enter the native `ingest` → `measure` → `accept` workflow with an explicit p
 and declared claims. A supported external export can be ingested as source claims
 and byte identity; it does not produce a measurable read under the current profile.
 External observations do not enter `measure`. The direct `audit-promptfoo FILE`
-command defaults to Promptfoo 0.123.0; `--version 0.124.1` selects the other
-supported export profile. Neither creates a
+command in current development builds reads SummaryV3 without a version option;
+explicit `--version` retains the older strict profiles. Neither creates a
 measurement read. The promptfoo example below deliberately calls `measure` to
 show that command's typed refusal.
 
@@ -93,7 +93,7 @@ is ready; obtain the completed producer artifact and its version context first.
 | goppi | `audit-baseline` and `project-baseline` accept the exact baseline exchange manifest v2 described below; P7 paired handoffs, the separate C55 operator-answer assessment, and older grounded-pilot exchanges have different contracts. No generic ingest profile. A CLI summary is insufficient; do not manufacture rows from counts. |
 | Langfuse | Published `0.1.1` defaults to the `4.35.0` **server blob-export profile**: complete-field, uncompressed JSON arrays for `observations_v2` and `scores`; wait for its completed manifest. A development checkout may advertise the separate `--profile cli-1.2.4` for two local official-CLI Observations v2 / Scores v3 captures from API snapshot 4.35.0, in native `--json` envelope or `--output` body form. Check capabilities before using it. Neither is an arbitrary REST/UI JSON, Parquet, or SDK flush result. See [the pinned CLI example](fixtures/examples/langfuse-cli/SOURCE.md). |
 | DeepEval | Supply the ordinary `4.1.1` or `4.2.8` TestRun JSON written by the tool, with the producer version recorded separately. Select `--version 4.2.8` explicitly for that profile; the default remains `4.1.1`. A failed test run can still write a valid artifact. Zero, evaluator errors, and absent verdicts remain distinct. |
-| Promptfoo | Supply the `0.123.0` or `0.124.1` eval output JSON (summary version 3). An assertion-failure exit can accompany a valid export. Direct `audit-promptfoo FILE --json` defaults to 0.123.0; select `--version 0.124.1` explicitly for that producer. With a supplied manifest, `audit-counts` uses its explicit source version and expected hash. |
+| Promptfoo | Supply a SummaryV3 eval output JSON. Development builds advertising `promptfoo.eval-output\|auto` read it without a version flag, recording any valid declared producer version separately from their reader policy. Published 0.1.1 predates auto input; its strict profiles require the supported version selection. An assertion-failure exit can accompany a valid export. A supplied `audit-counts` manifest retains its explicit source version and expected-hash check. |
 
 The [producer checks](EVIDENCE_REVIEW.md) distinguish fresh tool-generated
 synthetic evaluations, archived captures, and constructed examples. They test
@@ -612,11 +612,10 @@ are the same as v1.
 
 ## Audit Promptfoo counts
 
-The direct audit commands ship in `0.1.0`. The older PyPI `0.0.1` artifacts lack
-them; the fixture paths below still require a GitHub checkout.
-
-For a Promptfoo 0.123.0 export, audit the supplied file directly without creating
-a manifest:
+Current development builds advertising `promptfoo.eval-output|auto` accept
+SummaryV3 files without a version/profile option. Published `0.1.1` predates this
+default; inspect capabilities on an installed tool. Fixture paths below require
+a checkout. For a local export, use its path directly without creating a manifest:
 
 ```sh
 uv run --frozen --no-sync underwrite audit-promptfoo \
@@ -627,10 +626,17 @@ For agent triage by original 0-based row position without receiving source text,
 select the ordinal row index:
 
 ```sh
-underwrite audit-promptfoo results.json --version 0.124.1 --view row-index --json
+underwrite audit-promptfoo results.json --view row-index --json
 ```
 
-`promptfoo_row_index.v1` retains the selected format/version, one raw-byte hash,
+`promptfoo_accounting.v2` and `promptfoo_row_index.v2` distinguish SummaryV3 from
+the producer's declared release. A missing version declaration stays unknown.
+The reader validates the fields used for count accounting; additional unconsumed
+fields do not cause a release-number mismatch. A well-formed newer release token
+alone does not imply that release was tested. Unknown summary generations and
+malformed consumed fields are refused, without trying an older interpretation.
+
+The row index retains one raw-byte hash,
 declared and observed counts, their deltas/findings, and each row's ordinal,
 accounting category, source `success` flag, finite `failureReason` code, and nullable
 `gradingResult.pass`. A null grading pass covers an absent or explicit-null grading
@@ -640,32 +646,39 @@ result. The category is the existing success-first accounting classification:
 reason. `ERROR` is a source code, not a verified provider cause. Prompt/response,
 error text, labels, IDs, scores, costs, and paths are withheld. This view cannot
 distinguish a zero score from another score and gives no task verdict or approval.
-Its hash and ordinal pattern remain linkable, so it is content-minimized, not
+Its declared release, hash and ordinal pattern remain linkable, so it is content-minimized, not
 anonymous; planned evaluations and export completeness stay unknown, and
 `verification` is empty. The importable file API is
 `underwrite.instrument.ingest.accounting.audit_promptfoo_row_index_file`.
 
-This selects the pinned payload profile; it does not authenticate the producer or
-verify an independently supplied expected hash. It uses bounded local-file reads.
+Automatic intake does not authenticate a producer, interpret omitted populations
+or verify an independently supplied expected hash. It uses bounded local-file reads.
 For expected-hash checks, explicit source references/locators, or contained relative
-artifact selection, retain the manifest route below. With default source metadata,
-both routes return the same canonical report for the same bytes.
+artifact selection, retain the manifest route below. An explicitly selected legacy
+direct route and its matching manifest route retain their original canonical output.
 
-For a 0.124.1 export, use explicit selection on the direct paths:
+To retain the exact source buffer used by automatic accounting:
 
 ```sh
-underwrite audit-promptfoo results.json --version 0.124.1 --json
-underwrite records audit-promptfoo results.json --version 0.124.1 \
+underwrite records audit-promptfoo results.json \
   --root /private/review-store --id promptfoo.review-001 --json
 ```
 
+The default record is `promptfoo_record.v2`; it preserves complete source bytes,
+the actual accounting or diagnostic, and automatic selection metadata. It retains
+private source contents even when the result omits them. The Python file/bytes APIs
+also default to automatic mode with `version=None`.
+
+For exact historical output, `--version 0.123.0` or `--version 0.124.1` keeps
+`promptfoo_accounting.v1`, `promptfoo_row_index.v1`, and `promptfoo_record.v1`.
 Generic `ingest`/`project` also accept `--format promptfoo.eval-output --version
 0.124.1`. The selected version must match `metadata.promptfooVersion`; no detection,
 rewriting or fallback occurs. `audit-counts` accepts both versions when explicitly
 selected by the supplied manifest; there is no CLI version override for that route.
-Both direct profiles retain `promptfoo_accounting.v1` and `promptfoo_record.v1`:
-only the allowed source-version metadata expands. Older installed schemas pinned
-to 0.123.0 reject new-profile reports; old/default result bytes remain unchanged.
+Explicit legacy direct profiles and stored record bytes remain unchanged. Omitted
+selectors intentionally use the new v2 outputs; consumers requiring the old JSON
+contract should use the explicit legacy selector. Existing stored records still read
+and verify normally.
 
 In the supported 0.124.1 capture, a numeric assertion score of 0.3 has a producer
 success flag; it is not an absent verdict. A zero-weight cost component can exceed

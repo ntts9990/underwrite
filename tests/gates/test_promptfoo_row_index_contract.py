@@ -61,20 +61,23 @@ def test_contract_accepts_real_view_and_rejects_private_fields_and_false_classes
             validator.validate(invalid)  # pyright: ignore[reportUnknownMemberType]
 
 
-def test_capabilities_describe_both_row_index_versions() -> None:
+def test_capabilities_describe_auto_and_explicit_row_index_routes() -> None:
     report = capabilities.report(main.COMMAND_DESCRIPTORS)
     commands = cast(list[dict[str, Any]], report["commands"])
     command = next(item for item in commands if item["command"] == "audit-promptfoo")
     profiles = cast(list[dict[str, Any]], command["profiles"])
     row_profiles = [item for item in profiles if item["name"].endswith("|row-index")]
     assert [item["name"] for item in row_profiles] == [
+        "promptfoo.eval-output|auto|row-index",
         "promptfoo.eval-output|0.123.0|row-index",
         "promptfoo.eval-output|0.124.1|row-index",
     ]
+    assert row_profiles[0]["required_inputs"] == ["file", "view"]
+    assert row_profiles[0]["output_schemas"] == ["promptfoo_row_index.v2"]
     assert all(
         item["required_inputs"] == ["file", "version", "view"]
         and item["output_schemas"] == ["promptfoo_row_index.v1"]
-        for item in row_profiles
+        for item in row_profiles[1:]
     )
 
 

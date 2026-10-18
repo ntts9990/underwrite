@@ -68,6 +68,25 @@ Tests cover both the application and `packages/underwrite-core`. Keep pure modul
 free of application dependencies and filesystem, network, or clock effects.
 See [AGENTS.md](AGENTS.md) for repository layout and technical constraints.
 
+## Producer compatibility
+
+Normal intake should interpret supported format families without asking users to
+choose producer package versions. Keep exact version/profile options for legacy
+reproduction. Distinguish a file's declared producer version (or unknown) from
+Underwrite's reader policy; structural compatibility does not identify or
+authenticate the producer. A compatible release string alone is not an admission
+gate, and accepting its shape does not certify an untested release.
+
+Maintain a latest-stable native fixture check and older regression examples when
+changing an adapter or preparing a release. Preserve truthful fixture provenance.
+Validate the fields and populations the task consumes, tolerate unconsumed additive
+fields with an explicit selected scope, and reject unsupported format generations
+or changed critical semantics without trying older readers to conceal the failure.
+Keep producer execution, runtime network lookups and updates outside input parsing.
+Test no-selector audit and same-byte record workflows as well as explicit legacy
+contracts. Document any default output-schema migration; do not alter old stored
+contracts to pretend they are new results.
+
 ## Implementation owners
 
 The optional workspace policy loaded by AGENTS.md owns shared development and

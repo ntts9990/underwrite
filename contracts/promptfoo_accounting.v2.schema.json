@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:promptfoo_accounting.v2",
+  "title": "promptfoo_accounting.v2",
+  "description": "Selected Promptfoo SummaryV3 row-count agreement. Producer version is only a source declaration; unconsumed fields and populations are not analyzed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "source",
+    "raw_hash",
+    "reader_profile",
+    "scope",
+    "producer_stats",
+    "row_tallies",
+    "deltas",
+    "declared_relation",
+    "findings",
+    "limitations"
+  ],
+  "properties": {
+    "schema": {
+      "const": "promptfoo_accounting.v2"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "summary_version",
+        "producer_version",
+        "producer_version_state",
+        "claims_verified"
+      ],
+      "properties": {
+        "format": {
+          "const": "promptfoo.eval-output"
+        },
+        "summary_version": {
+          "const": 3
+        },
+        "producer_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 128,
+          "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?![\\s\\S])"
+        },
+        "producer_version_state": {
+          "enum": [
+            "unknown",
+            "declared"
+          ]
+        },
+        "claims_verified": {
+          "const": false
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "producer_version_state": {
+              "const": "unknown"
+            },
+            "producer_version": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "producer_version_state": {
+              "const": "declared"
+            },
+            "producer_version": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "raw_hash": {
+      "$ref": "#/$defs/hash"
+    },
+    "reader_profile": {
+      "const": "promptfoo.summary-v3.selected-fields.v1"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "population",
+        "selected_fields_only",
+        "planned_evaluations",
+        "export_completeness"
+      ],
+      "properties": {
+        "population": {
+          "const": "supplied_results_rows"
+        },
+        "selected_fields_only": {
+          "const": true
+        },
+        "planned_evaluations": {
+          "const": "unknown"
+        },
+        "export_completeness": {
+          "const": "unknown"
+        }
+      }
+    },
+    "producer_stats": {
+      "$ref": "#/$defs/counts"
+    },
+    "row_tallies": {
+      "$ref": "#/$defs/counts"
+    },
+    "deltas": {
+      "$ref": "#/$defs/deltas"
+    },
+    "declared_relation": {
+      "enum": [
+        "consistent",
+        "inconsistent"
+      ]
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 2003,
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    },
+    "limitations": {
+      "const": [
+        "PLANNED_DENOMINATOR_UNKNOWN",
+        "CAUSE_UNKNOWN",
+        "SOURCE_CLAIMS_UNVERIFIED",
+        "UNCONSUMED_FIELDS_AND_POPULATIONS_NOT_ANALYZED",
+        "SOURCE_HASH_AND_VERSION_LINKABLE",
+        "NO_APPROVAL_AUTHORITY"
+      ]
+    }
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "successes",
+        "failures",
+        "errors",
+        "total"
+      ],
+      "properties": {
+        "successes": {
+          "$ref": "#/$defs/nonnegative"
+        },
+        "failures": {
+          "$ref": "#/$defs/nonnegative"
+        },
+        "errors": {
+          "$ref": "#/$defs/nonnegative"
+        },
+        "total": {
+          "$ref": "#/$defs/nonnegative"
+        }
+      }
+    },
+    "deltas": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "successes",
+        "failures",
+        "errors",
+        "total"
+      ],
+      "properties": {
+        "successes": {
+          "$ref": "#/$defs/signed"
+        },
+        "failures": {
+          "$ref": "#/$defs/signed"
+        },
+        "errors": {
+          "$ref": "#/$defs/signed"
+        },
+        "total": {
+          "$ref": "#/$defs/signed"
+        }
+      }
+    },
+    "nonnegative": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740992
+    },
+    "signed": {
+      "type": "integer",
+      "minimum": -9007199254740992,
+      "maximum": 9007199254740992
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "row_index",
+        "location"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "CATEGORY_COUNT_MISMATCH",
+            "SOURCE_FLAGS_DISAGREE"
+          ]
+        },
+        "row_index": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1999
+        },
+        "location": {
+          "type": "string",
+          "pattern": "^/results/(?:stats/(?:successes|failures|errors)|results/(?:0|[1-9][0-9]{0,3})/(?:failureReason|gradingResult/pass))$"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "CATEGORY_COUNT_MISMATCH"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "row_index": {
+                "type": "null"
+              },
+              "location": {
+                "pattern": "^/results/stats/(?:successes|failures|errors)$"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "row_index": {
+                "type": "integer"
+              },
+              "location": {
+                "pattern": "^/results/results/(?:0|[1-9][0-9]{0,3})/(?:failureReason|gradingResult/pass)$"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,1330 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:promptfoo_record.v2",
+  "title": "promptfoo_record.v2",
+  "description": "Selected Promptfoo SummaryV3 accounting and private capture outcomes. Stored-byte verification is not producer authentication or approval. Null published_record means no returned identity, not proven absence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "command",
+    "source",
+    "analysis",
+    "storage",
+    "exit_code"
+  ],
+  "properties": {
+    "schema": {
+      "const": "promptfoo_record.v2"
+    },
+    "command": {
+      "const": "records audit-promptfoo"
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "analysis": {
+      "$ref": "#/$defs/analysis"
+    },
+    "storage": {
+      "$ref": "#/$defs/storage"
+    },
+    "exit_code": {
+      "enum": [
+        0,
+        2,
+        3
+      ]
+    }
+  },
+  "$defs": {
+    "promptfoo_accounting": {
+      "title": "promptfoo_accounting.v2",
+      "description": "Selected Promptfoo SummaryV3 row-count agreement. Producer version is only a source declaration; unconsumed fields and populations are not analyzed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "source",
+        "raw_hash",
+        "reader_profile",
+        "scope",
+        "producer_stats",
+        "row_tallies",
+        "deltas",
+        "declared_relation",
+        "findings",
+        "limitations"
+      ],
+      "properties": {
+        "schema": {
+          "const": "promptfoo_accounting.v2"
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "format",
+            "summary_version",
+            "producer_version",
+            "producer_version_state",
+            "claims_verified"
+          ],
+          "properties": {
+            "format": {
+              "const": "promptfoo.eval-output"
+            },
+            "summary_version": {
+              "const": 3
+            },
+            "producer_version": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 128,
+              "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?![\\s\\S])"
+            },
+            "producer_version_state": {
+              "enum": [
+                "unknown",
+                "declared"
+              ]
+            },
+            "claims_verified": {
+              "const": false
+            }
+          },
+          "oneOf": [
+            {
+              "properties": {
+                "producer_version_state": {
+                  "const": "unknown"
+                },
+                "producer_version": {
+                  "type": "null"
+                }
+              }
+            },
+            {
+              "properties": {
+                "producer_version_state": {
+                  "const": "declared"
+                },
+                "producer_version": {
+                  "type": "string"
+                }
+              }
+            }
+          ]
+        },
+        "raw_hash": {
+          "$ref": "#/$defs/promptfoo_accounting__hash"
+        },
+        "reader_profile": {
+          "const": "promptfoo.summary-v3.selected-fields.v1"
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "population",
+            "selected_fields_only",
+            "planned_evaluations",
+            "export_completeness"
+          ],
+          "properties": {
+            "population": {
+              "const": "supplied_results_rows"
+            },
+            "selected_fields_only": {
+              "const": true
+            },
+            "planned_evaluations": {
+              "const": "unknown"
+            },
+            "export_completeness": {
+              "const": "unknown"
+            }
+          }
+        },
+        "producer_stats": {
+          "$ref": "#/$defs/promptfoo_accounting__counts"
+        },
+        "row_tallies": {
+          "$ref": "#/$defs/promptfoo_accounting__counts"
+        },
+        "deltas": {
+          "$ref": "#/$defs/promptfoo_accounting__deltas"
+        },
+        "declared_relation": {
+          "enum": [
+            "consistent",
+            "inconsistent"
+          ]
+        },
+        "findings": {
+          "type": "array",
+          "maxItems": 2003,
+          "items": {
+            "$ref": "#/$defs/promptfoo_accounting__finding"
+          }
+        },
+        "limitations": {
+          "const": [
+            "PLANNED_DENOMINATOR_UNKNOWN",
+            "CAUSE_UNKNOWN",
+            "SOURCE_CLAIMS_UNVERIFIED",
+            "UNCONSUMED_FIELDS_AND_POPULATIONS_NOT_ANALYZED",
+            "SOURCE_HASH_AND_VERSION_LINKABLE",
+            "NO_APPROVAL_AUTHORITY"
+          ]
+        }
+      }
+    },
+    "promptfoo_accounting__hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "promptfoo_accounting__counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "successes",
+        "failures",
+        "errors",
+        "total"
+      ],
+      "properties": {
+        "successes": {
+          "$ref": "#/$defs/promptfoo_accounting__nonnegative"
+        },
+        "failures": {
+          "$ref": "#/$defs/promptfoo_accounting__nonnegative"
+        },
+        "errors": {
+          "$ref": "#/$defs/promptfoo_accounting__nonnegative"
+        },
+        "total": {
+          "$ref": "#/$defs/promptfoo_accounting__nonnegative"
+        }
+      }
+    },
+    "promptfoo_accounting__deltas": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "successes",
+        "failures",
+        "errors",
+        "total"
+      ],
+      "properties": {
+        "successes": {
+          "$ref": "#/$defs/promptfoo_accounting__signed"
+        },
+        "failures": {
+          "$ref": "#/$defs/promptfoo_accounting__signed"
+        },
+        "errors": {
+          "$ref": "#/$defs/promptfoo_accounting__signed"
+        },
+        "total": {
+          "$ref": "#/$defs/promptfoo_accounting__signed"
+        }
+      }
+    },
+    "promptfoo_accounting__nonnegative": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740992
+    },
+    "promptfoo_accounting__signed": {
+      "type": "integer",
+      "minimum": -9007199254740992,
+      "maximum": 9007199254740992
+    },
+    "promptfoo_accounting__finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "row_index",
+        "location"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "CATEGORY_COUNT_MISMATCH",
+            "SOURCE_FLAGS_DISAGREE"
+          ]
+        },
+        "row_index": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1999
+        },
+        "location": {
+          "type": "string",
+          "pattern": "^/results/(?:stats/(?:successes|failures|errors)|results/(?:0|[1-9][0-9]{0,3})/(?:failureReason|gradingResult/pass))$"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "CATEGORY_COUNT_MISMATCH"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "row_index": {
+                "type": "null"
+              },
+              "location": {
+                "pattern": "^/results/stats/(?:successes|failures|errors)$"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "row_index": {
+                "type": "integer"
+              },
+              "location": {
+                "pattern": "^/results/results/(?:0|[1-9][0-9]{0,3})/(?:failureReason|gradingResult/pass)$"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "evidence_error": {
+      "title": "evidence_error.v1",
+      "description": "Invocation or input failure of an evidence pilot command. No successful report was emitted. This is not a measurement verdict.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "code",
+        "reason",
+        "location",
+        "next_action",
+        "retryable",
+        "exit_code"
+      ],
+      "properties": {
+        "schema": {
+          "const": "evidence_error.v1"
+        },
+        "code": {
+          "enum": [
+            "USAGE_ERROR",
+            "INVALID_INPUT",
+            "SOURCE_READ_FAILED",
+            "INPUT_LIMIT_EXCEEDED",
+            "OUTPUT_LIMIT_EXCEEDED",
+            "UNSUPPORTED_PROFILE",
+            "UNSUPPORTED_FORMAT",
+            "EXPECTED_HASH_MISMATCH",
+            "INVALID_MANIFEST",
+            "INVALID_ARTIFACT_PATH",
+            "SCHEMA_CONFIGURATION_ERROR",
+            "COMPUTATION_LIMIT_EXCEEDED",
+            "INTERNAL_ERROR",
+            "UNSUPPORTED_PLATFORM",
+            "INPUT_BINDING_MISMATCH"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Z][A-Z0-9_]*(?![\\s\\S])"
+        },
+        "location": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "next_action": {
+          "enum": [
+            "CORRECT_ARGUMENTS",
+            "CORRECT_INPUT",
+            "PROVIDE_REGULAR_LOCAL_FILE",
+            "REDUCE_INPUT_SIZE",
+            "USE_SUPPORTED_PROFILE",
+            "CHECK_EXPECTED_HASH",
+            "CORRECT_MANIFEST",
+            "CORRECT_ARTIFACT",
+            "REINSTALL_PACKAGE",
+            "REDUCE_COMPUTATION",
+            "REPORT_INTERNAL_ERROR",
+            "USE_SUPPORTED_PLATFORM",
+            "CORRECT_INPUT_BINDING"
+          ]
+        },
+        "retryable": {
+          "const": false
+        },
+        "exit_code": {
+          "const": 2
+        }
+      }
+    },
+    "record_error": {
+      "title": "record_error.v1",
+      "description": "Finite records command failure without caller-supplied diagnostics.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "code",
+        "reason",
+        "location",
+        "next_action",
+        "retryable",
+        "exit_code"
+      ],
+      "properties": {
+        "schema": {
+          "const": "record_error.v1"
+        },
+        "code": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^(?:|/(?:root|store|record_id|spec(?:/(?:files|links)(?:/[0-9]+(?:/[a-z_]+)?)?)?|source_base|record|catalog|verification|output))(?![\\s\\S])"
+        },
+        "next_action": {
+          "type": "string"
+        },
+        "retryable": {
+          "const": false
+        },
+        "exit_code": {
+          "const": 2
+        }
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/record_error__INVALID_SPEC"
+        },
+        {
+          "$ref": "#/$defs/record_error__INVALID_RECORD"
+        },
+        {
+          "$ref": "#/$defs/record_error__INVALID_STORE_LAYOUT"
+        },
+        {
+          "$ref": "#/$defs/record_error__INSECURE_STORE"
+        },
+        {
+          "$ref": "#/$defs/record_error__STORE_NOT_FOUND"
+        },
+        {
+          "$ref": "#/$defs/record_error__RECORD_NOT_FOUND"
+        },
+        {
+          "$ref": "#/$defs/record_error__RECORD_EXISTS"
+        },
+        {
+          "$ref": "#/$defs/record_error__RECORD_CAPTURE_INCOMPLETE"
+        },
+        {
+          "$ref": "#/$defs/record_error__RECORD_NOT_PUBLISHED"
+        },
+        {
+          "$ref": "#/$defs/record_error__SOURCE_READ_FAILED"
+        },
+        {
+          "$ref": "#/$defs/record_error__INPUT_LIMIT_EXCEEDED"
+        },
+        {
+          "$ref": "#/$defs/record_error__RECORD_LIMIT_EXCEEDED"
+        },
+        {
+          "$ref": "#/$defs/record_error__STORE_IO_ERROR"
+        },
+        {
+          "$ref": "#/$defs/record_error__UNSUPPORTED_PLATFORM"
+        },
+        {
+          "$ref": "#/$defs/record_error__USAGE_ERROR"
+        },
+        {
+          "$ref": "#/$defs/record_error__SCHEMA_CONFIGURATION_ERROR"
+        },
+        {
+          "$ref": "#/$defs/record_error__OUTPUT_LIMIT_EXCEEDED"
+        },
+        {
+          "$ref": "#/$defs/record_error__INTERNAL_ERROR"
+        },
+        {
+          "$ref": "#/$defs/record_error__RECORD_FILE_NOT_FOUND"
+        },
+        {
+          "$ref": "#/$defs/record_error__RECORD_FILE_INTEGRITY_MISMATCH"
+        },
+        {
+          "$ref": "#/$defs/record_error__UNSUPPORTED_RECORD_CONTENT"
+        }
+      ]
+    },
+    "record_error__INVALID_SPEC": {
+      "properties": {
+        "code": {
+          "const": "INVALID_SPEC"
+        },
+        "reason": {
+          "const": "INVALID_RECORD_SPEC"
+        },
+        "next_action": {
+          "const": "CORRECT_RECORD_SPEC"
+        }
+      }
+    },
+    "record_error__INVALID_RECORD": {
+      "properties": {
+        "code": {
+          "const": "INVALID_RECORD"
+        },
+        "reason": {
+          "const": "INVALID_RECORD_MANIFEST"
+        },
+        "next_action": {
+          "const": "SELECT_VALID_RECORD"
+        }
+      }
+    },
+    "record_error__INVALID_STORE_LAYOUT": {
+      "properties": {
+        "code": {
+          "const": "INVALID_STORE_LAYOUT"
+        },
+        "reason": {
+          "const": "INVALID_STORE_LAYOUT"
+        },
+        "next_action": {
+          "const": "SELECT_VALID_STORE"
+        }
+      }
+    },
+    "record_error__INSECURE_STORE": {
+      "properties": {
+        "code": {
+          "const": "INSECURE_STORE"
+        },
+        "reason": {
+          "const": "INSECURE_STORE_PERMISSIONS"
+        },
+        "next_action": {
+          "const": "SECURE_STORE"
+        }
+      }
+    },
+    "record_error__STORE_NOT_FOUND": {
+      "properties": {
+        "code": {
+          "const": "STORE_NOT_FOUND"
+        },
+        "reason": {
+          "const": "STORE_NOT_FOUND"
+        },
+        "next_action": {
+          "const": "CREATE_OR_SELECT_STORE"
+        }
+      }
+    },
+    "record_error__RECORD_NOT_FOUND": {
+      "properties": {
+        "code": {
+          "const": "RECORD_NOT_FOUND"
+        },
+        "reason": {
+          "const": "RECORD_NOT_FOUND"
+        },
+        "next_action": {
+          "const": "SELECT_EXISTING_RECORD"
+        }
+      }
+    },
+    "record_error__RECORD_EXISTS": {
+      "properties": {
+        "code": {
+          "const": "RECORD_EXISTS"
+        },
+        "reason": {
+          "const": "RECORD_ALREADY_EXISTS"
+        },
+        "next_action": {
+          "const": "USE_NEW_RECORD_ID"
+        }
+      }
+    },
+    "record_error__RECORD_CAPTURE_INCOMPLETE": {
+      "properties": {
+        "code": {
+          "const": "RECORD_CAPTURE_INCOMPLETE"
+        },
+        "reason": {
+          "const": "RECORD_CAPTURE_INCOMPLETE"
+        },
+        "next_action": {
+          "const": "USE_NEW_RECORD_ID"
+        }
+      }
+    },
+    "record_error__RECORD_NOT_PUBLISHED": {
+      "properties": {
+        "code": {
+          "const": "RECORD_NOT_PUBLISHED"
+        },
+        "reason": {
+          "const": "RECORD_NOT_PUBLISHED"
+        },
+        "next_action": {
+          "const": "SELECT_PUBLISHED_RECORD"
+        }
+      }
+    },
+    "record_error__SOURCE_READ_FAILED": {
+      "properties": {
+        "code": {
+          "const": "SOURCE_READ_FAILED"
+        },
+        "reason": {
+          "const": "SOURCE_READ_FAILED"
+        },
+        "next_action": {
+          "const": "CHECK_SOURCE_FILE"
+        }
+      }
+    },
+    "record_error__INPUT_LIMIT_EXCEEDED": {
+      "properties": {
+        "code": {
+          "const": "INPUT_LIMIT_EXCEEDED"
+        },
+        "reason": {
+          "const": "INPUT_LIMIT_EXCEEDED"
+        },
+        "next_action": {
+          "const": "REDUCE_INPUT_SIZE"
+        }
+      }
+    },
+    "record_error__RECORD_LIMIT_EXCEEDED": {
+      "properties": {
+        "code": {
+          "const": "RECORD_LIMIT_EXCEEDED"
+        },
+        "reason": {
+          "const": "RECORD_LIMIT_EXCEEDED"
+        },
+        "next_action": {
+          "const": "REDUCE_RECORD_COUNT"
+        }
+      }
+    },
+    "record_error__STORE_IO_ERROR": {
+      "properties": {
+        "code": {
+          "const": "STORE_IO_ERROR"
+        },
+        "reason": {
+          "const": "STORE_IO_ERROR"
+        },
+        "next_action": {
+          "const": "CHECK_STORE_IO"
+        }
+      }
+    },
+    "record_error__UNSUPPORTED_PLATFORM": {
+      "properties": {
+        "code": {
+          "const": "UNSUPPORTED_PLATFORM"
+        },
+        "reason": {
+          "const": "UNSUPPORTED_PLATFORM"
+        },
+        "next_action": {
+          "const": "USE_SUPPORTED_PLATFORM"
+        }
+      }
+    },
+    "record_error__USAGE_ERROR": {
+      "properties": {
+        "code": {
+          "const": "USAGE_ERROR"
+        },
+        "reason": {
+          "const": "INVALID_ARGUMENTS_SEE_HELP"
+        },
+        "next_action": {
+          "const": "CORRECT_ARGUMENTS"
+        }
+      }
+    },
+    "record_error__SCHEMA_CONFIGURATION_ERROR": {
+      "properties": {
+        "code": {
+          "const": "SCHEMA_CONFIGURATION_ERROR"
+        },
+        "reason": {
+          "const": "INVALID_PACKAGED_CONTRACT"
+        },
+        "next_action": {
+          "const": "REINSTALL_PACKAGE"
+        }
+      }
+    },
+    "record_error__OUTPUT_LIMIT_EXCEEDED": {
+      "properties": {
+        "code": {
+          "const": "OUTPUT_LIMIT_EXCEEDED"
+        },
+        "reason": {
+          "const": "OUTPUT_LIMIT_EXCEEDED"
+        },
+        "next_action": {
+          "const": "REDUCE_OUTPUT_SIZE"
+        }
+      }
+    },
+    "record_error__INTERNAL_ERROR": {
+      "properties": {
+        "code": {
+          "const": "INTERNAL_ERROR"
+        },
+        "reason": {
+          "const": "INTERNAL_ERROR"
+        },
+        "next_action": {
+          "const": "REPORT_INTERNAL_ERROR"
+        }
+      }
+    },
+    "record_error__RECORD_FILE_NOT_FOUND": {
+      "properties": {
+        "code": {
+          "const": "RECORD_FILE_NOT_FOUND"
+        },
+        "reason": {
+          "const": "RECORD_FILE_NOT_LISTED"
+        },
+        "next_action": {
+          "const": "SELECT_LISTED_RECORD_FILE"
+        }
+      }
+    },
+    "record_error__RECORD_FILE_INTEGRITY_MISMATCH": {
+      "properties": {
+        "code": {
+          "const": "RECORD_FILE_INTEGRITY_MISMATCH"
+        },
+        "reason": {
+          "const": "RECORD_FILE_INTEGRITY_MISMATCH"
+        },
+        "next_action": {
+          "const": "SELECT_VALID_RECORD"
+        }
+      }
+    },
+    "record_error__UNSUPPORTED_RECORD_CONTENT": {
+      "properties": {
+        "code": {
+          "const": "UNSUPPORTED_RECORD_CONTENT"
+        },
+        "reason": {
+          "const": "RECORD_CONTENT_NOT_REPRESENTABLE_AS_JSON"
+        },
+        "next_action": {
+          "const": "SELECT_SUPPORTED_RECORD_FILE"
+        }
+      }
+    },
+    "record_verification": {
+      "title": "record_verification.v1",
+      "description": "Stored-byte and direct-link integrity findings; valid false is result data, not invocation failure.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "record_id",
+        "manifest_digest",
+        "valid",
+        "files_checked",
+        "links_checked",
+        "findings",
+        "verification_scope"
+      ],
+      "properties": {
+        "schema": {
+          "const": "record_verification.v1"
+        },
+        "record_id": {
+          "$ref": "#/$defs/record_verification__record_id"
+        },
+        "manifest_digest": {
+          "$ref": "#/$defs/record_verification__digest"
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "files_checked": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        },
+        "links_checked": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16
+        },
+        "findings": {
+          "description": "At most one deterministic P2 runtime-selected finding per file or direct link; runtime precedence owns coordinate uniqueness.",
+          "type": "array",
+          "maxItems": 80,
+          "items": {
+            "$ref": "#/$defs/record_verification__finding"
+          },
+          "uniqueItems": true
+        },
+        "verification_scope": {
+          "const": "stored_bytes_and_direct_links"
+        }
+      },
+      "if": {
+        "properties": {
+          "valid": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "findings": {
+            "maxItems": 0
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "findings": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    "record_verification__record_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 96,
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,95}(?![\\s\\S])"
+    },
+    "record_verification__digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}(?![\\s\\S])"
+    },
+    "record_verification__logical_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*(?![\\s\\S])"
+    },
+    "record_verification__finding": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/record_verification__file_finding"
+        },
+        {
+          "$ref": "#/$defs/record_verification__link_finding"
+        }
+      ]
+    },
+    "record_verification__file_finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "name",
+        "record_id"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "FILE_MISSING",
+            "FILE_NOT_REGULAR",
+            "FILE_NOT_PRIVATE",
+            "FILE_READ_FAILED",
+            "FILE_SIZE_MISMATCH",
+            "FILE_DIGEST_MISMATCH"
+          ]
+        },
+        "name": {
+          "$ref": "#/$defs/record_verification__logical_name"
+        },
+        "record_id": {
+          "type": "null"
+        }
+      }
+    },
+    "record_verification__link_finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "name",
+        "record_id"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "LINK_RECORD_NOT_FOUND",
+            "LINK_RECORD_NOT_PUBLISHED",
+            "LINK_MANIFEST_INVALID",
+            "LINK_DIGEST_MISMATCH"
+          ]
+        },
+        "name": {
+          "type": "null"
+        },
+        "record_id": {
+          "$ref": "#/$defs/record_verification__record_id"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "captured",
+            "unavailable"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "captured"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state",
+              "raw_hash",
+              "bytes"
+            ],
+            "properties": {
+              "state": {
+                "const": "captured"
+              },
+              "raw_hash": {
+                "$ref": "#/$defs/record_verification__digest"
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4194304
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "unavailable"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "const": "unavailable"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "analysis": {
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "result",
+            "error"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "result"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state",
+              "report"
+            ],
+            "properties": {
+              "state": {
+                "const": "result"
+              },
+              "report": {
+                "$ref": "#/$defs/promptfoo_accounting"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "error"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state",
+              "phase",
+              "error"
+            ],
+            "properties": {
+              "state": {
+                "const": "error"
+              },
+              "phase": {
+                "enum": [
+                  "acquisition",
+                  "analysis"
+                ]
+              },
+              "error": {
+                "$ref": "#/$defs/evidence_error"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "storage": {
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "saved",
+            "error"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "saved"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state",
+              "record_id",
+              "manifest_digest",
+              "verification"
+            ],
+            "properties": {
+              "state": {
+                "const": "saved"
+              },
+              "record_id": {
+                "$ref": "#/$defs/record_verification__record_id"
+              },
+              "manifest_digest": {
+                "$ref": "#/$defs/record_verification__digest"
+              },
+              "verification": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/record_verification"
+                  },
+                  {
+                    "properties": {
+                      "valid": {
+                        "const": true
+                      },
+                      "findings": {
+                        "maxItems": 0
+                      },
+                      "links_checked": {
+                        "const": 0
+                      },
+                      "files_checked": {
+                        "enum": [
+                          2,
+                          3
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "error"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state",
+              "error",
+              "published_record"
+            ],
+            "properties": {
+              "state": {
+                "const": "error"
+              },
+              "error": {
+                "$ref": "#/$defs/record_error"
+              },
+              "published_record": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "record_id",
+                      "manifest_digest"
+                    ],
+                    "properties": {
+                      "record_id": {
+                        "$ref": "#/$defs/record_verification__record_id"
+                      },
+                      "manifest_digest": {
+                        "$ref": "#/$defs/record_verification__digest"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "storage": {
+            "properties": {
+              "state": {
+                "const": "saved"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "if": {
+          "properties": {
+            "source": {
+              "properties": {
+                "state": {
+                  "const": "captured"
+                }
+              }
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "storage": {
+              "properties": {
+                "verification": {
+                  "properties": {
+                    "files_checked": {
+                      "const": 3
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "else": {
+          "properties": {
+            "storage": {
+              "properties": {
+                "verification": {
+                  "properties": {
+                    "files_checked": {
+                      "const": 2
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "storage": {
+            "properties": {
+              "state": {
+                "const": "error"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit_code": {
+            "const": 3
+          }
+        }
+      },
+      "else": {
+        "if": {
+          "properties": {
+            "analysis": {
+              "properties": {
+                "state": {
+                  "const": "error"
+                }
+              }
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "exit_code": {
+              "const": 2
+            }
+          }
+        },
+        "else": {
+          "properties": {
+            "exit_code": {
+              "const": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "source": {
+            "properties": {
+              "state": {
+                "const": "unavailable"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "analysis": {
+            "properties": {
+              "state": {
+                "const": "error"
+              },
+              "phase": {
+                "const": "acquisition"
+              }
+            },
+            "required": [
+              "phase"
+            ]
+          }
+        }
+      },
+      "else": {
+        "if": {
+          "properties": {
+            "analysis": {
+              "properties": {
+                "state": {
+                  "const": "error"
+                }
+              }
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "analysis": {
+              "properties": {
+                "phase": {
+                  "const": "analysis"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

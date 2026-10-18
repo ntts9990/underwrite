@@ -287,7 +287,7 @@ def _promptfoo_numeric_pilot(
     )
     _cli_json(
         cli,
-        ["audit-promptfoo", str(source)],
+        ["audit-promptfoo", str(source), "--version", "0.123.0"],
         work / "promptfoo-integral-direct.json",
         work,
     )
@@ -306,12 +306,17 @@ def _promptfoo_numeric_pilot(
 
 
 def _promptfoo_record_pilot(
-    cli: Path, original: Path, work: Path, expected: dict[str, object], *, version: str = "0.123.0"
+    cli: Path,
+    original: Path,
+    work: Path,
+    expected: dict[str, object],
+    *,
+    version: str | None = "0.123.0",
 ) -> None:
     raw = original.read_bytes()
     source = work / "selected-promptfoo.json"
     source.write_bytes(raw)
-    selection = [] if version == "0.123.0" else ["--version", version]
+    selection = [] if version is None else ["--version", version]
     store = work / "promptfoo-records"
     report = _cli_json(
         cli,
@@ -411,25 +416,35 @@ def _promptfoo_record_pilot(
         recovered_error["content"] == diagnostic["analysis"]["error"],
         "selected read replaced the saved diagnostic",
     )
-    if selection:
-        invocation = _cli_json(
-            cli,
-            [
-                "records",
-                "read-json",
-                "--root",
-                str(store),
-                "--id",
-                "diagnostic",
-                "--name",
-                "invocation.json",
-            ],
-            work / "recovered-invocation.json",
-            work,
-        )
-        content = cast(dict[str, object], invocation["content"])
+    invocation = _cli_json(
+        cli,
+        [
+            "records",
+            "read-json",
+            "--root",
+            str(store),
+            "--id",
+            "diagnostic",
+            "--name",
+            "invocation.json",
+        ],
+        work / "recovered-invocation.json",
+        work,
+    )
+    content = cast(dict[str, object], invocation["content"])
+    arguments = cast(dict[str, object], content["arguments"])
+    if version is None:
         _require(
-            cast(dict[str, object], content["arguments"])["format_version"] == version,
+            arguments["selection_mode"] == "auto"
+            and "reader_profile" not in arguments
+            and "producer_version" not in arguments,
+            "failed automatic input selection fabricated an applied reader or source version",
+        )
+    elif version == "0.123.0":
+        _require("format_version" not in arguments, "legacy default invocation bytes changed")
+    else:
+        _require(
+            arguments["format_version"] == version,
             "saved Promptfoo diagnostic lost its selected version",
         )
 
@@ -471,6 +486,109 @@ def _promptfoo_manifest_pilot(cli: Path, directory: Path, raw: bytes) -> None:
         and json.loads(refused.stderr)["code"] == "EXPECTED_HASH_MISMATCH",
         "manifest count audit accepted mismatching artifact bytes",
     )
+
+
+def _promptfoo_auto_mutations(cli: Path, source: Path, work: Path) -> None:
+    payload = json.loads(source.read_bytes())
+    payload.pop("metadata", None)
+    payload["unconsumed"] = "PRIVATE_CANARY"
+    selected = work / "undeclared-source.json"
+    selected.write_text(json.dumps(payload), encoding="utf-8")
+    report = _cli_json(
+        cli,
+        ["audit-promptfoo", str(selected), "--view", "row-index"],
+        work / "undeclared-result.json",
+        work,
+    )
+    identity = cast(dict[str, object], report["source"])
+    _require(
+        identity["producer_version"] is None
+        and identity["producer_version_state"] == "unknown"
+        and "PRIVATE_CANARY" not in json.dumps(report),
+        "auto intake fabricated a version or leaked an unconsumed field",
+    )
+    payload["results"]["version"] = 4
+    selected.write_text(json.dumps(payload), encoding="utf-8")
+    refused = _command([str(cli), "audit-promptfoo", str(selected), "--json"], work)
+    _require(
+        refused.returncode == EVIDENCE_ERROR_EXIT
+        and refused.stdout == ""
+        and "PRIVATE_CANARY" not in refused.stderr,
+        "unknown export generation bypassed the auto reader",
+    )
+
+
+def _promptfoo_auto_pilot(cli: Path, work: Path) -> None:
+    for folder in ("promptfoo", "promptfoo-0.124.1"):
+        directory = work / f"{folder}-auto"
+        directory.mkdir()
+        source = directory / "source.json"
+        raw = (ROOT / "fixtures/golden/external" / folder / "results.json").read_bytes()
+        source.write_bytes(raw)
+        declared_version = json.loads(raw)["metadata"]["promptfooVersion"]
+        report = _cli_json(
+            cli, ["audit-promptfoo", str(source)], directory / "auto.json", directory
+        )
+        legacy = _cli_json(
+            cli,
+            ["audit-promptfoo", str(source), "--version", declared_version],
+            directory / "explicit.json",
+            directory,
+        )
+        _require(
+            report["schema"] == "promptfoo_accounting.v2"
+            and report["raw_hash"] == "sha256:" + hashlib.sha256(raw).hexdigest()
+            and "observation_digest" not in report,
+            "auto accounting changed byte identity or invented a full-source observation",
+        )
+        identity = cast(dict[str, object], report["source"])
+        _require(
+            identity["producer_version"] == declared_version
+            and identity["producer_version_state"] == "declared"
+            and identity["claims_verified"] is False,
+            "auto accounting lost declared-version limits",
+        )
+        _require(
+            all(
+                report[key] == legacy[key]
+                for key in (
+                    "producer_stats",
+                    "row_tallies",
+                    "deltas",
+                    "declared_relation",
+                    "findings",
+                )
+            ),
+            "auto accounting introduced a different count classifier",
+        )
+        api = _success(
+            [
+                str(cli.with_name("python")),
+                "-c",
+                "import json,sys; from pathlib import Path; "
+                "from underwrite.instrument.ingest.accounting import audit_promptfoo_bytes; "
+                "print(json.dumps(audit_promptfoo_bytes(Path(sys.argv[1]).read_bytes())))",
+                str(source),
+            ],
+            directory,
+        )
+        _require(json.loads(api.stdout) == report, "installed auto API and CLI disagree")
+        _promptfoo_record_pilot(cli, source, directory, report, version=None)
+        verified = _cli_json(
+            cli,
+            [
+                "records",
+                "verify",
+                "--root",
+                str(directory / "promptfoo-records"),
+                "--id",
+                "captured",
+            ],
+            directory / "whole-verification.json",
+            directory,
+        )
+        _require(verified["valid"] is True, "auto record did not verify after input removal")
+        _promptfoo_auto_mutations(cli, source, directory)
 
 
 def _promptfoo_current_pilot(cli: Path, work: Path) -> None:
@@ -570,6 +688,7 @@ def _evidence_pilots(cli: Path, fixtures: Path, work: Path) -> None:
         cli, evidence / "synthetic-promptfoo-category-mismatch.json", work, audit
     )
     _promptfoo_current_pilot(cli, work)
+    _promptfoo_auto_pilot(cli, work)
     comparison = _cli_json(
         cli,
         [

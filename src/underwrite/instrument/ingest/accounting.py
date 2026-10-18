@@ -5,7 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import cast
 
-from underwrite_core.canonical import content_digest
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import ValidationError
+from underwrite_core.canonical import content_digest, digest_bytes
 
 from underwrite.instrument.evidence.accounting import (
     ROW_INDEX_LIMITATIONS,
@@ -14,6 +16,12 @@ from underwrite.instrument.evidence.accounting import (
     RowIndex,
     audit_promptfoo,
     audit_promptfoo_with_rows,
+)
+from underwrite.instrument.evidence.promptfoo_compat import (
+    ACCOUNTING_SCHEMA,
+    ROW_INDEX_SCHEMA,
+    PromptfooCompatibilityError,
+    account_promptfoo_compatible,
 )
 from underwrite.instrument.ingest.application import (
     DEFAULT_MAX_BYTES,
@@ -30,7 +38,12 @@ from underwrite.instrument.ingest.inspection import (
 )
 from underwrite.instrument.ingest.project import Projection, Source
 from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
-from underwrite.instrument.ingest.transport import TransportError, read_local_file
+from underwrite.instrument.ingest.transport import (
+    DecodeError,
+    TransportError,
+    decode_json,
+    read_local_file,
+)
 
 SOURCE = ("promptfoo.eval-output", "0.123.0")
 LIMITATIONS = [
@@ -209,6 +222,49 @@ def validate_version(version: str) -> None:
         raise AccountingCaseError("UNSUPPORTED_FORMAT", "UNSUPPORTED_PROMPTFOO_VERSION")
 
 
+def _compatible_validator(row_index: bool) -> Draft202012Validator:
+    try:
+        return packaged_validator(ROW_INDEX_SCHEMA if row_index else ACCOUNTING_SCHEMA)
+    except SchemaConfigurationError:
+        raise AccountingCaseError(
+            "SCHEMA_CONFIGURATION_ERROR", "INVALID_PACKAGED_CONTRACT"
+        ) from None
+
+
+def _compatible_bytes(
+    raw: bytes, *, row_index: bool, validator: Draft202012Validator
+) -> dict[str, object]:
+    if len(raw) > DEFAULT_MAX_BYTES:
+        raise AccountingCaseError("INPUT_LIMIT_EXCEEDED", "BYTE_LIMIT_EXCEEDED", "/file")
+    try:
+        payload = decode_json(raw, DEFAULT_MAX_DEPTH)
+    except DecodeError as exc:
+        diagnostic = instrument_diagnostic(exc, "ingest")
+        raise AccountingCaseError(
+            cast(str, diagnostic["code"]),
+            cast(str, diagnostic["reason"]),
+            "/file",
+        ) from None
+    try:
+        counted = account_promptfoo_compatible(payload, row_index=row_index)
+    except PromptfooCompatibilityError as exc:
+        raise AccountingCaseError(exc.code, exc.reason, exc.location) from None
+    report = {
+        "schema": ROW_INDEX_SCHEMA if row_index else ACCOUNTING_SCHEMA,
+        "raw_hash": digest_bytes(raw),
+        **counted,
+    }
+    try:
+        validator.validate(report)  # pyright: ignore[reportUnknownMemberType]
+    except ValidationError:
+        raise AccountingCaseError("INTERNAL_ERROR", "PROMPTFOO_COMPAT_RESULT_INVALID") from None
+    except Exception:
+        raise AccountingCaseError(
+            "SCHEMA_CONFIGURATION_ERROR", "INVALID_PACKAGED_CONTRACT"
+        ) from None
+    return report
+
+
 def _audit_promptfoo_bytes(raw: bytes, *, version: str, row_index: bool) -> dict[str, object]:
     validate_version(version)
     try:
@@ -238,19 +294,27 @@ def _audit_promptfoo_bytes(raw: bytes, *, version: str, row_index: bool) -> dict
     )
 
 
-def audit_promptfoo_bytes(raw: bytes, *, version: str = SOURCE[1]) -> dict[str, object]:
+def audit_promptfoo_bytes(raw: bytes, *, version: str | None = None) -> dict[str, object]:
     """Audit the supplied buffer, retaining the original projection and byte bounds."""
+    if version is None:
+        return _compatible_bytes(raw, row_index=False, validator=_compatible_validator(False))
     return _audit_promptfoo_bytes(raw, version=version, row_index=False)
 
 
-def audit_promptfoo_file(path: Path, *, version: str = SOURCE[1]) -> dict[str, object]:
+def audit_promptfoo_file(path: Path, *, version: str | None = None) -> dict[str, object]:
     """Audit a pinned raw export once; expected-hash checks remain in audit_case."""
+    if version is None:
+        validator = _compatible_validator(False)
+        return _compatible_bytes(read_promptfoo_file(path), row_index=False, validator=validator)
     validate_version(version)
     return audit_promptfoo_bytes(read_promptfoo_file(path), version=version)
 
 
-def audit_promptfoo_row_index_file(path: Path, *, version: str = SOURCE[1]) -> dict[str, object]:
+def audit_promptfoo_row_index_file(path: Path, *, version: str | None = None) -> dict[str, object]:
     """Return a checked content-minimized row view after one bounded file read."""
+    if version is None:
+        validator = _compatible_validator(True)
+        return _compatible_bytes(read_promptfoo_file(path), row_index=True, validator=validator)
     validate_version(version)
     try:
         report = _audit_promptfoo_bytes(read_promptfoo_file(path), version=version, row_index=True)

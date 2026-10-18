@@ -35,6 +35,11 @@ no Docker, dashboard, or provider credentials.
 > without a checkout. The older `0.0.1` artifacts lack these workflows and have
 > a separate `pins refresh` caution; see [Install](#install).
 
+Development checkouts advertising `promptfoo.eval-output|auto` can read SummaryV3
+with `underwrite audit-promptfoo FILE --json`, without a producer-version option.
+This automatic default is newer than the published 0.1.1 package; see the
+[input workflow](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#audit-promptfoo-counts).
+
 ## Quickstart
 
 Requires **Python 3.12+** and [uv](https://docs.astral.sh/uv/); the optional
