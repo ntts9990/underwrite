@@ -7,7 +7,10 @@ from pathlib import Path
 from typing import Any, cast
 
 from underwrite.cli.evidence import EvidenceError, ReportOutput, run_cli
-from underwrite.instrument.evidence.deepeval_binding import DeepevalBindingError
+from underwrite.instrument.evidence.deepeval_binding import (
+    AUTO_RESULT_SCHEMA,
+    DeepevalBindingError,
+)
 from underwrite.instrument.evidence.deepeval_compat import (
     ACCOUNTING_SCHEMA as AUTO_ACCOUNTING_SCHEMA,
 )
@@ -24,8 +27,11 @@ from underwrite.instrument.ingest.deepeval_binding import audit_deepeval_bound_f
 from underwrite.instrument.ingest.deepeval_trace import audit_deepeval_trace_file
 
 AUTO_ORDINARY_HUMAN_LIMIT = (
-    "Only supplied serialized metricsData rows are counted; "
-    "expectation population is unknown."
+    "Only supplied serialized metricsData rows are counted; expectation population is unknown."
+)
+AUTO_BOUND_HUMAN_LIMIT = (
+    AUTO_ORDINARY_HUMAN_LIMIT
+    + " Producer version unknown; pack hash identifies only captured declaration bytes."
 )
 
 
@@ -34,7 +40,7 @@ def configure(parser: argparse.ArgumentParser) -> None:
         "file",
         type=Path,
         metavar="FILE",
-        help="Local DeepEval TestRun JSON for the selected version.",
+        help="Local DeepEval TestRun JSON.",
     )
     parser.add_argument(
         "--version",
@@ -46,16 +52,16 @@ def configure(parser: argparse.ArgumentParser) -> None:
         "--bindings",
         type=Path,
         default=None,
-        help="Reusable owner-asserted DeepEval 4.2.8 metric declaration pack.",
+        help=(
+            "Owner-asserted metric pack: format-only v2 without --version; "
+            "v1 with --version 4.2.8."
+        ),
     )
     parser.add_argument(
         "--view",
         choices=("accounting", "trace-index"),
         default="accounting",
-        help=(
-            "Trace-index selects bounded native step statuses; "
-            "default is accounting."
-        ),
+        help=("Trace-index selects bounded native step statuses; default is accounting."),
     )
     parser.add_argument(
         "--json",
@@ -89,12 +95,12 @@ def produce(args: argparse.Namespace) -> dict[str, object]:
                 )
             return audit_deepeval_trace_file(cast(Path, args.file), version=args.version)
         if args.bindings is not None:
-            if args.version != "4.2.8":
+            if args.version is not None and args.version != "4.2.8":
                 raise EvidenceError(
                     "UNSUPPORTED_FORMAT", "DEEPEVAL_BINDING_EXPLICIT_VERSION_REQUIRED", "/version"
                 )
             return audit_deepeval_bound_file(
-                cast(Path, args.file), cast(Path, args.bindings), version="4.2.8"
+                cast(Path, args.file), cast(Path, args.bindings), version=args.version
             )
         return audit_deepeval_file(cast(Path, args.file), version=args.version)
     except (DeepevalFileError, DeepevalBindingError) as exc:
@@ -111,12 +117,17 @@ def render_bound_human(report: dict[str, object]) -> str:
     bound = sum(
         cast(dict[str, object], item["metric"])["semantic_binding"] == "bound" for item in items
     )
-    return (
+    summary = (
         f"Metric occurrences: {population['observed_count']}; bound {bound}; "
         f"scored {states['observed']}; evaluator errors {states['error']}; "
         f"unscored {states['missing']}.\n"
         "Planned evaluations unknown; source claims and owner name meanings unverified. "
         "No statistical or approval authority."
+    )
+    return (
+        summary + " " + AUTO_BOUND_HUMAN_LIMIT
+        if report["schema"] == AUTO_RESULT_SCHEMA
+        else summary
     )
 
 
@@ -125,7 +136,7 @@ def _render(report: dict[str, object]) -> str:
         return render_trace_human(report)
     return (
         render_bound_human(report)
-        if report["schema"] == "evidence_result.v1"
+        if report["schema"] in ("evidence_result.v1", AUTO_RESULT_SCHEMA)
         else render_human(report)
     )
 
@@ -198,7 +209,7 @@ def main(argv: list[str]) -> int:
             lambda args: (
                 (AUTO_TRACE_SCHEMA if args.version is None else TRACE_SCHEMA)
                 if args.view == "trace-index"
-                else "evidence_result.v1"
+                else (AUTO_RESULT_SCHEMA if args.version is None else "evidence_result.v1")
                 if args.bindings is not None
                 else AUTO_ACCOUNTING_SCHEMA
                 if args.version is None

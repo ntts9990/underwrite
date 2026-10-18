@@ -1,0 +1,513 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:deepeval_metric_bindings.v2",
+  "title": "deepeval_metric_bindings.v2",
+  "description": "Version-neutral owner-asserted metric-name meanings for supplied ordinary DeepEval occurrences; no evaluator or producer-release verification.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "source",
+    "name_binding_authority",
+    "bindings"
+  ],
+  "properties": {
+    "schema": {
+      "const": "deepeval_metric_bindings.v2"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format"
+      ],
+      "properties": {
+        "format": {
+          "const": "deepeval.test-run"
+        }
+      }
+    },
+    "name_binding_authority": {
+      "const": "owner_asserted_stable_name_not_verified"
+    },
+    "bindings": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source_metric_name",
+          "definition"
+        ],
+        "properties": {
+          "source_metric_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "\\S"
+          },
+          "definition": {
+            "$ref": "#/$defs/metric_definition"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "metric_definition": {
+      "title": "metric_definition.v1",
+      "description": "A declared metric meaning, separate from implementation and policy. This contract does not authorize measurement, read, acceptance, or gates.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "namespace",
+        "metric_id",
+        "version",
+        "semantic",
+        "semantic_digest",
+        "method",
+        "policy"
+      ],
+      "properties": {
+        "schema": {
+          "const": "metric_definition.v1"
+        },
+        "namespace": {
+          "$ref": "#/$defs/metric_definition__token"
+        },
+        "metric_id": {
+          "$ref": "#/$defs/metric_definition__token"
+        },
+        "version": {
+          "$ref": "#/$defs/metric_definition__version"
+        },
+        "semantic": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "construct",
+            "target",
+            "value",
+            "sampling",
+            "applicability",
+            "missingness",
+            "aggregation",
+            "grounding",
+            "required_coordinates",
+            "prediction_timing"
+          ],
+          "properties": {
+            "construct": {
+              "$ref": "#/$defs/metric_definition__defined_term"
+            },
+            "target": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "id",
+                "definition"
+              ],
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "event",
+                    "rubric",
+                    "quantity"
+                  ]
+                },
+                "id": {
+                  "$ref": "#/$defs/metric_definition__token"
+                },
+                "definition": {
+                  "$ref": "#/$defs/metric_definition__definition_text"
+                }
+              }
+            },
+            "value": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type",
+                "minimum",
+                "maximum",
+                "unit",
+                "desirable_direction"
+              ],
+              "properties": {
+                "type": {
+                  "enum": [
+                    "number",
+                    "boolean"
+                  ]
+                },
+                "minimum": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "maximum": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "unit": {
+                  "$ref": "#/$defs/metric_definition__token"
+                },
+                "desirable_direction": {
+                  "enum": [
+                    "higher",
+                    "lower",
+                    "neither"
+                  ]
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "const": "boolean"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "minimum": {
+                        "type": "null"
+                      },
+                      "maximum": {
+                        "type": "null"
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "sampling": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "unit",
+                "expected_population_basis"
+              ],
+              "properties": {
+                "unit": {
+                  "enum": [
+                    "case",
+                    "row",
+                    "metric_occurrence",
+                    "run"
+                  ]
+                },
+                "expected_population_basis": {
+                  "$ref": "#/$defs/metric_definition__defined_term"
+                }
+              }
+            },
+            "applicability": {
+              "$ref": "#/$defs/metric_definition__defined_term"
+            },
+            "missingness": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "missing",
+                "error",
+                "abstained"
+              ],
+              "properties": {
+                "missing": {
+                  "$ref": "#/$defs/metric_definition__defined_term"
+                },
+                "error": {
+                  "$ref": "#/$defs/metric_definition__defined_term"
+                },
+                "abstained": {
+                  "$ref": "#/$defs/metric_definition__defined_term"
+                }
+              }
+            },
+            "aggregation": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "method",
+                "denominator"
+              ],
+              "properties": {
+                "method": {
+                  "$ref": "#/$defs/metric_definition__defined_term"
+                },
+                "denominator": {
+                  "$ref": "#/$defs/metric_definition__defined_term"
+                }
+              }
+            },
+            "grounding": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "rubric",
+                "label_source"
+              ],
+              "properties": {
+                "rubric": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/$defs/metric_definition__grounding_ref"
+                    }
+                  ]
+                },
+                "label_source": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/$defs/metric_definition__grounding_ref"
+                    }
+                  ]
+                }
+              }
+            },
+            "required_coordinates": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "enum": [
+                  "run_index",
+                  "case_index",
+                  "row_index",
+                  "metric_index"
+                ]
+              },
+              "maxItems": 2,
+              "uniqueItems": true,
+              "enum": [
+                [
+                  "run_index"
+                ],
+                [
+                  "case_index"
+                ],
+                [
+                  "row_index"
+                ],
+                [
+                  "case_index",
+                  "metric_index"
+                ]
+              ]
+            },
+            "prediction_timing": {
+              "enum": [
+                "not_prediction",
+                "before_outcome",
+                "after_outcome",
+                "unknown"
+              ]
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "sampling": {
+                    "properties": {
+                      "unit": {
+                        "const": "run"
+                      }
+                    }
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "required_coordinates": {
+                    "const": [
+                      "run_index"
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "sampling": {
+                    "properties": {
+                      "unit": {
+                        "const": "case"
+                      }
+                    }
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "required_coordinates": {
+                    "const": [
+                      "case_index"
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "sampling": {
+                    "properties": {
+                      "unit": {
+                        "const": "row"
+                      }
+                    }
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "required_coordinates": {
+                    "const": [
+                      "row_index"
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "sampling": {
+                    "properties": {
+                      "unit": {
+                        "const": "metric_occurrence"
+                      }
+                    }
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "required_coordinates": {
+                    "const": [
+                      "case_index",
+                      "metric_index"
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "semantic_digest": {
+          "description": "Must equal underwrite_core.canonical.content_digest(instance['semantic']): SHA-256 over underwrite-canonical-json/v1 canonical UTF-8 bytes of the semantic object only. Namespace, metric ID, version, method, and policy are excluded. JSON Schema checks syntax; a semantic owner must recompute equality.",
+          "$ref": "#/$defs/metric_definition__hash"
+        },
+        "method": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/metric_definition__identity"
+            }
+          ]
+        },
+        "policy": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/metric_definition__identity"
+            }
+          ]
+        }
+      }
+    },
+    "metric_definition__token": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$"
+    },
+    "metric_definition__version": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "metric_definition__hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "metric_definition__definition_text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "\\S"
+    },
+    "metric_definition__defined_term": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "definition"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/metric_definition__token"
+        },
+        "definition": {
+          "$ref": "#/$defs/metric_definition__definition_text"
+        }
+      }
+    },
+    "metric_definition__grounding_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/metric_definition__token"
+        },
+        "version": {
+          "$ref": "#/$defs/metric_definition__version"
+        },
+        "digest": {
+          "$ref": "#/$defs/metric_definition__hash"
+        }
+      }
+    },
+    "metric_definition__identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/metric_definition__token"
+        },
+        "version": {
+          "$ref": "#/$defs/metric_definition__version"
+        },
+        "digest": {
+          "$ref": "#/$defs/metric_definition__hash"
+        }
+      }
+    }
+  }
+}

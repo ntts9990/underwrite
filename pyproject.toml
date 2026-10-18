@@ -33,6 +33,11 @@ source-include = [
     "contracts/metric_definition.v1.schema.json",
     "contracts/deepeval_bound_record.v1.schema.json",
     "contracts/deepeval_metric_bindings.v1.schema.json",
+    "contracts/deepeval_metric_bindings.v2.schema.json",
+    "contracts/evidence_result.v2.schema.json",
+    "contracts/deepeval_bound_record.v2.schema.json",
+    "contracts/common_result_inspection.v2.schema.json",
+    "contracts/common_result_inspection_actions.v2.schema.json",
     "contracts/measurement_semantics.v1.schema.json",
     "contracts/measurement_policy.v3.schema.json",
     "contracts/read.v2.schema.json",
@@ -163,6 +168,8 @@ pythonpath = ["tests", "src"]
 known_first_party = [
     "underwrite", "underwrite_core", "_schema_compose", "_record_schema",
     "build_deepeval_accounting", "build_deepeval_record", "build_langfuse_record",
+    "build_common_result_inspection_actions", "build_deepeval_bound_record",
+    "build_deepeval_metric_bindings",
 ]
 # The workspace distribution imports as underwrite_core.
 package_module_name_map = { "underwrite-core" = ["underwrite_core"] }

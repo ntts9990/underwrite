@@ -179,7 +179,7 @@ def configure(parser: argparse.ArgumentParser) -> None:
         "file",
         type=Path,
         metavar="FILE",
-        help="Entire DeepEval export for the selected version to retain.",
+        help="Entire local DeepEval TestRun JSON to retain.",
     )
     parser.add_argument(
         "--version",
@@ -191,7 +191,10 @@ def configure(parser: argparse.ArgumentParser) -> None:
         "--bindings",
         type=Path,
         default=None,
-        help="Owner-asserted DeepEval 4.2.8 metric binding pack to retain with the source.",
+        help=(
+            "Owner-asserted metric pack: format-only v2 without --version; "
+            "v1 with --version 4.2.8."
+        ),
     )
     parser.add_argument(
         "--view",
@@ -438,17 +441,13 @@ def produce(args: argparse.Namespace) -> dict[str, object]:
             view=TRACE_VIEW,
         )
     if args.bindings is not None:
-        if args.version is None:
-            raise EvidenceError(
-                "UNSUPPORTED_FORMAT", "DEEPEVAL_BINDING_EXPLICIT_VERSION_REQUIRED", "/version"
-            )
         return record_deepeval_bound.run_record_bound_deepeval(
             cast(Path, args.file),
             cast(Path, args.bindings),
             cast(Path, args.root),
             cast(str, args.id),
             as_json=cast(bool, args.json),
-            version=cast(str, args.version),
+            version=cast(str | None, args.version),
         )
     return run_record_deepeval(
         cast(Path, args.file),
@@ -467,11 +466,11 @@ def _output_schema(args: argparse.Namespace) -> str:
             )
         return _selection(cast(str | None, args.version), TRACE_VIEW).record_schema
     if args.bindings is not None:
-        if args.version is None:
-            raise EvidenceError(
-                "UNSUPPORTED_FORMAT", "DEEPEVAL_BINDING_EXPLICIT_VERSION_REQUIRED", "/version"
-            )
-        return record_deepeval_bound.SCHEMA
+        return (
+            record_deepeval_bound.AUTO_SCHEMA
+            if args.version is None
+            else record_deepeval_bound.SCHEMA
+        )
     return _selection(cast(str | None, args.version), "accounting").record_schema
 
 
@@ -486,7 +485,8 @@ def main(argv: list[str]) -> int:
             max_bytes=OUTPUT_MAX_BYTES,
             human=lambda report: (
                 record_deepeval_bound.render_human(report)
-                if report["schema"] == record_deepeval_bound.SCHEMA
+                if report["schema"]
+                in (record_deepeval_bound.SCHEMA, record_deepeval_bound.AUTO_SCHEMA)
                 else render_human(report)
             ),
             exit_status=lambda report: cast(int, report["exit_code"]),

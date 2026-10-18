@@ -1,0 +1,1063 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:evidence_result.v2",
+  "title": "evidence_result.v2",
+  "description": "Artifact-scoped descriptive evidence with separate producer-version claim, applied reader and owner-declaration byte identity; no decision authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "source",
+    "processing",
+    "population",
+    "items",
+    "verification",
+    "declaration_source"
+  ],
+  "properties": {
+    "schema": {
+      "const": "evidence_result.v2"
+    },
+    "source": {
+      "description": "Null only when no source identity can be established. Producer version is a declaration or unknown, not authenticated by this contract.",
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "producer_version",
+        "producer_version_state",
+        "reader_profile",
+        "identity"
+      ],
+      "properties": {
+        "format": {
+          "$ref": "#/$defs/token"
+        },
+        "identity": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "raw_hash"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "single_file"
+                },
+                "raw_hash": {
+                  "$ref": "#/$defs/hash"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "manifest_raw_hash",
+                "members"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "bound_bundle"
+                },
+                "manifest_raw_hash": {
+                  "description": "Raw bytes of a bundle manifest. Its hash alone does not establish that member bytes match the manifest, or authenticate the producer.",
+                  "$ref": "#/$defs/hash"
+                },
+                "members": {
+                  "description": "Each unique role names one member's raw-byte hash. Duplicate JSON keys must be rejected during decoding before schema validation.",
+                  "type": "object",
+                  "minProperties": 2,
+                  "propertyNames": {
+                    "$ref": "#/$defs/token"
+                  },
+                  "additionalProperties": {
+                    "$ref": "#/$defs/hash"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "producer_version": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/version"
+            }
+          ],
+          "description": "A source-declared package version or null; not authenticated."
+        },
+        "producer_version_state": {
+          "enum": [
+            "unknown",
+            "declared"
+          ]
+        },
+        "reader_profile": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/token"
+            }
+          ],
+          "description": "Applied local reader rule, not producer version; null if none."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "producer_version_state": {
+                "const": "declared"
+              }
+            },
+            "required": [
+              "producer_version_state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "producer_version": {
+                "$ref": "#/$defs/version"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "producer_version": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "processing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "reason",
+        "next_action"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "analyzed",
+            "insufficient",
+            "unsupported"
+          ]
+        },
+        "reason": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "MISSING_INPUT",
+                "AMBIGUOUS_FORMAT",
+                "UNSUPPORTED_FORMAT",
+                "INVALID_STRUCTURE",
+                "UNBOUND_SOURCE"
+              ]
+            }
+          ]
+        },
+        "next_action": {
+          "enum": [
+            "none",
+            "supply_input",
+            "select_format",
+            "provide_supported_export",
+            "repair_export",
+            "bind_source"
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "state": {
+              "const": "analyzed"
+            },
+            "reason": {
+              "type": "null"
+            },
+            "next_action": {
+              "const": "none"
+            }
+          }
+        },
+        {
+          "properties": {
+            "state": {
+              "const": "insufficient"
+            },
+            "reason": {
+              "const": "MISSING_INPUT"
+            },
+            "next_action": {
+              "const": "supply_input"
+            }
+          }
+        },
+        {
+          "properties": {
+            "state": {
+              "const": "insufficient"
+            },
+            "reason": {
+              "const": "AMBIGUOUS_FORMAT"
+            },
+            "next_action": {
+              "const": "select_format"
+            }
+          }
+        },
+        {
+          "properties": {
+            "state": {
+              "const": "insufficient"
+            },
+            "reason": {
+              "const": "INVALID_STRUCTURE"
+            },
+            "next_action": {
+              "const": "repair_export"
+            }
+          }
+        },
+        {
+          "properties": {
+            "state": {
+              "const": "insufficient"
+            },
+            "reason": {
+              "const": "UNBOUND_SOURCE"
+            },
+            "next_action": {
+              "const": "bind_source"
+            }
+          }
+        },
+        {
+          "properties": {
+            "state": {
+              "const": "unsupported"
+            },
+            "reason": {
+              "const": "UNSUPPORTED_FORMAT"
+            },
+            "next_action": {
+              "const": "provide_supported_export"
+            }
+          }
+        }
+      ]
+    },
+    "population": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/population"
+        }
+      ]
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/item"
+      }
+    },
+    "verification": {
+      "description": "Scoped assertions only. Consumers must resolve and reperform evidence_ref; schema-valid entries do not establish producer authentication or independent review.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/verification"
+      }
+    },
+    "declaration_source": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "format",
+            "raw_hash",
+            "authority"
+          ],
+          "properties": {
+            "format": {
+              "$ref": "#/$defs/token"
+            },
+            "raw_hash": {
+              "$ref": "#/$defs/hash"
+            },
+            "authority": {
+              "const": "owner_asserted_unverified"
+            }
+          }
+        }
+      ],
+      "description": "One separately captured owner declaration, if supplied. Its hash identifies bytes but does not authenticate the owner or declared meaning."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "processing": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "insufficient",
+                  "unsupported"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "population": {
+            "type": "null"
+          },
+          "items": {
+            "maxItems": 0
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "source": {
+            "type": "object"
+          },
+          "population": {
+            "$ref": "#/$defs/population"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "source": {
+            "type": "null"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "verification": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "processing": {
+            "type": "object",
+            "properties": {
+              "reason": {
+                "enum": [
+                  "MISSING_INPUT",
+                  "AMBIGUOUS_FORMAT",
+                  "UNBOUND_SOURCE"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "source": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "population": {
+            "type": "object",
+            "properties": {
+              "unit": {
+                "const": "run"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "items": {
+            "items": {
+              "properties": {
+                "coordinate": {
+                  "properties": {
+                    "kind": {
+                      "const": "run"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "population": {
+            "type": "object",
+            "properties": {
+              "unit": {
+                "const": "case"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "items": {
+            "items": {
+              "properties": {
+                "coordinate": {
+                  "properties": {
+                    "kind": {
+                      "const": "case"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "population": {
+            "type": "object",
+            "properties": {
+              "unit": {
+                "const": "row"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "items": {
+            "items": {
+              "properties": {
+                "coordinate": {
+                  "properties": {
+                    "kind": {
+                      "const": "row"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "population": {
+            "type": "object",
+            "properties": {
+              "unit": {
+                "const": "metric_occurrence"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "items": {
+            "items": {
+              "properties": {
+                "coordinate": {
+                  "properties": {
+                    "kind": {
+                      "const": "metric_occurrence"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "token": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "population": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unit",
+        "observed_count",
+        "planned_count"
+      ],
+      "properties": {
+        "unit": {
+          "enum": [
+            "run",
+            "case",
+            "row",
+            "metric_occurrence"
+          ]
+        },
+        "observed_count": {
+          "description": "Number of parsed source records in the declared unit, including records whose outcome is missing or errored. This is not a count of successful measurements.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "planned_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "coordinate": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "index"
+          ],
+          "properties": {
+            "kind": {
+              "const": "run"
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "index"
+          ],
+          "properties": {
+            "kind": {
+              "const": "case"
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "index"
+          ],
+          "properties": {
+            "kind": {
+              "const": "row"
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "case_index",
+            "metric_index"
+          ],
+          "properties": {
+            "kind": {
+              "const": "metric_occurrence"
+            },
+            "case_index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "metric_index": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      ]
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "method",
+        "scope",
+        "evidence_ref"
+      ],
+      "properties": {
+        "target": {
+          "enum": [
+            "source_bytes",
+            "bundle_binding",
+            "contract_shape",
+            "semantic_digest",
+            "planned_population",
+            "calculation",
+            "label"
+          ]
+        },
+        "method": {
+          "enum": [
+            "sha256",
+            "manifest_binding",
+            "schema_validation",
+            "canonical_digest",
+            "inventory_comparison",
+            "deterministic_replay",
+            "independent_review"
+          ]
+        },
+        "scope": {
+          "oneOf": [
+            {
+              "const": "artifact"
+            },
+            {
+              "$ref": "#/$defs/coordinate"
+            }
+          ]
+        },
+        "evidence_ref": {
+          "$ref": "#/$defs/token"
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "target": {
+              "const": "source_bytes"
+            },
+            "method": {
+              "const": "sha256"
+            }
+          }
+        },
+        {
+          "properties": {
+            "target": {
+              "const": "bundle_binding"
+            },
+            "method": {
+              "const": "manifest_binding"
+            }
+          }
+        },
+        {
+          "properties": {
+            "target": {
+              "const": "contract_shape"
+            },
+            "method": {
+              "const": "schema_validation"
+            }
+          }
+        },
+        {
+          "properties": {
+            "target": {
+              "const": "semantic_digest"
+            },
+            "method": {
+              "const": "canonical_digest"
+            }
+          }
+        },
+        {
+          "properties": {
+            "target": {
+              "const": "planned_population"
+            },
+            "method": {
+              "const": "inventory_comparison"
+            }
+          }
+        },
+        {
+          "properties": {
+            "target": {
+              "const": "calculation"
+            },
+            "method": {
+              "const": "deterministic_replay"
+            }
+          }
+        },
+        {
+          "properties": {
+            "target": {
+              "const": "label"
+            },
+            "method": {
+              "const": "independent_review"
+            }
+          }
+        }
+      ]
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coordinate",
+        "metric",
+        "applicability",
+        "availability",
+        "value",
+        "reason",
+        "next_action",
+        "origin",
+        "method",
+        "policy",
+        "permitted_effect"
+      ],
+      "properties": {
+        "coordinate": {
+          "$ref": "#/$defs/coordinate"
+        },
+        "metric": {
+          "$ref": "#/$defs/metric_binding"
+        },
+        "applicability": {
+          "enum": [
+            "applicable",
+            "not_applicable",
+            "unknown"
+          ]
+        },
+        "availability": {
+          "enum": [
+            "observed",
+            "missing",
+            "error",
+            "abstained"
+          ]
+        },
+        "value": {
+          "type": [
+            "number",
+            "boolean",
+            "null"
+          ]
+        },
+        "reason": {
+          "enum": [
+            null,
+            "SOURCE_MISSING",
+            "SOURCE_ERROR",
+            "SOURCE_ABSTAINED"
+          ]
+        },
+        "next_action": {
+          "enum": [
+            "none",
+            "inspect_source",
+            "supply_plan",
+            "supply_applicability",
+            "supply_definition",
+            "supply_label",
+            "rerun_source"
+          ]
+        },
+        "origin": {
+          "enum": [
+            "source_claim",
+            "computed"
+          ]
+        },
+        "method": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/identity"
+            }
+          ]
+        },
+        "policy": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/identity"
+            }
+          ]
+        },
+        "permitted_effect": {
+          "enum": [
+            "descriptive",
+            "advisory"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "availability": {
+                  "const": "observed"
+                },
+                "value": {
+                  "type": [
+                    "number",
+                    "boolean"
+                  ]
+                },
+                "reason": {
+                  "type": "null"
+                },
+                "next_action": {
+                  "const": "none"
+                }
+              }
+            },
+            {
+              "properties": {
+                "availability": {
+                  "const": "missing"
+                },
+                "value": {
+                  "type": "null"
+                },
+                "reason": {
+                  "const": "SOURCE_MISSING"
+                },
+                "next_action": {
+                  "enum": [
+                    "inspect_source",
+                    "supply_plan",
+                    "supply_applicability",
+                    "supply_definition",
+                    "supply_label",
+                    "rerun_source"
+                  ]
+                }
+              }
+            },
+            {
+              "properties": {
+                "availability": {
+                  "const": "error"
+                },
+                "value": {
+                  "type": "null"
+                },
+                "reason": {
+                  "const": "SOURCE_ERROR"
+                },
+                "next_action": {
+                  "enum": [
+                    "inspect_source",
+                    "rerun_source"
+                  ]
+                }
+              }
+            },
+            {
+              "properties": {
+                "availability": {
+                  "const": "abstained"
+                },
+                "value": {
+                  "type": "null"
+                },
+                "reason": {
+                  "const": "SOURCE_ABSTAINED"
+                },
+                "next_action": {
+                  "enum": [
+                    "inspect_source",
+                    "supply_applicability",
+                    "supply_definition"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "if": {
+            "properties": {
+              "origin": {
+                "const": "computed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "metric": {
+                "properties": {
+                  "semantic_binding": {
+                    "const": "bound"
+                  }
+                }
+              },
+              "method": {
+                "$ref": "#/$defs/identity"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "permitted_effect": {
+                "const": "advisory"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "metric": {
+                "properties": {
+                  "semantic_binding": {
+                    "const": "bound"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "metric_binding": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "semantic_binding",
+            "source_metric_index"
+          ],
+          "properties": {
+            "semantic_binding": {
+              "const": "unbound"
+            },
+            "source_metric_index": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "semantic_binding",
+            "namespace",
+            "id",
+            "version",
+            "semantic_digest"
+          ],
+          "properties": {
+            "semantic_binding": {
+              "const": "bound"
+            },
+            "namespace": {
+              "$ref": "#/$defs/token"
+            },
+            "id": {
+              "$ref": "#/$defs/token"
+            },
+            "version": {
+              "$ref": "#/$defs/version"
+            },
+            "semantic_digest": {
+              "$ref": "#/$defs/hash"
+            }
+          }
+        }
+      ]
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/token"
+        },
+        "version": {
+          "$ref": "#/$defs/version"
+        },
+        "digest": {
+          "$ref": "#/$defs/hash"
+        }
+      }
+    }
+  }
+}

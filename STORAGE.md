@@ -128,9 +128,17 @@ is insufficient. This verifies stored bytes, not execution, complete trace cover
 or the truth of source statuses. Published 0.1.1 predates this route; see the
 [step-review workflow](AGENT_USAGE.md#inspect-recorded-deepeval-agent-steps).
 
-For an owner-asserted metric binding pack, add `--version 4.2.8 --bindings PACK`
-to `records audit-deepeval FILE --root ROOT --id NEW_ID --json`. This opt-in
-`deepeval_bound_record.v1` route captures the pack and TestRun independently once,
+In a development build advertising neutral DeepEval binding, use
+`records audit-deepeval FILE --bindings PACK.v2.json --root ROOT --id NEW_ID --json`
+with an owner-authored `deepeval_metric_bindings.v2` pack and no version flag.
+The `deepeval_bound_record.v2` result embeds `evidence_result.v2`: its source
+producer version is unknown, its applied reader is an Underwrite rule, and the
+pack's raw hash and owner assertion remain separate from the TestRun raw hash.
+This route does not verify metric meaning, evaluator configuration or source
+authenticity. The owner chooses a v2 declaration once for supported ordinary
+occurrences; an old v1 pack is not silently widened.
+
+The composed bound route captures the pack and TestRun independently once,
 then saves `source/bindings.bin`, `source/deepeval.bin`, and either
 `analysis/evidence_result.json` or `analysis/error.json`, plus `invocation.json`.
 Completely captured malformed inputs remain available; incomplete acquisitions
@@ -138,10 +146,16 @@ leave no partial source file. Pack acquisition error takes precedence over sourc
 acquisition error. Saved verification checks two base files plus each captured
 source. The response keeps the raw pack hash separate from item semantic digests;
 stored-byte integrity does not authenticate the owner declaration. Exits 0/2/3
-retain the result, diagnostic, and storage-failure meanings above. Omitting
-`--version` with `--bindings` refuses before input or record-ID effects; the
-version-neutral binding pack/result/record is a separate required follow-on.
-Explicit no-bindings routes and logical names remain unchanged.
+retain the result, diagnostic, and storage-failure meanings above. Saved auto
+diagnostics name requested selection, never an unapplied reader. A null returned
+publication identity does not prove that the new ID is free.
+
+For historical output, use explicit `--version 4.2.8 --bindings PACK.v1.json`
+with the pinned `deepeval_metric_bindings.v1` pack. This keeps
+`deepeval_bound_record.v1`, `evidence_result.v1` and valid stored bytes unchanged.
+The auto route refuses a v1 pack, and the explicit route refuses v2; there is
+no implicit pack migration. Explicit no-bindings routes and logical names remain
+unchanged.
 
 In a development build advertising automatic Langfuse intake, use
 `records audit-langfuse --observations FILE --scores FILE --root ROOT --id NEW_ID --json`.
@@ -306,7 +320,11 @@ The manual example is synthetic. Each `records save` capture needs its own expli
 [`record_spec.v1`](contracts/record_spec.v1.schema.json), unique record ID,
 selection, and honest reproduction status. Source paths are relative to the
 specification file. They are not persisted; a `source_locator` is recorded only
-when explicitly supplied. Avoid secrets, credentials, raw thinking streams,
+when explicitly supplied as a nonblank string. Omit an unknown locator; do not
+write `"source_locator": null`. The portable
+[complete four-file spec example](skills/underwrite-review/references/recording.md#minimal-manual-record-specification)
+shows actual input, result, command, and exit files without inventing a locator.
+Avoid secrets, credentials, raw thinking streams,
 caches, environments, and unrelated working files. Captures copy bytes and leave
 the originals in place. A record is not automatically a complete reproduction kit.
 

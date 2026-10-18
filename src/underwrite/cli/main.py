@@ -28,6 +28,7 @@ from underwrite.cli import (
     prepare_event_policy,
     project_baseline,
     record_deepeval,
+    record_deepeval_bound,
     record_langfuse,
     record_promptfoo,
     records,
@@ -154,21 +155,17 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
     ),
     CommandDescriptor(
         "inspect-result",
-        "Screen one external evidence_result.v1 file with content-minimized output.",
+        "Screen one external common-result file with content-minimized output.",
         inspect_result.configure,
-        (
+        tuple(
             profile(
-                "evidence_result.v1",
-                ("file",),
-                ("evidence_result.v1",),
-                ("common_result_inspection.v1",),
-            ),
-            profile(
-                "evidence_result.v1|actions",
-                ("file", "view"),
-                ("evidence_result.v1",),
-                ("common_result_inspection_actions.v1",),
-            ),
+                source if view == "summary" else f"{source}|{view}",
+                ("file",) if view == "summary" else ("file", "view"),
+                (source,),
+                (output,),
+            )
+            for source, views in inspect_result.RESULT_SCHEMAS.items()
+            for view, output in views.items()
         ),
         _standalone(inspect_result.main),
     ),
@@ -235,6 +232,12 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                     (selected.record_schema,),
                 )
                 for version, selected in DEEPEVAL_PROFILES.items()
+            ),
+            profile(
+                "audit-deepeval|owner-asserted-metric-bindings",
+                ("file", "bindings", "root", "id"),
+                ("deepeval_metric_bindings.v2",),
+                (record_deepeval_bound.AUTO_SCHEMA,),
             ),
             profile(
                 "audit-deepeval|4.2.8|owner-asserted-metric-bindings",
@@ -389,6 +392,12 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 ("file", "version", "view"),
                 (),
                 (DEEPEVAL_TRACE_SCHEMA,),
+            ),
+            profile(
+                "deepeval.test-run|auto|owner-asserted-metric-bindings",
+                ("file", "bindings"),
+                ("deepeval_metric_bindings.v2",),
+                ("evidence_result.v2",),
             ),
             profile(
                 "deepeval.test-run|4.2.8|owner-asserted-metric-bindings",

@@ -178,7 +178,7 @@ def test_expectation_marker_refuses_ordinary_and_saves_same_private_source(
     assert "reader_profile" not in invocation["arguments"]
 
 
-def test_auto_byte_limit_and_no_version_bindings_refuse_without_side_effect(
+def test_auto_byte_limit_and_missing_bound_inputs_keep_independent_diagnostics(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     raw = NATIVE_ORDINARY.read_bytes()
@@ -209,12 +209,17 @@ def test_auto_byte_limit_and_no_version_bindings_refuse_without_side_effect(
         == ERROR_EXIT
     )
     streams = capsys.readouterr()
-    assert streams.out == "" and not store.exists()
-    assert json.loads(streams.err)["reason"] == "DEEPEVAL_BINDING_EXPLICIT_VERSION_REQUIRED"
+    assert streams.err == ""
+    report = json.loads(streams.out)
+    assert report["schema"] == "deepeval_bound_record.v2"
+    assert report["analysis"]["phase"] == "acquisition"
+    assert report["sources"]["deepeval"]["state"] == "unavailable"
+    assert report["sources"]["bindings"]["state"] == "unavailable"
+    assert report["storage"]["state"] == "saved"
     assert main(["audit-deepeval", str(source), "--bindings", str(source), "--json"]) == ERROR_EXIT
     streams = capsys.readouterr()
     assert streams.out == ""
-    assert json.loads(streams.err)["reason"] == "DEEPEVAL_BINDING_EXPLICIT_VERSION_REQUIRED"
+    assert json.loads(streams.err)["location"] == "/bindings"
 
 
 def test_unavailable_auto_source_saves_acquisition_error_without_applied_reader(
