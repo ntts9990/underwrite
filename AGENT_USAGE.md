@@ -1104,6 +1104,66 @@ It is a test input from a feature branch, not an authenticated production result
 or a claim that the feature is on goppi main. The runtime command has no goppi
 dependency.
 
+## Compare a Goppi paired trajectory
+
+Development builds advertising `audit-trajectory` can review an existing Goppi
+paired+trajectory export. Published `underwrite==0.1.1` predates this command.
+Use the complete outer directory containing `paired/` and `trajectory/`; a bare
+paired export is not evidence of zero tool calls. Goppi must already be installed
+with offline trajectory verification support. Underwrite does not install it or
+run an evaluation.
+
+The input must be the complete outer directory at a physical path without symlink
+components. On macOS, use `/private/tmp/...` for exports placed through the `/tmp`
+alias. A missing child or an extra entry is refused; do not edit sealed files or
+drop part of the export to force acceptance.
+
+```sh
+underwrite capabilities --json
+underwrite audit-trajectory --exchange /absolute/path/to/export --json
+```
+
+The command discovers `goppi` on PATH. If needed, select an existing trusted
+installation with `--goppi-executable /absolute/path/to/goppi`. This is executable
+configuration, not an input field or producer-version selector. Underwrite copies
+the exact bounded input bytes to a private temporary directory, invokes only
+`goppi run verify-paired`, and analyzes those same bytes. Temporary files are
+removed afterward. A missing or incompatible verifier is a typed refusal, not a
+fallback to weaker validation. Source-supplied schemas and strings are data.
+
+`goppi_trajectory_review.v1` separates `populations`, `comparisons`, `trust_scope`
+and `next_verification_tasks`. Compare within the complete case/stage/repeat key;
+stages can reuse run IDs and cases. Paired rows, repeated observations and tool
+spans do not increase the independent-case population. Unavailable capture has
+null tool counts; retained zero-tool capture has actual zero counts. Observed false,
+scalar scores, endpoint failures and missing outcomes keep their different meanings.
+
+A tool error→ok alongside a verifier false→true is a descriptive co-occurrence.
+The export has no call-parent, retry or result-consumption relationships, so the
+report cannot establish call correspondence, retry benefit or causality. The
+structured tasks identify what evidence to inspect or obtain next; they do not
+execute commands, generate patches or authorize changes. Source metadata such as
+case and tool names can remain identifying even when payload text is omitted.
+
+Exit 0 means analysis completed, including partial capture or unfavorable results.
+Portable verification checks content consistency; it does not authenticate the
+producer or independently verify its private projection. Privacy checks on the
+temporary copy say nothing about the original directory. Keep the original export
+and save the JSON output to resolve its byte identities and source references later.
+The Python entry point also discovers `goppi` on PATH. To select an existing
+trusted installation explicitly:
+
+```python
+from pathlib import Path
+from underwrite.instrument.ingest.goppi_trajectory import audit_goppi_trajectory
+from underwrite.instrument.ingest.goppi_verifier import GoppiCliVerifier
+
+report = audit_goppi_trajectory(
+    Path("/absolute/path/to/export"),
+    verifier=GoppiCliVerifier(Path("/absolute/path/to/goppi")),
+)
+```
+
 ## Audit a completed goppi baseline as common evidence
 
 For the exact completed baseline exchange v2 directory, get a descriptive

@@ -561,3 +561,24 @@ def test_zero_bytes_fit_after_total_allowance_is_exhausted(tmp_path: Path) -> No
         )
         assert reader.total_bytes == THREE_BYTES
         assert reader.file_count == len(("full", "empty"))
+
+
+def test_exact_tree_cannot_reuse_stale_cached_capture(tmp_path: Path) -> None:
+    (tmp_path / "item").write_bytes(b"old")
+    with RootReader.open(tmp_path, policy()) as reader:
+        reader.capture_relative("item", logical_name="item", max_bytes=32, location="")
+        (tmp_path / "item").write_bytes(b"new")
+        with pytest.raises(CaptureError, match="CAPTURE_TOPOLOGY_INVALID"):
+            reader.capture_exact_tree({"item": 32})
+
+
+def test_exact_tree_detects_root_replacement(tmp_path: Path) -> None:
+    root = tmp_path / "source"
+    root.mkdir()
+    (root / "item").write_bytes(b"old")
+    with RootReader.open(root, policy()) as reader:
+        root.rename(tmp_path / "moved")
+        root.mkdir()
+        (root / "item").write_bytes(b"new")
+        with pytest.raises(CaptureError, match="CAPTURE_TOPOLOGY_CHANGED"):
+            reader.capture_exact_tree({"item": 32})

@@ -2500,6 +2500,57 @@ def _measurement_replay_pilot(cli: Path, work: Path) -> None:
     )
 
 
+def _trajectory_pilot(cli: Path, work: Path) -> None:
+    """Installed wiring with an explicit stub, not native Goppi validation evidence."""
+    exchange = work / "trajectory-exchange"
+    shutil.copytree(ROOT / "fixtures/conformance/goppi-trajectory/exchange", exchange)
+    verifier = work / "offline-verifier-stub"
+    verifier.write_text(
+        f"#!{cli.parent / 'python'}\n"
+        + (ROOT / "tests/drivers/goppi_trajectory_verifier_stub.py").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    verifier.chmod(0o700)
+    args = ["audit-trajectory", "--exchange", str(exchange), "--goppi-executable", str(verifier)]
+    report = _cli_json(cli, args, work / "trajectory-review.json", work)
+    populations = cast(dict[str, object], report["populations"])
+    manifest = json.loads((exchange / "paired/manifest.json").read_bytes())
+    _require(report["schema"] == "goppi_trajectory_review.v1", "trajectory output contract")
+    _require(populations["paired_rows"] == manifest["row_count"], "trajectory row population")
+    tasks = cast(list[dict[str, object]], report["next_verification_tasks"])
+    _require(
+        "inspect_tool_status_difference" in {task["kind"] for task in tasks},
+        "trajectory tool difference missing",
+    )
+    code = (
+        "import json,sys; from pathlib import Path; "
+        "from underwrite.instrument.ingest.goppi_trajectory import audit_goppi_trajectory; "
+        "from underwrite.instrument.ingest.goppi_verifier import GoppiCliVerifier; "
+        "print(json.dumps(audit_goppi_trajectory(Path(sys.argv[1]),"
+        "verifier=GoppiCliVerifier(Path(sys.argv[2])))))"
+    )
+    result = _success(
+        [str(cli.parent / "python"), "-c", code, str(exchange), str(verifier)], work
+    )
+    _require(json.loads(result.stdout) == report, "trajectory installed API/CLI mismatch")
+    _native_refusal(
+        cli,
+        ["audit-trajectory", "--exchange", str(exchange / "paired"),
+         "--goppi-executable", str(verifier)],
+        work,
+        "INVALID_INPUT",
+        "TRAJECTORY_COMPLETE_HANDOFF_REQUIRED",
+    )
+    _native_refusal(
+        cli,
+        ["audit-trajectory", "--exchange", str(exchange),
+         "--goppi-executable", str(work / "missing-verifier")],
+        work,
+        "SOURCE_READ_FAILED",
+        "GOPPI_VERIFIER_UNAVAILABLE",
+    )
+
+
 def _smoke(dist: Path) -> None:
     core_wheel, app_wheel = _wheels(dist)
     fixtures = ROOT / "fixtures/examples"
@@ -2522,6 +2573,7 @@ def _smoke(dist: Path) -> None:
         _langfuse_pilot(cli, work)
         _langfuse_cli_pilot(cli, work)
         _langfuse_auto_pilot(cli, work)
+        _trajectory_pilot(cli, work)
 
         _native_measurement_pilot(cli, fixtures, work)
         _baseline_event_pilot(cli, fixtures, work)

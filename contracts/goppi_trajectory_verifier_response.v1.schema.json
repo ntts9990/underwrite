@@ -1,0 +1,254 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:goppi_trajectory_verifier_response.v1",
+  "title": "Trusted consumed fields of the offline Goppi combined verifier response",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "goppi.command_result.v1"
+    },
+    "command": {
+      "type": "string",
+      "const": "run"
+    },
+    "status": {
+      "type": "string",
+      "const": "success"
+    },
+    "code": {
+      "type": "string",
+      "const": "COMMAND_COMPLETED"
+    },
+    "exit_code": {
+      "type": "integer",
+      "const": 0
+    },
+    "data": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "string",
+          "const": "goppi.paired_run_verification_result.v2"
+        },
+        "status": {
+          "type": "string",
+          "const": "valid"
+        },
+        "layout": {
+          "type": "string",
+          "const": "paired_trajectory_handoff"
+        },
+        "input": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "paired_output": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "format": {
+          "type": "string",
+          "const": "v1"
+        },
+        "format_scope": {
+          "type": "string",
+          "const": "terminal_native_paired_run"
+        },
+        "cycle_status": {
+          "enum": [
+            "completed",
+            "stopped"
+          ]
+        },
+        "row_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "manifest_digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "trajectory": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "const": "valid"
+            },
+            "output": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "format": {
+              "type": "string",
+              "const": "v1"
+            },
+            "manifest_digest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "availability_counts": {
+              "type": "object",
+              "properties": {
+                "retained": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 10000
+                },
+                "not_retained": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 10000
+                },
+                "unsupported": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 10000
+                },
+                "interrupted": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 10000
+                },
+                "malformed": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 10000
+                },
+                "storage_failure": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 10000
+                },
+                "total": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 10000
+                }
+              },
+              "required": [
+                "retained",
+                "not_retained",
+                "unsupported",
+                "interrupted",
+                "malformed",
+                "storage_failure",
+                "total"
+              ],
+              "additionalProperties": false
+            },
+            "capture_profile": {
+              "type": "string",
+              "const": "native_pi_1_3_lifecycle.v1"
+            }
+          },
+          "required": [
+            "status",
+            "output",
+            "format",
+            "manifest_digest",
+            "availability_counts",
+            "capture_profile"
+          ]
+        },
+        "integrity_scope": {
+          "type": "string",
+          "const": "self_consistent_content_closure"
+        },
+        "authenticity": {
+          "type": "string",
+          "const": "content_digest_only"
+        },
+        "local_checks": {
+          "type": "object",
+          "properties": {
+            "source_authentication": {
+              "type": "string",
+              "const": "not_reperformed"
+            },
+            "retained_trace_binding": {
+              "type": "string",
+              "const": "not_reperformed"
+            }
+          },
+          "required": [
+            "source_authentication",
+            "retained_trace_binding"
+          ]
+        },
+        "portable_checks": {
+          "type": "object",
+          "properties": {
+            "content_closure": {
+              "type": "string",
+              "const": "valid"
+            }
+          },
+          "required": [
+            "content_closure"
+          ]
+        },
+        "source_local_authentication_independently_reverified": {
+          "type": "boolean",
+          "const": false
+        },
+        "producer_projection_independently_verified": {
+          "type": "boolean",
+          "const": false
+        },
+        "independent_provenance_established": {
+          "type": "boolean",
+          "const": false
+        }
+      },
+      "required": [
+        "schema",
+        "status",
+        "layout",
+        "input",
+        "paired_output",
+        "format",
+        "format_scope",
+        "cycle_status",
+        "row_count",
+        "manifest_digest",
+        "trajectory",
+        "integrity_scope",
+        "authenticity",
+        "local_checks",
+        "portable_checks",
+        "source_local_authentication_independently_reverified",
+        "producer_projection_independently_verified",
+        "independent_provenance_established"
+      ]
+    },
+    "human_review": {
+      "type": "string",
+      "const": "required"
+    },
+    "merge_authorized": {
+      "type": "boolean",
+      "const": false
+    },
+    "revert_authorized": {
+      "type": "boolean",
+      "const": false
+    }
+  },
+  "required": [
+    "schema",
+    "command",
+    "status",
+    "code",
+    "exit_code",
+    "data",
+    "human_review",
+    "merge_authorized",
+    "revert_authorized"
+  ]
+}
