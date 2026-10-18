@@ -4,13 +4,24 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from underwrite.cli.evidence import EvidenceError, ReportOutput, run_cli
 from underwrite.instrument.ingest.langfuse_accounting import (
+    BLOB_PROFILE,
+    CLI_PROFILE,
     LangfuseFileError,
     audit_langfuse_files,
     audit_langfuse_row_index_files,
+    output_schema,
+)
+from underwrite.instrument.ingest.langfuse_cli import audit_langfuse_cli_files
+
+_INVENTORY_GUIDANCE = (
+    "SUPPLY_PLANNED_INVENTORY_FOR_MISSINGNESS applies only when missing-execution "
+    "accounting is needed: obtain explicit planned evidence from the evaluation owner. "
+    "This command cannot ingest it; planned and missing-execution counts remain unknown. "
+    "Descriptive accounting needs no additional collection."
 )
 
 
@@ -20,23 +31,34 @@ def configure(parser: argparse.ArgumentParser) -> None:
         type=Path,
         required=True,
         metavar="FILE",
-        help="Langfuse server 4.35.0 observations_v2 JSON export.",
+        help="Selected Langfuse observations_v2 blob export or CLI JSON capture.",
     )
     parser.add_argument(
         "--scores",
         type=Path,
         required=True,
         metavar="FILE",
-        help="Langfuse server 4.35.0 scores JSON export.",
+        help="Selected Langfuse scores blob export or CLI JSON capture.",
     )
     parser.add_argument(
-        "--view", choices=("accounting", "row-index"), default="accounting",
+        "--profile",
+        choices=(BLOB_PROFILE, CLI_PROFILE),
+        default=BLOB_PROFILE,
+        help="Select the blob 4.35.0 default or pinned CLI 1.2.4/API 4.35.0 file shape.",
+    )
+    parser.add_argument(
+        "--view",
+        choices=("accounting", "row-index"),
+        default="accounting",
         help="Select full accounting or a content-minimized per-score row index.",
     )
     parser.add_argument("--json", action="store_true", help="Emit the selected view as JSON.")
     parser.description = (
-        "Account for score kinds and exact project/trace/observation associations in two "
-        "supplied Langfuse 4.35.0 exports. Unresolved references remain descriptive results. "
+        "Account for score kinds and local associations in two supplied Langfuse files. "
+        "The default is the pinned server 4.35.0 blob export; --profile cli-1.2.4 "
+        "accepts official CLI JSON captures from API snapshot 4.35.0. "
+        "CLI collection status does not establish matching windows or complete source data. "
+        "Unresolved references remain descriptive results. "
         "No producer execution, export-completeness claim, task success, or approval. "
         "The source profile is explicitly selected, not detected. "
         "If missing-execution accounting is required, the inventory next action asks for "
@@ -47,9 +69,13 @@ def configure(parser: argparse.ArgumentParser) -> None:
 
 def produce(args: argparse.Namespace) -> dict[str, object]:
     try:
-        audit = (
-            audit_langfuse_row_index_files if args.view == "row-index" else audit_langfuse_files
-        )
+        if args.profile == CLI_PROFILE:
+            return audit_langfuse_cli_files(
+                cast(Path, args.observations),
+                cast(Path, args.scores),
+                view=cast(Literal["accounting", "row-index"], args.view),
+            )
+        audit = audit_langfuse_row_index_files if args.view == "row-index" else audit_langfuse_files
         return audit(cast(Path, args.observations), cast(Path, args.scores))
     except LangfuseFileError as exc:
         raise EvidenceError(exc.code, exc.reason, exc.location) from None
@@ -70,10 +96,7 @@ def render_human(report: dict[str, object]) -> str:
             "Planned evaluations and export completeness unknown; source claims unverified.",
             "Stored score values are not task verdicts; no statistical or approval authority.",
             "Next: " + "; ".join(cast(list[str], report["next_actions"])),
-            "SUPPLY_PLANNED_INVENTORY_FOR_MISSINGNESS applies only when missing-execution "
-            "accounting is needed: obtain explicit planned evidence from the evaluation owner. "
-            "This command cannot ingest it; planned and missing-execution counts remain unknown. "
-            "Descriptive accounting needs no additional collection.",
+            _INVENTORY_GUIDANCE,
         ]
     )
 
@@ -81,11 +104,45 @@ def render_human(report: dict[str, object]) -> str:
 def render_selected_human(report: dict[str, object]) -> str:
     if report["schema"] == "langfuse_accounting.v1":
         return render_human(report)
+    if report["schema"] in {
+        output_schema(CLI_PROFILE, "accounting"),
+        output_schema(CLI_PROFILE, "row-index"),
+    }:
+        return render_cli_human(report)
     counts = cast(dict[str, Any], report["counts"])
     return (
         f"Supplied rows: {counts['observations']} observations; {counts['scores']} scores.\n"
         "Per-score kinds and association ordinals available in --json; score content withheld.\n"
         "Selected file hashes and row patterns remain linkable; no task verdict or approval."
+    )
+
+
+def render_cli_human(report: dict[str, object]) -> str:
+    counts = cast(dict[str, Any], report["counts"])
+    retrieval = cast(dict[str, dict[str, Any]], report["retrieval"])
+    kinds = cast(dict[str, int], counts["by_data_type"])
+    associations = cast(dict[str, int], counts["associations"])
+    collected = "; ".join(
+        f"{role} {retrieval[role]['pagination']['mode']}, "
+        f"cursor {retrieval[role]['pagination']['cursor_state']}, "
+        f"truncated {retrieval[role]['pagination']['truncated']}"
+        for role in ("observations", "scores")
+    )
+    return "\n".join(
+        [
+            f"Supplied rows: {counts['observations']} observations; {counts['scores']} scores.",
+            "Score kinds: "
+            + "; ".join(f"{kind.lower()} {count}" for kind, count in kinds.items())
+            + ".",
+            "Local associations: "
+            + "; ".join(f"{state} {count}" for state, count in associations.items())
+            + ".",
+            f"Collection reported: {collected}.",
+            "Requested windows, export completeness and planned executions are unknown. "
+            "Stored values are source claims, not task verdicts or approval.",
+            "Next: " + "; ".join(cast(list[str], report["next_actions"])),
+            _INVENTORY_GUIDANCE,
+        ]
     )
 
 
@@ -96,9 +153,7 @@ def main(argv: list[str]) -> int:
         configure,
         produce,
         ReportOutput(
-            lambda args: "langfuse_row_index.v1"
-            if args.view == "row-index"
-            else "langfuse_accounting.v1",
+            lambda args: output_schema(args.profile, args.view),
             human=render_selected_human,
         ),
     )

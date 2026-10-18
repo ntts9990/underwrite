@@ -12,6 +12,11 @@ from underwrite.instrument.evidence.langfuse_accounting import (
     LangfuseAccountingError,
     account_langfuse,
 )
+from underwrite.instrument.evidence.langfuse_cli import (
+    ACCOUNTING_SCHEMA,
+    CLI_PROFILE,
+    ROW_INDEX_SCHEMA,
+)
 from underwrite.instrument.evidence.langfuse_row_index import index_langfuse_accounting
 from underwrite.instrument.ingest.application import (
     DEFAULT_MAX_BYTES,
@@ -31,6 +36,25 @@ SOURCES = MappingProxyType(
         "scores": ("langfuse.scores", "4.35.0"),
     }
 )
+BLOB_PROFILE = "blob-4.35.0"
+OUTPUT_SCHEMAS = MappingProxyType(
+    {
+        BLOB_PROFILE: MappingProxyType(
+            {"accounting": "langfuse_accounting.v1", "row-index": "langfuse_row_index.v1"}
+        ),
+        CLI_PROFILE: MappingProxyType(
+            {"accounting": ACCOUNTING_SCHEMA, "row-index": ROW_INDEX_SCHEMA}
+        ),
+    }
+)
+
+
+def output_schema(profile: str, view: str) -> str:
+    """Resolve a selected Langfuse source shape and view to its exact result contract."""
+    try:
+        return OUTPUT_SCHEMAS[profile][view]
+    except KeyError:
+        raise ValueError("UNSUPPORTED_LANGFUSE_PROFILE_OR_VIEW") from None
 
 
 class LangfuseFileError(ValueError):

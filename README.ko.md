@@ -202,15 +202,19 @@ API, 내보내기 형식, 버전을 지원한다는 뜻은 아닙니다. 버전�
 ```sh
 underwrite audit-promptfoo /path/to/promptfoo-output.json --version 0.124.1 --json
 underwrite audit-deepeval /path/to/deepeval-test-run.json --version 4.2.8 --json
-underwrite audit-langfuse --observations /path/to/observations.json \
-  --scores /path/to/scores.json --json
+underwrite audit-langfuse --observations /path/to/blob-observations.json \
+  --scores /path/to/blob-scores.json --json
 underwrite audit-baseline --exchange /path/to/goppi-baseline-exchange --json
 ```
 
 DeepEval 집계 검사의 기본값은 `4.1.1`입니다. `4.2.8` 프로필을 쓰려면
 `--version 4.2.8`을 지정하세요. Promptfoo 집계 검사의 기본값은 `0.123.0`이며,
 `0.124.1` 프로필에는 `--version 0.124.1`을 지정합니다. Langfuse의 버전은 SDK가 아니라
-서버 내보내기를 가리킵니다. 검사한 범위와 fixture의 출처는
+서버 blob 내보내기를 가리킵니다. 공개된 `0.1.1`은 이 blob 경로를 지원합니다.
+개발 체크아웃은 별도의 [CLI 캡처 프로필](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#read-official-langfuse-cli-captures-offline)을
+제공할 수 있으므로 사용 전에 `capabilities --json`으로 확인하세요. 합성 fixture는
+로컬 파일 형식을 검증하지만 실제 서버의 완전성을 증명하지 않습니다.
+검사한 범위와 fixture의 출처는
 [아티팩트 요구사항](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#get-the-right-producer-artifact)과
 [생성 도구 검증](https://github.com/ntts9990/underwrite/blob/main/EVIDENCE_REVIEW.md)을 참고하세요.
 

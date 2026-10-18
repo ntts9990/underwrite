@@ -1247,6 +1247,88 @@ def _native_refusal(cli: Path, args: list[str], work: Path, code: str, reason: s
     )
 
 
+def _langfuse_cli_pilot(cli: Path, work: Path) -> None:
+    fixtures = ROOT / "fixtures/examples/langfuse-cli"
+    selected: dict[str, Path] = {}
+    raw: dict[str, bytes] = {}
+    for role in ("observations", "scores"):
+        raw[role] = (fixtures / f"{role}.json").read_bytes()
+        selected[role] = work / f"langfuse-cli-{role}.json"
+        selected[role].write_bytes(raw[role])
+    args = [
+        "audit-langfuse",
+        "--observations",
+        str(selected["observations"]),
+        "--scores",
+        str(selected["scores"]),
+        "--profile",
+        "cli-1.2.4",
+    ]
+    report = _cli_json(cli, args, work / "langfuse-cli-accounting.json", work)
+    _require(report["schema"] == "langfuse_cli_accounting.v1", "wrong CLI capture schema")
+    sources = cast(dict[str, dict[str, object]], report["sources"])
+    for role, data in raw.items():
+        _require(
+            sources[role]["raw_hash"] == "sha256:" + hashlib.sha256(data).hexdigest(),
+            "CLI capture source bytes changed",
+        )
+    native_scores = json.loads(raw["scores"])["body"]["data"]
+    scores = cast(list[dict[str, object]], report["scores"])
+    _require(len(scores) == len(native_scores), "CLI capture lost supplied score rows")
+    for score, native in zip(scores, native_scores, strict=True):
+        _require(
+            score["data_type"] == native["dataType"]
+            and type(score["value"]) is type(native["value"])
+            and score["value"] == native["value"],
+            "CLI capture changed native score types or values",
+        )
+    index = _cli_json(cli, [*args, "--view", "row-index"], work / "langfuse-cli-index.json", work)
+    _require(
+        index["schema"] == "langfuse_cli_row_index.v1" and index["counts"] == report["counts"],
+        "CLI row index changed accounting",
+    )
+    for row in cast(list[dict[str, object]], index["score_rows"]):
+        _require(
+            not {"id", "name", "value", "project_id", "subject"}.intersection(row),
+            "CLI row index exposed score content",
+        )
+    api_code = (
+        "import json,sys; from pathlib import Path; "
+        "from underwrite.instrument.ingest.langfuse_cli import audit_langfuse_cli_bytes; "
+        "print(json.dumps(audit_langfuse_cli_bytes("
+        "Path(sys.argv[1]).read_bytes(),Path(sys.argv[2]).read_bytes()),sort_keys=True))"
+    )
+    api = _success([str(cli.parent / "python"), "-c", api_code, *map(str, selected.values())], work)
+    _require(json.loads(api.stdout) == report, "installed CLI/API capture outcomes differ")
+    partial = _cli_json(
+        cli,
+        [
+            "audit-langfuse",
+            "--profile",
+            "cli-1.2.4",
+            "--observations",
+            str(fixtures / "observations-body.json"),
+            "--scores",
+            str(fixtures / "scores-truncated.json"),
+        ],
+        work / "langfuse-cli-partial.json",
+        work,
+    )
+    retrieval = cast(dict[str, dict[str, object]], partial["retrieval"])
+    pagination = cast(dict[str, object], retrieval["scores"]["pagination"])
+    planned = cast(dict[str, object], partial["planned"])
+    _require(
+        pagination["truncated"] is True
+        and planned["status"] == "unknown"
+        and planned["missing_execution_count"] is None,
+        "CLI partial capture became complete planned evidence",
+    )
+    invalid = json.loads(raw["scores"])
+    invalid["status"] = 403
+    selected["scores"].write_text(json.dumps(invalid), encoding="utf-8")
+    _native_refusal(cli, args, work, "INVALID_INPUT", "LANGFUSE_CLI_NON_SUCCESS_STATUS")
+
+
 def _native_measurement_pilot(cli: Path, fixtures: Path, work: Path) -> None:
     source = fixtures / "event-measurement"
     reads: list[Path] = []
@@ -1935,6 +2017,7 @@ def _smoke(dist: Path) -> None:
         _deepeval_pilot(cli, work)
         _deepeval_v2_pilot(cli, work)
         _langfuse_pilot(cli, work)
+        _langfuse_cli_pilot(cli, work)
 
         _native_measurement_pilot(cli, fixtures, work)
         _baseline_event_pilot(cli, fixtures, work)

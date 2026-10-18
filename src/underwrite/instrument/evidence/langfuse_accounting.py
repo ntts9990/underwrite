@@ -106,8 +106,18 @@ def _text(value: object, maximum: int, location: str, *, identifier: bool = Fals
     return normalized
 
 
+def langfuse_identifier(value: object, location: str) -> str:
+    """Admit one opaque ID under the shared Langfuse byte/NFC/length policy."""
+    return _text(value, MAX_ID_LENGTH, location, identifier=True)
+
+
+def langfuse_label(value: object, location: str) -> str:
+    """Admit a display label without using it as an identity key."""
+    return _text(value, MAX_LABEL_LENGTH, location)
+
+
 def _identifier(row: dict[str, object], key: str, location: str) -> str:
-    return _text(_field(row, key, location), MAX_ID_LENGTH, location + "/" + key, identifier=True)
+    return langfuse_identifier(_field(row, key, location), location + "/" + key)
 
 
 def _number(value: object, location: str) -> int | float:
