@@ -36,6 +36,12 @@ from underwrite.cli import (
     review_pair,
 )
 from underwrite.cli.capabilities import CommandDescriptor, Handler, profile
+from underwrite.instrument.evidence.deepeval_compat import (
+    ACCOUNTING_SCHEMA as DEEPEVAL_AUTO_ACCOUNTING_SCHEMA,
+)
+from underwrite.instrument.evidence.deepeval_compat import (
+    TRACE_SCHEMA as DEEPEVAL_AUTO_TRACE_SCHEMA,
+)
 from underwrite.instrument.evidence.deepeval_trace import SCHEMA as DEEPEVAL_TRACE_SCHEMA
 from underwrite.instrument.evidence.deepeval_trace import SOURCE_VERSION as DEEPEVAL_TRACE_VERSION
 from underwrite.instrument.evidence.langfuse_accounting import RULE_PROFILE as LANGFUSE_RULE_PROFILE
@@ -219,7 +225,7 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 "audit-deepeval",
                 ("file", "root", "id"),
                 (),
-                (DEEPEVAL_PROFILES[DEEPEVAL_SOURCE[1]].record_schema,),
+                (record_deepeval.AUTO_RECORD_SCHEMA,),
             ),
             *(
                 profile(
@@ -229,13 +235,18 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                     (selected.record_schema,),
                 )
                 for version, selected in DEEPEVAL_PROFILES.items()
-                if version != DEEPEVAL_SOURCE[1]
             ),
             profile(
                 "audit-deepeval|4.2.8|owner-asserted-metric-bindings",
                 ("file", "version", "bindings", "root", "id"),
                 ("deepeval_metric_bindings.v1",),
                 ("deepeval_bound_record.v1",),
+            ),
+            profile(
+                "audit-deepeval|trace-index",
+                ("file", "view", "root", "id"),
+                (),
+                (record_deepeval.AUTO_TRACE_RECORD_SCHEMA,),
             ),
             profile(
                 f"audit-deepeval|{DEEPEVAL_TRACE_VERSION}|trace-index",
@@ -349,10 +360,24 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
         "audit-deepeval",
         "Distinguish scores, evaluator errors, and unscored DeepEval metrics.",
         audit_deepeval.configure,
-        tuple(
+        (
+            profile(
+                f"{DEEPEVAL_SOURCE[0]}|auto",
+                ("file",),
+                (),
+                (DEEPEVAL_AUTO_ACCOUNTING_SCHEMA,),
+            ),
+            profile(
+                f"{DEEPEVAL_SOURCE[0]}|auto|trace-index",
+                ("file", "view"),
+                (),
+                (DEEPEVAL_AUTO_TRACE_SCHEMA,),
+            ),
+        )
+        + tuple(
             profile(
                 "|".join((DEEPEVAL_SOURCE[0], version)),
-                ("file",) if version == DEEPEVAL_SOURCE[1] else ("file", "version"),
+                ("file", "version"),
                 (),
                 (selected.accounting_schema,),
             )

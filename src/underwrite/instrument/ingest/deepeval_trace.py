@@ -75,14 +75,22 @@ def _index(raw: bytes, validator: Draft202012Validator) -> dict[str, object]:
     return report
 
 
-def audit_deepeval_trace_bytes(raw: bytes, *, version: str) -> dict[str, object]:
+def audit_deepeval_trace_bytes(raw: bytes, *, version: str | None = None) -> dict[str, object]:
     """Analyze supplied original bytes without materializing a canonical source copy."""
+    if version is None:
+        from underwrite.instrument.ingest.deepeval_compat import audit_deepeval_compatible_bytes
+
+        return audit_deepeval_compatible_bytes(raw, view="trace-index")
     _version(version)
     return _index(raw, _validator())
 
 
-def audit_deepeval_trace_file(path: Path, *, version: str) -> dict[str, object]:
+def audit_deepeval_trace_file(path: Path, *, version: str | None = None) -> dict[str, object]:
     """Validate selected contract, then capture the regular source file once."""
+    if version is None:
+        from underwrite.instrument.ingest.deepeval_compat import audit_deepeval_compatible_file
+
+        return audit_deepeval_compatible_file(path, view="trace-index")
     _version(version)
     validator = _validator()
     return _index(read_deepeval_file(path), validator)

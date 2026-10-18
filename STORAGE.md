@@ -85,27 +85,38 @@ The command never changes the original record or its `rerun_verification` claim.
 For a supported DeepEval TestRun, use
 `records audit-deepeval FILE --root ROOT --id NEW_ID --json` to analyze and retain
 the same complete bytes with their result or diagnostic and invocation metadata.
-The `deepeval_record.v1` outcomes and exits 0/2/3 distinguish result saved,
-diagnostic saved, and storage failed. Complete malformed input is retained;
-failed acquisition stores no partial source. A diagnostic still consumes the ID.
+In development builds advertising automatic intake, omitted `--version` returns
+`deepeval_record.v3` with `deepeval_accounting.v3`. It selects an Underwrite reader
+from consumed fields but leaves the actual producer version unknown. Visible
+non-null case or metric `expectationsData` is a finite ordinary-analysis refusal;
+complete input can still be retained privately with its diagnostic. Exits 0/2/3
+distinguish result saved, diagnostic saved, and storage failed. Complete malformed
+input is retained; failed acquisition stores no partial source. A diagnostic
+still consumes the ID.
 Use `records read-json` with `analysis/accounting.json` or `analysis/error.json`
 for later reuse. Raw TestRun content is not redacted. See
 [the DeepEval workflow](AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors).
 
-The default producer profile remains 4.1.1. With `--version 4.2.8`, the same
-command emits `deepeval_record.v2` containing `deepeval_accounting.v2`; saved
-invocation metadata and `source_format_version` identify the selection even when
-acquisition fails. Missing metric verdicts and source flaky declarations retain
-their distinct meanings. The logical file names and retrieval commands stay the
-same; never relabel a saved v1 report as v2.
+Published `0.1.1` defaults to the strict 4.1.1 `deepeval_record.v1`. Explicit
+`--version 4.1.1` or `--version 4.2.8` preserves the historical v1 or v2
+record/result and stored-byte contracts. The saved manifest identifies the
+explicit selection even when acquisition fails; the nondefault 4.2.8 response
+also includes `source_format_version`. Automatic records use
+`selection_mode:auto`, naming an applied reader only after successful analysis.
+Missing metric verdicts and source flaky
+declarations retain distinct meanings. Logical file names and retrieval
+commands stay the same; never relabel an existing stored report.
 
-For a native 4.2.8 trace review, a development checkout advertising the trace
-record profile supports `records audit-deepeval FILE --version 4.2.8 --view trace-index
---root ROOT --id NEW_ID --json`. The `deepeval_trace_record.v1` envelope retains
-the one captured source buffer and its actual `deepeval_trace_index.v1` result as
+For a selected trace review, a development checkout advertising automatic
+trace intake supports `records audit-deepeval FILE --view trace-index --root ROOT
+--id NEW_ID --json`. The `deepeval_trace_record.v2` envelope retains the one
+captured source buffer and its actual `deepeval_trace_index.v2` result as
 `analysis/trace-index.json`, or the existing diagnostic file on failure. Its
-invocation and manifest identify the trace view. It cannot be combined with
-`--bindings`; wrong selections and schema faults stop before storage.
+invocation and manifest identify automatic selection and the trace view. It
+cannot be combined with `--bindings`; wrong selections and schema faults stop
+before storage. Visible expectation data does not block selected step review,
+but metric/expectation evaluation and the meaning of source case success remain
+unexamined. Explicit `--version 4.2.8` retains the old trace v1 contracts.
 
 The index omits source contents, but **the stored TestRun and invocation remain
 private and unredacted**. Exits 0/2/3 and consumed diagnostic IDs keep their existing
@@ -127,8 +138,10 @@ leave no partial source file. Pack acquisition error takes precedence over sourc
 acquisition error. Saved verification checks two base files plus each captured
 source. The response keeps the raw pack hash separate from item semantic digests;
 stored-byte integrity does not authenticate the owner declaration. Exits 0/2/3
-retain the result, diagnostic, and storage-failure meanings above. The no-bindings
-route and its existing logical names remain unchanged.
+retain the result, diagnostic, and storage-failure meanings above. Omitting
+`--version` with `--bindings` refuses before input or record-ID effects; the
+version-neutral binding pack/result/record is a separate required follow-on.
+Explicit no-bindings routes and logical names remain unchanged.
 
 In a development build advertising automatic Langfuse intake, use
 `records audit-langfuse --observations FILE --scores FILE --root ROOT --id NEW_ID --json`.

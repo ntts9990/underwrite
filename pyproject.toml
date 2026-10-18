@@ -67,6 +67,10 @@ source-include = [
     "contracts/deepeval_accounting.v1.schema.json",
     "contracts/deepeval_record.v1.schema.json",
     "contracts/deepeval_accounting.v2.schema.json",
+    "contracts/deepeval_accounting.v3.schema.json",
+    "contracts/deepeval_trace_index.v2.schema.json",
+    "contracts/deepeval_record.v3.schema.json",
+    "contracts/deepeval_trace_record.v2.schema.json",
     "contracts/deepeval_record.v2.schema.json",
     "contracts/deepeval_trace_index.v1.schema.json",
     "contracts/deepeval_trace_record.v1.schema.json",
@@ -162,4 +166,5 @@ known_first_party = [
 ]
 # The workspace distribution imports as underwrite_core.
 package_module_name_map = { "underwrite-core" = ["underwrite_core"] }
-extend_exclude = ["packages/.*/tests", "fixtures/golden"]
+# Producer capture recipes run only in isolated SDK environments.
+extend_exclude = ["packages/.*/tests", "fixtures/golden", "fixtures/examples/deepeval-auto-4.3.1"]

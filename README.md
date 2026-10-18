@@ -197,7 +197,7 @@ explicit selectors reproduce older contracts.
 | --- | --- | --- |
 | **goppi** | Completed baseline exchange manifest v2; separate paired-handoff route | [`audit-baseline`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#audit-a-completed-goppi-baseline-as-common-evidence) for descriptive common JSON · [`project-baseline`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#project-a-completed-goppi-baseline-into-event-observations) for native measurement · [`review-handoff`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#review-a-completed-paired-handoff-in-one-call) |
 | **Langfuse** | Published `0.1.1`: `4.35.0` server blob arrays. Development automatic intake: compatible blob arrays or official-CLI list captures. | [`audit-langfuse`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-langfuse-score-kinds-and-associations), with an optional content-minimized row index |
-| **DeepEval** | Ordinary TestRun JSON, `4.1.1` or `4.2.8` | [`audit-deepeval`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors) |
+| **DeepEval** | Published `0.1.1`: ordinary `4.1.1` or `4.2.8` TestRun. Development automatic intake: compatible old/current ordinary or selected trace structure. | [`audit-deepeval`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors) |
 | **Promptfoo** | Eval output JSON, `0.123.0` or `0.124.1` | [`audit-promptfoo`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#source-checkout-pilot-audit-promptfoo-counts) |
 | **External common result** | `evidence_result.v1` JSON from a producer | [`inspect-result`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#inspect-an-external-common-result) for contract screening and availability counts, with optional evidence-item `next_action` and declared metric-binding counts |
 | **Native evidence** | `underwrite.evidence-bundle` / `v1` | `ingest` → `measure` → `accept` |
@@ -216,9 +216,12 @@ underwrite audit-langfuse --observations /path/to/blob-observations.json \
 underwrite audit-baseline --exchange /path/to/goppi-baseline-exchange --json
 ```
 
-DeepEval accounting defaults to `4.1.1`; select `--version 4.2.8` for that
-profile. For a reusable owner-asserted metric-name pack and common descriptive
-JSON, see the [DeepEval binding workflow](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors).
+Published `0.1.1` defaults DeepEval accounting to `4.1.1`; select
+`--version 4.2.8` there. Development builds advertising automatic intake read
+compatible TestRuns without a version flag, reporting the producer release as
+unknown. Select `--view trace-index` for recorded steps; metric/expectation
+evaluation is outside that view. The owner-asserted [metric binding workflow](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors)
+still requires explicit `--version 4.2.8` until its separate contract update.
 Published `0.1.1` defaults Promptfoo to `0.123.0`; select `--version 0.124.1`
 there. Published Langfuse intake defaults to the 4.35.0 server blob export.
 Development builds advertising automatic Langfuse intake read compatible blob

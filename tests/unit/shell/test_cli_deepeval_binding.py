@@ -437,7 +437,7 @@ def test_capability_profile_matches_bound_and_legacy_entry_points(
     refused = capsys.readouterr()
     assert not refused.out
     assert json.loads(refused.err)["reason"] == "DEEPEVAL_BINDING_EXPLICIT_VERSION_REQUIRED"
-    assert main(["audit-deepeval", str(LEGACY_SOURCE), "--json"]) == 0
+    assert main(["audit-deepeval", str(LEGACY_SOURCE), "--version", "4.1.1", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["schema"] == "deepeval_accounting.v1"
 
 

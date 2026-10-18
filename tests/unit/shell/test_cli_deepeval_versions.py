@@ -83,7 +83,15 @@ def test_actual_new_cli_and_retained_recovery(
     recovered = result(code, capsys)
     assert code == 0 and recovered["content"] == report
     assert (
-        main(["audit-deepeval", str(FIXTURES / "deepeval-4.2.8" / (name + ".json")), "--json"])
+        main(
+            [
+                "audit-deepeval",
+                str(FIXTURES / "deepeval-4.2.8" / (name + ".json")),
+                "--version",
+                "4.1.1",
+                "--json",
+            ]
+        )
         == ERROR_EXIT
     )
     capsys.readouterr()
@@ -121,20 +129,19 @@ def test_new_conflict_keeps_analysis_and_old_record(
     assert report["storage"]["state"] == "error" and read_record(store, "sample") == before
 
 
-def test_default_old_cli_bytes_and_invocation_preserved(
+def test_explicit_old_cli_bytes_and_invocation_preserved(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     path = FIXTURES / "deepeval/test_run_20260914_132634.json"
-    assert main(["audit-deepeval", str(path), "--json"]) == 0
-    default = capsys.readouterr().out
     assert main(["audit-deepeval", str(path), "--version", "4.1.1", "--json"]) == 0
-    assert capsys.readouterr().out == default
+    explicit = capsys.readouterr().out
+    assert json.loads(explicit) == audit_deepeval_bytes(path.read_bytes(), version="4.1.1")
     store = tmp_path / "store"
     report = record_deepeval.run_record_deepeval(path, store, "sample", version="4.1.1")
     assert report["schema"] == "deepeval_record.v1" and "source_format_version" not in report
     invocation = json.loads(read_record_file(store, "sample", "invocation.json").data)
     assert "format_version" not in invocation["arguments"]
-    assert read_record_file(store, "sample", "analysis/accounting.json").data == default.encode()
+    assert read_record_file(store, "sample", "analysis/accounting.json").data == explicit.encode()
 
 
 def test_unknown_version_has_no_read_or_storage_effect(
