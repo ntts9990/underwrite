@@ -17,6 +17,13 @@ from underwrite.instrument.evidence.langfuse_cli import (
     CLI_PROFILE,
     ROW_INDEX_SCHEMA,
 )
+from underwrite.instrument.evidence.langfuse_compat import (
+    ACCOUNTING_SCHEMA as AUTO_ACCOUNTING_SCHEMA,
+)
+from underwrite.instrument.evidence.langfuse_compat import AUTO_PROFILE
+from underwrite.instrument.evidence.langfuse_compat import (
+    ROW_INDEX_SCHEMA as AUTO_ROW_INDEX_SCHEMA,
+)
 from underwrite.instrument.evidence.langfuse_row_index import index_langfuse_accounting
 from underwrite.instrument.ingest.application import (
     DEFAULT_MAX_BYTES,
@@ -45,14 +52,17 @@ OUTPUT_SCHEMAS = MappingProxyType(
         CLI_PROFILE: MappingProxyType(
             {"accounting": ACCOUNTING_SCHEMA, "row-index": ROW_INDEX_SCHEMA}
         ),
+        AUTO_PROFILE: MappingProxyType(
+            {"accounting": AUTO_ACCOUNTING_SCHEMA, "row-index": AUTO_ROW_INDEX_SCHEMA}
+        ),
     }
 )
 
 
-def output_schema(profile: str, view: str) -> str:
+def output_schema(profile: str | None, view: str) -> str:
     """Resolve a selected Langfuse source shape and view to its exact result contract."""
     try:
-        return OUTPUT_SCHEMAS[profile][view]
+        return OUTPUT_SCHEMAS[AUTO_PROFILE if profile is None else profile][view]
     except KeyError:
         raise ValueError("UNSUPPORTED_LANGFUSE_PROFILE_OR_VIEW") from None
 
@@ -112,8 +122,20 @@ def _capture(
     return identity, projection.payload
 
 
-def audit_langfuse_files(observations_file: Path, scores_file: Path) -> dict[str, object]:
+def audit_langfuse_files(
+    observations_file: Path, scores_file: Path, *, profile: str | None = None
+) -> dict[str, object]:
     """Read each source once and keep original IDs separate from normalized observations."""
+    if profile is None or profile == AUTO_PROFILE:
+        from underwrite.instrument.ingest.langfuse_compat import audit_langfuse_compatible_files
+
+        return audit_langfuse_compatible_files(observations_file, scores_file)
+    if profile == CLI_PROFILE:
+        from underwrite.instrument.ingest.langfuse_cli import audit_langfuse_cli_files
+
+        return audit_langfuse_cli_files(observations_file, scores_file)
+    if profile != BLOB_PROFILE:
+        raise LangfuseFileError("UNSUPPORTED_FORMAT", "LANGFUSE_PROFILE_UNSUPPORTED", "/profile")
     try:
         ingestor = packaged_ingestor(max_bytes=DEFAULT_MAX_BYTES, max_depth=DEFAULT_MAX_DEPTH)
     except tuple(DIAGNOSTICS) as exc:
@@ -125,9 +147,19 @@ def audit_langfuse_files(observations_file: Path, scores_file: Path) -> dict[str
     return _account(observation_identity, observations, score_identity, scores)
 
 
-def audit_langfuse_row_index_files(observations_file: Path, scores_file: Path) -> dict[str, object]:
+def audit_langfuse_row_index_files(
+    observations_file: Path, scores_file: Path, *, profile: str | None = None
+) -> dict[str, object]:
     """Return the checked content-minimized view of the same two selected files."""
-    accounting = audit_langfuse_files(observations_file, scores_file)
+    if profile is None or profile == AUTO_PROFILE:
+        from underwrite.instrument.ingest.langfuse_compat import audit_langfuse_compatible_files
+
+        return audit_langfuse_compatible_files(observations_file, scores_file, view="row-index")
+    if profile == CLI_PROFILE:
+        from underwrite.instrument.ingest.langfuse_cli import audit_langfuse_cli_files
+
+        return audit_langfuse_cli_files(observations_file, scores_file, view="row-index")
+    accounting = audit_langfuse_files(observations_file, scores_file, profile=profile)
     try:
         packaged_validator("langfuse_accounting.v1").validate(accounting)  # pyright: ignore[reportUnknownMemberType]
         result = index_langfuse_accounting(accounting)
@@ -139,8 +171,20 @@ def audit_langfuse_row_index_files(observations_file: Path, scores_file: Path) -
     return result
 
 
-def audit_langfuse_bytes(observations: bytes, scores: bytes) -> dict[str, object]:
+def audit_langfuse_bytes(
+    observations: bytes, scores: bytes, *, profile: str | None = None
+) -> dict[str, object]:
     """Account for the exact two supplied buffers without reopening their sources."""
+    if profile is None or profile == AUTO_PROFILE:
+        from underwrite.instrument.ingest.langfuse_compat import audit_langfuse_compatible_bytes
+
+        return audit_langfuse_compatible_bytes(observations, scores)
+    if profile == CLI_PROFILE:
+        from underwrite.instrument.ingest.langfuse_cli import audit_langfuse_cli_bytes
+
+        return audit_langfuse_cli_bytes(observations, scores)
+    if profile != BLOB_PROFILE:
+        raise LangfuseFileError("UNSUPPORTED_FORMAT", "LANGFUSE_PROFILE_UNSUPPORTED", "/profile")
     try:
         ingestor = packaged_ingestor(max_bytes=DEFAULT_MAX_BYTES, max_depth=DEFAULT_MAX_DEPTH)
     except tuple(DIAGNOSTICS) as exc:

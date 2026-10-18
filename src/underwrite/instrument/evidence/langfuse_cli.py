@@ -414,25 +414,12 @@ def account_langfuse_cli(
     }
 
 
-def index_langfuse_cli_accounting(accounting: dict[str, object]) -> dict[str, object]:
-    """Allowlist structural row facts already decided by full accounting."""
-    sources = cast(dict[str, dict[str, object]], accounting["sources"])
+def index_langfuse_cli_body(accounting: dict[str, object]) -> dict[str, object]:
+    """Allowlist CLI row facts without asserting a capture version."""
     rows = cast(list[dict[str, Any]], accounting["scores"])
     counts = cast(dict[str, Any], accounting["counts"])
     return {
-        "schema": ROW_INDEX_SCHEMA,
-        "source_rule_profile": RULE_PROFILE,
-        "sources": {
-            role: {
-                "format": sources[role]["format"],
-                "format_version": sources[role]["format_version"],
-                "raw_hash": sources[role]["raw_hash"],
-                "claims_verified": False,
-            }
-            for role in SOURCE_FORMATS
-        },
         "retrieval": accounting["retrieval"],
-        "scope": dict(ROW_SCOPE),
         "counts": {
             "observations": counts["observations"],
             "scores": counts["scores"],
@@ -456,4 +443,24 @@ def index_langfuse_cli_accounting(accounting: dict[str, object]) -> dict[str, ob
         ],
         "limitations": list(ROW_LIMITATIONS),
         "next_actions": cast(list[str], accounting["next_actions"]).copy(),
+    }
+
+
+def index_langfuse_cli_accounting(accounting: dict[str, object]) -> dict[str, object]:
+    """Preserve the pinned CLI row contract over shared counted row facts."""
+    sources = cast(dict[str, dict[str, object]], accounting["sources"])
+    return {
+        "schema": ROW_INDEX_SCHEMA,
+        "source_rule_profile": RULE_PROFILE,
+        "sources": {
+            role: {
+                "format": sources[role]["format"],
+                "format_version": sources[role]["format_version"],
+                "raw_hash": sources[role]["raw_hash"],
+                "claims_verified": False,
+            }
+            for role in SOURCE_FORMATS
+        },
+        "scope": dict(ROW_SCOPE),
+        **index_langfuse_cli_body(accounting),
     }

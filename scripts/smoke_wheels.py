@@ -1358,10 +1358,10 @@ def _langfuse_record_pilot(
     scores: Path,
     expected: dict[str, object],
     *,
-    capture_profile: tuple[str, str] | None = None,
+    capture_profile: tuple[str | None, str] = ("blob-4.35.0", "langfuse_record.v1"),
 ) -> None:
-    profile, record_schema = capture_profile or (None, "langfuse_record.v1")
-    slug = "langfuse" if profile is None else "langfuse-cli"
+    profile, record_schema = capture_profile
+    slug = "langfuse-auto" if profile is None else f"langfuse-{profile}"
     input_directory = work / f"{slug}-record-inputs"
     input_directory.mkdir()
     inputs = (input_directory / "observations.json", input_directory / "scores.json")
@@ -1459,7 +1459,15 @@ def _langfuse_pilot(cli: Path, work: Path) -> None:
     scores = golden / "scores-2026-09-14T06-40-00.json"
     report = _cli_json(
         cli,
-        ["audit-langfuse", "--observations", str(observed), "--scores", str(scores)],
+        [
+            "audit-langfuse",
+            "--observations",
+            str(observed),
+            "--scores",
+            str(scores),
+            "--profile",
+            "blob-4.35.0",
+        ],
         work / "langfuse-accounting.json",
         work,
     )
@@ -1605,6 +1613,83 @@ def _langfuse_cli_pilot(cli: Path, work: Path) -> None:
     invalid["status"] = 403
     selected["scores"].write_text(json.dumps(invalid), encoding="utf-8")
     _native_refusal(cli, args, work, "INVALID_INPUT", "LANGFUSE_CLI_NON_SUCCESS_STATUS")
+
+
+def _langfuse_auto_pilot(cli: Path, work: Path) -> None:
+    golden = ROOT / "fixtures/golden/external/langfuse"
+    native = ROOT / "fixtures/examples/langfuse-cli"
+    pairs = (
+        (
+            golden / "observations_v2-2026-09-14T06-40-00.json",
+            golden / "scores-2026-09-14T06-40-00.json",
+            "langfuse.blob-array.selected-fields.v1",
+        ),
+        (
+            native / "observations.json",
+            native / "scores.json",
+            "langfuse.cli-list.selected-fields.v1",
+        ),
+        (
+            native / "observations-body.json",
+            native / "scores-body.json",
+            "langfuse.cli-list.selected-fields.v1",
+        ),
+        (
+            native / "observations-body.json",
+            native / "scores-truncated.json",
+            "langfuse.cli-list.selected-fields.v1",
+        ),
+    )
+    for index, (observed, scores, reader) in enumerate(pairs):
+        selected = work / f"langfuse-auto-{index}"
+        selected.mkdir()
+        args = ["audit-langfuse", "--observations", str(observed), "--scores", str(scores)]
+        report = _cli_json(cli, args, selected / "accounting.json", selected)
+        _require(
+            report["schema"] == "langfuse_accounting.v2" and report["reader_profile"] == reader,
+            "automatic Langfuse intake selected the wrong reader",
+        )
+        for role, source in zip(("observations", "scores"), (observed, scores), strict=True):
+            identity = cast(dict[str, dict[str, object]], report["sources"])[role]
+            _require(
+                identity["raw_hash"] == "sha256:" + hashlib.sha256(source.read_bytes()).hexdigest()
+                and identity["producer_version"] is None
+                and identity["producer_version_state"] == "unknown"
+                and identity["claims_verified"] is False,
+                "automatic Langfuse intake changed bytes or invented producer identity",
+            )
+        rows = _cli_json(cli, [*args, "--view", "row-index"], selected / "rows.json", selected)
+        _require(
+            rows["schema"] == "langfuse_row_index.v2"
+            and rows["reader_profile"] == reader
+            and rows["counts"] == report["counts"],
+            "automatic Langfuse row projection changed accounting",
+        )
+        api_code = (
+            "import json,sys; from pathlib import Path; "
+            "from underwrite.instrument.ingest.langfuse_accounting import audit_langfuse_bytes; "
+            "print(json.dumps(audit_langfuse_bytes("
+            "Path(sys.argv[1]).read_bytes(),Path(sys.argv[2]).read_bytes()),sort_keys=True))"
+        )
+        api = _success(
+            [str(cli.parent / "python"), "-c", api_code, str(observed), str(scores)], selected
+        )
+        _require(json.loads(api.stdout) == report, "automatic Langfuse API/CLI outcomes differ")
+        _langfuse_record_pilot(
+            cli,
+            selected,
+            observed,
+            scores,
+            report,
+            capture_profile=(None, "langfuse_record.v2"),
+        )
+    _native_refusal(
+        cli,
+        ["audit-langfuse", "--observations", str(pairs[0][0]), "--scores", str(pairs[1][1])],
+        work,
+        "UNSUPPORTED_PROFILE",
+        "LANGFUSE_AUTO_MIXED_FAMILIES",
+    )
 
 
 def _native_measurement_pilot(cli: Path, fixtures: Path, work: Path) -> None:
@@ -2297,6 +2382,7 @@ def _smoke(dist: Path) -> None:
         _deepeval_trace_pilot(cli, work)
         _langfuse_pilot(cli, work)
         _langfuse_cli_pilot(cli, work)
+        _langfuse_auto_pilot(cli, work)
 
         _native_measurement_pilot(cli, fixtures, work)
         _baseline_event_pilot(cli, fixtures, work)

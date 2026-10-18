@@ -1,0 +1,1849 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:langfuse_accounting.v2",
+  "title": "langfuse_accounting.v2",
+  "description": "Selected Langfuse array/blob or CLI-list rows; producer version and source windows remain unknown. The reader family is an Underwrite policy, not origin proof.",
+  "if": {
+    "properties": {
+      "reader_profile": {
+        "const": "langfuse.blob-array.selected-fields.v1"
+      }
+    },
+    "required": [
+      "reader_profile"
+    ]
+  },
+  "then": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "schema",
+      "rule_profile",
+      "sources",
+      "scope",
+      "observations",
+      "scores",
+      "counts",
+      "planned",
+      "limitations",
+      "next_actions",
+      "reader_profile"
+    ],
+    "properties": {
+      "schema": {
+        "const": "langfuse_accounting.v2"
+      },
+      "rule_profile": {
+        "const": "langfuse.score-accounting.v1"
+      },
+      "sources": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "observations",
+          "scores"
+        ],
+        "properties": {
+          "observations": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "format",
+              "raw_hash",
+              "producer_version",
+              "producer_version_state",
+              "claims_verified"
+            ],
+            "properties": {
+              "format": {
+                "const": "langfuse.observations-v2"
+              },
+              "raw_hash": {
+                "type": "string",
+                "pattern": "^sha256:[a-f0-9]{64}(?![\\s\\S])"
+              },
+              "producer_version": {
+                "type": "null"
+              },
+              "producer_version_state": {
+                "const": "unknown"
+              },
+              "claims_verified": {
+                "const": false
+              }
+            }
+          },
+          "scores": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "format",
+              "raw_hash",
+              "producer_version",
+              "producer_version_state",
+              "claims_verified"
+            ],
+            "properties": {
+              "format": {
+                "const": "langfuse.scores"
+              },
+              "raw_hash": {
+                "type": "string",
+                "pattern": "^sha256:[a-f0-9]{64}(?![\\s\\S])"
+              },
+              "producer_version": {
+                "type": "null"
+              },
+              "producer_version_state": {
+                "const": "unknown"
+              },
+              "claims_verified": {
+                "const": false
+              }
+            }
+          }
+        }
+      },
+      "scope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "population",
+          "export_completeness",
+          "planned_evaluations",
+          "unit",
+          "claims_verified",
+          "display_text",
+          "selected_fields_only",
+          "selected_file_binding",
+          "source_windows"
+        ],
+        "properties": {
+          "population": {
+            "const": "supplied_rows"
+          },
+          "export_completeness": {
+            "const": "unknown"
+          },
+          "planned_evaluations": {
+            "const": "unknown"
+          },
+          "unit": {
+            "const": "score_row"
+          },
+          "claims_verified": {
+            "const": false
+          },
+          "display_text": {
+            "const": "nfc_normalized"
+          },
+          "selected_fields_only": {
+            "const": true
+          },
+          "selected_file_binding": {
+            "const": "independent_selected_files"
+          },
+          "source_windows": {
+            "const": "unknown"
+          }
+        }
+      },
+      "observations": {
+        "type": "array",
+        "maxItems": 512,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "observation_index",
+            "id",
+            "project_id",
+            "trace_id",
+            "type",
+            "local_score_count"
+          ],
+          "properties": {
+            "observation_index": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 511
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "project_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "trace_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "type": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "local_score_count": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2048
+            }
+          }
+        }
+      },
+      "scores": {
+        "type": "array",
+        "maxItems": 2048,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "score_index",
+            "id",
+            "project_id",
+            "trace_id",
+            "observation_id",
+            "name",
+            "data_type",
+            "value",
+            "string_value",
+            "kind_rule",
+            "association",
+            "association_rule",
+            "target_observation_index"
+          ],
+          "properties": {
+            "score_index": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2047
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "project_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "trace_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "observation_id": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "name": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "data_type": {
+              "enum": [
+                "NUMERIC",
+                "BOOLEAN",
+                "CATEGORICAL",
+                "TEXT"
+              ]
+            },
+            "value": {
+              "type": "number"
+            },
+            "string_value": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 1024
+            },
+            "kind_rule": {
+              "enum": [
+                "NUMERIC_SCORE",
+                "BOOLEAN_SCORE",
+                "CATEGORICAL_SCORE",
+                "TEXT_SCORE"
+              ]
+            },
+            "association": {
+              "enum": [
+                "observation_local",
+                "trace_level",
+                "unresolved_observation_reference"
+              ]
+            },
+            "association_rule": {
+              "enum": [
+                "MATCHED_OBSERVATION_SCORE",
+                "TRACE_LEVEL_SCORE",
+                "UNRESOLVED_OBSERVATION_SCORE"
+              ]
+            },
+            "target_observation_index": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 511
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "data_type": {
+                    "const": "NUMERIC"
+                  }
+                },
+                "required": [
+                  "data_type"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "kind_rule": {
+                    "const": "NUMERIC_SCORE"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "data_type": {
+                    "const": "BOOLEAN"
+                  }
+                },
+                "required": [
+                  "data_type"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "kind_rule": {
+                    "const": "BOOLEAN_SCORE"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "data_type": {
+                    "const": "CATEGORICAL"
+                  }
+                },
+                "required": [
+                  "data_type"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "kind_rule": {
+                    "const": "CATEGORICAL_SCORE"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "data_type": {
+                    "const": "TEXT"
+                  }
+                },
+                "required": [
+                  "data_type"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "kind_rule": {
+                    "const": "TEXT_SCORE"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "association": {
+                    "const": "observation_local"
+                  }
+                },
+                "required": [
+                  "association"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "association_rule": {
+                    "const": "MATCHED_OBSERVATION_SCORE"
+                  },
+                  "observation_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "target_observation_index": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 511
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "association": {
+                    "const": "trace_level"
+                  }
+                },
+                "required": [
+                  "association"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "association_rule": {
+                    "const": "TRACE_LEVEL_SCORE"
+                  },
+                  "observation_id": {
+                    "type": "null"
+                  },
+                  "target_observation_index": {
+                    "type": "null"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "association": {
+                    "const": "unresolved_observation_reference"
+                  }
+                },
+                "required": [
+                  "association"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "association_rule": {
+                    "const": "UNRESOLVED_OBSERVATION_SCORE"
+                  },
+                  "observation_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "target_observation_index": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "counts": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "observations",
+          "scores",
+          "by_data_type",
+          "associations",
+          "observations_without_local_scores"
+        ],
+        "properties": {
+          "observations": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 512
+          },
+          "scores": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2048
+          },
+          "by_data_type": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "NUMERIC",
+              "BOOLEAN",
+              "CATEGORICAL",
+              "TEXT"
+            ],
+            "properties": {
+              "NUMERIC": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2048
+              },
+              "BOOLEAN": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2048
+              },
+              "CATEGORICAL": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2048
+              },
+              "TEXT": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2048
+              }
+            }
+          },
+          "associations": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "observation_local",
+              "trace_level",
+              "unresolved_observation_reference"
+            ],
+            "properties": {
+              "observation_local": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2048
+              },
+              "trace_level": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2048
+              },
+              "unresolved_observation_reference": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2048
+              }
+            }
+          },
+          "observations_without_local_scores": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 512
+          }
+        }
+      },
+      "planned": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "count",
+          "missing_execution_count"
+        ],
+        "properties": {
+          "status": {
+            "const": "unknown"
+          },
+          "count": {
+            "const": null
+          },
+          "missing_execution_count": {
+            "const": null
+          }
+        }
+      },
+      "limitations": {
+        "const": [
+          "SOURCE_CLAIMS_UNVERIFIED",
+          "EXPORT_COMPLETENESS_UNKNOWN",
+          "PLANNED_EVALUATIONS_UNKNOWN",
+          "SCORE_VALUES_NOT_TASK_VERDICTS",
+          "NO_STATISTICAL_OR_APPROVAL_AUTHORITY",
+          "SOURCE_VERSION_UNKNOWN",
+          "SELECTED_FIELDS_ONLY",
+          "SOURCE_WINDOWS_UNKNOWN",
+          "SOURCE_HASHES_AND_ROW_PATTERNS_LINKABLE"
+        ]
+      },
+      "next_actions": {
+        "type": "array",
+        "maxItems": 2,
+        "items": {
+          "type": "string",
+          "enum": [
+            "SUPPLY_PLANNED_INVENTORY_FOR_MISSINGNESS",
+            "INSPECT_UNRESOLVED_OBSERVATION_REFERENCES"
+          ]
+        },
+        "uniqueItems": true
+      },
+      "reader_profile": {
+        "const": "langfuse.blob-array.selected-fields.v1"
+      }
+    }
+  },
+  "else": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "schema",
+      "rule_profile",
+      "sources",
+      "retrieval",
+      "scope",
+      "counts",
+      "limitations",
+      "next_actions",
+      "observations",
+      "scores",
+      "planned",
+      "reader_profile"
+    ],
+    "properties": {
+      "schema": {
+        "const": "langfuse_accounting.v2"
+      },
+      "rule_profile": {
+        "const": "langfuse.cli-accounting.v1"
+      },
+      "sources": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "observations",
+          "scores"
+        ],
+        "properties": {
+          "observations": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "format",
+              "raw_hash",
+              "producer_version",
+              "producer_version_state",
+              "claims_verified"
+            ],
+            "properties": {
+              "format": {
+                "const": "langfuse.cli.observations-v2"
+              },
+              "raw_hash": {
+                "type": "string",
+                "pattern": "^sha256:[a-f0-9]{64}(?![\\s\\S])"
+              },
+              "producer_version": {
+                "type": "null"
+              },
+              "producer_version_state": {
+                "const": "unknown"
+              },
+              "claims_verified": {
+                "const": false
+              }
+            }
+          },
+          "scores": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "format",
+              "raw_hash",
+              "producer_version",
+              "producer_version_state",
+              "claims_verified"
+            ],
+            "properties": {
+              "format": {
+                "const": "langfuse.cli.scores-v3"
+              },
+              "raw_hash": {
+                "type": "string",
+                "pattern": "^sha256:[a-f0-9]{64}(?![\\s\\S])"
+              },
+              "producer_version": {
+                "type": "null"
+              },
+              "producer_version_state": {
+                "const": "unknown"
+              },
+              "claims_verified": {
+                "const": false
+              }
+            }
+          }
+        }
+      },
+      "retrieval": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "observations",
+          "scores"
+        ],
+        "properties": {
+          "observations": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "capture_kind",
+              "http_status",
+              "pagination"
+            ],
+            "properties": {
+              "capture_kind": {
+                "enum": [
+                  "json_envelope",
+                  "output_body"
+                ]
+              },
+              "http_status": {
+                "enum": [
+                  200,
+                  null
+                ]
+              },
+              "pagination": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "mode",
+                  "cursor_state",
+                  "pages",
+                  "fetched_items",
+                  "truncated"
+                ],
+                "properties": {
+                  "mode": {
+                    "enum": [
+                      "one_page",
+                      "cli_all"
+                    ]
+                  },
+                  "cursor_state": {
+                    "enum": [
+                      "present",
+                      "null",
+                      "absent",
+                      "not_applicable"
+                    ]
+                  },
+                  "pages": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 1,
+                    "maximum": 100
+                  },
+                  "fetched_items": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "maximum": 512
+                  },
+                  "truncated": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  }
+                },
+                "allOf": [
+                  {
+                    "if": {
+                      "properties": {
+                        "mode": {
+                          "const": "one_page"
+                        }
+                      },
+                      "required": [
+                        "mode"
+                      ]
+                    },
+                    "then": {
+                      "properties": {
+                        "cursor_state": {
+                          "enum": [
+                            "present",
+                            "null",
+                            "absent"
+                          ]
+                        },
+                        "pages": {
+                          "type": "null"
+                        },
+                        "fetched_items": {
+                          "type": "null"
+                        },
+                        "truncated": {
+                          "type": "null"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": {
+                        "mode": {
+                          "const": "cli_all"
+                        }
+                      },
+                      "required": [
+                        "mode"
+                      ]
+                    },
+                    "then": {
+                      "properties": {
+                        "cursor_state": {
+                          "const": "not_applicable"
+                        },
+                        "pages": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 100
+                        },
+                        "fetched_items": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 512
+                        },
+                        "truncated": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "capture_kind": {
+                      "const": "json_envelope"
+                    }
+                  },
+                  "required": [
+                    "capture_kind"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "http_status": {
+                      "const": 200
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "capture_kind": {
+                      "const": "output_body"
+                    }
+                  },
+                  "required": [
+                    "capture_kind"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "http_status": {
+                      "type": "null"
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "scores": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "capture_kind",
+              "http_status",
+              "pagination"
+            ],
+            "properties": {
+              "capture_kind": {
+                "enum": [
+                  "json_envelope",
+                  "output_body"
+                ]
+              },
+              "http_status": {
+                "enum": [
+                  200,
+                  null
+                ]
+              },
+              "pagination": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "mode",
+                  "cursor_state",
+                  "pages",
+                  "fetched_items",
+                  "truncated"
+                ],
+                "properties": {
+                  "mode": {
+                    "enum": [
+                      "one_page",
+                      "cli_all"
+                    ]
+                  },
+                  "cursor_state": {
+                    "enum": [
+                      "present",
+                      "null",
+                      "absent",
+                      "not_applicable"
+                    ]
+                  },
+                  "pages": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 1,
+                    "maximum": 100
+                  },
+                  "fetched_items": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "maximum": 2048
+                  },
+                  "truncated": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  }
+                },
+                "allOf": [
+                  {
+                    "if": {
+                      "properties": {
+                        "mode": {
+                          "const": "one_page"
+                        }
+                      },
+                      "required": [
+                        "mode"
+                      ]
+                    },
+                    "then": {
+                      "properties": {
+                        "cursor_state": {
+                          "enum": [
+                            "present",
+                            "null",
+                            "absent"
+                          ]
+                        },
+                        "pages": {
+                          "type": "null"
+                        },
+                        "fetched_items": {
+                          "type": "null"
+                        },
+                        "truncated": {
+                          "type": "null"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": {
+                        "mode": {
+                          "const": "cli_all"
+                        }
+                      },
+                      "required": [
+                        "mode"
+                      ]
+                    },
+                    "then": {
+                      "properties": {
+                        "cursor_state": {
+                          "const": "not_applicable"
+                        },
+                        "pages": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 100
+                        },
+                        "fetched_items": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2048
+                        },
+                        "truncated": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "capture_kind": {
+                      "const": "json_envelope"
+                    }
+                  },
+                  "required": [
+                    "capture_kind"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "http_status": {
+                      "const": 200
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "capture_kind": {
+                      "const": "output_body"
+                    }
+                  },
+                  "required": [
+                    "capture_kind"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "http_status": {
+                      "type": "null"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "scope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "population",
+          "selected_file_binding",
+          "export_completeness",
+          "planned_evaluations",
+          "claims_verified",
+          "score_values",
+          "selected_fields_only",
+          "source_windows"
+        ],
+        "properties": {
+          "population": {
+            "const": "supplied_rows"
+          },
+          "selected_file_binding": {
+            "const": "independent_selected_files"
+          },
+          "export_completeness": {
+            "const": "unknown"
+          },
+          "planned_evaluations": {
+            "const": "unknown"
+          },
+          "claims_verified": {
+            "const": false
+          },
+          "score_values": {
+            "const": "source_claim"
+          },
+          "selected_fields_only": {
+            "const": true
+          },
+          "source_windows": {
+            "const": "unknown"
+          }
+        }
+      },
+      "counts": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "observations",
+          "scores",
+          "by_data_type",
+          "by_subject_kind",
+          "associations",
+          "observations_without_local_scores"
+        ],
+        "properties": {
+          "observations": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 512
+          },
+          "scores": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2048
+          },
+          "by_data_type": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "NUMERIC",
+              "BOOLEAN",
+              "CATEGORICAL",
+              "TEXT",
+              "CORRECTION"
+            ],
+            "properties": {
+              "NUMERIC": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2048
+              },
+              "BOOLEAN": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2048
+              },
+              "CATEGORICAL": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2048
+              },
+              "TEXT": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2048
+              },
+              "CORRECTION": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2048
+              }
+            }
+          },
+          "by_subject_kind": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "observation",
+              "trace",
+              "session",
+              "experiment",
+              "unknown"
+            ],
+            "properties": {
+              "observation": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2048
+              },
+              "trace": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2048
+              },
+              "session": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2048
+              },
+              "experiment": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2048
+              },
+              "unknown": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2048
+              }
+            }
+          },
+          "associations": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "observation_local",
+              "unresolved_observation_reference",
+              "observation_context_unknown",
+              "other_subject",
+              "subject_unknown"
+            ],
+            "properties": {
+              "observation_local": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2048
+              },
+              "unresolved_observation_reference": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2048
+              },
+              "observation_context_unknown": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2048
+              },
+              "other_subject": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2048
+              },
+              "subject_unknown": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2048
+              }
+            }
+          },
+          "observations_without_local_scores": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 512
+          }
+        }
+      },
+      "limitations": {
+        "const": [
+          "SOURCE_CLAIMS_UNVERIFIED",
+          "SELECTED_FILES_NOT_ATOMICALLY_BOUND",
+          "PAGINATION_NOT_EXPORT_COMPLETENESS",
+          "REQUEST_FILTERS_NOT_VERIFIED",
+          "PLANNED_EVALUATIONS_UNKNOWN",
+          "LOCAL_ASSOCIATIONS_ONLY",
+          "SCORE_VALUES_NOT_TASK_VERDICTS",
+          "NO_STATISTICAL_OR_APPROVAL_AUTHORITY",
+          "SOURCE_VERSION_UNKNOWN",
+          "SELECTED_FIELDS_ONLY",
+          "SOURCE_WINDOWS_UNKNOWN",
+          "SOURCE_HASHES_AND_ROW_PATTERNS_LINKABLE"
+        ]
+      },
+      "next_actions": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 4,
+        "items": {
+          "enum": [
+            "SUPPLY_PLANNED_INVENTORY_FOR_MISSINGNESS",
+            "FETCH_REMAINING_LANGFUSE_PAGES",
+            "INSPECT_LANGFUSE_SUBJECT_CONTEXT",
+            "INSPECT_UNRESOLVED_OBSERVATION_REFERENCES"
+          ]
+        },
+        "uniqueItems": true
+      },
+      "observations": {
+        "type": "array",
+        "maxItems": 512,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "observation_index",
+            "id",
+            "project_id",
+            "trace_id",
+            "type",
+            "local_score_count"
+          ],
+          "properties": {
+            "observation_index": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 511
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "project_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "trace_id": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "type": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "local_score_count": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2048
+            }
+          }
+        }
+      },
+      "scores": {
+        "type": "array",
+        "maxItems": 2048,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "score_index",
+            "id",
+            "project_id",
+            "name",
+            "data_type",
+            "value",
+            "subject",
+            "association",
+            "target_observation_index"
+          ],
+          "properties": {
+            "score_index": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2047
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "project_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "name": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "data_type": {
+              "enum": [
+                "NUMERIC",
+                "BOOLEAN",
+                "CATEGORICAL",
+                "TEXT",
+                "CORRECTION"
+              ]
+            },
+            "value": {
+              "type": [
+                "number",
+                "boolean",
+                "string"
+              ],
+              "maxLength": 1024
+            },
+            "subject": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "availability",
+                "kind",
+                "id",
+                "trace_id"
+              ],
+              "properties": {
+                "availability": {
+                  "enum": [
+                    "present",
+                    "null",
+                    "absent"
+                  ]
+                },
+                "kind": {
+                  "enum": [
+                    "observation",
+                    "trace",
+                    "session",
+                    "experiment",
+                    null
+                  ]
+                },
+                "id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "trace_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "availability": {
+                        "const": "present"
+                      }
+                    },
+                    "required": [
+                      "availability"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "kind": {
+                        "enum": [
+                          "observation",
+                          "trace",
+                          "session",
+                          "experiment"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "availability": {
+                        "const": "null"
+                      }
+                    },
+                    "required": [
+                      "availability"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "kind": {
+                        "type": "null"
+                      },
+                      "id": {
+                        "type": "null"
+                      },
+                      "trace_id": {
+                        "type": "null"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "availability": {
+                        "const": "absent"
+                      }
+                    },
+                    "required": [
+                      "availability"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "kind": {
+                        "type": "null"
+                      },
+                      "id": {
+                        "type": "null"
+                      },
+                      "trace_id": {
+                        "type": "null"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "trace"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "trace_id": {
+                        "type": "null"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "session"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "trace_id": {
+                        "type": "null"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "experiment"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "trace_id": {
+                        "type": "null"
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "association": {
+              "enum": [
+                "observation_local",
+                "unresolved_observation_reference",
+                "observation_context_unknown",
+                "other_subject",
+                "subject_unknown"
+              ]
+            },
+            "target_observation_index": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 511
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "data_type": {
+                    "const": "NUMERIC"
+                  }
+                },
+                "required": [
+                  "data_type"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "value": {
+                    "type": "number"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "data_type": {
+                    "const": "BOOLEAN"
+                  }
+                },
+                "required": [
+                  "data_type"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "value": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "data_type": {
+                    "const": "CATEGORICAL"
+                  }
+                },
+                "required": [
+                  "data_type"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "maxLength": 1024
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "data_type": {
+                    "const": "TEXT"
+                  }
+                },
+                "required": [
+                  "data_type"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "maxLength": 1024
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "data_type": {
+                    "const": "CORRECTION"
+                  }
+                },
+                "required": [
+                  "data_type"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "maxLength": 1024
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "association": {
+                    "const": "observation_local"
+                  }
+                },
+                "required": [
+                  "association"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "target_observation_index": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 511
+                  },
+                  "subject": {
+                    "properties": {
+                      "kind": {
+                        "const": "observation"
+                      },
+                      "trace_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "association": {
+                    "const": "unresolved_observation_reference"
+                  }
+                },
+                "required": [
+                  "association"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "target_observation_index": {
+                    "type": "null"
+                  },
+                  "subject": {
+                    "properties": {
+                      "kind": {
+                        "const": "observation"
+                      },
+                      "trace_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "association": {
+                    "const": "observation_context_unknown"
+                  }
+                },
+                "required": [
+                  "association"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "target_observation_index": {
+                    "type": "null"
+                  },
+                  "subject": {
+                    "properties": {
+                      "kind": {
+                        "const": "observation"
+                      },
+                      "trace_id": {
+                        "type": "null"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "association": {
+                    "const": "other_subject"
+                  }
+                },
+                "required": [
+                  "association"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "target_observation_index": {
+                    "type": "null"
+                  },
+                  "subject": {
+                    "properties": {
+                      "kind": {
+                        "enum": [
+                          "trace",
+                          "session",
+                          "experiment"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "association": {
+                    "const": "subject_unknown"
+                  }
+                },
+                "required": [
+                  "association"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "target_observation_index": {
+                    "type": "null"
+                  },
+                  "subject": {
+                    "properties": {
+                      "kind": {
+                        "const": null
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "planned": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "count",
+          "missing_execution_count"
+        ],
+        "properties": {
+          "status": {
+            "const": "unknown"
+          },
+          "count": {
+            "const": null
+          },
+          "missing_execution_count": {
+            "const": null
+          }
+        }
+      },
+      "reader_profile": {
+        "const": "langfuse.cli-list.selected-fields.v1"
+      }
+    }
+  }
+}

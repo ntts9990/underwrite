@@ -190,12 +190,13 @@ The same CLI and importable Python APIs are available to your own automation.
 ## Supported formats
 
 Support is for the **specific local payload profiles below**, not every API,
-export, or version offered by each producer. Select the version explicitly.
+export, or version offered by each producer. Check installed capabilities;
+explicit selectors reproduce older contracts.
 
 | Your input | Supported profile | Start here |
 | --- | --- | --- |
 | **goppi** | Completed baseline exchange manifest v2; separate paired-handoff route | [`audit-baseline`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#audit-a-completed-goppi-baseline-as-common-evidence) for descriptive common JSON · [`project-baseline`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#project-a-completed-goppi-baseline-into-event-observations) for native measurement · [`review-handoff`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#review-a-completed-paired-handoff-in-one-call) |
-| **Langfuse** | `4.35.0` server blob exports: observations-v2 and scores JSON arrays | [`audit-langfuse`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-langfuse-score-kinds-and-associations), with an optional content-minimized row index |
+| **Langfuse** | Published `0.1.1`: `4.35.0` server blob arrays. Development automatic intake: compatible blob arrays or official-CLI list captures. | [`audit-langfuse`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-langfuse-score-kinds-and-associations), with an optional content-minimized row index |
 | **DeepEval** | Ordinary TestRun JSON, `4.1.1` or `4.2.8` | [`audit-deepeval`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors) |
 | **Promptfoo** | Eval output JSON, `0.123.0` or `0.124.1` | [`audit-promptfoo`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#source-checkout-pilot-audit-promptfoo-counts) |
 | **External common result** | `evidence_result.v1` JSON from a producer | [`inspect-result`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#inspect-an-external-common-result) for contract screening and availability counts, with optional evidence-item `next_action` and declared metric-binding counts |
@@ -218,12 +219,14 @@ underwrite audit-baseline --exchange /path/to/goppi-baseline-exchange --json
 DeepEval accounting defaults to `4.1.1`; select `--version 4.2.8` for that
 profile. For a reusable owner-asserted metric-name pack and common descriptive
 JSON, see the [DeepEval binding workflow](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors).
-Promptfoo accounting defaults to `0.123.0`; select `--version 0.124.1`
-for that profile. Langfuse's version identifies the server blob export, not its SDK.
-Published `0.1.1` supports that blob path. A development checkout may also
-advertise an explicit [CLI-capture profile](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#read-official-langfuse-cli-captures-offline);
-check `capabilities --json` before using it. Its synthetic fixture proves the
-local file format, not live-server completeness.
+Published `0.1.1` defaults Promptfoo to `0.123.0`; select `--version 0.124.1`
+there. Published Langfuse intake defaults to the 4.35.0 server blob export.
+Development builds advertising automatic Langfuse intake read compatible blob
+arrays or [official-CLI list captures](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#read-official-langfuse-cli-captures-offline)
+without `--profile`; the selected reader does not establish the actual producer
+release. Their explicit blob/CLI profiles retain historical v1 outputs. The
+controlled CLI fixture proves local file-format handling, not live-server
+interoperability or complete export.
 See [artifact requirements](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#get-the-right-producer-artifact) and
 [producer checks](https://github.com/ntts9990/underwrite/blob/main/EVIDENCE_REVIEW.md) for the tested scope and fixture origins.
 

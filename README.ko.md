@@ -187,12 +187,13 @@ Claude Code에서 재사용할 수 있는 지침을 제공합니다.
 ## 지원 형식
 
 지원 범위는 **아래의 구체적인 로컬 페이로드 프로필**입니다. 각 도구가 제공하는 모든
-API, 내보내기 형식, 버전을 지원한다는 뜻은 아닙니다. 버전을 명시적으로 선택하세요.
+API, 내보내기 형식, 버전을 지원한다는 뜻은 아닙니다. 설치된 capabilities를 확인하세요.
+이전 계약을 재현할 때는 명시적인 선택자를 사용합니다.
 
 | 입력 | 지원 프로필 | 시작 경로 |
 | --- | --- | --- |
 | **goppi** | 완료된 baseline exchange manifest v2; paired handoff는 별도 경로 | 설명용 공통 JSON은 [`audit-baseline`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#audit-a-completed-goppi-baseline-as-common-evidence) · 네이티브 측정용 관측은 [`project-baseline`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#project-a-completed-goppi-baseline-into-event-observations) · [`review-handoff`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#review-a-completed-paired-handoff-in-one-call) |
-| **Langfuse** | `4.35.0` 서버 blob export: observations-v2와 scores JSON 배열 | [`audit-langfuse`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-langfuse-score-kinds-and-associations), 선택형 내용 최소화 행 인덱스 제공 |
+| **Langfuse** | 배포된 `0.1.1`: `4.35.0` 서버 blob 배열. 개발본의 자동 입력: 호환되는 blob 배열 또는 공식 CLI 목록 캡처. | [`audit-langfuse`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-langfuse-score-kinds-and-associations), 선택형 내용 최소화 행 인덱스 제공 |
 | **DeepEval** | 일반 TestRun JSON, `4.1.1` 또는 `4.2.8` | [`audit-deepeval`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors) |
 | **Promptfoo** | Eval output JSON, `0.123.0` 또는 `0.124.1` | [`audit-promptfoo`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#source-checkout-pilot-audit-promptfoo-counts) |
 | **외부 공통 결과** | 생성 도구의 `evidence_result.v1` JSON | [`inspect-result`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#inspect-an-external-common-result)로 계약과 가용성 집계를 검사하고, 선택적으로 근거 항목의 `next_action`과 선언된 메트릭 결합 상태별 개수를 집계 |
@@ -213,12 +214,15 @@ underwrite audit-baseline --exchange /path/to/goppi-baseline-exchange --json
 ```
 
 DeepEval 집계 검사의 기본값은 `4.1.1`입니다. `4.2.8` 프로필을 쓰려면
-`--version 4.2.8`을 지정하세요. Promptfoo 집계 검사의 기본값은 `0.123.0`이며,
-`0.124.1` 프로필에는 `--version 0.124.1`을 지정합니다. Langfuse의 버전은 SDK가 아니라
-서버 blob 내보내기를 가리킵니다. 공개된 `0.1.1`은 이 blob 경로를 지원합니다.
-개발 체크아웃은 별도의 [CLI 캡처 프로필](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#read-official-langfuse-cli-captures-offline)을
-제공할 수 있으므로 사용 전에 `capabilities --json`으로 확인하세요. 합성 fixture는
-로컬 파일 형식을 검증하지만 실제 서버의 완전성을 증명하지 않습니다.
+`--version 4.2.8`을 지정하세요. 배포된 `0.1.1`의 Promptfoo 기본값은
+`0.123.0`이며, 그 버전에서 `0.124.1`에는 `--version 0.124.1`을 지정합니다.
+배포된 Langfuse 입력의 기본값은 4.35.0 서버 blob export입니다. 개발본에서
+자동 Langfuse 입력을 광고하면 호환되는 blob 배열이나
+[공식 CLI 목록 캡처](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#read-official-langfuse-cli-captures-offline)를
+`--profile` 없이 읽습니다. 선택된 reader는 생성 도구의 실제 배포 버전을 입증하지
+않습니다. 명시적인 blob/CLI 프로필은 이전 v1 출력을 유지합니다. 통제된 CLI fixture는
+로컬 형식 처리를 보여 줄 뿐, 실제 서버와의 상호 운용성이나 내보내기의 완전성을
+증명하지 않습니다.
 검사한 범위와 fixture의 출처는
 [아티팩트 요구사항](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#get-the-right-producer-artifact)과
 [생성 도구 검증](https://github.com/ntts9990/underwrite/blob/main/EVIDENCE_REVIEW.md)을 참고하세요.

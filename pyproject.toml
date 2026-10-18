@@ -76,6 +76,9 @@ source-include = [
     "contracts/langfuse_cli_row_index.v1.schema.json",
     "contracts/langfuse_cli_record.v1.schema.json",
     "contracts/langfuse_record.v1.schema.json",
+    "contracts/langfuse_accounting.v2.schema.json",
+    "contracts/langfuse_row_index.v2.schema.json",
+    "contracts/langfuse_record.v2.schema.json",
     "contracts/declared_comparison_case.v1.schema.json",
     "contracts/declared_comparison.v1.schema.json",
     "contracts/paired_binary_input.v1.schema.json",
@@ -155,7 +158,7 @@ pythonpath = ["tests", "src"]
 [tool.deptry]
 known_first_party = [
     "underwrite", "underwrite_core", "_schema_compose", "_record_schema",
-    "build_deepeval_accounting", "build_deepeval_record",
+    "build_deepeval_accounting", "build_deepeval_record", "build_langfuse_record",
 ]
 # The workspace distribution imports as underwrite_core.
 package_module_name_map = { "underwrite-core" = ["underwrite_core"] }
