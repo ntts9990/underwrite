@@ -31,10 +31,11 @@ or assign one quality score across tools. Checking supported local files needs
 no Docker, dashboard, or provider credentials.
 
 > [!NOTE]
-> **Choose an entry path:** [published PyPI 0.1.1](#published-package--pypi-011) for the
-> released workflows, or [current main checkout](#development-checkout--current-main) for newer
-> automatic input handling and trajectory comparison. Both currently report
-> `0.1.1`; use `capabilities --json` to discover what your executable supports.
+> **This guide targets `underwrite==0.2.0`.** [Install the CLI](#installed-package--020)
+> for automatic input handling, focused evidence views and retained trajectory review.
+> A [source checkout](#development-checkout--current-main) is optional for repository
+> examples and development. Use `capabilities --json` to confirm the installed routes.
+> Upgrading from 0.1.1? Read the [migration guide](https://github.com/ntts9990/underwrite/blob/main/MIGRATION.md).
 > The older `0.0.1` has a separate pin-manifest caution; see [Install](#install).
 
 ## Quickstart
@@ -44,20 +45,19 @@ synthetic download below uses `curl`.
 File-based CLI workflows are tested with CPython 3.12 on Linux and macOS. They
 require Unix/POSIX file APIs, including for ordinary artifact reads.
 
-### Published package · PyPI 0.1.1
+### Installed package · 0.2.0
 
 **1. Install and check a file.** The app-only install resolves a compatible
 `underwrite-core` automatically. Download the public synthetic example; no
 checkout or API key is needed:
 
 ```sh
-uv tool install 'underwrite==0.1.1'
+uv tool install 'underwrite==0.2.0'
 underwrite capabilities --json
 example_dir=$(mktemp -d)
 curl -fsSLo "$example_dir/promptfoo.json" \
   https://raw.githubusercontent.com/ntts9990/underwrite/cb913d39bce628b93dcd3b06fcc4ce36f9dc66af/fixtures/examples/evidence/synthetic-promptfoo-count-mismatch.json
-underwrite audit-promptfoo "$example_dir/promptfoo.json" \
-  --version 0.123.0 --json
+underwrite audit-promptfoo "$example_dir/promptfoo.json" --json
 ```
 
 The same `uv tool install` command updates an older uv-managed `underwrite`
@@ -71,7 +71,7 @@ from its actual output:
 
 ```json
 {
-  "schema": "promptfoo_accounting.v1",
+  "schema": "promptfoo_accounting.v2",
   "declared_relation": "inconsistent",
   "producer_stats": {"errors": 1, "failures": 1, "successes": 1, "total": 3},
   "row_tallies": {"errors": 1, "failures": 0, "successes": 1, "total": 2},
@@ -83,6 +83,8 @@ from its actual output:
     "PLANNED_DENOMINATOR_UNKNOWN",
     "CAUSE_UNKNOWN",
     "SOURCE_CLAIMS_UNVERIFIED",
+    "UNCONSUMED_FIELDS_AND_POPULATIONS_NOT_ANALYZED",
+    "SOURCE_HASH_AND_VERSION_LINKABLE",
     "NO_APPROVAL_AUTHORITY"
   ]
 }
@@ -96,14 +98,14 @@ the source's verdict was verified. To keep the input and analysis together,
 [save them in a local record](#keep-results-you-can-return-to).
 
 For your own completed Promptfoo export, replace the path and use a
-[supported published profile](#supported-formats). The downloaded file is a
+[supported input shape](#supported-formats). The downloaded file is a
 constructed example, not an unchanged producer export.
 
 ### Development checkout · current main
 
-Use a checkout for the newer workflows. Run its commands through `uv run` inside
-that directory, keeping the published tool installation separate. If you already
-have a checkout, open its root and start at `uv sync` below:
+Use a checkout to work on the source or run repository examples. Run its commands
+through `uv run` inside that directory, keeping the installed tool separate. If you
+already have a checkout, open its root and start at `uv sync` below:
 
 ```sh
 git clone https://github.com/ntts9990/underwrite.git
@@ -120,7 +122,7 @@ fixture's declared `0.123.0` version as an unverified source claim. Inputs witho
 a version declaration retain an unknown release. No version flag, producer
 installation, Goppi, or provider call is needed for this example.
 Use this `uv run --frozen --no-sync underwrite` prefix for all checkout commands.
-See [development additions](#development-checkout--additions-on-current-main) for the other routes.
+See [included workflows](#included-in-020) for the other routes.
 
 <details>
 <summary><strong>Try the native measurement → acceptance workflow</strong></summary>
@@ -185,9 +187,9 @@ does not identify the available workflows.
 
 Python callers can use
 `underwrite.instrument.ingest.accounting.audit_promptfoo_file(Path(...))` in
-the chosen environment. For the published package, confirm that the input matches
-a supported profile; select it explicitly when it differs from the documented
-default. Current automatic intake does not require guessing a producer release.
+the chosen environment. Automatic intake selects a supported reader from the
+input shape without guessing a producer release. Use explicit historical selectors
+when reproducing an older contract, as described in the migration guide.
 
 Example task for an agent with terminal access:
 
@@ -211,21 +213,21 @@ Support covers selected local payloads, not every producer API, export, or
 version. Use capabilities from your chosen executable and the linked workflows
 for exact input requirements.
 
-### Published profiles · PyPI 0.1.1
+### Supported profiles · 0.2.0
 
 | Your input | Supported profile | Start here |
 | --- | --- | --- |
-| **Goppi** | Completed baseline exchange manifest v2; P7 paired handoff | [`audit-baseline`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#audit-a-completed-goppi-baseline-as-common-evidence) · [`project-baseline`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#project-a-completed-goppi-baseline-into-event-observations) · [`review-handoff`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#review-a-completed-paired-handoff-in-one-call) |
-| **Langfuse** | `4.35.0` server blob arrays | [`audit-langfuse`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-langfuse-score-kinds-and-associations) |
-| **DeepEval** | Ordinary TestRun, `4.1.1` (default) or explicit `4.2.8` | [`audit-deepeval`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors) |
-| **Promptfoo** | Eval output, `0.123.0` (default) or explicit `0.124.1` | [`audit-promptfoo`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#audit-promptfoo-counts) |
-| **External common result** | `evidence_result.v1` | [`inspect-result`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#inspect-an-external-common-result) |
+| **Goppi** | Completed baseline exchange manifest v2; P7 handoff; adopted paired trajectory | [`audit-baseline`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#audit-a-completed-goppi-baseline-as-common-evidence) · [`project-baseline`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#project-a-completed-goppi-baseline-into-event-observations) · [`review-handoff`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#review-a-completed-paired-handoff-in-one-call) · [`audit-trajectory`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#compare-a-goppi-paired-trajectory) |
+| **Langfuse** | Compatible blob arrays or official-CLI list captures; automatic pair selection | [`audit-langfuse`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-langfuse-score-kinds-and-associations) |
+| **DeepEval** | Compatible TestRun; automatic accounting, optional trace view and meaning bindings | [`audit-deepeval`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors) |
+| **Promptfoo** | SummaryV3 eval output; automatic intake, historical selectors retained | [`audit-promptfoo`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#audit-promptfoo-counts) |
+| **External common result** | `evidence_result.v1` or `evidence_result.v2` | [`inspect-result`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#inspect-an-external-common-result) |
 | **Native evidence** | `underwrite.evidence-bundle` / `v1` | `ingest` → `measure` → `accept` |
 | **Inspect AI** | `inspect.eval-log` / `0.3.263` | `ingest` |
 | **OpenInference** | `openinference.traces` / `0.1.38` | `ingest` |
 | **OTLP JSON** | `otlp-json.traces` / `0.160.0` | `ingest` |
 
-### Development checkout · additions on current main
+### Included in 0.2.0
 
 - **Automatic intake:** compatible Promptfoo SummaryV3, DeepEval TestRun, and
   Langfuse blob arrays or [official-CLI list captures](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#read-official-langfuse-cli-captures-offline)
@@ -267,16 +269,16 @@ Promptfoo export:
 
 ```sh
 underwrite records audit-promptfoo /path/to/promptfoo-output.json \
-  --version 0.123.0 --root ./review-store --id review-001 --json
+  --root ./review-store --id review-001 --json
 
 underwrite records read-json \
   --root ./review-store --id review-001 \
   --name analysis/accounting.json --json
 ```
 
-In the checkout, prefix both commands with `uv run --frozen --no-sync`; omit
-`--version` for automatic intake. Use a fresh ID for each capture; existing
-records are never overwritten.
+Automatic intake needs no producer version flag. In a checkout, prefix both
+commands with `uv run --frozen --no-sync`. Use a fresh ID for each capture;
+existing records are never overwritten.
 `records verify` checks stored integrity. `records measure` captures a native
 measurement, and `records replay-measure` recalculates it from verified saved
 inputs using the current engine, without executing the original producer.
@@ -310,7 +312,7 @@ Install the versioned app; its dependency resolves the compatible core. Use
 profiles:
 
 ```sh
-uv tool install 'underwrite==0.1.1'
+uv tool install 'underwrite==0.2.0'
 underwrite --help
 underwrite capabilities --json
 ```
@@ -323,12 +325,12 @@ For the importable Python API, install into a Python 3.12 environment instead:
 
 ```sh
 uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python 'underwrite==0.1.1'
+uv pip install --python .venv/bin/python 'underwrite==0.2.0'
 .venv/bin/python - <<'PY'
 from pathlib import Path
 from underwrite.instrument.ingest.accounting import audit_promptfoo_file
 
-result = audit_promptfoo_file(Path("/path/to/promptfoo-output.json"), version="0.123.0")
+result = audit_promptfoo_file(Path("/path/to/promptfoo-output.json"))
 print(result["declared_relation"])
 PY
 ```
@@ -398,10 +400,13 @@ Before using OIDC publishing, create the GitHub environment `pypi`, restrict it 
 `ntts9990`, repository `underwrite`, workflow `publish.yml`, and environment `pypi`.
 Once configured, run **Publish PyPI** manually from `main` in GitHub Actions.
 
-The workflow validates both packages, then publishes core before the application;
-only the separate publish job receives OIDC permission. No stored PyPI API token
-is required. Retry a partial upload with the same artifacts: existing registry
-files must match exactly, and changed artifacts require a new version.
+The workflow validates both packages and defaults to publishing only the app
+(`publish_core: false`), after testing it with the published compatible core. Select
+`publish_core: true` only for an explicitly approved core release; core upload must
+succeed before app upload. The unchanged core remains `0.1.1` for this app release.
+Only the publish job receives OIDC permission; no stored PyPI token is required.
+Retry partial uploads with identical artifacts. Existing registry files must match
+exactly; never re-upload a rebuilt, different archive under an existing version.
 
 See the official [uv publishing guide](https://docs.astral.sh/uv/guides/package/)
 and [PyPI Trusted Publisher guide](https://docs.pypi.org/trusted-publishers/using-a-publisher/).

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.0
+
+- Supported Promptfoo SummaryV3, Langfuse blob/official-CLI captures and DeepEval
+  TestRuns now use automatic input selection. Unknown producer versions stay
+  unknown; explicit historical selectors retain their earlier JSON contracts.
+- Focused DeepEval trace and Langfuse row-index views, version-neutral DeepEval
+  meaning bindings and common-result v2 inspection keep source claims, errors
+  and missing evidence distinct.
+- Goppi trajectory review compares recorded case/stage/repeat tool statuses and
+  outcomes. One-call recording retains the exact seven input files, analysis or
+  supported diagnostic, and verification history. Typed reopen verifies stored
+  bytes without Goppi or the original export. Differences do not prove causality.
+- Default JSON schemas change; see [migration](MIGRATION.md). Existing immutable
+  records preserve their original bytes and remain readable without re-analysis.
+- Only the app moves to `0.2.0`; unchanged `underwrite-core` remains `0.1.1` and
+  the compatible `underwrite-core>=0.1.0,<0.2` requirement is preserved. App-only
+  release checks install the candidate with the published core before upload.
+
 ## 0.1.1
 
 - The package description now leads with an installed CLI/Python workflow and

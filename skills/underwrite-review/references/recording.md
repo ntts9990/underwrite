@@ -49,7 +49,7 @@ Stored-byte integrity does not authenticate the producer or authorize a change.
 
 For a selected DeepEval step review, when capabilities advertises automatic
 trace recording, use `records audit-deepeval FILE --view trace-index --root ROOT
---id NEW_ID --json` without a version flag. This development route returns
+--id NEW_ID --json` without a version flag. This 0.2.0 route returns
 `deepeval_trace_record.v2` and retains the exact source buffer used for the
 minimized index; the actual producer release stays unknown. Published 0.1.1
 predates this route, while explicit `--version 4.2.8` keeps the old v1 trace
@@ -90,7 +90,7 @@ whole-record `records verify` check.
 
 For a supported DeepEval TestRun, prefer the capabilities-listed
 `records audit-deepeval FILE --root ROOT --id NEW_ID --json` when the caller requests
-whole-file retention in an explicit private store. Development automatic intake
+whole-file retention in an explicit private store. Automatic intake in 0.2.0
 returns `deepeval_record.v3` with actual v3 accounting or a finite diagnostic,
 without claiming a producer release. Published 0.1.1 instead defaults to strict
 4.1.1/v1. Explicit `--version 4.1.1` or `--version 4.2.8` retains the old
@@ -122,7 +122,7 @@ do not silently migrate or widen its version assertion.
 For a supported Langfuse pair, if capabilities lists the automatic records
 audit-langfuse profile and the caller selected a private store and new ID, prefer
 `records audit-langfuse --observations FILE --scores FILE --root ROOT --id NEW_ID --json`.
-In development builds this chooses the blob-array or CLI-list reader from both
+In 0.2.0 this chooses the blob-array or CLI-list reader from both
 captured shapes and returns `langfuse_record.v2`; the actual producer release stays
 unknown. Published 0.1.1 instead defaults to the pinned blob v1 route. The record
 retains both entire selected files using the same buffers as analysis. It attempts
@@ -157,7 +157,7 @@ claim, or approval.
 For a supported Promptfoo export, when the caller explicitly selects a private
 store and new ID and capabilities includes the records audit-promptfoo profile,
 use `records audit-promptfoo FILE --root ROOT --id NEW_ID --json`. The default
-in development builds advertising `promptfoo_record.v2` is automatic SummaryV3
+in 0.2.0 builds advertising `promptfoo_record.v2` is automatic SummaryV3
 accounting: omit `--version`. The source's producer version is a declaration or
 unknown, separate from the reader policy; do not guess it from file shape.
 Explicit `--version 0.123.0` or `--version 0.124.1` keeps the strict v1 record/report family.

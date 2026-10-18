@@ -2,7 +2,7 @@
 
 underwrite reads local artifacts. An agent can run its CLI, keep the JSON outputs,
 and report what each output establishes. It does not need a server or credentials.
-Install the versioned CLI with `uv tool install 'underwrite==0.1.1'`, then run
+Install the versioned CLI with `uv tool install 'underwrite==0.2.0'`, then run
 `underwrite` directly. The app resolves a compatible `underwrite-core`.
 For an importable Python API, install the same app version into a Python 3.12
 environment; see [Install](README.md#install). The app accepts core
@@ -23,7 +23,7 @@ of inferring support from the package version alone. Published `0.1.0` has
 does not. Use help-based discovery with any installed version. Capability
 availability is not evidence that an arbitrary export satisfies a profile.
 
-For development changes since published 0.1.1, see [migration](MIGRATION.md).
+For changes from published 0.1.1 to 0.2.0, see [migration](MIGRATION.md).
 Automatic reader selection changes some default JSON contracts; explicit
 historical selectors and existing stored bytes retain their original meanings.
 
@@ -32,7 +32,7 @@ enter the native `ingest` → `measure` → `accept` workflow with an explicit p
 and declared claims. A supported external export can be ingested as source claims
 and byte identity; it does not produce a measurable read under the current profile.
 External observations do not enter `measure`. The direct `audit-promptfoo FILE`
-command in current development builds reads SummaryV3 without a version option;
+command in 0.2.0 reads SummaryV3 without a version option;
 explicit `--version` retains the older strict profiles. Neither creates a
 measurement read. The promptfoo example below deliberately calls `measure` to
 show that command's typed refusal.
@@ -94,10 +94,10 @@ is ready; obtain the completed producer artifact and its version context first.
 
 | Producer | Input boundary |
 | --- | --- |
-| goppi | `audit-baseline` and `project-baseline` accept the exact baseline exchange manifest v2 described below; P7 paired handoffs, the separate C55 operator-answer assessment, and older grounded-pilot exchanges have different contracts. No generic ingest profile. A CLI summary is insufficient; do not manufacture rows from counts. |
-| Langfuse | Published `0.1.1` defaults to the `4.35.0` **server blob-export profile**: complete-field, uncompressed JSON arrays for `observations_v2` and `scores`. Development builds advertising automatic Langfuse intake accept either that array pair or local official-CLI Observations v2 / Scores v3 `--json` envelopes or `--output` bodies without `--profile`. Check capabilities; file shape selects an Underwrite reader, not a verified server/CLI release. Neither path accepts arbitrary REST/UI JSON, Parquet, or an SDK flush result. See [the pinned CLI example](fixtures/examples/langfuse-cli/SOURCE.md). |
-| DeepEval | Published `0.1.1` defaults to ordinary `4.1.1`; select `--version 4.2.8` for that strict profile. Development builds advertising automatic intake read compatible old/current TestRuns without a version flag and keep the actual producer release unknown. `--view trace-index` selects step structure. A version-neutral owner-authored v2 binding pack can attach declared metric meaning without a version flag when advertised; the explicit 4.2.8/v1 pack remains historical. |
-| Promptfoo | Supply a SummaryV3 eval output JSON. Development builds advertising `promptfoo.eval-output\|auto` read it without a version flag, recording any valid declared producer version separately from their reader policy. Published 0.1.1 predates auto input; its strict profiles require the supported version selection. An assertion-failure exit can accompany a valid export. A supplied `audit-counts` manifest retains its explicit source version and expected-hash check. |
+| goppi | `audit-baseline` and `project-baseline` accept the exact baseline exchange manifest v2 described below; P7 paired handoffs, the separate C55 operator-answer assessment, and older grounded-pilot exchanges have different contracts. For `audit-trajectory`, supply the complete outer export with `paired/` and `trajectory/` and an already installed compatible offline Goppi verifier; see [trajectory review](#compare-a-goppi-paired-trajectory). No generic ingest profile. A CLI summary is insufficient; do not manufacture rows from counts. |
+| Langfuse | Published `0.1.1` defaults to the `4.35.0` **server blob-export profile**: complete-field, uncompressed JSON arrays for `observations_v2` and `scores`. Underwrite 0.2.0 accepts either that array pair or local official-CLI Observations v2 / Scores v3 `--json` envelopes or `--output` bodies without `--profile`. Check capabilities; file shape selects an Underwrite reader, not a verified server/CLI release. Neither path accepts arbitrary REST/UI JSON, Parquet, or an SDK flush result. See [the pinned CLI example](fixtures/examples/langfuse-cli/SOURCE.md). |
+| DeepEval | Published `0.1.1` defaults to ordinary `4.1.1`; select `--version 4.2.8` for that strict profile. Underwrite 0.2.0 reads compatible old/current TestRuns without a version flag and keeps the actual producer release unknown. `--view trace-index` selects step structure. A version-neutral owner-authored v2 binding pack can attach declared metric meaning without a version flag when advertised; the explicit 4.2.8/v1 pack remains historical. |
+| Promptfoo | Supply a SummaryV3 eval output JSON. Underwrite 0.2.0 builds advertising `promptfoo.eval-output\|auto` read it without a version flag, recording any valid declared producer version separately from their reader policy. Published 0.1.1 predates auto input; its strict profiles require the supported version selection. An assertion-failure exit can accompany a valid export. A supplied `audit-counts` manifest retains its explicit source version and expected-hash check. |
 
 The [producer checks](EVIDENCE_REVIEW.md) distinguish fresh tool-generated
 synthetic evaluations, archived captures, and constructed examples. They test
@@ -121,7 +121,7 @@ approved a change. Acceptance always requires human review and sets
 The current native path uses `measurement_policy.v3`, profile
 `binary-event-directional.v1`, `read.v2`, `declared_claims.v2`, and
 `acceptance_decision.v2`. These workflows were introduced in published `0.1.0`
-and remain in the `0.1.1` source tree; older PyPI `0.0.1` lacks them. Use the
+and remain available in `0.2.0`; older PyPI `0.0.1` lacks them. Use the
 installed CLI or a checkout for the selected version.
 
 The native bundle declares `payload.measurement_semantics` (`measurement_semantics.v1`):
@@ -242,12 +242,12 @@ unscored metrics or Langfuse observations without scores as unexecuted planned u
 
 ## Account for Langfuse score kinds and associations
 
-In a development build advertising automatic Langfuse intake, supply two local
+In 0.2.0, use the advertised automatic Langfuse intake with two local
 files: either complete-field, uncompressed blob JSON arrays or official-CLI
 Observations v2 / Scores v3 list captures. The command selects the reader from
 both file shapes; it does not infer or verify a producer release. Published
 `0.1.1` accepts only the pinned 4.35.0 blob arrays at this route. Inspect
-capabilities before using a development route:
+capabilities before using the selected route:
 
 ```sh
 underwrite audit-langfuse --observations observations_v2.json --scores scores.json --json
@@ -323,7 +323,7 @@ underwrite records read-json --root /private/review-store --id langfuse.review-0
 
 This retains the entire selected files, including source content omitted from the
 accounting report. Analysis and storage use the same captured bytes; the two exports
-are not an atomic producer snapshot. The default development `langfuse_record.v2`
+are not an atomic producer snapshot. The default 0.2.0 `langfuse_record.v2`
 embeds automatic full accounting; explicit legacy profiles retain their v1 record
 contracts and stored invocation/manifest bytes. Both versions separate acquisition,
 analysis, and storage. Exit 0 means a result was saved, exit 2 means a diagnostic was
@@ -340,7 +340,7 @@ provenance or export completeness. Null `published_record` means no identity was
 returned, not proof that the ID is free. Use a new ID after inspecting failure.
 Analysis-only `audit-langfuse` remains available without creating a store.
 
-For a content-minimized row index and private retention in one call, development
+For a content-minimized row index and private retention in one call, 0.2.0
 builds advertising row-index recording accept:
 
 ```sh
@@ -362,7 +362,7 @@ authentication. Published `0.1.1` predates this recording view, so check capabil
 
 ### Read official Langfuse CLI captures offline
 
-This route is available in a development checkout when capabilities advertises
+This route is available in 0.2.0 when capabilities advertises
 automatic Langfuse intake; published `underwrite==0.1.1` predates CLI intake.
 For a selected `@langfuse/cli` 1.2.4 / API-snapshot 4.35.0 pair, save the
 Observations v2 and Scores v3 list outputs as local files. Automatic intake
@@ -423,11 +423,11 @@ request windows, complete export or approval. Explicit `--profile cli-1.2.4`
 retains `langfuse_cli_accounting.v1`, `langfuse_cli_row_index.v1` and the default
 `langfuse_cli_record.v1`; row recording uses `langfuse_row_record.v1`.
 `--profile blob-4.35.0` likewise retains its blob v1 analysis contracts.
-The published `0.1.1` artifacts predate this development-checkout route.
+The published `0.1.1` artifacts predate this route, introduced in 0.2.0.
 
 ## Inspect recorded DeepEval agent steps
 
-Use this development route when capabilities advertises automatic DeepEval
+Use this 0.2.0 route when capabilities advertises automatic DeepEval
 `trace-index` intake; published `underwrite==0.1.1` predates it. Supply the
 unchanged local TestRun JSON written by DeepEval's `results_folder`. The file
 does not declare the package release, so keep that context separately:
@@ -493,7 +493,7 @@ Published 0.1.1 predates this composed trace route too. Explicit
 
 ## Account for DeepEval scores and evaluator errors
 
-In a development build advertising automatic DeepEval intake, use the completed
+In 0.2.0, use the advertised automatic DeepEval intake with the completed
 local TestRun without a producer-version flag. Published `0.1.1` instead defaults
 to the strict 4.1.1 profile; inspect capabilities before relying on automatic
 behavior:
@@ -581,7 +581,7 @@ works with `ingest --format deepeval.test-run --version 4.2.8`.
 No version is detected from this unversioned file; selecting a profile does not
 authenticate its producer. Automatic intake does not widen low-level `ingest`.
 
-In a development build advertising neutral DeepEval binding, supply one
+In 0.2.0, use the advertised neutral DeepEval binding with one
 owner-authored `deepeval_metric_bindings.v2` pack with the local TestRun. Omit
 `--version`; Underwrite applies the selected ordinary reader and returns
 `evidence_result.v2` with the producer release null/unknown, the actual reader
@@ -762,7 +762,7 @@ acquisition diagnostics; its storage and exit meanings are the same as v1.
 
 ## Audit Promptfoo counts
 
-Current development builds advertising `promptfoo.eval-output|auto` accept
+Underwrite 0.2.0 builds advertising `promptfoo.eval-output|auto` accept
 SummaryV3 files without a version/profile option. Published `0.1.1` predates this
 default; inspect capabilities on an installed tool. Fixture paths below require
 a checkout. For a local export, use its path directly without creating a manifest:
@@ -928,7 +928,7 @@ one is not necessarily an improvement: consult `outcome_definition`.
 
 The field is optional in the updated output schema so historical reports remain
 valid; current outputs include it. Consumers with an older strict schema must
-update that schema before validating these outputs. Package versions are unchanged.
+update that schema before validating these outputs. Schema versions identify contracts independently of the package release.
 
 For a producer handoff, obtain an actual, authorized export matching
 [`paired_binary_input.v1`](contracts/paired_binary_input.v1.schema.json) and a
@@ -1029,8 +1029,7 @@ The [observed-and-missing fixture](fixtures/examples/evidence/synthetic-observed
 has one observed zero with an endpoint reason and a separate missing
 infrastructure slot. It remains `not_measured` because a primary pair is missing.
 The source annotation does not repair that gap. Older PyPI `0.0.1` strict
-validators may reject reason-bearing outputs; use the matching `0.1.0` or
-`0.1.1` source or wheel contracts.
+validators may reject reason-bearing outputs; use the matching installed source or wheel contracts.
 
 A nonsignificant p-value does not establish equivalence. None of these three
 descriptive reports is a `read.v2`, an acceptance decision, or merge authorization; do
@@ -1056,7 +1055,7 @@ underwrite inspect-result /path/to/evidence-result.json --json
 The importable equivalent is
 `underwrite.cli.inspect_result.inspect_result_file(Path("/path/to/evidence-result.json"))`.
 Published `0.1.1` accepts `evidence_result.v1` and returns
-`common_result_inspection.v1`. Development builds advertising v2 inspection
+`common_result_inspection.v1`. Underwrite 0.2.0 builds advertising v2 inspection
 accept either v1 or `evidence_result.v2` without another selector: the decoded
 closed schema token chooses a code-known installed validator, not a source-supplied
 schema path. A v2 input returns `common_result_inspection.v2`; valid v1 output
@@ -1110,7 +1109,7 @@ dependency.
 
 ## Compare a Goppi paired trajectory
 
-Development builds advertising `audit-trajectory` can review an existing Goppi
+Underwrite 0.2.0 builds advertising `audit-trajectory` can review an existing Goppi
 paired+trajectory export. Published `underwrite==0.1.1` predates this command.
 Use the complete outer directory containing `paired/` and `trajectory/`; a bare
 paired export is not evidence of zero tool calls. Goppi must already be installed
@@ -1241,7 +1240,7 @@ finite `CaptureError` or `BaselineProjectionError`; the CLI projects those
 into one `evidence_error.v1` on stderr with exit 2 and no partial stdout.
 Use `underwrite capabilities --json` to confirm that the installed executable
 offers this route. The older PyPI `0.0.1` lacks it; use the installed `0.1.0`
-CLI or the `0.1.1` source/wheel and confirm the profile.
+CLI or a current installed version and confirm the profile.
 
 When you explicitly want to retain the same source bytes and result in a
 private immutable record, use the one-call capture path:
