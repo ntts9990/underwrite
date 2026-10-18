@@ -92,7 +92,7 @@ is ready; obtain the completed producer artifact and its version context first.
 | --- | --- |
 | goppi | `audit-baseline` and `project-baseline` accept the exact baseline exchange manifest v2 described below; P7 paired handoffs, the separate C55 operator-answer assessment, and older grounded-pilot exchanges have different contracts. No generic ingest profile. A CLI summary is insufficient; do not manufacture rows from counts. |
 | Langfuse | Published `0.1.1` defaults to the `4.35.0` **server blob-export profile**: complete-field, uncompressed JSON arrays for `observations_v2` and `scores`. Development builds advertising automatic Langfuse intake accept either that array pair or local official-CLI Observations v2 / Scores v3 `--json` envelopes or `--output` bodies without `--profile`. Check capabilities; file shape selects an Underwrite reader, not a verified server/CLI release. Neither path accepts arbitrary REST/UI JSON, Parquet, or an SDK flush result. See [the pinned CLI example](fixtures/examples/langfuse-cli/SOURCE.md). |
-| DeepEval | Supply the ordinary `4.1.1` or `4.2.8` TestRun JSON written by the tool, with the producer version recorded separately. Select `--version 4.2.8` explicitly for that profile; the default remains `4.1.1`. A failed test run can still write a valid artifact. Zero, evaluator errors, and absent verdicts remain distinct. |
+| DeepEval | Published `0.1.1` defaults to ordinary `4.1.1`; select `--version 4.2.8` for that strict profile. Development builds advertising automatic intake read compatible old/current TestRuns without a version flag, reporting the actual producer release as unknown. `--view trace-index` selects recorded step structure, not metric evaluation. A failed test run can still write a valid artifact. Zero, evaluator errors and absent verdicts remain distinct. |
 | Promptfoo | Supply a SummaryV3 eval output JSON. Development builds advertising `promptfoo.eval-output\|auto` read it without a version flag, recording any valid declared producer version separately from their reader policy. Published 0.1.1 predates auto input; its strict profiles require the supported version selection. An assertion-failure exit can accompany a valid export. A supplied `audit-counts` manifest retains its explicit source version and expected-hash check. |
 
 The [producer checks](EVIDENCE_REVIEW.md) distinguish fresh tool-generated
@@ -400,48 +400,55 @@ The published `0.1.1` artifacts predate this development-checkout route.
 
 ## Inspect recorded DeepEval agent steps
 
-Use this development route only when `capabilities --json` advertises
-`deepeval.test-run|4.2.8|trace-index`. Published `underwrite==0.1.1` predates it.
-Supply the native TestRun JSON written by DeepEval's local `results_folder` and
-record the producer version separately:
+Use this development route when capabilities advertises automatic DeepEval
+`trace-index` intake; published `underwrite==0.1.1` predates it. Supply the
+unchanged local TestRun JSON written by DeepEval's `results_folder`. The file
+does not declare the package release, so keep that context separately:
 
 ```sh
-underwrite audit-deepeval test_run.json --version 4.2.8 --view trace-index --json
+underwrite audit-deepeval test_run.json --view trace-index --json
 ```
 
-The `deepeval_trace_index.v1` result separates case success, trace status and
-individual recorded span statuses. A successful case can contain an errored tool
-step. Inspect that step's original context before deciding whether it represents
+The automatic `deepeval_trace_index.v2` result separates the producer's case
+success flag, trace status and individual recorded span statuses. A successful
+case can contain an errored tool step. Inspect that step's original context
+before deciding whether it represents
 expected recovery or a defect. Source pointers locate evidence in the exact file;
-its raw hash establishes byte identity. Names, UUIDs, prompts, tool arguments,
-results and error text are omitted from this content-minimized view.
+its raw hash establishes byte identity, not producer authentication. Names,
+UUIDs, prompts, tool arguments, results and error text are omitted from this
+content-minimized view.
 
 Parent references resolve only inside the embedded trace. Unresolved references
 and cycles remain explicit; they do not establish missing executions, chronology,
 retries or causes. Absent/null trace groups remain distinct from observed empty
 groups. Planned steps and instrumentation coverage remain unknown. The index
-does not evaluate metrics or count `toolsCalled` descriptions as extra steps, and
-cannot align runs by name, UUID or ordinal. Obtain explicit correspondence before
-a cross-run comparison. The source's declarations remain unverified.
+does not evaluate metrics or expectations, and does not count `toolsCalled`
+descriptions as extra steps. A visible `expectationsData` field does not block
+selected step review, but the source case-success flag may depend on unexamined
+expectation evaluation. Do not treat it as an independently checked outcome. The
+index cannot align runs by name, UUID or ordinal. Obtain explicit correspondence
+before a cross-run comparison. The source's declarations remain unverified.
 
-This view requires explicit `--version 4.2.8` and cannot be combined with
-`--bindings`. Default ordinary accounting retains its existing scope. See the
-[native synthetic examples](fixtures/golden/external/deepeval-4.2.8/traces/SOURCE.md) for producer
-capture provenance and a successful case containing an errored step.
+This view cannot be combined with `--bindings`. Explicit `--version 4.2.8`
+retains the historical `deepeval_trace_index.v1` contract. Ordinary accounting
+still refuses populated traces. See the [4.2.8 native examples](fixtures/golden/external/deepeval-4.2.8/traces/SOURCE.md)
+and [4.3.1 native examples](fixtures/examples/deepeval-auto-4.3.1/SOURCE.md)
+for producer capture provenance and the limits of a successful case containing
+an errored step. Neither source establishes expectation coverage.
 
-When retention is requested and capabilities lists `audit-deepeval|4.2.8|trace-index`
-under `records`, analyze and save the same captured bytes in one call:
+When retention is requested and capabilities lists the automatic DeepEval
+trace-index record route, analyze and save the same captured bytes in one call:
 
 ```sh
-underwrite records audit-deepeval test_run.json --version 4.2.8 --view trace-index \
+underwrite records audit-deepeval test_run.json --view trace-index \
   --root /private/review-store --id trace-review-001 --json
 underwrite records verify --root /private/review-store --id trace-review-001 --json
 underwrite records read-json --root /private/review-store --id trace-review-001 \
   --name analysis/trace-index.json --json
 ```
 
-The `deepeval_trace_record.v1` response separates analysis and storage: exit 0 means
-a result was saved, 2 a diagnostic was saved, and 3 storage failed. A saved
+The automatic `deepeval_trace_record.v2` response separates analysis and storage:
+exit 0 means a result was saved, 2 a diagnostic was saved, and 3 storage failed. A saved
 diagnostic consumes the ID. Usage or schema-configuration errors stop before
 storage. After storage failure, a null `published_record` means no identity was
 returned; inspect the ID before retrying. Complete malformed input can be retained
@@ -454,17 +461,29 @@ still work from the store. To read original `source/deepeval.bin` bytes through
 `underwrite.service.records.read_record_file`, explicitly allow the 4 MiB source
 budget when needed; selected reads default to 1 MiB. Stored-byte verification does
 not establish producer execution, source truth or complete instrumentation.
-Published 0.1.1 predates this composed trace route too.
+Published 0.1.1 predates this composed trace route too. Explicit
+`--version 4.2.8` keeps the old trace record and stored-byte contract.
 
 ## Account for DeepEval scores and evaluator errors
 
-For a completed DeepEval 4.1.1 TestRun JSON, use one command without a manifest:
+In a development build advertising automatic DeepEval intake, use the completed
+local TestRun without a producer-version flag. Published `0.1.1` instead defaults
+to the strict 4.1.1 profile; inspect capabilities before relying on automatic
+behavior:
 
 ```sh
 underwrite audit-deepeval /path/to/test_run.json --json
 ```
 
-The `deepeval_accounting.v1` report applies deterministic field-presence rules:
+The automatic `deepeval_accounting.v3` report applies a selected Underwrite
+reader rule, not a detected DeepEval release. All case/metric `flaky` fields
+absent selects the older rule when its required success/threshold fields hold;
+all present as booleans selects the newer rule. Mixed or malformed presence is
+refused without retrying another reader or filling absent flags with false.
+An empty case roster selects the older rule only as a fixed policy; it provides
+no evidence about the file's producer version. The actual producer version
+remains null/unknown; `raw_hash` identifies original bytes, with no invented
+whole-source observation digest. The existing pure accounting rules still apply:
 `score` means `scored`, `error` means `error`, and neither means `unscored`.
 Both fields together, invalid types, and unsupported nonempty conversational or
 trace branches are refused. Numeric spellings such as `1` and `1.0` are equivalent;
@@ -472,9 +491,16 @@ booleans, strings, and null are not converted into scores. The trace summary is 
 object: empty known groups are accepted, while populated groups remain unsupported.
 Case and metric indices locate each source occurrence;
 duplicate names do not merge records. `rule_profile` and `applied_rule` identify
-the rules used. `raw_hash` identifies the original file, and `observation_digest`
-binds its common normalized observation. The command selects a pinned profile;
-it cannot authenticate the producer version of an unversioned input file.
+the rules used, not a package version. A valid selected-field report does not
+establish a complete evaluator population.
+
+Visible non-null `expectationsData` on a case or one of its metric rows, including
+an empty object, is refused before ordinary counting at that source pointer.
+Absent/null markers do not prove that no expectation evaluation occurred:
+DeepEval can omit expectation metric entries from serialized `metricsData`.
+`datasetVersion` is unexamined dataset metadata in the original bytes, not a
+producer-package selector. Do not delete a marked row or expectation field to
+force an accounting result.
 
 Source case flags and metric flags remain separate from scores. A numeric zero
 is not automatically a task failure; an evaluator error has no invented score.
@@ -500,8 +526,9 @@ underwrite records read-json --root /private/review-store --id deepeval.review-0
   --name analysis/accounting.json
 ```
 
-`deepeval_record.v1` separates source acquisition, analysis, and storage. Exit 0
-means a result was saved, 2 means a diagnostic was saved, and 3 means storage failed;
+The automatic `deepeval_record.v3` separates source acquisition, analysis and
+storage. Exit 0 means a result was saved, 2 means a diagnostic was saved, and 3
+means storage failed;
 inspect the analysis even when storage failed. Configuration and response-capacity
 refusals occur before storage and use `evidence_error.v1` stderr. Complete malformed
 input is retained in full; failed acquisition stores no partial source. The selected
@@ -512,7 +539,7 @@ reserved. The saved result retains the existing zero/error/sibling and unknown
 population meanings; storage verification grants no producer or approval authority.
 Use analysis-only `audit-deepeval` when storage is not requested.
 
-For the ordinary **4.2.8** profile, select the producer version explicitly:
+For exact historical output, select a supported producer profile explicitly:
 
 ```sh
 underwrite audit-deepeval test_run.json --version 4.2.8 --json
@@ -520,13 +547,16 @@ underwrite records audit-deepeval test_run.json --version 4.2.8 \
   --root /private/review-store --id deepeval.review-002 --json
 ```
 
-These return `deepeval_accounting.v2` and `deepeval_record.v2`, respectively.
-The same selection works with `ingest --format deepeval.test-run --version 4.2.8`.
+The shown explicit 4.2.8 calls return `deepeval_accounting.v2` and
+`deepeval_record.v2`, respectively. Explicit 4.1.1 retains its v1 result and
+record contracts; valid old stored bytes remain unchanged. The same selection
+works with `ingest --format deepeval.test-run --version 4.2.8`.
 No version is detected from this unversioned file; selecting a profile does not
-authenticate its producer. The default and explicit 4.1.1 results stay v1.
+authenticate its producer. Automatic intake does not widen low-level `ingest`.
 
-To return the common descriptive `evidence_result.v1` for DeepEval metric
-occurrences, supply one reusable owner-authored name binding pack:
+To return the historical common descriptive `evidence_result.v1` for DeepEval
+metric occurrences, supply one reusable owner-authored name binding pack with
+explicit `--version 4.2.8`:
 
 ```sh
 underwrite audit-deepeval /path/to/test_run.json --version 4.2.8 \
@@ -554,6 +584,11 @@ pack = {
 }
 Path("/private/path/deepeval-bindings.json").write_text(json.dumps(pack))
 ```
+
+Omitting `--version` with `--bindings` currently refuses before reading either
+file or reserving a record ID. The pack's owner-asserted version cannot establish
+the TestRun's actual producer version. A separate version-neutral pack, result
+and record contract is required before this binding workflow can omit the selector.
 
 Each definition must have `method` and `policy` set to null, numeric value
 type, `sampling.unit` of `metric_occurrence`, coordinates
@@ -602,7 +637,8 @@ The pack's raw hash identifies its captured bytes; each item's semantic digest
 identifies an owner declaration. Neither authenticates the declared meaning or
 producer. Paths appear only in the private invocation file, never in this
 response. Exit 0 means a result saved, 2 a diagnostic saved, and 3 storage
-failed. The no-bindings record route keeps its existing accounting contracts.
+failed. Explicit historical no-bindings routes keep their existing accounting
+contracts; omitted `--version` intentionally uses the new automatic contract.
 
 The result lists ordinal metric occurrences, source-byte hash, score/error/missing
 availability, and any bound namespace, metric ID, version, and semantic digest.
@@ -611,8 +647,8 @@ visible in the result and should be nonsensitive. `planned_count` stays null,
 source values remain `source_claim`, and the result grants no statistical,
 acceptance, or approval authority. JSON output is limited to 1 MiB; a larger
 otherwise valid population returns a typed `OUTPUT_LIMIT_EXCEEDED` error with
-no partial stdout. The unbound accounting command retains its existing contract
-and behavior.
+no partial stdout. The explicit bound result retains its existing contract;
+automatic unbound accounting has a new v3 contract.
 
 In v2, `source_flaky` is the producer's boolean declaration at case and metric
 level, not measured instability or a computed CI outcome. A failed flaky case
@@ -623,10 +659,12 @@ neither missing value is inferred from the score. Present null input fields are
 refused, and the profile requires explicit boolean `flaky` fields.
 
 Producer aggregate summaries remain unchecked, even when they label a score-only
-row as an aggregate error. New case token metadata, expectations and classifiers
-are outside this bounded profile; nonempty conversational/trace accounting remains
-unsupported. Do not delete fields to force acceptance. V2 retention preserves the
-selected version even for acquisition diagnostics; its storage and exit meanings
+row as an aggregate error. The explicit v2 route does not interpret new case token
+metadata, expectations or classifiers; automatic ordinary intake refuses visible
+non-null expectation markers as described above. Nonempty conversational/trace
+ordinary accounting remains unsupported. Do not delete fields to force acceptance.
+V2 retention preserves the selected version even for acquisition diagnostics;
+its storage and exit meanings
 are the same as v1.
 
 <a id="source-checkout-pilot-audit-promptfoo-counts"></a>

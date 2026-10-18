@@ -69,7 +69,7 @@ def source_file(tmp_path: Path, value: object | None = None) -> Path:
 
 
 def invoke(path: Path, capsys: pytest.CaptureFixture[str]) -> tuple[int, dict[str, Any], str, str]:
-    code = audit_deepeval.main([str(path), "--json"])
+    code = audit_deepeval.main([str(path), "--version", "4.1.1", "--json"])
     streams = capsys.readouterr()
     return code, json.loads(streams.out if code == 0 else streams.err), streams.out, streams.err
 
@@ -220,7 +220,7 @@ def test_output_limit_refuses_without_stdout_prefix(
     path = source_file(tmp_path)
     code = run_cli(
         "audit-deepeval",
-        [str(path), "--json"],
+            [str(path), "--version", "4.1.1", "--json"],
         audit_deepeval.configure,
         audit_deepeval.produce,
         ReportOutput("deepeval_accounting.v1", max_bytes=1),

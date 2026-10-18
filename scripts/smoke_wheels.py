@@ -1010,7 +1010,7 @@ def _deepeval_record_pilot(
     source: Path,
     expected: dict[str, object],
     *,
-    version: str = "4.1.1",
+    version: str | None = "4.1.1",
     view: str = "accounting",
 ) -> None:
     selected = work / "deepeval-selected.json"
@@ -1018,7 +1018,7 @@ def _deepeval_record_pilot(
     selected.write_bytes(raw)
     store = work / "deepeval-records"
     arguments = ["records", "audit-deepeval", str(selected), "--root", str(store)]
-    if version != "4.1.1":
+    if version is not None:
         arguments.extend(["--version", version])
     if view != "accounting":
         arguments.extend(["--view", view])
@@ -1082,7 +1082,7 @@ def _deepeval_record_pilot(
         "DeepEval diagnostic capture used the wrong channel or exit",
     )
     diagnostic = json.loads(failed.stdout)
-    if version != "4.1.1":
+    if version is not None and version != "4.1.1":
         _require(
             diagnostic["source_format_version"] == version,
             "DeepEval diagnostic lost selected producer version",
@@ -1167,7 +1167,7 @@ def _deepeval_pilot(cli: Path, work: Path) -> None:
 
     accounting = _cli_json(
         cli,
-        ["audit-deepeval", str(source)],
+        ["audit-deepeval", str(source), "--version", "4.1.1"],
         work / "deepeval-accounting.json",
         work,
     )
@@ -1268,7 +1268,11 @@ def _deepeval_v2_pilot(cli: Path, work: Path) -> None:
 
 
 def _deepeval_trace_refusals(cli: Path, source: Path, work: Path) -> None:
-    for options in ([], ["--version", "4.1.1"], ["--version", "4.2.8", "--bindings", "missing"]):
+    for options in (
+        ["--version", "4.1.1"],
+        ["--version", "4.2.8", "--bindings", "missing"],
+        ["--bindings", "missing"],
+    ):
         refused = _command(
             [str(cli), "audit-deepeval", "missing", "--view", "trace-index", *options, "--json"],
             work,
@@ -1279,6 +1283,15 @@ def _deepeval_trace_refusals(cli: Path, source: Path, work: Path) -> None:
             and json.loads(refused.stderr)["code"] == "UNSUPPORTED_FORMAT",
             "trace selection must refuse unsupported combinations before file acquisition",
         )
+    missing = _command(
+        [str(cli), "audit-deepeval", "missing", "--view", "trace-index", "--json"], work
+    )
+    _require(
+        missing.returncode == EVIDENCE_ERROR_EXIT
+        and missing.stdout == ""
+        and json.loads(missing.stderr)["code"] == "SOURCE_READ_FAILED",
+        "automatic trace intake did not preserve missing-source acquisition failure",
+    )
     ordinary = _command(
         [str(cli), "audit-deepeval", str(source), "--version", "4.2.8", "--json"], work
     )
@@ -1349,6 +1362,60 @@ def _deepeval_trace_pilot(cli: Path, work: Path) -> None:
     retained = work / "deepeval-trace-retention"
     retained.mkdir()
     _deepeval_record_pilot(cli, retained, source, report, version="4.2.8", view="trace-index")
+
+
+def _deepeval_auto_pilot(cli: Path, work: Path) -> None:
+    golden = ROOT / "fixtures/golden/external"
+    native = ROOT / "fixtures/examples/deepeval-auto-4.3.1"
+    scenarios = (
+        (golden / "deepeval/test_run_20260914_132634.json", "accounting"),
+        (golden / "deepeval-4.2.8/ordinary.json", "accounting"),
+        (native / "ordinary.json", "accounting"),
+        (golden / "deepeval-4.2.8/traces/recovery.json", "trace-index"),
+        (native / "recovery.json", "trace-index"),
+    )
+    for index, (source, view) in enumerate(scenarios):
+        selected = work / f"deepeval-auto-{index}"
+        selected.mkdir()
+        report = _cli_json(
+            cli, ["audit-deepeval", str(source), "--view", view], selected / "report.json", selected
+        )
+        schema = "deepeval_accounting.v3" if view == "accounting" else "deepeval_trace_index.v2"
+        identity = cast(dict[str, object], report["source"])
+        _require(
+            report["schema"] == schema
+            and identity["producer_version"] is None
+            and identity["producer_version_state"] == "unknown"
+            and identity["claims_verified"] is False
+            and report["raw_hash"] == "sha256:" + hashlib.sha256(source.read_bytes()).hexdigest(),
+            "automatic DeepEval intake changed bytes or invented producer identity",
+        )
+        module = "deepeval_accounting" if view == "accounting" else "deepeval_trace"
+        function = "audit_deepeval_bytes" if view == "accounting" else "audit_deepeval_trace_bytes"
+        code = (
+            "import json,sys; from pathlib import Path; "
+            f"from underwrite.instrument.ingest.{module} import {function}; "
+            f"print(json.dumps({function}(Path(sys.argv[1]).read_bytes()),sort_keys=True))"
+        )
+        api = _success([str(cli.parent / "python"), "-c", code, str(source)], selected)
+        _require(json.loads(api.stdout) == report, "automatic DeepEval API/CLI outcomes differ")
+        _deepeval_record_pilot(cli, selected, source, report, version=None, view=view)
+    invalid = json.loads((native / "ordinary.json").read_bytes())
+    invalid["testCases"][0]["metricsData"][0]["expectationsData"] = {
+        "private": "EXPECTATION_CANARY"
+    }
+    path = work / "deepeval-unsupported-expectation.json"
+    path.write_text(json.dumps(invalid), encoding="utf-8")
+    refused = _command([str(cli), "audit-deepeval", str(path), "--json"], work)
+    error = json.loads(refused.stderr)
+    _require(
+        refused.returncode == EVIDENCE_ERROR_EXIT
+        and refused.stdout == ""
+        and error["code"] == "UNSUPPORTED_PROFILE"
+        and error["location"] == "/testCases/0/metricsData/0/expectationsData"
+        and "EXPECTATION_CANARY" not in refused.stderr,
+        "automatic DeepEval intake silently counted an unsupported expectation",
+    )
 
 
 def _langfuse_record_pilot(
@@ -2380,6 +2447,7 @@ def _smoke(dist: Path) -> None:
         _deepeval_pilot(cli, work)
         _deepeval_v2_pilot(cli, work)
         _deepeval_trace_pilot(cli, work)
+        _deepeval_auto_pilot(cli, work)
         _langfuse_pilot(cli, work)
         _langfuse_cli_pilot(cli, work)
         _langfuse_auto_pilot(cli, work)

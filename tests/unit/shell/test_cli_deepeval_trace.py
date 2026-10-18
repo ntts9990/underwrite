@@ -71,7 +71,6 @@ def test_native_trace_has_explicit_minimized_machine_route(
 @pytest.mark.parametrize(
     ("options", "reason"),
     [
-        (("--view", "trace-index"), "DEEPEVAL_TRACE_EXPLICIT_VERSION_REQUIRED"),
         (("--version", "4.1.1", "--view", "trace-index"), "DEEPEVAL_TRACE_VERSION_UNSUPPORTED"),
         (
             ("--version", "4.2.8", "--view", "trace-index", "--bindings", "missing"),

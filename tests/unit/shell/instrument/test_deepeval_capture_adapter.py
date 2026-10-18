@@ -32,7 +32,7 @@ def test_buffered_keeps_file_refusals(tmp_path: Path, raw: bytes) -> None:
 def test_buffered_enforces_existing_limits(axis: str, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(adapter, axis, 1)
     with pytest.raises(adapter.DeepevalFileError) as caught:
-        adapter.audit_deepeval_bytes(GOLDEN.read_bytes())
+        adapter.audit_deepeval_bytes(GOLDEN.read_bytes(), version="4.1.1")
     assert caught.value.code == "INPUT_LIMIT_EXCEEDED"
     assert caught.value.location == "/file"
 
@@ -61,12 +61,11 @@ def test_capture_read_reason_is_finite(
     assert caught.value.location == "/file"
 
 
-def test_default_and_explicit_old_profile_are_identical() -> None:
+def test_explicit_old_profile_file_and_bytes_are_identical() -> None:
     raw = GOLDEN.read_bytes()
-    assert adapter.audit_deepeval_file(GOLDEN) == adapter.audit_deepeval_file(
-        GOLDEN, version="4.1.1"
+    assert adapter.audit_deepeval_file(GOLDEN, version="4.1.1") == adapter.audit_deepeval_bytes(
+        raw, version="4.1.1"
     )
-    assert adapter.audit_deepeval_bytes(raw) == adapter.audit_deepeval_bytes(raw, version="4.1.1")
 
 
 @pytest.mark.parametrize("version", ["4.2.7", "latest", "private/version"])
@@ -104,4 +103,4 @@ def test_actual_new_profile_file_and_bytes_parity(name: str) -> None:
         "claims_verified": False,
     }
     with pytest.raises(adapter.DeepevalFileError):
-        adapter.audit_deepeval_file(path)
+        adapter.audit_deepeval_file(path, version="4.1.1")

@@ -92,7 +92,7 @@ def test_native_recovery_source_and_index_are_saved_from_one_buffer(
     )
 
 
-@pytest.mark.parametrize("invalid", ["missing-version", "old-version", "bindings", "bad-view"])
+@pytest.mark.parametrize("invalid", ["old-version", "bindings", "bad-view"])
 def test_invalid_trace_selection_refuses_before_source_and_store(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -101,10 +101,7 @@ def test_invalid_trace_selection_refuses_before_source_and_store(
 ) -> None:
     path, store = tmp_path / "PRIVATE_SOURCE", tmp_path / "store"
     args = _args(path, store)
-    if invalid == "missing-version":
-        args.remove("--version")
-        args.remove("4.2.8")
-    elif invalid == "old-version":
+    if invalid == "old-version":
         args[args.index("--version") + 1] = "4.1.1"
     elif invalid == "bindings":
         args.extend(("--bindings", str(tmp_path / "PRIVATE_BINDINGS")))

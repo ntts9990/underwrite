@@ -194,7 +194,7 @@ API, 내보내기 형식, 버전을 지원한다는 뜻은 아닙니다. 설치�
 | --- | --- | --- |
 | **goppi** | 완료된 baseline exchange manifest v2; paired handoff는 별도 경로 | 설명용 공통 JSON은 [`audit-baseline`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#audit-a-completed-goppi-baseline-as-common-evidence) · 네이티브 측정용 관측은 [`project-baseline`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#project-a-completed-goppi-baseline-into-event-observations) · [`review-handoff`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#review-a-completed-paired-handoff-in-one-call) |
 | **Langfuse** | 배포된 `0.1.1`: `4.35.0` 서버 blob 배열. 개발본의 자동 입력: 호환되는 blob 배열 또는 공식 CLI 목록 캡처. | [`audit-langfuse`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-langfuse-score-kinds-and-associations), 선택형 내용 최소화 행 인덱스 제공 |
-| **DeepEval** | 일반 TestRun JSON, `4.1.1` 또는 `4.2.8` | [`audit-deepeval`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors) |
+| **DeepEval** | 배포된 `0.1.1`: 일반 `4.1.1` 또는 `4.2.8` TestRun. 개발본의 자동 입력: 호환되는 이전/현재 일반 결과 또는 선택된 trace 구조. | [`audit-deepeval`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors) |
 | **Promptfoo** | Eval output JSON, `0.123.0` 또는 `0.124.1` | [`audit-promptfoo`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#source-checkout-pilot-audit-promptfoo-counts) |
 | **외부 공통 결과** | 생성 도구의 `evidence_result.v1` JSON | [`inspect-result`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#inspect-an-external-common-result)로 계약과 가용성 집계를 검사하고, 선택적으로 근거 항목의 `next_action`과 선언된 메트릭 결합 상태별 개수를 집계 |
 | **네이티브 근거** | `underwrite.evidence-bundle` / `v1` | `ingest` → `measure` → `accept` |
@@ -213,8 +213,14 @@ underwrite audit-langfuse --observations /path/to/blob-observations.json \
 underwrite audit-baseline --exchange /path/to/goppi-baseline-exchange --json
 ```
 
-DeepEval 집계 검사의 기본값은 `4.1.1`입니다. `4.2.8` 프로필을 쓰려면
-`--version 4.2.8`을 지정하세요. 배포된 `0.1.1`의 Promptfoo 기본값은
+배포된 `0.1.1`의 DeepEval 집계 기본값은 `4.1.1`이며, 그 버전에서
+`4.2.8`에는 `--version 4.2.8`을 지정합니다. 자동 입력을 광고하는 개발본은
+호환되는 TestRun을 버전 옵션 없이 읽고 생성 도구의 실제 버전을 알 수 없는 상태로
+보고합니다. 기록된 단계는 `--view trace-index`로 선택하며, 이 보기에서 메트릭이나
+expectation 평가는 분석하지 않습니다. 소유자가 선언한
+[메트릭 결합 경로](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors)는
+별도 계약을 갱신하기 전까지 명시적인 `--version 4.2.8`이 필요합니다.
+배포된 `0.1.1`의 Promptfoo 기본값은
 `0.123.0`이며, 그 버전에서 `0.124.1`에는 `--version 0.124.1`을 지정합니다.
 배포된 Langfuse 입력의 기본값은 4.35.0 서버 blob export입니다. 개발본에서
 자동 Langfuse 입력을 광고하면 호환되는 blob 배열이나

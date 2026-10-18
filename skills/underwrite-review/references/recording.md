@@ -47,11 +47,14 @@ saved and the ID remains available. Complete captured malformed input may save
 storage failure does not prove absence; inspect the requested ID before retrying.
 Stored-byte integrity does not authenticate the producer or authorize a change.
 
-For a native DeepEval 4.2.8 step review, only when capabilities lists
-`audit-deepeval|4.2.8|trace-index` under `records`, use
-`records audit-deepeval FILE --version 4.2.8 --view trace-index --root ROOT --id NEW_ID --json`.
-This development route returns `deepeval_trace_record.v1` and retains the exact
-source buffer used for the actual index. Published 0.1.1 predates it. It cannot
+For a selected DeepEval step review, when capabilities advertises automatic
+trace recording, use `records audit-deepeval FILE --view trace-index --root ROOT
+--id NEW_ID --json` without a version flag. This development route returns
+`deepeval_trace_record.v2` and retains the exact source buffer used for the
+minimized index; the actual producer release stays unknown. Published 0.1.1
+predates this route, while explicit `--version 4.2.8` keeps the old v1 trace
+record. Visible expectation data does not block step indexing but its metric
+meaning and source case-success flag remain unexamined. It cannot
 be combined with `--bindings`; use a fresh ID in an explicit private store.
 Inspect analysis and storage separately: 0 result saved, 2 diagnostic saved,
 3 storage failed. Complete malformed input may save a diagnostic and consume the
@@ -87,15 +90,21 @@ whole-record `records verify` check.
 
 For a supported DeepEval TestRun, prefer the capabilities-listed
 `records audit-deepeval FILE --root ROOT --id NEW_ID --json` when the caller requests
-whole-file retention in an explicit private store. The default is producer 4.1.1
-with `deepeval_record.v1`; select
-`--version 4.2.8` explicitly for its v2 accounting and `deepeval_record.v2` envelope.
+whole-file retention in an explicit private store. Development automatic intake
+returns `deepeval_record.v3` with actual v3 accounting or a finite diagnostic,
+without claiming a producer release. Published 0.1.1 instead defaults to strict
+4.1.1/v1. Explicit `--version 4.1.1` or `--version 4.2.8` retains the old
+v1/v2 accounting and record contracts.
 Keep absent metric verdicts and producer flaky declarations distinct. Inspect analysis
 and storage separately on exits 0/2/3. Complete malformed input is retained; acquisition failure
 stores only the actual diagnostic and invocation, and consumes the ID. Recover
 `analysis/accounting.json` or `analysis/error.json` with `records read-json`.
 The TestRun is not redacted, and a stored evaluator error remains an error without
-a score. Use the manual path if the caller needs selective omission.
+a score. Visible non-null case or metric `expectationsData` gets an ordinary
+analysis diagnostic, not a count of zero expectations. `--bindings` still needs
+explicit `--version 4.2.8`; omitting it refuses before input or ID effects until
+the separate version-neutral binding contracts arrive. Use the manual path for
+selective omission.
 
 For a supported Langfuse pair, if capabilities lists the automatic records
 audit-langfuse profile and the caller selected a private store and new ID, prefer

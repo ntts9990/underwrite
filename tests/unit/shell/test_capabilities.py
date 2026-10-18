@@ -127,7 +127,7 @@ def test_advertised_audit_profile_runs_its_registered_fixture(
     capabilities_report = json.loads(capsys.readouterr().out)
     descriptor = next(row for row in capabilities_report["commands"] if row["command"] == command)
     selected = next(row for row in descriptor["profiles"] if row["name"] == name)
-    required = ["file"] if name == "deepeval.test-run|4.1.1" else ["file", "version"]
+    required = ["file", "version"]
     assert selected["required_inputs"] == required
     assert selected["output_schemas"] == [schema]
 
@@ -169,6 +169,13 @@ def test_advertised_audit_profile_runs_its_registered_fixture(
         ),
         (
             "audit-deepeval",
+            "deepeval/test_run_20260914_132634.json",
+            "4.1.1",
+            "deepeval_record.v3",
+            "deepeval_accounting.v3",
+        ),
+        (
+            "audit-deepeval|4.1.1",
             "deepeval/test_run_20260914_132634.json",
             "4.1.1",
             "deepeval_record.v1",
@@ -224,6 +231,10 @@ def test_advertised_record_profile_captures_and_verifies_its_selected_fixture(
         original = json.loads(Path(values["file"]).read_bytes())
         assert identity["summary_version"] == original["results"]["version"]
         assert identity["claims_verified"] is False
+    elif analysis_schema == "deepeval_accounting.v3":
+        assert identity["producer_version"] is None
+        assert identity["producer_version_state"] == "unknown"
+        assert identity["claims_verified"] is False
     else:
         assert identity["format_version"] == version
     assert report["storage"]["state"] == "saved"
@@ -271,6 +282,37 @@ def test_explicit_older_record_profile_does_not_fallback(
     assert report["analysis"]["state"] == "error"
     assert report["analysis"]["error"]["code"] == "INVALID_INPUT"
     assert report["storage"]["state"] == "saved"
+
+
+@pytest.mark.parametrize("view", ["accounting", "trace-index"])
+def test_deepeval_auto_capabilities_run_native_file_without_version(
+    view: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main.main(["capabilities", "--json"]) == 0
+    commands = {row["command"]: row for row in json.loads(capsys.readouterr().out)["commands"]}
+    suffix = "" if view == "accounting" else "|trace-index"
+    audit = next(
+        row
+        for row in commands["audit-deepeval"]["profiles"]
+        if row["name"] == "deepeval.test-run|auto" + suffix
+    )
+    record = next(
+        row for row in commands["records"]["profiles"] if row["name"] == "audit-deepeval" + suffix
+    )
+    assert "version" not in audit["required_inputs"]
+    assert "version" not in record["required_inputs"]
+    scenario = "ordinary" if view == "accounting" else "recovery"
+    source = ROOT / f"fixtures/examples/deepeval-auto-4.3.1/{scenario}.json"
+    args = ["audit-deepeval", str(source), "--view", view]
+    assert main.main([*args, "--json"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    _validator(audit["output_schemas"][0]).validate(report)
+    assert report["source"]["producer_version"] is None
+    assert main.main(["records", *args, "--root", str(tmp_path), "--id", "auto", "--json"]) == 0
+    saved = json.loads(capsys.readouterr().out)
+    _validator(record["output_schemas"][0]).validate(saved)
+    assert saved["analysis"]["report"] == report
+    assert saved["storage"]["state"] == "saved"
 
 
 @pytest.mark.parametrize("family", ["blob", "cli"])

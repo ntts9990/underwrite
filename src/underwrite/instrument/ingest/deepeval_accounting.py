@@ -1,4 +1,4 @@
-"""Account for one explicitly selected DeepEval file through trusted ingestion."""
+"""Account for one DeepEval file with automatic or explicitly pinned local rules."""
 
 from __future__ import annotations
 
@@ -66,8 +66,12 @@ def profile_for(version: str) -> DeepevalProfile:
     return PROFILES[version]
 
 
-def audit_deepeval_file(path: Path, *, version: str = SOURCE[1]) -> dict[str, object]:
+def audit_deepeval_file(path: Path, *, version: str | None = None) -> dict[str, object]:
     """Read once, normalize, and account without running a producer or evaluator."""
+    if version is None:
+        from underwrite.instrument.ingest.deepeval_compat import audit_deepeval_compatible_file
+
+        return audit_deepeval_compatible_file(path)
     profile = profile_for(version)
     try:
         observation = (
@@ -121,8 +125,12 @@ def read_deepeval_file(path: Path) -> bytes:
         raise DeepevalFileError(code, reason, "/file") from None
 
 
-def audit_deepeval_bytes(raw: bytes, *, version: str = SOURCE[1]) -> dict[str, object]:
-    """Account for the supplied bytes using the existing bounded pinned reader."""
+def audit_deepeval_bytes(raw: bytes, *, version: str | None = None) -> dict[str, object]:
+    """Account for bounded original bytes using the selected local reader."""
+    if version is None:
+        from underwrite.instrument.ingest.deepeval_compat import audit_deepeval_compatible_bytes
+
+        return audit_deepeval_compatible_bytes(raw)
     profile = profile_for(version)
     try:
         result, _ = packaged_ingestor(

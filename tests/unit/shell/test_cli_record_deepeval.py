@@ -26,10 +26,26 @@ def invoke(
     path: Path, store: Path, capsys: pytest.CaptureFixture[str], identifier: str = "sample"
 ) -> tuple[int, dict[str, Any], str, str]:
     code = record_cli.main(
-        ["audit-deepeval", str(path), "--root", str(store), "--id", identifier, "--json"]
+        [
+            "audit-deepeval",
+            str(path),
+            "--version",
+            "4.1.1",
+            "--root",
+            str(store),
+            "--id",
+            identifier,
+            "--json",
+        ]
     )
     streams = capsys.readouterr()
     return code, json.loads(streams.out or streams.err), streams.out, streams.err
+
+
+def legacy_record(
+    path: Path, store: Path, identifier: str, *, as_json: bool = True
+) -> dict[str, object]:
+    return command.run_record_deepeval(path, store, identifier, as_json=as_json, version="4.1.1")
 
 
 def source(tmp_path: Path, raw: bytes | None = None) -> Path:
@@ -51,7 +67,7 @@ def test_saved_result_matches_existing_audit_and_records_actual_composition(
     code, report, stdout, stderr = invoke(path, store, capsys)
     assert code == report["exit_code"] == 0 and stderr == ""
     assert stdout.encode() == canonical_bytes(report) + b"\n"
-    assert report["analysis"]["report"] == adapter.audit_deepeval_file(path)
+    assert report["analysis"]["report"] == adapter.audit_deepeval_file(path, version="4.1.1")
     assert report["source"] == {
         "state": "captured",
         "raw_hash": digest_bytes(raw),
@@ -143,7 +159,7 @@ def test_source_mutation_after_capture_does_not_change_saved_or_analyzed_bytes(
         return raw
 
     monkeypatch.setattr(command, "read_deepeval_file", mutate)
-    report = command.run_record_deepeval(path, store, "sample")
+    report = legacy_record(path, store, "sample")
     assert report["exit_code"] == 0 and reads == [path]
     analysis = cast(dict[str, Any], report["analysis"])
     assert analysis["report"]["raw_hash"] == digest_bytes(original_bytes)
@@ -272,7 +288,7 @@ def test_invalid_id_is_rejected_before_acquisition(
 
     monkeypatch.setattr(command, "read_deepeval_file", forbidden)
     with pytest.raises(command.EvidenceError) as caught:
-        command.run_record_deepeval(tmp_path / "missing", tmp_path / "store", "../invalid")
+        legacy_record(tmp_path / "missing", tmp_path / "store", "../invalid")
     assert caught.value.payload["code"] == "USAGE_ERROR"
 
 
@@ -287,7 +303,7 @@ def test_undecodable_display_path_is_storage_failure_not_lost_analysis(
 
     monkeypatch.setattr(command, "read_deepeval_file", read)
     store = tmp_path / "store"
-    report = command.run_record_deepeval(Path("private-\ud800"), store, "sample")
+    report = legacy_record(Path("private-\ud800"), store, "sample")
     assert report["exit_code"] == STORAGE_ERROR_EXIT
     assert cast(dict[str, object], report["analysis"])["state"] == "result"
     assert cast(dict[str, Any], report["storage"])["error"]["code"] == "INVALID_SPEC"
@@ -299,10 +315,12 @@ def test_bytes_entry_point_keeps_own_input_cap_and_matches_path(
 ) -> None:
     path = source(tmp_path)
     raw = path.read_bytes()
-    assert adapter.audit_deepeval_bytes(raw) == adapter.audit_deepeval_file(path)
+    assert adapter.audit_deepeval_bytes(raw, version="4.1.1") == adapter.audit_deepeval_file(
+        path, version="4.1.1"
+    )
     monkeypatch.setattr(adapter, "DEFAULT_MAX_BYTES", len(raw) - 1)
     with pytest.raises(adapter.DeepevalFileError) as caught:
-        adapter.audit_deepeval_bytes(raw)
+        adapter.audit_deepeval_bytes(raw, version="4.1.1")
     assert caught.value.code == "INPUT_LIMIT_EXCEEDED"
 
 
@@ -310,7 +328,7 @@ def test_unpublished_reservation_is_not_reused_or_deleted(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     path, store = source(tmp_path), tmp_path / "store"
-    command.run_record_deepeval(path, store, "first")
+    legacy_record(path, store, "first")
     pending = store / "records/sample"
     pending.mkdir(mode=0o700)
     code, report, _, _ = invoke(path, store, capsys)
@@ -333,7 +351,7 @@ def test_exact_response_bound_covers_all_storage_branches_and_newline(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, as_json: bool
 ) -> None:
     path = source(tmp_path)
-    report = command.run_record_deepeval(path, tmp_path / "reference", "sample")
+    report = legacy_record(path, tmp_path / "reference", "sample")
     saved = cast(dict[str, Any], report["storage"])
     identity = {"record_id": "sample", "manifest_digest": saved["manifest_digest"]}
     variants = [report]
@@ -356,11 +374,11 @@ def test_exact_response_bound_covers_all_storage_branches_and_newline(
     ]
     maximum = max(sizes)
     monkeypatch.setattr(command, "OUTPUT_MAX_BYTES", maximum)
-    actual = command.run_record_deepeval(path, tmp_path / "accepted", "sample", as_json=as_json)
+    actual = legacy_record(path, tmp_path / "accepted", "sample", as_json=as_json)
     assert actual["exit_code"] == 0
     monkeypatch.setattr(command, "OUTPUT_MAX_BYTES", maximum - 1)
     with pytest.raises(command.EvidenceError) as caught:
-        command.run_record_deepeval(path, tmp_path / "refused", "sample", as_json=as_json)
+        legacy_record(path, tmp_path / "refused", "sample", as_json=as_json)
     assert caught.value.payload["code"] == "OUTPUT_LIMIT_EXCEEDED"
     assert not (tmp_path / "refused").exists()
 
@@ -372,16 +390,16 @@ def test_analysis_read_cap_includes_final_newline(
     delta: int,
 ) -> None:
     path, store = source(tmp_path), tmp_path / "store"
-    report = adapter.audit_deepeval_file(path)
+    report = adapter.audit_deepeval_file(path, version="4.1.1")
     maximum = len(canonical_bytes(report)) + 1
     monkeypatch.setattr(command, "RECORD_READ_MAX_BYTES", maximum + delta)
     if delta:
         with pytest.raises(command.EvidenceError) as caught:
-            command.run_record_deepeval(path, store, "sample")
+            legacy_record(path, store, "sample")
         assert caught.value.payload["code"] == "OUTPUT_LIMIT_EXCEEDED"
         assert not store.exists()
     else:
-        assert command.run_record_deepeval(path, store, "sample")["exit_code"] == 0
+        assert legacy_record(path, store, "sample")["exit_code"] == 0
         assert len((stored_files(store) / "analysis/accounting.json").read_bytes()) == maximum
 
 
@@ -391,7 +409,7 @@ def test_original_removal_retains_zero_error_sibling_and_unknown_planned_invento
 ) -> None:
     path, store = source(tmp_path), tmp_path / "store"
     raw = path.read_bytes()
-    expected = adapter.audit_deepeval_file(path)
+    expected = adapter.audit_deepeval_file(path, version="4.1.1")
     original = command.read_deepeval_file
     reads: list[Path] = []
 
@@ -402,7 +420,7 @@ def test_original_removal_retains_zero_error_sibling_and_unknown_planned_invento
         return data
 
     monkeypatch.setattr(command, "read_deepeval_file", read)
-    result = command.run_record_deepeval(path, store, "sample")
+    result = legacy_record(path, store, "sample")
     assert reads == [path] and not path.exists()
     analysis = cast(dict[str, Any], result["analysis"])["report"]
     assert analysis == expected
@@ -443,10 +461,10 @@ def test_unexpected_errors_are_finite_and_interrupts_propagate(
         store = tmp_path / exception.__name__
         if exception is KeyboardInterrupt:
             with pytest.raises(KeyboardInterrupt):
-                command.run_record_deepeval(path, store, "sample")
+                legacy_record(path, store, "sample")
             assert not store.exists()
         else:
-            report = command.run_record_deepeval(path, store, "sample")
+            report = legacy_record(path, store, "sample")
             assert report["exit_code"] == ANALYSIS_ERROR_EXIT
             analysis = cast(dict[str, Any], report["analysis"])
             assert analysis["phase"] == phase
@@ -465,7 +483,7 @@ def test_identity_mismatch_refuses_publication(
 
     monkeypatch.setattr(command, "audit_deepeval_bytes", audit)
     with pytest.raises(command.EvidenceError) as caught:
-        command.run_record_deepeval(path, store, "sample")
+        legacy_record(path, store, "sample")
     assert caught.value.payload["code"] == "INTERNAL_ERROR"
     assert not store.exists()
 
