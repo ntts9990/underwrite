@@ -199,7 +199,7 @@ explicit selectors reproduce older contracts.
 | **Langfuse** | Published `0.1.1`: `4.35.0` server blob arrays. Development automatic intake: compatible blob arrays or official-CLI list captures. | [`audit-langfuse`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-langfuse-score-kinds-and-associations), with an optional content-minimized row index |
 | **DeepEval** | Published `0.1.1`: ordinary `4.1.1` or `4.2.8` TestRun. Development automatic intake: compatible old/current ordinary or selected trace structure. | [`audit-deepeval`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors) |
 | **Promptfoo** | Eval output JSON, `0.123.0` or `0.124.1` | [`audit-promptfoo`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#source-checkout-pilot-audit-promptfoo-counts) |
-| **External common result** | `evidence_result.v1` JSON from a producer | [`inspect-result`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#inspect-an-external-common-result) for contract screening and availability counts, with optional evidence-item `next_action` and declared metric-binding counts |
+| **External common result** | Published `0.1.1`: `evidence_result.v1`. Development inspection also accepts `evidence_result.v2`. | [`inspect-result`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#inspect-an-external-common-result) for structural screening, availability and optional evidence-item action counts |
 | **Native evidence** | `underwrite.evidence-bundle` / `v1` | `ingest` → `measure` → `accept` |
 | **Inspect AI** | `inspect.eval-log` / `0.3.263` | `ingest` |
 | **OpenInference** | `openinference.traces` / `0.1.38` | `ingest` |
@@ -220,8 +220,11 @@ Published `0.1.1` defaults DeepEval accounting to `4.1.1`; select
 `--version 4.2.8` there. Development builds advertising automatic intake read
 compatible TestRuns without a version flag, reporting the producer release as
 unknown. Select `--view trace-index` for recorded steps; metric/expectation
-evaluation is outside that view. The owner-asserted [metric binding workflow](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors)
-still requires explicit `--version 4.2.8` until its separate contract update.
+evaluation is outside that view. Development builds advertising neutral binding
+accept an owner-authored `deepeval_metric_bindings.v2` pack without a version flag;
+the pack declares metric-name meaning, not producer release or verified semantics.
+The historical v1 pack still requires explicit `--version 4.2.8`.
+See the [binding workflow](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors).
 Published `0.1.1` defaults Promptfoo to `0.123.0`; select `--version 0.124.1`
 there. Published Langfuse intake defaults to the 4.35.0 server blob export.
 Development builds advertising automatic Langfuse intake read compatible blob
@@ -239,9 +242,10 @@ explicit exchange adapters: `audit-baseline` produces descriptive
 `evidence_result.v1` without a policy or directional verdict, while
 `project-baseline` can produce native event observations. `prepare-event-policy`
 binds a consumer configuration while leaving statistical assumptions unknown.
-For an already produced `evidence_result.v1` file, `inspect-result` checks the
-installed contract and item counts without verifying the producer's source or
-bundle, or admitting that result to measurement or acceptance.
+For an already produced `evidence_result.v1` file, or v2 when advertised by a
+development build, `inspect-result` checks the installed contract and item counts
+without verifying the producer's source or owner pack, or admitting that result
+to measurement or acceptance.
 Its optional action view counts recorded next actions for evidence remediation,
 not executed tool calls or an agent trajectory.
 

@@ -92,7 +92,7 @@ is ready; obtain the completed producer artifact and its version context first.
 | --- | --- |
 | goppi | `audit-baseline` and `project-baseline` accept the exact baseline exchange manifest v2 described below; P7 paired handoffs, the separate C55 operator-answer assessment, and older grounded-pilot exchanges have different contracts. No generic ingest profile. A CLI summary is insufficient; do not manufacture rows from counts. |
 | Langfuse | Published `0.1.1` defaults to the `4.35.0` **server blob-export profile**: complete-field, uncompressed JSON arrays for `observations_v2` and `scores`. Development builds advertising automatic Langfuse intake accept either that array pair or local official-CLI Observations v2 / Scores v3 `--json` envelopes or `--output` bodies without `--profile`. Check capabilities; file shape selects an Underwrite reader, not a verified server/CLI release. Neither path accepts arbitrary REST/UI JSON, Parquet, or an SDK flush result. See [the pinned CLI example](fixtures/examples/langfuse-cli/SOURCE.md). |
-| DeepEval | Published `0.1.1` defaults to ordinary `4.1.1`; select `--version 4.2.8` for that strict profile. Development builds advertising automatic intake read compatible old/current TestRuns without a version flag, reporting the actual producer release as unknown. `--view trace-index` selects recorded step structure, not metric evaluation. A failed test run can still write a valid artifact. Zero, evaluator errors and absent verdicts remain distinct. |
+| DeepEval | Published `0.1.1` defaults to ordinary `4.1.1`; select `--version 4.2.8` for that strict profile. Development builds advertising automatic intake read compatible old/current TestRuns without a version flag and keep the actual producer release unknown. `--view trace-index` selects step structure. A version-neutral owner-authored v2 binding pack can attach declared metric meaning without a version flag when advertised; the explicit 4.2.8/v1 pack remains historical. |
 | Promptfoo | Supply a SummaryV3 eval output JSON. Development builds advertising `promptfoo.eval-output\|auto` read it without a version flag, recording any valid declared producer version separately from their reader policy. Published 0.1.1 predates auto input; its strict profiles require the supported version selection. An assertion-failure exit can accompany a valid export. A supplied `audit-counts` manifest retains its explicit source version and expected-hash check. |
 
 The [producer checks](EVIDENCE_REVIEW.md) distinguish fresh tool-generated
@@ -554,9 +554,74 @@ works with `ingest --format deepeval.test-run --version 4.2.8`.
 No version is detected from this unversioned file; selecting a profile does not
 authenticate its producer. Automatic intake does not widen low-level `ingest`.
 
-To return the historical common descriptive `evidence_result.v1` for DeepEval
-metric occurrences, supply one reusable owner-authored name binding pack with
-explicit `--version 4.2.8`:
+In a development build advertising neutral DeepEval binding, supply one
+owner-authored `deepeval_metric_bindings.v2` pack with the local TestRun. Omit
+`--version`; Underwrite applies the selected ordinary reader and returns
+`evidence_result.v2` with the producer release null/unknown, the actual reader
+profile, original TestRun hash and a separate captured pack hash:
+
+```sh
+underwrite audit-deepeval /path/to/test_run.json \
+  --bindings /private/path/deepeval-bindings.v2.json --json \
+  > /private/path/deepeval-evidence.v2.json
+underwrite inspect-result /private/path/deepeval-evidence.v2.json \
+  --view actions --json
+```
+
+The importable `audit_deepeval_bound_file(source_path, pack_path)` follows the
+same v2 route when `version` is omitted; neither entry point needs a reader hint.
+
+The v2 pack's `source` contains only `{"format":"deepeval.test-run"}` and keeps
+`name_binding_authority` as `owner_asserted_stable_name_not_verified`. Each
+binding still uses a complete `metric_definition.v1` and its semantic digest.
+The owner must make a **one-time choice** to assert that those names and meanings
+apply across the supplied ordinary metric occurrences. Underwrite checks exact
+names, unit, numeric type, declared identity, bounds and digest integrity; it
+cannot verify evaluator configuration, stability across unseen releases or the
+truth of the owner's claim. The v2 pack needs no producer-version field and no
+list of Underwrite reader profiles. Do not invent definitions from metric names.
+A v1 pack is refused on the no-version route; do not strip its 4.2.8 assertion
+or silently broaden it. An explicit old route likewise refuses a v2 pack.
+The [synthetic v2 example pack](fixtures/examples/evidence/synthetic-deepeval.bindings.v2.json)
+binds the `zero` metric in the included 4.2.8 and 4.3.1 ordinary examples.
+It does not match the older 4.1.1 example's names. Its definitions are not
+authority for unrelated evaluations; obtain an owner's declaration for real
+metric names and meanings.
+
+`evidence_result.v2` separates `source` (TestRun-byte identity, unknown/declared
+producer version and applied Underwrite reader) from `declaration_source`
+(captured pack format, raw hash and owner-asserted authority). Its
+bound metric-definition `version` is the owner's definition version, not a
+DeepEval package version. Scores, errors and unscored occurrences remain source
+claims; planned count stays unknown. Bound item identities and hashes remain
+linkable, while source metric names, pack prose and raw case text stay out of
+the public result. `inspect-result` structurally screens the produced v2 file;
+it does not recheck original source/pack bytes or verify the declared meaning.
+When whole private input retention is requested, use the automatic bound record:
+
+```sh
+underwrite records audit-deepeval /path/to/test_run.json \
+  --bindings /private/path/deepeval-bindings.v2.json \
+  --root /private/review-store --id deepeval.bound-auto-001 --json
+underwrite records verify --root /private/review-store \
+  --id deepeval.bound-auto-001 --json
+underwrite records read-json --root /private/review-store \
+  --id deepeval.bound-auto-001 --name analysis/evidence_result.json --json
+```
+
+`deepeval_bound_record.v2` saves the exact TestRun and pack bytes used for
+analysis, plus the actual v2 result or diagnostic. Both inputs are acquired
+independently; complete invalid bytes may be retained while unavailable input
+has no invented source member. Exit 0 means result saved, 2 diagnostic saved,
+and 3 storage failed; inspect analysis even after a storage error. An error
+record consumes its new ID, and `published_record:null` does not prove that
+the ID is free. The private invocation records automatic selection but names
+an applied reader only after successful analysis. Whole verification and
+selected-file reads check stored bytes, not producer execution, pack meaning
+or approval. The complete TestRun and pack remain private and unredacted.
+
+For exact historical `evidence_result.v1` output, keep the owner-authored
+`deepeval_metric_bindings.v1` pack and explicit `--version 4.2.8`:
 
 ```sh
 underwrite audit-deepeval /path/to/test_run.json --version 4.2.8 \
@@ -585,10 +650,9 @@ pack = {
 Path("/private/path/deepeval-bindings.json").write_text(json.dumps(pack))
 ```
 
-Omitting `--version` with `--bindings` currently refuses before reading either
-file or reserving a record ID. The pack's owner-asserted version cannot establish
-the TestRun's actual producer version. A separate version-neutral pack, result
-and record contract is required before this binding workflow can omit the selector.
+The v1 pack's 4.2.8 scope remains an owner assertion, never proof that an
+unversioned TestRun came from that release. Keep this route for exact old
+result, invocation, manifest and stored-member bytes.
 
 Each definition must have `method` and `policy` set to null, numeric value
 type, `sampling.unit` of `metric_occurrence`, coordinates
@@ -602,7 +666,8 @@ Use a separate pack/profile or leave a homonymous name unbound when that owner
 assertion cannot be made. A selected name absent from the source is refused;
 unselected occurrences remain visible as unbound items.
 
-The importable API returns the same validated result and typed refusals:
+The historical importable API returns the same validated v1 result and typed
+refusals:
 
 ```python
 from pathlib import Path
@@ -615,8 +680,8 @@ result = audit_deepeval_bound_file(
 )
 ```
 
-To retain the bound result and both exact inputs in one call, use the opt-in
-record route:
+To retain the historical v1 bound result and both exact inputs in one call,
+use the explicit record route:
 
 ```sh
 underwrite records audit-deepeval /path/to/test_run.json --version 4.2.8 \
@@ -663,9 +728,8 @@ row as an aggregate error. The explicit v2 route does not interpret new case tok
 metadata, expectations or classifiers; automatic ordinary intake refuses visible
 non-null expectation markers as described above. Nonempty conversational/trace
 ordinary accounting remains unsupported. Do not delete fields to force acceptance.
-V2 retention preserves the selected version even for acquisition diagnostics;
-its storage and exit meanings
-are the same as v1.
+The explicit 4.2.8 accounting record preserves the selected version even for
+acquisition diagnostics; its storage and exit meanings are the same as v1.
 
 <a id="source-checkout-pilot-audit-promptfoo-counts"></a>
 
@@ -955,8 +1019,8 @@ aggregate-count counterexample, measured command cost, and unmeasured user value
 
 ## Inspect an external common result
 
-To screen a local `evidence_result.v1` file from any producer against this
-installation's contract and analyzed-item invariants, use:
+To screen a local common-result file against this installation's contract and
+analyzed-item invariants, use:
 
 ```sh
 underwrite inspect-result /path/to/evidence-result.json --json
@@ -964,7 +1028,12 @@ underwrite inspect-result /path/to/evidence-result.json --json
 
 The importable equivalent is
 `underwrite.cli.inspect_result.inspect_result_file(Path("/path/to/evidence-result.json"))`.
-Both return `common_result_inspection.v1`: the selected file's raw-byte hash,
+Published `0.1.1` accepts `evidence_result.v1` and returns
+`common_result_inspection.v1`. Development builds advertising v2 inspection
+accept either v1 or `evidence_result.v2` without another selector: the decoded
+closed schema token chooses a code-known installed validator, not a source-supplied
+schema path. A v2 input returns `common_result_inspection.v2`; valid v1 output
+remains byte-exact. Both report the selected file's raw-byte hash,
 source-declared processing and population, computed availability counts for
 analyzed items, and explicit unchecked claims. The selected file is read once,
 with a 4 MiB byte limit and 64-level JSON depth limit. Output omits item values,
@@ -978,8 +1047,9 @@ opt-in view:
 underwrite inspect-result /path/to/evidence-result.json --view actions --json
 ```
 
-The Python equivalent is `inspect_result_file(path, view="actions")`, which
-returns `common_result_inspection_actions.v1`. Its two additional histograms
+The Python equivalent is `inspect_result_file(path, view="actions")`. It returns
+`common_result_inspection_actions.v1` for v1 input or, when advertised,
+`common_result_inspection_actions.v2` for v2 input. Its two additional histograms
 count items by `next_action` and by the producer's declared metric
 `semantic_binding`. All contract categories appear with zero counts for an
 analyzed empty result; both histograms are null for `insufficient` or
@@ -988,7 +1058,8 @@ are not distinct causes or work units. A declared binding is not an
 independently checked metric identity. The view withholds metric IDs,
 namespaces, values, source identities, evidence references, and the path;
 raw hashes and count patterns remain linkable. Omitting `--view` or using
-`--view summary` retains the original `common_result_inspection.v1` output.
+`--view summary` selects the matching v1/v2 summary contract; v1 bytes remain
+unchanged.
 
 Exit 0 means the file was inspected. A valid source-declared `insufficient` or
 `unsupported` result also exits 0 and has null availability counts. Invalid JSON,
@@ -996,8 +1067,10 @@ schema failures, and count or coordinate invariant failures exit 2 with a typed
 `evidence_error.v1` on stderr and empty stdout. The item invariant check covers
 analyzed item count and unique structural coordinates only; it does not establish
 contiguous order, a source roster, or source-specific mapping. The command does
-not read claimed source bytes or a bundle, authenticate a producer, reperform
-embedded verification references, or grant measurement or acceptance authority.
+not read the claimed TestRun or owner pack, compare their hashes, authenticate a
+producer, verify the asserted metric meaning, reperform embedded verification
+references, or grant measurement or acceptance authority. Missing, unknown or
+path-like schema tokens receive a finite input error without echoing source content.
 
 The [public synthetic C55 example](fixtures/examples/evidence/common-result-c55.json)
 was copied byte-for-byte from goppi commit

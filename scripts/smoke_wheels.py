@@ -765,30 +765,39 @@ def _evidence_pilots(cli: Path, fixtures: Path, work: Path) -> None:
 
 
 def _bound_deepeval_record_pilot(
-    cli: Path, work: Path, capabilities: dict[str, object]
+    cli: Path, work: Path, capabilities: dict[str, object], *, automatic: bool = False
 ) -> None:
     commands = cast(list[dict[str, object]], capabilities["commands"])
     records_entry = next(item for item in commands if item["command"] == "records")
     profiles = cast(list[dict[str, object]], records_entry["profiles"])
-    selected = next(
-        item
-        for item in profiles
-        if item["name"] == "audit-deepeval|4.2.8|owner-asserted-metric-bindings"
+    selector = (
+        "audit-deepeval|" + ("" if automatic else "4.2.8|") + "owner-asserted-metric-bindings"
     )
+    selected = next(item for item in profiles if item["name"] == selector)
+    version = "v2" if automatic else "v1"
+    required = ["file", *([] if automatic else ["version"]), "bindings", "root", "id"]
     _require(
-        selected["required_inputs"] == ["file", "version", "bindings", "root", "id"]
-        and selected["input_schemas"] == ["deepeval_metric_bindings.v1"]
-        and selected["output_schemas"] == ["deepeval_bound_record.v1"],
+        selected["required_inputs"] == required
+        and selected["input_schemas"] == [f"deepeval_metric_bindings.{version}"]
+        and selected["output_schemas"] == [f"deepeval_bound_record.{version}"],
         "installed bound DeepEval capability does not describe its executable route",
     )
     output_schemas = cast(list[str], selected["output_schemas"])
     source = work / "bound-deepeval-source.json"
-    source_raw = (ROOT / "fixtures/golden/external/deepeval-4.2.8/ordinary.json").read_bytes()
+    source_fixture = (
+        "fixtures/examples/deepeval-auto-4.3.1/ordinary.json"
+        if automatic
+        else "fixtures/golden/external/deepeval-4.2.8/ordinary.json"
+    )
+    source_raw = (ROOT / source_fixture).read_bytes()
     source.write_bytes(source_raw)
     bindings = work / "bound-deepeval-bindings.json"
-    pack_raw = (
-        ROOT / "fixtures/examples/evidence/synthetic-deepeval-4.2.8.bindings.json"
-    ).read_bytes()
+    pack_name = (
+        "synthetic-deepeval.bindings.v2.json"
+        if automatic
+        else "synthetic-deepeval-4.2.8.bindings.json"
+    )
+    pack_raw = (ROOT / "fixtures/examples/evidence" / pack_name).read_bytes()
     bindings.write_bytes(pack_raw)
     store = work / "bound-deepeval-store"
     values = {"version": "4.2.8", "bindings": str(bindings), "root": str(store), "id": "bound"}
@@ -804,13 +813,42 @@ def _bound_deepeval_record_pilot(
     verification = cast(dict[str, object], storage["verification"])
     _require(
         report["schema"] == output_schemas[0]
-        and report["source_format_version"] == "4.2.8"
-        and source_identity["raw_hash"] == sources["deepeval"]["raw_hash"]
+        and (automatic or report["source_format_version"] == "4.2.8")
+        and source_identity["raw_hash"]
+        == sources["deepeval"]["raw_hash"]
         == "sha256:" + hashlib.sha256(source_raw).hexdigest()
         and sources["bindings"]["raw_hash"] == "sha256:" + hashlib.sha256(pack_raw).hexdigest()
         and verification["files_checked"] == 2 + len(sources),
         "installed bound DeepEval capture changed source identity or retained file count",
     )
+    if automatic:
+        identity = cast(dict[str, object], result["source"])
+        declaration = cast(dict[str, object], result["declaration_source"])
+        _require(
+            result["schema"] == "evidence_result.v2"
+            and identity["producer_version"] is None
+            and identity["producer_version_state"] == "unknown"
+            and declaration["raw_hash"] == sources["bindings"]["raw_hash"],
+            "automatic bound result invented a producer version or lost its declaration bytes",
+        )
+        direct = _cli_json(
+            cli,
+            ["audit-deepeval", str(source), "--bindings", str(bindings)],
+            work / "bound-direct.json",
+            work,
+        )
+        _require(direct == result, "automatic direct and retained bound results differ")
+        for view, schema in (
+            ("summary", "common_result_inspection.v2"),
+            ("actions", "common_result_inspection_actions.v2"),
+        ):
+            inspection = _cli_json(
+                cli,
+                ["inspect-result", str(work / "bound-direct.json"), "--view", view],
+                work / f"bound-inspected-{view}.json",
+                work,
+            )
+            _require(inspection["schema"] == schema, "automatic bound result used wrong inspection")
     source.unlink()
     bindings.unlink()
     verified = _cli_json(
@@ -822,8 +860,14 @@ def _bound_deepeval_record_pilot(
     recovered = _cli_json(
         cli,
         [
-            "records", "read-json", "--root", str(store), "--id", "bound",
-            "--name", "analysis/evidence_result.json",
+            "records",
+            "read-json",
+            "--root",
+            str(store),
+            "--id",
+            "bound",
+            "--name",
+            "analysis/evidence_result.json",
         ],
         work / "bound-deepeval-recovered.json",
         work,
@@ -832,8 +876,19 @@ def _bound_deepeval_record_pilot(
         verified["valid"] is True and recovered["content"] == result,
         "installed bound DeepEval result did not survive source removal",
     )
-
-
+    recovery_code = (
+        "import json,sys; from pathlib import Path; "
+        "from underwrite.service.records import read_record_file; "
+        "print(json.dumps({role:read_record_file(Path(sys.argv[1]),'bound',"
+        "f'source/{role}.bin',max_bytes=4*1024*1024).sha256 "
+        "for role in ('deepeval','bindings')}))"
+    )
+    raw_recovery = _success([str(cli.with_name("python")), "-c", recovery_code, str(store)], work)
+    _require(
+        json.loads(raw_recovery.stdout)
+        == {role: captured["raw_hash"] for role, captured in sources.items()},
+        "bound record did not recover both original source byte identities",
+    )
 def _record_pilots(cli: Path, fixtures: Path, work: Path) -> None:
     installed_capabilities = _cli_json(cli, ["capabilities"], work / "capabilities.json", work)
     checkout_capabilities = _success(
@@ -844,6 +899,9 @@ def _record_pilots(cli: Path, fixtures: Path, work: Path) -> None:
         "checkout and installed capabilities differ",
     )
     _bound_deepeval_record_pilot(cli, work, installed_capabilities)
+    auto_bound = work / "automatic-bound"
+    auto_bound.mkdir()
+    _bound_deepeval_record_pilot(cli, auto_bound, installed_capabilities, automatic=True)
     commands = cast(list[dict[str, object]], installed_capabilities["commands"])
     for command, name, fixture, version, schema in (
         (

@@ -101,10 +101,23 @@ stores only the actual diagnostic and invocation, and consumes the ID. Recover
 `analysis/accounting.json` or `analysis/error.json` with `records read-json`.
 The TestRun is not redacted, and a stored evaluator error remains an error without
 a score. Visible non-null case or metric `expectationsData` gets an ordinary
-analysis diagnostic, not a count of zero expectations. `--bindings` still needs
-explicit `--version 4.2.8`; omitting it refuses before input or ID effects until
-the separate version-neutral binding contracts arrive. Use the manual path for
+analysis diagnostic, not a count of zero expectations. Use the manual path for
 selective omission.
+
+When neutral binding is advertised and the owner supplies a
+`deepeval_metric_bindings.v2` pack, prefer `records audit-deepeval FILE --bindings
+PACK --root ROOT --id NEW_ID --json` without a version flag for whole-source
+retention. It returns `deepeval_bound_record.v2` with `evidence_result.v2` or a
+saved diagnostic and captures the exact TestRun and pack independently. The pack
+hash, source hash and semantic digest identify different bytes/declarations;
+none verifies the owner's metric meaning or the producer. Both complete sources
+remain private. Inspect analysis/storage on exits 0/2/3; a diagnostic may consume
+the ID and null publication identity does not prove absence. Use `records verify`
+for the whole record, then `records read-json --name analysis/evidence_result.json`
+for the bound result; `inspect-result` can structurally screen that recovered
+JSON but does not reopen the original source or pack. Keep the old v1 pack only
+with explicit `--version 4.2.8`, which retains the exact v1 result/record route;
+do not silently migrate or widen its version assertion.
 
 For a supported Langfuse pair, if capabilities lists the automatic records
 audit-langfuse profile and the caller selected a private store and new ID, prefer
@@ -170,6 +183,38 @@ when the caller needs selective file omission instead.
    output or a missing-state report when the process produced none. Empty
    captured streams need not become selected bundle files. Add exclusions when
    selection intentionally omits known sensitive or oversized material.
+
+### Minimal manual record specification
+
+Place the **actual** `input.json`, `analysis.json`, `command.json`, and `exit.json`
+beside `record-spec.json`. `analysis.json` must be a result the command really
+produced; if it instead produced an error, give that file role `log` and use its
+actual name. The following complete spec selects those four existing files by
+paths relative to the spec. Use a fresh ID and private paths for each real run:
+
+```json
+{
+  "schema": "record_spec.v1",
+  "record_id": "manual.review-001",
+  "kind": "manual.analysis",
+  "label": "Selected local analysis and invocation",
+  "selection": {"scope": "explicit_files", "excluded": null},
+  "rerun_verification": {"status": "not_performed", "reference": null},
+  "provenance": {"verified": false, "attestation_ref": null},
+  "files": [
+    {"name": "source/input.json", "role": "input", "path": "input.json", "media_type": "application/json"},
+    {"name": "analysis/result.json", "role": "result", "path": "analysis.json", "media_type": "application/json"},
+    {"name": "invocation/command.json", "role": "log", "path": "command.json", "media_type": "application/json"},
+    {"name": "invocation/exit.json", "role": "log", "path": "exit.json", "media_type": "application/json"}
+  ]
+}
+```
+
+Omit optional `source_locator` when no locator is known. If supplied, it must be
+a nonblank string; `null` is invalid. This is a local byte capture, not proof
+that the saved command ran or that the analysis and source are semantically
+bound. Save, verify and retrieve it with the commands in steps 4–5.
+
 4. Save with `records save --root ROOT --spec SPEC --json`, capturing its output
    separately from the analysis. A record error is a storage result, not an
    analysis status. Preserve the original command artifacts if capture fails.

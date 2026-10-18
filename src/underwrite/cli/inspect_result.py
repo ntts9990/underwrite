@@ -22,6 +22,12 @@ INPUT_MAX_BYTES = 4 * 1024 * 1024
 INPUT_MAX_DEPTH = 64
 SCHEMA = "common_result_inspection.v1"
 ACTIONS_SCHEMA = "common_result_inspection_actions.v1"
+SCHEMA_V2 = "common_result_inspection.v2"
+ACTIONS_SCHEMA_V2 = "common_result_inspection_actions.v2"
+RESULT_SCHEMAS = {
+    "evidence_result.v1": {"summary": SCHEMA, "actions": ACTIONS_SCHEMA},
+    "evidence_result.v2": {"summary": SCHEMA_V2, "actions": ACTIONS_SCHEMA_V2},
+}
 View = Literal["summary", "actions"]
 LIMITATIONS = [
     "SOURCE_CLAIMS_UNVERIFIED",
@@ -80,7 +86,13 @@ def inspect_result_file(path: Path, *, view: View = "summary") -> dict[str, obje
     document, _ = decode_document(
         raw, INPUT_MAX_BYTES, INPUT_MAX_DEPTH, "/result", "INVALID_INPUT", EvidenceError
     )
-    input_validator = packaged_validator("evidence_result.v1")
+    selected_format = document.get("schema")
+    if type(selected_format) is not str or selected_format not in RESULT_SCHEMAS:
+        raise EvidenceError("INVALID_INPUT", "UNSUPPORTED_RESULT_SCHEMA", "/result/schema")
+    # Only exact keys in this code-owned map can select trusted installed contracts.
+    input_schema = selected_format
+    output_schema = RESULT_SCHEMAS[input_schema][view]
+    input_validator = packaged_validator(input_schema)
     validate(
         input_validator,
         document,
@@ -96,8 +108,8 @@ def inspect_result_file(path: Path, *, view: View = "summary") -> dict[str, obje
     processing = cast(dict[str, Any], document["processing"])
     analyzed = processing["state"] == "analyzed"
     report: dict[str, object] = {
-        "schema": ACTIONS_SCHEMA if view == "actions" else SCHEMA,
-        "selected_result": {"format": "evidence_result.v1", "raw_hash": digest_bytes(raw)},
+        "schema": output_schema,
+        "selected_result": {"format": input_schema, "raw_hash": digest_bytes(raw)},
         "declared_processing": {
             "state": processing["state"],
             "reason": processing["reason"],
@@ -121,22 +133,26 @@ def inspect_result_file(path: Path, *, view: View = "summary") -> dict[str, obje
         report["item_next_action_counts"] = action_counts
         report["declared_semantic_binding_counts"] = binding_counts
     validate(
-        packaged_validator(ACTIONS_SCHEMA if view == "actions" else SCHEMA),
-        report, EvidenceError, "INTERNAL_ERROR",
+        packaged_validator(output_schema),
+        report,
+        EvidenceError,
+        "INTERNAL_ERROR",
     )
     return report
 
 
 def configure(parser: argparse.ArgumentParser) -> None:
     parser.description = (
-        "Screen one local evidence_result.v1 against the installed shape and analyzed-item "
+        "Screen one local evidence_result.v1 or v2 against its installed shape and analyzed-item "
         "invariants. Exit 0 means the selected document was inspected, even when its producer "
         "declares insufficient or unsupported processing. Source bytes, bundle binding, and "
         "verification references are not checked."
     )
     parser.add_argument("file", type=Path, metavar="FILE")
     parser.add_argument(
-        "--view", choices=("summary", "actions"), default="summary",
+        "--view",
+        choices=("summary", "actions"),
+        default="summary",
         help="Select the default screening or item action and declared-binding counts.",
     )
     parser.add_argument("--json", action="store_true", help="Emit the selected view as JSON.")
@@ -161,7 +177,7 @@ def render_human(report: dict[str, object]) -> str:
 
 def render_selected_human(report: dict[str, object]) -> str:
     summary = render_human(report)
-    if report["schema"] == SCHEMA:
+    if report["schema"] in (SCHEMA, SCHEMA_V2):
         return summary
     action_counts = report["item_next_action_counts"]
     binding_counts = report["declared_semantic_binding_counts"]
@@ -170,7 +186,8 @@ def render_selected_human(report: dict[str, object]) -> str:
     actions = cast(dict[str, int], action_counts)
     bindings = cast(dict[str, int], binding_counts)
     return (
-        summary + " Item actions: "
+        summary
+        + " Item actions: "
         + ", ".join(f"{name}={count}" for name, count in actions.items())
         + ". Declared semantic bindings: "
         + ", ".join(f"{name}={count}" for name, count in bindings.items())
@@ -184,9 +201,12 @@ def produce(args: argparse.Namespace) -> dict[str, object]:
 
 def main(argv: list[str]) -> int:
     return run_cli(
-        "inspect-result", argv, configure, produce,
+        "inspect-result",
+        argv,
+        configure,
+        produce,
         ReportOutput(
-            lambda args: ACTIONS_SCHEMA if args.view == "actions" else SCHEMA,
+            lambda args: tuple(views[args.view] for views in RESULT_SCHEMAS.values()),
             human=render_selected_human,
         ),
     )

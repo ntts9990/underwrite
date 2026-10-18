@@ -23,9 +23,10 @@ def _histogram(names: list[str]) -> dict[str, Any]:
     return nullable(object_schema({name: {"type": "integer", "minimum": 0} for name in names}))
 
 
-def build_schema() -> dict[str, Any]:
-    base = _owner("common_result_inspection.v1")
-    source = _owner("evidence_result.v1")
+def build_schema(*, version: str = "v1") -> dict[str, Any]:
+    base = _owner(f"common_result_inspection.{version}")
+    source = _owner(f"evidence_result.{version}")
+    name = f"common_result_inspection_actions.{version}"
     definitions = source["$defs"]
     actions = definitions["item"]["properties"]["next_action"]["enum"]
     bindings = [
@@ -33,13 +34,13 @@ def build_schema() -> dict[str, Any]:
         for variant in definitions["metric_binding"]["oneOf"]
     ]
     fields = ("item_next_action_counts", "declared_semantic_binding_counts")
-    base["$id"] = "urn:underwrite:contract:" + NAME
-    base["title"] = NAME
+    base["$id"] = "urn:underwrite:contract:" + name
+    base["title"] = name
     base["description"] = (
         "Content-minimized screening with item action and source-declared semantic-binding "
         "histograms; no source or decision authority."
     )
-    base["properties"]["schema"] = {"const": NAME}
+    base["properties"]["schema"] = {"const": name}
     base["properties"][fields[0]] = _histogram(actions)
     base["properties"][fields[1]] = _histogram(bindings)
     base["required"].extend(fields)

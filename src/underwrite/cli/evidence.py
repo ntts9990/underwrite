@@ -12,12 +12,13 @@ from typing import Any, NoReturn
 
 from underwrite_core.canonical import canonical_bytes
 
-from underwrite.cli.local_json import read_document, validate
+from underwrite.cli.local_json import Validator, read_document, validate
 from underwrite.instrument.ingest.application import NEXT_ACTIONS
 from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
 
 REPORT_MAX_BYTES = 1024 * 1024
 DISPLAY_LIMIT = 1024
+type OutputSchemas = str | tuple[str, ...]
 
 
 def display(value: object) -> str:
@@ -30,7 +31,7 @@ def display(value: object) -> str:
 class ReportOutput:
     """Output contract and presentation for a composed CLI report."""
 
-    schema: str | Callable[[argparse.Namespace], str]
+    schema: OutputSchemas | Callable[[argparse.Namespace], OutputSchemas]
     max_bytes: int = REPORT_MAX_BYTES
     exit_status: Callable[[dict[str, object]], int] | None = None
     human: Callable[[dict[str, object]], str] | None = None
@@ -118,8 +119,25 @@ def run_cli(
         schema = (
             specification.schema(args) if callable(specification.schema) else specification.schema
         )
+        choices: dict[str, Validator] | None = None
+        if isinstance(schema, tuple):
+            if (
+                not schema
+                or any(type(name) is not str or not name for name in schema)
+                or len(set(schema)) != len(schema)
+            ):
+                raise SchemaConfigurationError("INVALID_OUTPUT_SCHEMA_SET")
+            choices = {name: packaged_validator(name) for name in schema}
         report = produce(args)
-        validate(packaged_validator(schema), report, EvidenceError, "INTERNAL_ERROR")
+        if choices is not None:
+            selected = report.get("schema")
+            if type(selected) is not str or selected not in choices:
+                raise EvidenceError("INTERNAL_ERROR", "UNDECLARED_OUTPUT_SCHEMA", "/schema")
+            validator = choices[selected]
+        else:
+            assert isinstance(schema, str)
+            validator = packaged_validator(schema)
+        validate(validator, report, EvidenceError, "INTERNAL_ERROR")
         output = (
             canonical_bytes(report).decode("utf-8")
             if args.json

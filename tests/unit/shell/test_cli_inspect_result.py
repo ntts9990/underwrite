@@ -128,7 +128,7 @@ def test_actions_view_matches_same_byte_control_and_preserves_default(
     assert main(["capabilities", "--json"]) == 0
     capability = json.loads(capsys.readouterr().out)
     entry = next(item for item in capability["commands"] if item["command"] == "inspect-result")
-    assert entry["profiles"] == [
+    assert [row for row in entry["profiles"] if row["name"].startswith("evidence_result.v1")] == [
         {"name": "evidence_result.v1", "required_inputs": ["file"],
          "input_schemas": ["evidence_result.v1"],
          "output_schemas": ["common_result_inspection.v1"]},
@@ -334,15 +334,17 @@ def test_actions_view_rejects_duplicate_coordinates_before_aggregation(
     )
 
 
-@pytest.mark.parametrize("raw,code,reason", [
-    (b'{"schema":1,"schema":2}', "INVALID_INPUT", "INVALID_JSON_INPUT"),
-    (b"\xff", "INVALID_INPUT", "INVALID_JSON_INPUT"),
-    (b"{}", "INVALID_INPUT", "SCHEMA_VALIDATION_FAILED"),
-    (b"[" * 65 + b"0" + b"]" * 65, "INPUT_LIMIT_EXCEEDED", "DEPTH_LIMIT_EXCEEDED"),
-    (b" " * (inspect_result.INPUT_MAX_BYTES + 1), "INPUT_LIMIT_EXCEEDED", "BYTE_LIMIT_EXCEEDED"),
+@pytest.mark.parametrize("raw,code,reason,location", [
+    (b'{"schema":1,"schema":2}', "INVALID_INPUT", "INVALID_JSON_INPUT", "/result"),
+    (b"\xff", "INVALID_INPUT", "INVALID_JSON_INPUT", "/result"),
+    (b"{}", "INVALID_INPUT", "UNSUPPORTED_RESULT_SCHEMA", "/result/schema"),
+    (b"[" * 65 + b"0" + b"]" * 65, "INPUT_LIMIT_EXCEEDED", "DEPTH_LIMIT_EXCEEDED", "/result"),
+    (b" " * (inspect_result.INPUT_MAX_BYTES + 1),
+     "INPUT_LIMIT_EXCEEDED", "BYTE_LIMIT_EXCEEDED", "/result"),
 ])
 def test_malformed_refusal_has_no_partial_output_or_private_path(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], raw: bytes, code: str, reason: str
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], raw: bytes, code: str, reason: str,
+    location: str,
 ) -> None:
     path = tmp_path / f"{CANARY}.json"
     path.write_bytes(raw)
@@ -351,7 +353,7 @@ def test_malformed_refusal_has_no_partial_output_or_private_path(
     assert streams.out == "" and CANARY not in streams.err
     error = json.loads(streams.err)
     assert (error["code"], error["reason"]) == (code, reason)
-    assert error["location"] == "/result"
+    assert error["location"] == location
 
 
 def test_selected_bytes_are_read_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

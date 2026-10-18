@@ -436,7 +436,7 @@ def test_capability_profile_matches_bound_and_legacy_entry_points(
     )
     refused = capsys.readouterr()
     assert not refused.out
-    assert json.loads(refused.err)["reason"] == "DEEPEVAL_BINDING_EXPLICIT_VERSION_REQUIRED"
+    assert json.loads(refused.err)["reason"] == "DEEPEVAL_BINDING_PACK_SCOPE_UNSUPPORTED"
     assert main(["audit-deepeval", str(LEGACY_SOURCE), "--version", "4.1.1", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["schema"] == "deepeval_accounting.v1"
 
@@ -555,7 +555,7 @@ def test_typed_refusals_have_no_partial_stdout(
     assert "private-unmatched-name" not in output.err
 
 
-def test_explicit_version_required_before_source_read(
+def test_v1_pack_on_auto_refuses_before_source_read(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     bindings = _write(tmp_path / "bindings.json", _pack())
@@ -564,7 +564,10 @@ def test_explicit_version_required_before_source_read(
         == ERROR_EXIT
     )
     error = json.loads(capsys.readouterr().err)
-    assert error["reason"] == "DEEPEVAL_BINDING_EXPLICIT_VERSION_REQUIRED"
+    assert (error["reason"], error["location"]) == (
+        "DEEPEVAL_BINDING_PACK_SCOPE_UNSUPPORTED",
+        "/bindings/schema",
+    )
 
 
 def test_repeated_name_preserves_ordinals_and_unscored_state() -> None:
