@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from jsonschema import Draft202012Validator
 from underwrite_core.canonical import canonical_bytes
 
 from underwrite.cli.audit_trajectory import trajectory_cli_error
@@ -22,6 +21,7 @@ from underwrite.cli.record_capture import (
     admit_record_response,
     render_record_response,
     saved_record,
+    storage_validator,
     store_captured_record,
 )
 from underwrite.instrument.evidence.goppi_trajectory import (
@@ -85,12 +85,9 @@ class _Contracts:
 
 def _contracts() -> _Contracts:
     aggregate = packaged_validator(SCHEMA)
-    schema = cast(dict[str, Any], aggregate.schema)
     return _Contracts(
         cast(Validator, aggregate),
-        cast(
-            Validator, Draft202012Validator({"$defs": schema["$defs"], "$ref": "#/$defs/storage"})
-        ),
+        storage_validator(aggregate),
         cast(Validator, packaged_validator(RESULT_SCHEMA)),
         cast(Validator, packaged_validator(HISTORY_SCHEMA)),
         cast(Validator, packaged_validator("evidence_error.v1")),

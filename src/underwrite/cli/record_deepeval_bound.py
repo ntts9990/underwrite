@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from jsonschema import Draft202012Validator
 from underwrite_core.canonical import CanonicalizationError, canonical_bytes, digest_bytes
 
 from underwrite.cli.audit_deepeval import AUTO_BOUND_HUMAN_LIMIT
@@ -17,6 +16,7 @@ from underwrite.cli.record_capture import (
     STORAGE_FAILURE_EXIT,
     admit_record_response,
     render_record_response,
+    storage_validator,
     store_captured_record,
 )
 from underwrite.cli.records import OUTPUT_MAX_BYTES, record_error_payload
@@ -62,13 +62,12 @@ class _Contracts:
 
 def _contracts(version: str | None) -> _Contracts:
     aggregate = packaged_validator(AUTO_SCHEMA if version is None else SCHEMA)
-    schema = cast(dict[str, Any], aggregate.schema)
-    storage = Draft202012Validator({"$defs": schema["$defs"], "$ref": "#/$defs/storage"})
+    storage = storage_validator(aggregate)
     packaged_validator(ACCOUNTING_SCHEMA if version is None else "observation.v1")
     packaged_validator(AUTO_PACK_SCHEMA if version is None else "deepeval_metric_bindings.v1")
     return _Contracts(
         cast(Validator, aggregate),
-        cast(Validator, storage),
+        storage,
         cast(
             Validator,
             packaged_validator(AUTO_RESULT_SCHEMA if version is None else "evidence_result.v1"),

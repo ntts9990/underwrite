@@ -5,276 +5,48 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import shutil
-import subprocess
 import sys
 import tempfile
-import tomllib
-import urllib.parse
-import urllib.request
-import zipfile
 from collections import Counter
-from email.parser import BytesParser
 from pathlib import Path
 from typing import Any, cast
 
-ROOT = Path(__file__).resolve().parents[1]
-COMMAND_TIMEOUT = 120
+if __package__:
+    from . import _wheel_smoke as wheel
+else:
+    import _wheel_smoke as wheel
+
 EVIDENCE_ERROR_EXIT = 2
 STORAGE_ERROR_EXIT = 3
 BASELINE_RECORD_FILE_COUNT = 7
-REGISTRY_INDEX = "https://pypi.org/simple/"
-REGISTRY_MAX_BYTES = 16 * 1024 * 1024
-
-
-class SmokeFailure(Exception):
-    """A wheel or installed CLI did not satisfy the release smoke contract."""
-
-
-def _require(condition: bool, message: str) -> None:
-    if not condition:
-        raise SmokeFailure(message)
-
-
-def _wheels(dist: Path) -> tuple[Path, Path]:
-    _require(dist.is_dir(), f"distribution directory is missing: {dist}")
-    pairs: list[Path] = []
-    for pattern in ("underwrite_core-*.whl", "underwrite-*.whl"):
-        found = sorted(dist.glob(pattern))
-        _require(len(found) == 1, f"expected one {pattern} in {dist}; found {len(found)}")
-        pairs.append(found[0])
-    return pairs[0], pairs[1]
-
-
-def _command(
-    args: list[str],
-    cwd: Path,
-    *,
-    project_environment: Path | None = None,
-    registry_only: bool = False,
-) -> subprocess.CompletedProcess[str]:
-    env = os.environ.copy()
-    if registry_only:
-        env = {key: value for key, value in env.items() if not key.startswith(("UV_", "PIP_"))}
-    for name in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV"):
-        env.pop(name, None)
-    if project_environment is not None:
-        env["UV_PROJECT_ENVIRONMENT"] = str(project_environment)
-    try:
-        return subprocess.run(
-            args,
-            cwd=cwd,
-            env=env,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=COMMAND_TIMEOUT,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise SmokeFailure(f"command timed out after {COMMAND_TIMEOUT}s: {args[0]}") from exc
-
-
-def _success(
-    args: list[str],
-    cwd: Path,
-    *,
-    project_environment: Path | None = None,
-    registry_only: bool = False,
-) -> subprocess.CompletedProcess[str]:
-    result = _command(
-        args, cwd, project_environment=project_environment, registry_only=registry_only
-    )
-    _require(
-        result.returncode == 0,
-        f"command failed ({result.returncode}): {args[0]}: {result.stderr[:500]}",
-    )
-    return result
 
 
 def _cli_json(cli: Path, args: list[str], output: Path, cwd: Path) -> dict[str, object]:
-    result = _success([str(cli), *args, "--json"], cwd)
-    _require(result.stderr == "", f"unexpected CLI stderr: {result.stderr[:500]}")
+    result = wheel.success([str(cli), *args, "--json"], cwd)
+    wheel.require(result.stderr == "", f"unexpected CLI stderr: {result.stderr[:500]}")
     try:
         document: object = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
-        raise SmokeFailure(f"invalid CLI JSON for {args[0]}") from exc
-    _require(isinstance(document, dict), f"CLI JSON is not an object for {args[0]}")
+        raise wheel.SmokeFailure(f"invalid CLI JSON for {args[0]}") from exc
+    wheel.require(isinstance(document, dict), f"CLI JSON is not an object for {args[0]}")
     output.write_text(result.stdout, encoding="utf-8")
     return cast(dict[str, object], document)
 
 
-def _prepare_wheel_environment(work: Path, venv: Path) -> None:
-    _success(
-        [
-            "uv",
-            "sync",
-            "--frozen",
-            "--no-default-groups",
-            "--no-install-workspace",
-            "--project",
-            str(ROOT),
-            "--python",
-            sys.executable,
-        ],
-        work,
-        project_environment=venv,
-    )
-
-
-def _install_app_from_local_dist(work: Path, venv: Path, wheels: tuple[Path, Path]) -> None:
-    python = venv / "bin/python"
-    _success(
-        [
-            "uv",
-            "pip",
-            "install",
-            "--offline",
-            "--no-index",
-            "--find-links",
-            str(wheels[0].parent),
-            "--python",
-            str(python),
-            str(wheels[1]),
-        ],
-        work,
-        project_environment=venv,
-    )
-    _success(["uv", "pip", "check", "--python", str(python)], work, project_environment=venv)
-
-
-def _install_wheels(work: Path, venv: Path, wheels: tuple[Path, Path]) -> None:
-    _prepare_wheel_environment(work, venv)
-    python = venv / "bin/python"
-    absent = _command(
-        [
-            str(python),
-            "-I",
-            "-c",
-            "from importlib.metadata import version; print(version('underwrite-core'))",
-        ],
-        work,
-        project_environment=venv,
-    )
-    _require(absent.returncode != 0, "core was installed before app dependency resolution")
-    _install_app_from_local_dist(work, venv, wheels)
-
-
-class _NoRegistryRedirects(urllib.request.HTTPRedirectHandler):
-    def redirect_request(
-        self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str
-    ) -> None:
-        raise SmokeFailure("registry redirects are not accepted")
-
-
-def _registry_bytes(url: str) -> bytes:
-    """Bound release-only registry reads; URLs are restricted to official PyPI hosts."""
-    parsed = urllib.parse.urlsplit(url)
-    _require(
-        parsed.scheme == "https" and parsed.netloc in {"pypi.org", "files.pythonhosted.org"},
-        "unexpected registry artifact URL",
-    )
-    opener = urllib.request.build_opener(_NoRegistryRedirects())
-    with opener.open(url, timeout=30) as response:
-        raw = response.read(REGISTRY_MAX_BYTES + 1)
-    _require(len(raw) <= REGISTRY_MAX_BYTES, "registry artifact exceeded smoke byte limit")
-    return raw
-
-
-def _published_core(work: Path, version: str) -> tuple[Path, dict[str, object]]:
-    try:
-        return _published_core_artifact(work, version)
-    except (KeyError, TypeError, ValueError, zipfile.BadZipFile) as exc:
-        raise SmokeFailure("invalid published core metadata or archive") from exc
-
-
-def _published_core_artifact(work: Path, version: str) -> tuple[Path, dict[str, object]]:
-    url = "https://pypi.org/pypi/underwrite-core/" + urllib.parse.quote(version, safe="") + "/json"
-    metadata = json.loads(_registry_bytes(url))
-    _require(
-        metadata["info"]["name"] == "underwrite-core" and metadata["info"]["version"] == version,
-        "published core release metadata mismatch",
-    )
-    choices = [
-        item
-        for item in metadata["urls"]
-        if item["packagetype"] == "bdist_wheel"
-        and item["filename"] == f"underwrite_core-{version}-py3-none-any.whl"
-    ]
-    _require(len(choices) == 1, "expected one published portable core wheel")
-    selected = choices[0]
-    raw = _registry_bytes(selected["url"])
-    digest = hashlib.sha256(raw).hexdigest()
-    _require(digest == selected["digests"]["sha256"], "published core wheel hash mismatch")
-    _require(Path(selected["filename"]).name == selected["filename"], "invalid core wheel filename")
-    wheel = work / selected["filename"]
-    wheel.write_bytes(raw)
-    with zipfile.ZipFile(wheel) as archive:
-        name = f"underwrite_core-{version}.dist-info/METADATA"
-        project = BytesParser().parsebytes(archive.read(name))
-        _require(
-            project["Name"] == "underwrite-core" and project["Version"] == version,
-            "published core wheel metadata mismatch",
-        )
-    return wheel, {"version": version, "url": selected["url"], "sha256": digest}
-
-
-def _install_registry_core(
-    work: Path, venv: Path, app_wheel: Path
-) -> tuple[Path, dict[str, object]]:
-    """Use app dependency resolution in a fresh venv; no workspace or local core input."""
-    _success(
-        ["uv", "--no-config", "--no-cache", "venv", "--python", sys.executable, str(venv)],
-        work,
-        registry_only=True,
-    )
-    python = venv / "bin/python"
-    _success(
-        [
-            "uv",
-            "--no-config",
-            "--no-cache",
-            "pip",
-            "install",
-            "--no-sources",
-            "--default-index",
-            REGISTRY_INDEX,
-            "--python",
-            str(python),
-            str(app_wheel),
-        ],
-        work,
-        registry_only=True,
-    )
-    _success(
-        ["uv", "--no-config", "pip", "check", "--python", str(python)], work, registry_only=True
-    )
-    resolved = _success(
-        [
-            str(python),
-            "-I",
-            "-c",
-            "from importlib.metadata import version; print(version('underwrite-core'))",
-        ],
-        work,
-        registry_only=True,
-    )
-    core, evidence = _published_core(work, resolved.stdout.strip())
-    _check_wheel_origins(venv, (core, app_wheel))
-    return core, evidence
-
-
 def _registry_core_smoke(dist: Path) -> None:
     candidates = sorted(dist.glob("underwrite-*.whl"))
-    _require(len(candidates) == 1, "expected one application wheel for registry-core smoke")
+    wheel.require(len(candidates) == 1, "expected one application wheel for registry-core smoke")
     app = candidates[0]
     with tempfile.TemporaryDirectory(prefix="underwrite-registry-core-smoke-") as directory:
         work = Path(directory).resolve()
-        _require(not work.is_relative_to(ROOT), "temporary directory must be outside checkout")
+        wheel.require(
+            not work.is_relative_to(wheel.ROOT), "temporary directory must be outside checkout"
+        )
         venv = work / "venv"
-        _, registry = _install_registry_core(work, venv, app)
+        _, registry = wheel.install_registry_core(work, venv, app)
         cli = venv / "bin/underwrite"
-        fixtures = ROOT / "fixtures/examples"
+        fixtures = wheel.ROOT / "fixtures/examples"
         _native_measurement_pilot(cli, fixtures, work)
         _baseline_event_pilot(cli, fixtures, work)
         _measurement_record_pilot(cli, work)
@@ -287,7 +59,7 @@ def _registry_core_smoke(dist: Path) -> None:
                     "app_wheel": app.name,
                     "app_sha256": hashlib.sha256(app.read_bytes()).hexdigest(),
                     "published_core": registry,
-                    "index": REGISTRY_INDEX,
+                    "index": wheel.REGISTRY_INDEX,
                     "installed_package_bytes_match_archives": True,
                     "tasks": "measurement_record_replay_and_trajectory",
                     "state": "passed",
@@ -295,105 +67,6 @@ def _registry_core_smoke(dist: Path) -> None:
                 sort_keys=True,
             )
         )
-
-
-def _stale_core_upgrade(work: Path, wheels: tuple[Path, Path]) -> None:
-    """Use a synthetic old-version surrogate, not published PyPI bytes."""
-    build = tomllib.loads((ROOT / "packages/underwrite-core/pyproject.toml").read_text())[
-        "build-system"
-    ]
-    source = work / "stale-core-source"
-    package = source / "src/underwrite_core"
-    package.mkdir(parents=True)
-    (package / "__init__.py").write_text("", encoding="utf-8")
-    (package / "canonical.py").write_text("", encoding="utf-8")
-    (source / "pyproject.toml").write_text(
-        '[project]\nname = "underwrite-core"\nversion = "0.0.1"\n'
-        'requires-python = ">=3.12"\n'
-        "[build-system]\n"
-        f"requires = [{', '.join(json.dumps(requirement) for requirement in build['requires'])}]\n"
-        f"build-backend = {json.dumps(build['build-backend'])}\n"
-        '[tool.uv.build-backend]\nmodule-name = "underwrite_core"\nmodule-root = "src"\n',
-        encoding="utf-8",
-    )
-    dist = work / "stale-core-dist"
-    _success(
-        [
-            "uv",
-            "build",
-            "--offline",
-            "--wheel",
-            "--no-sources",
-            "--project",
-            str(source),
-            "--out-dir",
-            str(dist),
-        ],
-        work,
-    )
-    old = list(dist.glob("underwrite_core-0.0.1-*.whl"))
-    _require(len(old) == 1, "stale-core surrogate wheel missing")
-    venv = work / "stale-venv"
-    _prepare_wheel_environment(work, venv)
-    python = venv / "bin/python"
-    _success(
-        ["uv", "pip", "install", "--offline", "--no-deps", "--python", str(python), str(old[0])],
-        work,
-        project_environment=venv,
-    )
-    missing = _command(
-        [str(python), "-I", "-c", "from underwrite_core.canonical import safe_integer_value"],
-        work,
-    )
-    _require(missing.returncode != 0, "stale-core surrogate unexpectedly has the new API")
-    _install_app_from_local_dist(work, venv, wheels)
-    _check_wheel_origins(venv, wheels)
-    _success([str(venv / "bin/underwrite"), "--help"], work)
-
-
-def _check_wheel_origins(venv: Path, wheels: tuple[Path, Path]) -> None:
-    """Check installed versions and package bytes, including a resolved core wheel."""
-    site = (
-        venv / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
-    )
-    for distribution, wheel in zip(("underwrite_core", "underwrite"), wheels, strict=True):
-        with zipfile.ZipFile(wheel) as archive:
-            metadata_name = next(
-                name for name in archive.namelist() if name.endswith(".dist-info/METADATA")
-            )
-            metadata = BytesParser().parsebytes(archive.read(metadata_name))
-            version = metadata["Version"]
-            records = list(site.glob(f"{distribution}-*.dist-info"))
-            _require(
-                len(records) == 1 and records[0].name == f"{distribution}-{version}.dist-info",
-                f"installed {distribution} version differs from built wheel",
-            )
-            installed = BytesParser().parsebytes((records[0] / "METADATA").read_bytes())
-            _require(
-                installed["Name"] == metadata["Name"]
-                and installed["Version"] == version
-                and installed.get_all("Requires-Dist") == metadata.get_all("Requires-Dist"),
-                f"installed {distribution} metadata differs from built wheel",
-            )
-            members = [
-                name
-                for name in archive.namelist()
-                if name.startswith(f"{distribution}/") and not name.endswith("/")
-            ]
-            _require(bool(members), f"built {distribution} has no package members")
-            for name in members:
-                _require(
-                    (site / name).read_bytes() == archive.read(name),
-                    f"installed {distribution} bytes differ from built wheel",
-                )
-        if distribution == "underwrite":
-            origin: object = json.loads((records[0] / "direct_url.json").read_text())
-            _require(isinstance(origin, dict), "invalid underwrite origin record")
-            record = cast(dict[str, object], origin)
-            _require(
-                record.get("url") == wheel.as_uri() and "dir_info" not in record,
-                "underwrite was not installed from its built wheel",
-            )
 
 
 def _promptfoo_numeric_pilot(
@@ -444,18 +117,24 @@ def _promptfoo_numeric_pilot(
         work / "promptfoo-integral-direct.json",
         work,
     )
-    _require(
+    wheel.require(
         (work / "promptfoo-integral-direct.json").read_bytes()
         == (work / "promptfoo-integral-audit.json").read_bytes(),
         "raw and manifest canonical output differs",
     )
     for key in baseline:
         if key in {"raw_hash", "observation_digest"}:
-            _require(audited[key] != baseline[key], "different raw sources lost their identity")
+            wheel.require(
+                audited[key] != baseline[key], "different raw sources lost their identity"
+            )
         else:
-            _require(audited[key] == baseline[key], "integral count spelling changed accounting")
+            wheel.require(
+                audited[key] == baseline[key], "integral count spelling changed accounting"
+            )
     raw = cast(dict[str, object], observed["raw"])
-    _require(raw["hash"] == audited["raw_hash"], "ingest/audit consumed different source bytes")
+    wheel.require(
+        raw["hash"] == audited["raw_hash"], "ingest/audit consumed different source bytes"
+    )
 
 
 def _promptfoo_record_pilot(
@@ -488,13 +167,13 @@ def _promptfoo_record_pilot(
     )
     analysis = cast(dict[str, object], report["analysis"])
     storage = cast(dict[str, object], report["storage"])
-    _require(analysis["report"] == expected, "record capture changed accounting")
-    _require(storage["state"] == "saved", "record capture did not save")
-    _require(
+    wheel.require(analysis["report"] == expected, "record capture changed accounting")
+    wheel.require(storage["state"] == "saved", "record capture did not save")
+    wheel.require(
         cast(dict[str, object], storage["verification"])["valid"] is True,
         "record capture did not verify",
     )
-    _require(
+    wheel.require(
         (store / "records/captured/files/source/promptfoo.bin").read_bytes() == raw,
         "captured source differs from the selected bytes",
     )
@@ -514,15 +193,15 @@ def _promptfoo_record_pilot(
         work / "recovered-accounting.json",
         work,
     )
-    _require(recovered["content"] == expected, "selected read changed the saved result")
-    _require(
+    wheel.require(recovered["content"] == expected, "selected read changed the saved result")
+    wheel.require(
         recovered["manifest_digest"] == storage["manifest_digest"]
         and recovered["verification_scope"] == "selected_file_against_manifest",
         "selected read misrepresented its identity or scope",
     )
     malformed = work / "malformed-promptfoo.json"
     malformed.write_bytes(b"{")
-    failed = _command(
+    failed = wheel.command(
         [
             str(cli),
             "records",
@@ -537,16 +216,16 @@ def _promptfoo_record_pilot(
         ],
         work,
     )
-    _require(
+    wheel.require(
         failed.returncode == EVIDENCE_ERROR_EXIT and failed.stderr == "",
         "wrong saved-diagnostic exit",
     )
     diagnostic = json.loads(failed.stdout)
-    _require(
+    wheel.require(
         diagnostic["analysis"]["state"] == "error" and diagnostic["storage"]["state"] == "saved",
         "saved analysis failure lost independent outcomes",
     )
-    _require(
+    wheel.require(
         (store / "records/diagnostic/files/source/promptfoo.bin").read_bytes() == b"{",
         "malformed complete source was not retained",
     )
@@ -565,7 +244,7 @@ def _promptfoo_record_pilot(
         work / "recovered-error.json",
         work,
     )
-    _require(
+    wheel.require(
         recovered_error["content"] == diagnostic["analysis"]["error"],
         "selected read replaced the saved diagnostic",
     )
@@ -587,16 +266,16 @@ def _promptfoo_record_pilot(
     content = cast(dict[str, object], invocation["content"])
     arguments = cast(dict[str, object], content["arguments"])
     if version is None:
-        _require(
+        wheel.require(
             arguments["selection_mode"] == "auto"
             and "reader_profile" not in arguments
             and "producer_version" not in arguments,
             "failed automatic input selection fabricated an applied reader or source version",
         )
     elif version == "0.123.0":
-        _require("format_version" not in arguments, "legacy default invocation bytes changed")
+        wheel.require("format_version" not in arguments, "legacy default invocation bytes changed")
     else:
-        _require(
+        wheel.require(
             arguments["format_version"] == version,
             "saved Promptfoo diagnostic lost its selected version",
         )
@@ -623,7 +302,7 @@ def _promptfoo_manifest_pilot(cli: Path, directory: Path, raw: bytes) -> None:
     counted = _cli_json(
         cli, ["audit-counts", str(case)], directory / "manifest-audit.json", directory
     )
-    _require(
+    wheel.require(
         counted["raw_hash"] == expected_hash
         and counted["observation_digest"]
         == cast(dict[str, object], inspected["observation"])["digest"]
@@ -632,8 +311,8 @@ def _promptfoo_manifest_pilot(cli: Path, directory: Path, raw: bytes) -> None:
     )
     artifact["expected_hash"] = "sha256:" + "0" * 64
     case.write_text(json.dumps(manifest), encoding="utf-8")
-    refused = _command([str(cli), "audit-counts", str(case), "--json"], directory)
-    _require(
+    refused = wheel.command([str(cli), "audit-counts", str(case), "--json"], directory)
+    wheel.require(
         refused.returncode == EVIDENCE_ERROR_EXIT
         and refused.stdout == ""
         and json.loads(refused.stderr)["code"] == "EXPECTED_HASH_MISMATCH",
@@ -654,7 +333,7 @@ def _promptfoo_auto_mutations(cli: Path, source: Path, work: Path) -> None:
         work,
     )
     identity = cast(dict[str, object], report["source"])
-    _require(
+    wheel.require(
         identity["producer_version"] is None
         and identity["producer_version_state"] == "unknown"
         and "PRIVATE_CANARY" not in json.dumps(report),
@@ -662,8 +341,8 @@ def _promptfoo_auto_mutations(cli: Path, source: Path, work: Path) -> None:
     )
     payload["results"]["version"] = 4
     selected.write_text(json.dumps(payload), encoding="utf-8")
-    refused = _command([str(cli), "audit-promptfoo", str(selected), "--json"], work)
-    _require(
+    refused = wheel.command([str(cli), "audit-promptfoo", str(selected), "--json"], work)
+    wheel.require(
         refused.returncode == EVIDENCE_ERROR_EXIT
         and refused.stdout == ""
         and "PRIVATE_CANARY" not in refused.stderr,
@@ -676,7 +355,7 @@ def _promptfoo_auto_pilot(cli: Path, work: Path) -> None:
         directory = work / f"{folder}-auto"
         directory.mkdir()
         source = directory / "source.json"
-        raw = (ROOT / "fixtures/golden/external" / folder / "results.json").read_bytes()
+        raw = (wheel.ROOT / "fixtures/golden/external" / folder / "results.json").read_bytes()
         source.write_bytes(raw)
         declared_version = json.loads(raw)["metadata"]["promptfooVersion"]
         report = _cli_json(
@@ -688,20 +367,20 @@ def _promptfoo_auto_pilot(cli: Path, work: Path) -> None:
             directory / "explicit.json",
             directory,
         )
-        _require(
+        wheel.require(
             report["schema"] == "promptfoo_accounting.v2"
             and report["raw_hash"] == "sha256:" + hashlib.sha256(raw).hexdigest()
             and "observation_digest" not in report,
             "auto accounting changed byte identity or invented a full-source observation",
         )
         identity = cast(dict[str, object], report["source"])
-        _require(
+        wheel.require(
             identity["producer_version"] == declared_version
             and identity["producer_version_state"] == "declared"
             and identity["claims_verified"] is False,
             "auto accounting lost declared-version limits",
         )
-        _require(
+        wheel.require(
             all(
                 report[key] == legacy[key]
                 for key in (
@@ -714,7 +393,7 @@ def _promptfoo_auto_pilot(cli: Path, work: Path) -> None:
             ),
             "auto accounting introduced a different count classifier",
         )
-        api = _success(
+        api = wheel.success(
             [
                 str(cli.with_name("python")),
                 "-c",
@@ -725,7 +404,7 @@ def _promptfoo_auto_pilot(cli: Path, work: Path) -> None:
             ],
             directory,
         )
-        _require(json.loads(api.stdout) == report, "installed auto API and CLI disagree")
+        wheel.require(json.loads(api.stdout) == report, "installed auto API and CLI disagree")
         _promptfoo_record_pilot(cli, source, directory, report, version=None)
         verified = _cli_json(
             cli,
@@ -740,14 +419,14 @@ def _promptfoo_auto_pilot(cli: Path, work: Path) -> None:
             directory / "whole-verification.json",
             directory,
         )
-        _require(verified["valid"] is True, "auto record did not verify after input removal")
+        wheel.require(verified["valid"] is True, "auto record did not verify after input removal")
         _promptfoo_auto_mutations(cli, source, directory)
 
 
 def _promptfoo_current_pilot(cli: Path, work: Path) -> None:
     directory = work / "promptfoo-current"
     directory.mkdir()
-    source = ROOT / "fixtures/golden/external/promptfoo-0.124.1/results.json"
+    source = wheel.ROOT / "fixtures/golden/external/promptfoo-0.124.1/results.json"
     raw = source.read_bytes()
     observation = directory / "observation.json"
     projected = _cli_json(
@@ -764,7 +443,7 @@ def _promptfoo_current_pilot(cli: Path, work: Path) -> None:
         observation,
         directory,
     )
-    _require(projected["payload"] == json.loads(raw), "new profile changed source")
+    wheel.require(projected["payload"] == json.loads(raw), "new profile changed source")
     report = _cli_json(
         cli,
         ["audit-promptfoo", str(source), "--version", "0.124.1"],
@@ -772,7 +451,7 @@ def _promptfoo_current_pilot(cli: Path, work: Path) -> None:
         directory,
     )
     expected = {"successes": 3, "failures": 1, "errors": 3, "total": 7}
-    _require(
+    wheel.require(
         report["row_tallies"] == report["producer_stats"] == expected
         and report["declared_relation"] == "consistent",
         "current Promptfoo capture changed declared category meaning",
@@ -784,14 +463,16 @@ def _promptfoo_current_pilot(cli: Path, work: Path) -> None:
         directory,
     )
     selected_rows = row_view.get("rows")
-    _require(isinstance(selected_rows, list), "installed Promptfoo row index did not return rows")
+    wheel.require(
+        isinstance(selected_rows, list), "installed Promptfoo row index did not return rows"
+    )
     source_rows = cast(list[object], selected_rows)
-    _require(
+    wheel.require(
         all(isinstance(row, dict) for row in source_rows),
         "installed Promptfoo row index contains non-object rows",
     )
     rows = cast(list[dict[str, object]], source_rows)
-    _require(
+    wheel.require(
         row_view.get("schema") == "promptfoo_row_index.v1"
         and row_view.get("raw_hash") == "sha256:" + hashlib.sha256(raw).hexdigest()
         and [row.get("row_index") for row in rows] == list(range(expected["total"]))
@@ -807,19 +488,19 @@ def _promptfoo_current_pilot(cli: Path, work: Path) -> None:
     )
     _promptfoo_record_pilot(cli, source, directory, report, version="0.124.1")
     _promptfoo_manifest_pilot(cli, directory, raw)
-    refused = _command(
+    refused = wheel.command(
         [
             str(cli),
             "measure",
             "--observation",
             str(observation),
             "--policy",
-            str(ROOT / "fixtures/examples/event-acceptance/policy.json"),
+            str(wheel.ROOT / "fixtures/examples/event-acceptance/policy.json"),
             "--json",
         ],
         directory,
     )
-    _require(
+    wheel.require(
         refused.returncode == EVIDENCE_ERROR_EXIT
         and refused.stdout == ""
         and json.loads(refused.stderr)["code"] == "UNSUPPORTED_PROFILE",
@@ -835,7 +516,7 @@ def _evidence_pilots(cli: Path, fixtures: Path, work: Path) -> None:
         work / "audit.json",
         work,
     )
-    _require(audit.get("declared_relation") == "inconsistent", "count mismatch was hidden")
+    wheel.require(audit.get("declared_relation") == "inconsistent", "count mismatch was hidden")
     _promptfoo_numeric_pilot(cli, evidence, work, audit)
     _promptfoo_record_pilot(
         cli, evidence / "synthetic-promptfoo-category-mismatch.json", work, audit
@@ -856,8 +537,8 @@ def _evidence_pilots(cli: Path, fixtures: Path, work: Path) -> None:
         work / "comparison.json",
         work,
     )
-    _require(comparison.get("declared_relation") == "different", "declaration mismatch hidden")
-    _require(comparison.get("actual_conditions_verified") is False, "unverified conditions")
+    wheel.require(comparison.get("declared_relation") == "different", "declaration mismatch hidden")
+    wheel.require(comparison.get("actual_conditions_verified") is False, "unverified conditions")
     for fixture, expected in (
         ("paired-complete", "measured"),
         ("paired-incomplete", "not_measured"),
@@ -875,14 +556,14 @@ def _evidence_pilots(cli: Path, fixtures: Path, work: Path) -> None:
             work / f"paired-{fixture}.json",
             work,
         )
-        _require(paired.get("schema") == "paired_binary_evidence.v1", "paired schema mismatch")
-        _require(paired.get("status") == expected, "paired missingness was hidden")
+        wheel.require(paired.get("schema") == "paired_binary_evidence.v1", "paired schema mismatch")
+        wheel.require(paired.get("status") == expected, "paired missingness was hidden")
         if fixture == "observed-and-missing":
             accounting = cast(dict[str, object], paired["accounting"])
             examples = cast(list[dict[str, object]], accounting["observed_reason_examples"])
-            _require(len(examples) == 1, "observed reason was lost")
-            _require(examples[0]["outcome"] == 0, "observed zero was recoded")
-            _require(examples[0]["source_claim_unverified"] is True, "source reason promoted")
+            wheel.require(len(examples) == 1, "observed reason was lost")
+            wheel.require(examples[0]["outcome"] == 0, "observed zero was recoded")
+            wheel.require(examples[0]["source_claim_unverified"] is True, "source reason promoted")
     review = _cli_json(
         cli,
         [
@@ -897,24 +578,26 @@ def _evidence_pilots(cli: Path, fixtures: Path, work: Path) -> None:
         work / "paired-review.json",
         work,
     )
-    _require(review.get("schema") == "paired_review.v1", "review schema mismatch")
-    _require(review.get("actual_conditions_verified") is False, "review verified source claims")
+    wheel.require(review.get("schema") == "paired_review.v1", "review schema mismatch")
+    wheel.require(
+        review.get("actual_conditions_verified") is False, "review verified source claims"
+    )
     reference = cast(dict[str, object], review["paired_evidence_ref"])
-    _require(reference.get("status") == "measured", "review lost measured status")
+    wheel.require(reference.get("status") == "measured", "review lost measured status")
     history = cast(dict[str, object], review["evaluation_history"])
     statuses = cast(dict[str, object], history["selected_statuses"])
-    _require(statuses.get("baseline") == "invalidated", "history invalidation was lost")
+    wheel.require(statuses.get("baseline") == "invalidated", "history invalidation was lost")
     partition = cast(dict[str, object], review["case_partition"])
     groups = cast(list[dict[str, object]], partition["groups"])
-    _require(groups[-1]["category"] is None, "unknown category was lost")
-    _require(groups[0]["case_count"] == 0, "empty category was lost")
-    error = _command([str(cli), "pair-binary", "--json"], work)
-    _require(
+    wheel.require(groups[-1]["category"] is None, "unknown category was lost")
+    wheel.require(groups[0]["case_count"] == 0, "empty category was lost")
+    error = wheel.command([str(cli), "pair-binary", "--json"], work)
+    wheel.require(
         error.returncode == EVIDENCE_ERROR_EXIT and error.stdout == "",
         "pilot error channel mismatch",
     )
     diagnostic = json.loads(error.stderr)
-    _require(diagnostic.get("schema") == "evidence_error.v1", "pilot error schema mismatch")
+    wheel.require(diagnostic.get("schema") == "evidence_error.v1", "pilot error schema mismatch")
 
 
 def _bound_deepeval_record_pilot(
@@ -929,7 +612,7 @@ def _bound_deepeval_record_pilot(
     selected = next(item for item in profiles if item["name"] == selector)
     version = "v2" if automatic else "v1"
     required = ["file", *([] if automatic else ["version"]), "bindings", "root", "id"]
-    _require(
+    wheel.require(
         selected["required_inputs"] == required
         and selected["input_schemas"] == [f"deepeval_metric_bindings.{version}"]
         and selected["output_schemas"] == [f"deepeval_bound_record.{version}"],
@@ -942,7 +625,7 @@ def _bound_deepeval_record_pilot(
         if automatic
         else "fixtures/golden/external/deepeval-4.2.8/ordinary.json"
     )
-    source_raw = (ROOT / source_fixture).read_bytes()
+    source_raw = (wheel.ROOT / source_fixture).read_bytes()
     source.write_bytes(source_raw)
     bindings = work / "bound-deepeval-bindings.json"
     pack_name = (
@@ -950,7 +633,7 @@ def _bound_deepeval_record_pilot(
         if automatic
         else "synthetic-deepeval-4.2.8.bindings.json"
     )
-    pack_raw = (ROOT / "fixtures/examples/evidence" / pack_name).read_bytes()
+    pack_raw = (wheel.ROOT / "fixtures/examples/evidence" / pack_name).read_bytes()
     bindings.write_bytes(pack_raw)
     store = work / "bound-deepeval-store"
     values = {"version": "4.2.8", "bindings": str(bindings), "root": str(store), "id": "bound"}
@@ -964,7 +647,7 @@ def _bound_deepeval_record_pilot(
     sources = cast(dict[str, dict[str, object]], report["sources"])
     storage = cast(dict[str, object], report["storage"])
     verification = cast(dict[str, object], storage["verification"])
-    _require(
+    wheel.require(
         report["schema"] == output_schemas[0]
         and (automatic or report["source_format_version"] == "4.2.8")
         and source_identity["raw_hash"]
@@ -977,7 +660,7 @@ def _bound_deepeval_record_pilot(
     if automatic:
         identity = cast(dict[str, object], result["source"])
         declaration = cast(dict[str, object], result["declaration_source"])
-        _require(
+        wheel.require(
             result["schema"] == "evidence_result.v2"
             and identity["producer_version"] is None
             and identity["producer_version_state"] == "unknown"
@@ -990,7 +673,7 @@ def _bound_deepeval_record_pilot(
             work / "bound-direct.json",
             work,
         )
-        _require(direct == result, "automatic direct and retained bound results differ")
+        wheel.require(direct == result, "automatic direct and retained bound results differ")
         for view, schema in (
             ("summary", "common_result_inspection.v2"),
             ("actions", "common_result_inspection_actions.v2"),
@@ -1001,7 +684,9 @@ def _bound_deepeval_record_pilot(
                 work / f"bound-inspected-{view}.json",
                 work,
             )
-            _require(inspection["schema"] == schema, "automatic bound result used wrong inspection")
+            wheel.require(
+                inspection["schema"] == schema, "automatic bound result used wrong inspection"
+            )
     source.unlink()
     bindings.unlink()
     verified = _cli_json(
@@ -1025,7 +710,7 @@ def _bound_deepeval_record_pilot(
         work / "bound-deepeval-recovered.json",
         work,
     )
-    _require(
+    wheel.require(
         verified["valid"] is True and recovered["content"] == result,
         "installed bound DeepEval result did not survive source removal",
     )
@@ -1036,18 +721,20 @@ def _bound_deepeval_record_pilot(
         "f'source/{role}.bin',max_bytes=4*1024*1024).sha256 "
         "for role in ('deepeval','bindings')}))"
     )
-    raw_recovery = _success([str(cli.with_name("python")), "-c", recovery_code, str(store)], work)
-    _require(
+    raw_recovery = wheel.success(
+        [str(cli.with_name("python")), "-c", recovery_code, str(store)], work
+    )
+    wheel.require(
         json.loads(raw_recovery.stdout)
         == {role: captured["raw_hash"] for role, captured in sources.items()},
         "bound record did not recover both original source byte identities",
     )
 def _record_pilots(cli: Path, fixtures: Path, work: Path) -> None:
     installed_capabilities = _cli_json(cli, ["capabilities"], work / "capabilities.json", work)
-    checkout_capabilities = _success(
-        [sys.executable, "-m", "underwrite.cli.main", "capabilities", "--json"], ROOT
+    checkout_capabilities = wheel.success(
+        [sys.executable, "-m", "underwrite.cli.main", "capabilities", "--json"], wheel.ROOT
     )
-    _require(
+    wheel.require(
         installed_capabilities == json.loads(checkout_capabilities.stdout),
         "checkout and installed capabilities differ",
     )
@@ -1075,18 +762,18 @@ def _record_pilots(cli: Path, fixtures: Path, work: Path) -> None:
         descriptor = next(item for item in commands if item["command"] == command)
         profiles = cast(list[dict[str, object]], descriptor["profiles"])
         selected = next(item for item in profiles if item["name"] == name)
-        _require(
+        wheel.require(
             selected["required_inputs"] == ["file", "version"]
             and selected["output_schemas"] == [schema],
             f"installed {name} capability selector changed",
         )
         required = cast(list[str], selected["required_inputs"])
-        args = [command, str(ROOT / "fixtures/golden/external" / fixture)]
+        args = [command, str(wheel.ROOT / "fixtures/golden/external" / fixture)]
         if "version" in required:
             args.extend(("--version", version))
         observed = _cli_json(cli, args, work / f"{command}-advertised.json", work)
         source = cast(dict[str, object], observed["source"])
-        _require(
+        wheel.require(
             observed["schema"] == schema and source["format_version"] == version,
             f"installed {name} capability selected the wrong source profile",
         )
@@ -1096,7 +783,7 @@ def _record_pilots(cli: Path, fixtures: Path, work: Path) -> None:
         work / "run-audit.json",
         work,
     )
-    _require(audit.get("schema") == "binary_run_audit.v1", "run audit schema mismatch")
+    wheel.require(audit.get("schema") == "binary_run_audit.v1", "run audit schema mismatch")
     store = work / "records-store"
     saved = _cli_json(
         cli,
@@ -1111,28 +798,28 @@ def _record_pilots(cli: Path, fixtures: Path, work: Path) -> None:
         work / "saved.json",
         work,
     )
-    _require(saved.get("schema") == "record_view.v1", "record view schema mismatch")
+    wheel.require(saved.get("schema") == "record_view.v1", "record view schema mismatch")
     shown = _cli_json(
         cli,
         ["records", "show", "--root", str(store), "--id", "synthetic.capture-001"],
         work / "shown.json",
         work,
     )
-    _require(saved == shown, "installed record save/show changed manifest")
+    wheel.require(saved == shown, "installed record save/show changed manifest")
     checked = _cli_json(
         cli,
         ["records", "verify", "--root", str(store), "--id", "synthetic.capture-001"],
         work / "verified.json",
         work,
     )
-    _require(checked.get("valid") is True, "installed record verification failed")
+    wheel.require(checked.get("valid") is True, "installed record verification failed")
     listing = _cli_json(cli, ["records", "list", "--root", str(store)], work / "catalog.json", work)
-    _require(listing.get("record_count") == 1, "installed record catalog mismatch")
+    wheel.require(listing.get("record_count") == 1, "installed record catalog mismatch")
 
 
 def _handoff_pilot(cli: Path, work: Path) -> None:
     source = work / "handoff-source"
-    _success(
+    wheel.success(
         [
             sys.executable,
             "-c",
@@ -1143,7 +830,7 @@ def _handoff_pilot(cli: Path, work: Path) -> None:
             str(source),
             str(work / "larger-handoff-source"),
         ],
-        ROOT,
+        wheel.ROOT,
     )
     store = work / "handoff-store"
     report = _cli_json(
@@ -1164,17 +851,17 @@ def _handoff_pilot(cli: Path, work: Path) -> None:
     )
     analysis = cast(dict[str, object], report["analysis"])
     summary = cast(dict[str, object], analysis["summary"])
-    _require(summary["measurement_status"] == "not_measured", "handoff fabricated measurement")
-    _require(summary["conditions_coverage"] == "unknown", "handoff fabricated conditions")
+    wheel.require(summary["measurement_status"] == "not_measured", "handoff fabricated measurement")
+    wheel.require(summary["conditions_coverage"] == "unknown", "handoff fabricated conditions")
     saved = cast(dict[str, object], report["storage"])
-    _require(saved["state"] == "saved", "installed handoff capture failed")
+    wheel.require(saved["state"] == "saved", "installed handoff capture failed")
     verification = _cli_json(
         cli,
         ["records", "verify", "--root", str(store), "--id", "synthetic.handoff"],
         work / "handoff-verified.json",
         work,
     )
-    _require(verification["valid"] is True, "installed handoff record is damaged")
+    wheel.require(verification["valid"] is True, "installed handoff record is damaged")
 
     larger_source = work / "larger-handoff-source"
     larger_args = [
@@ -1185,12 +872,12 @@ def _handoff_pilot(cli: Path, work: Path) -> None:
         str(larger_source),
     ]
     larger = _cli_json(cli, larger_args, work / "larger-handoff.json", work)
-    _require(
+    wheel.require(
         cast(dict[str, object], larger["analysis"])["state"] == "result",
         "installed analysis inherited storage capacity",
     )
     refused_store = work / "refused-handoff-store"
-    refused = _command(
+    refused = wheel.command(
         [
             str(cli),
             *larger_args,
@@ -1202,17 +889,17 @@ def _handoff_pilot(cli: Path, work: Path) -> None:
         ],
         work,
     )
-    _require(
+    wheel.require(
         refused.returncode == STORAGE_ERROR_EXIT and refused.stderr == "",
         "wrong storage refusal exit",
     )
     refusal = json.loads(refused.stdout)
-    _require(refusal["analysis"] == larger["analysis"], "storage refusal lost analysis")
-    _require(
+    wheel.require(refusal["analysis"] == larger["analysis"], "storage refusal lost analysis")
+    wheel.require(
         refusal["storage"]["error"]["code"] == "INPUT_LIMIT_EXCEEDED",
         "wrong storage refusal diagnostic",
     )
-    _require(not refused_store.exists(), "oversized capture mutated store")
+    wheel.require(not refused_store.exists(), "oversized capture mutated store")
 
 
 def _deepeval_record_pilot(
@@ -1236,9 +923,9 @@ def _deepeval_record_pilot(
     report = _cli_json(cli, [*arguments, "--id", "captured"], work / "deepeval-record.json", work)
     analysis = cast(dict[str, object], report["analysis"])
     storage = cast(dict[str, object], report["storage"])
-    _require(analysis["report"] == expected, "DeepEval capture changed accounting")
-    _require(storage["state"] == "saved", "DeepEval capture failed to save")
-    _require(
+    wheel.require(analysis["report"] == expected, "DeepEval capture changed accounting")
+    wheel.require(storage["state"] == "saved", "DeepEval capture failed to save")
+    wheel.require(
         (store / "records/captured/files/source/deepeval.bin").read_bytes() == raw,
         "DeepEval source bytes changed",
     )
@@ -1249,7 +936,9 @@ def _deepeval_record_pilot(
         work / "deepeval-verified.json",
         work,
     )
-    _require(verification == storage["verification"], "DeepEval retained record no longer verifies")
+    wheel.require(
+        verification == storage["verification"], "DeepEval retained record no longer verifies"
+    )
     recovered = _cli_json(
         cli,
         [
@@ -1265,12 +954,14 @@ def _deepeval_record_pilot(
         work / "deepeval-recovered.json",
         work,
     )
-    _require(recovered["content"] == expected, "DeepEval retained analysis could not be reused")
-    _require(
+    wheel.require(
+        recovered["content"] == expected, "DeepEval retained analysis could not be reused"
+    )
+    wheel.require(
         recovered["manifest_digest"] == storage["manifest_digest"],
         "DeepEval recovered manifest differs",
     )
-    raw_identity = _success(
+    raw_identity = wheel.success(
         [
             str(cli.with_name("python")),
             "-c",
@@ -1283,22 +974,22 @@ def _deepeval_record_pilot(
         ],
         work,
     )
-    _require(
+    wheel.require(
         raw_identity.stdout.strip() == expected["raw_hash"],
         "bounded stored-source read lost original identity after input removal",
     )
-    failed = _command([str(cli), *arguments, "--id", "unavailable", "--json"], work)
-    _require(
+    failed = wheel.command([str(cli), *arguments, "--id", "unavailable", "--json"], work)
+    wheel.require(
         failed.returncode == EVIDENCE_ERROR_EXIT and failed.stderr == "",
         "DeepEval diagnostic capture used the wrong channel or exit",
     )
     diagnostic = json.loads(failed.stdout)
     if version is not None and version != "4.1.1":
-        _require(
+        wheel.require(
             diagnostic["source_format_version"] == version,
             "DeepEval diagnostic lost selected producer version",
         )
-    _require(
+    wheel.require(
         diagnostic["source"]["state"] == "unavailable"
         and diagnostic["analysis"]["phase"] == "acquisition"
         and diagnostic["storage"]["state"] == "saved",
@@ -1345,7 +1036,7 @@ def _deepeval_pilot(cli: Path, work: Path) -> None:
         work / "normalization-cli.json",
         work,
     )
-    library = _success(
+    library = wheel.success(
         [
             str(cli.parent / "python"),
             "-c",
@@ -1359,19 +1050,19 @@ def _deepeval_pilot(cli: Path, work: Path) -> None:
         ],
         work,
     )
-    _require(library.stderr == "", "installed library emitted unexpected diagnostics")
-    _require(
+    wheel.require(library.stderr == "", "installed library emitted unexpected diagnostics")
+    wheel.require(
         library.stdout.strip() == json.dumps(observed, sort_keys=True),
         "installed API and CLI disagree on normalized JSON value representation",
     )
     payload = cast(dict[str, object], observed["payload"])
     cases = cast(list[dict[str, object]], payload["testCases"])
     metric = cast(list[dict[str, object]], cases[0]["metricsData"])[0]
-    _require(
+    wheel.require(
         type(metric["score"]) is int and metric["score"] == 0,
         "canonical negative zero was not normalized",
     )
-    _require(
+    wheel.require(
         metric["success"] is False and "error" not in metric,
         "normalization merged boolean, score, or field absence",
     )
@@ -1385,20 +1076,20 @@ def _deepeval_pilot(cli: Path, work: Path) -> None:
     counts = cast(dict[str, dict[str, int]], accounting["counts"])
     _deepeval_record_pilot(cli, work, source, accounting)
     expected_scored = 2
-    _require(
+    wheel.require(
         counts["metrics"]["scored"] == expected_scored and counts["metrics"]["error"] == 1,
         "installed accounting conflated score and evaluator error",
     )
     rows = cast(list[dict[str, object]], accounting["cases"])
     error_metric = cast(list[dict[str, object]], rows[0]["metrics"])[1]
-    _require(
+    wheel.require(
         error_metric["state"] == "error" and "score" not in error_metric,
         "installed accounting invented a score for an error",
     )
 
 
 def _deepeval_v2_pilot(cli: Path, work: Path) -> None:
-    golden = ROOT / "fixtures/golden/external/deepeval-4.2.8"
+    golden = wheel.ROOT / "fixtures/golden/external/deepeval-4.2.8"
     for scenario in ("ordinary", "flaky_metric", "flaky_case", "score_without_verdict"):
         directory = work / f"deepeval-v2-{scenario}"
         directory.mkdir()
@@ -1425,50 +1116,52 @@ def _deepeval_v2_pilot(cli: Path, work: Path) -> None:
             directory / "accounting.json",
             directory,
         )
-        _require(report["schema"] == "deepeval_accounting.v2", "wrong selected DeepEval schema")
+        wheel.require(
+            report["schema"] == "deepeval_accounting.v2", "wrong selected DeepEval schema"
+        )
         case = cast(list[dict[str, object]], report["cases"])[0]
         metrics = cast(list[dict[str, object]], case["metrics"])
         if scenario == "ordinary":
-            _require(
+            wheel.require(
                 metrics[1]["score"] == 0
                 and metrics[2]["state"] == "error"
                 and "score" not in metrics[2],
                 "DeepEval v2 collapsed zero and evaluator error",
             )
         elif scenario == "flaky_metric":
-            _require(
+            wheel.require(
                 case["source_success"] is True
                 and metrics[1]["source_flaky"] is True
                 and metrics[1]["source_success"] is False,
                 "DeepEval flaky metric changed independent case verdict",
             )
         elif scenario == "flaky_case":
-            _require(
+            wheel.require(
                 case["source_flaky"] is True and case["source_success"] is False,
                 "DeepEval flaky case was promoted to pass",
             )
         else:
             expected_score = 0.3
-            _require(
+            wheel.require(
                 metrics[1]["state"] == "scored"
                 and metrics[1]["score"] == expected_score
                 and metrics[1]["source_success"] is None
                 and metrics[1]["threshold"] is None,
                 "DeepEval score-only metric acquired a verdict or lost its score",
             )
-            refused = _command(
+            refused = wheel.command(
                 [
                     str(cli),
                     "measure",
                     "--observation",
                     str(observation),
                     "--policy",
-                    str(ROOT / "fixtures/examples/event-acceptance/policy.json"),
+                    str(wheel.ROOT / "fixtures/examples/event-acceptance/policy.json"),
                     "--json",
                 ],
                 directory,
             )
-            _require(
+            wheel.require(
                 refused.returncode == EVIDENCE_ERROR_EXIT
                 and refused.stdout == ""
                 and json.loads(refused.stderr)["code"] == "UNSUPPORTED_PROFILE",
@@ -1484,29 +1177,29 @@ def _deepeval_trace_refusals(cli: Path, source: Path, work: Path) -> None:
         ["--version", "4.2.8", "--bindings", "missing"],
         ["--bindings", "missing"],
     ):
-        refused = _command(
+        refused = wheel.command(
             [str(cli), "audit-deepeval", "missing", "--view", "trace-index", *options, "--json"],
             work,
         )
-        _require(
+        wheel.require(
             refused.returncode == EVIDENCE_ERROR_EXIT
             and refused.stdout == ""
             and json.loads(refused.stderr)["code"] == "UNSUPPORTED_FORMAT",
             "trace selection must refuse unsupported combinations before file acquisition",
         )
-    missing = _command(
+    missing = wheel.command(
         [str(cli), "audit-deepeval", "missing", "--view", "trace-index", "--json"], work
     )
-    _require(
+    wheel.require(
         missing.returncode == EVIDENCE_ERROR_EXIT
         and missing.stdout == ""
         and json.loads(missing.stderr)["code"] == "SOURCE_READ_FAILED",
         "automatic trace intake did not preserve missing-source acquisition failure",
     )
-    ordinary = _command(
+    ordinary = wheel.command(
         [str(cli), "audit-deepeval", str(source), "--version", "4.2.8", "--json"], work
     )
-    _require(
+    wheel.require(
         ordinary.returncode == EVIDENCE_ERROR_EXIT
         and ordinary.stdout == ""
         and json.loads(ordinary.stderr)["reason"] == "DEEPEVAL_SCOPE_UNSUPPORTED",
@@ -1518,7 +1211,7 @@ def _deepeval_trace_pilot(cli: Path, work: Path) -> None:
     for scenario in ("success", "recovery"):
         source = work / f"deepeval-trace-{scenario}.json"
         raw = (
-            ROOT / f"fixtures/golden/external/deepeval-4.2.8/traces/{scenario}.json"
+            wheel.ROOT / f"fixtures/golden/external/deepeval-4.2.8/traces/{scenario}.json"
         ).read_bytes()
         source.write_bytes(raw)
         report = _cli_json(
@@ -1527,20 +1220,20 @@ def _deepeval_trace_pilot(cli: Path, work: Path) -> None:
             work / f"deepeval-trace-{scenario}-index.json",
             work,
         )
-        _require(
+        wheel.require(
             report["schema"] == "deepeval_trace_index.v1"
             and report["raw_hash"] == "sha256:" + hashlib.sha256(raw).hexdigest(),
             "trace index lost original byte identity or schema",
         )
         case = cast(list[dict[str, Any]], report["cases"])[0]
-        _require(
+        wheel.require(
             case["source_success"] is True
             and case["trace_status"] == "SUCCESS"
             and any(row["source_status"] == "ERRORED" for row in case["spans"])
             == (scenario == "recovery"),
             "trace index collapsed case success and step errors",
         )
-        _require(
+        wheel.require(
             all(
                 row["parent_state"] == "resolved"
                 for row in case["spans"]
@@ -1550,12 +1243,12 @@ def _deepeval_trace_pilot(cli: Path, work: Path) -> None:
         )
         native_trace = json.loads(raw)["testCases"][0]["trace"]
         encoded = json.dumps(report)
-        _require(
+        wheel.require(
             all(native_trace[key] not in encoded for key in ("uuid", "name", "input")),
             "content-minimized trace index leaked private source fields",
         )
         python = cli.with_name("python")
-        check = _success(
+        check = wheel.success(
             [
                 str(python),
                 "-c",
@@ -1568,7 +1261,7 @@ def _deepeval_trace_pilot(cli: Path, work: Path) -> None:
             ],
             work,
         )
-        _require(json.loads(check.stdout) == report, "installed trace API and CLI disagree")
+        wheel.require(json.loads(check.stdout) == report, "installed trace API and CLI disagree")
     _deepeval_trace_refusals(cli, source, work)
     retained = work / "deepeval-trace-retention"
     retained.mkdir()
@@ -1576,8 +1269,8 @@ def _deepeval_trace_pilot(cli: Path, work: Path) -> None:
 
 
 def _deepeval_auto_pilot(cli: Path, work: Path) -> None:
-    golden = ROOT / "fixtures/golden/external"
-    native = ROOT / "fixtures/examples/deepeval-auto-4.3.1"
+    golden = wheel.ROOT / "fixtures/golden/external"
+    native = wheel.ROOT / "fixtures/examples/deepeval-auto-4.3.1"
     scenarios = (
         (golden / "deepeval/test_run_20260914_132634.json", "accounting"),
         (golden / "deepeval-4.2.8/ordinary.json", "accounting"),
@@ -1593,7 +1286,7 @@ def _deepeval_auto_pilot(cli: Path, work: Path) -> None:
         )
         schema = "deepeval_accounting.v3" if view == "accounting" else "deepeval_trace_index.v2"
         identity = cast(dict[str, object], report["source"])
-        _require(
+        wheel.require(
             report["schema"] == schema
             and identity["producer_version"] is None
             and identity["producer_version_state"] == "unknown"
@@ -1608,8 +1301,10 @@ def _deepeval_auto_pilot(cli: Path, work: Path) -> None:
             f"from underwrite.instrument.ingest.{module} import {function}; "
             f"print(json.dumps({function}(Path(sys.argv[1]).read_bytes()),sort_keys=True))"
         )
-        api = _success([str(cli.parent / "python"), "-c", code, str(source)], selected)
-        _require(json.loads(api.stdout) == report, "automatic DeepEval API/CLI outcomes differ")
+        api = wheel.success([str(cli.parent / "python"), "-c", code, str(source)], selected)
+        wheel.require(
+            json.loads(api.stdout) == report, "automatic DeepEval API/CLI outcomes differ"
+        )
         _deepeval_record_pilot(cli, selected, source, report, version=None, view=view)
     invalid = json.loads((native / "ordinary.json").read_bytes())
     invalid["testCases"][0]["metricsData"][0]["expectationsData"] = {
@@ -1617,9 +1312,9 @@ def _deepeval_auto_pilot(cli: Path, work: Path) -> None:
     }
     path = work / "deepeval-unsupported-expectation.json"
     path.write_text(json.dumps(invalid), encoding="utf-8")
-    refused = _command([str(cli), "audit-deepeval", str(path), "--json"], work)
+    refused = wheel.command([str(cli), "audit-deepeval", str(path), "--json"], work)
     error = json.loads(refused.stderr)
-    _require(
+    wheel.require(
         refused.returncode == EVIDENCE_ERROR_EXIT
         and refused.stdout == ""
         and error["code"] == "UNSUPPORTED_PROFILE"
@@ -1665,13 +1360,13 @@ def _langfuse_record_pilot(  # noqa: PLR0913 — keep profile and view smoke inp
     report = _cli_json(cli, [*arguments, "--id", "captured"], work / f"{slug}-record.json", work)
     analysis = cast(dict[str, object], report["analysis"])
     storage = cast(dict[str, object], report["storage"])
-    _require(report["schema"] == record_schema, "Langfuse record selected the wrong contract")
-    _require(analysis["report"] == expected, "Langfuse capture changed analysis")
-    _require(storage["state"] == "saved", "Langfuse capture failed to save")
+    wheel.require(report["schema"] == record_schema, "Langfuse record selected the wrong contract")
+    wheel.require(analysis["report"] == expected, "Langfuse capture changed analysis")
+    wheel.require(storage["state"] == "saved", "Langfuse capture failed to save")
     expected_hashes: dict[str, str] = {}
     for source, role in zip(inputs, ("observations", "scores"), strict=True):
         expected_hashes[role] = "sha256:" + hashlib.sha256(source.read_bytes()).hexdigest()
-        _require(
+        wheel.require(
             (store / f"records/captured/files/source/{role}.bin").read_bytes()
             == source.read_bytes(),
             "Langfuse retained source differs",
@@ -1683,7 +1378,7 @@ def _langfuse_record_pilot(  # noqa: PLR0913 — keep profile and view smoke inp
         work / f"{slug}-record-verified.json",
         work,
     )
-    _require(verified["valid"] is True, "Langfuse retained record did not verify")
+    wheel.require(verified["valid"] is True, "Langfuse retained record did not verify")
     recovered = _cli_json(
         cli,
         [
@@ -1699,8 +1394,8 @@ def _langfuse_record_pilot(  # noqa: PLR0913 — keep profile and view smoke inp
         work / f"{slug}-recovered.json",
         work,
     )
-    _require(recovered["content"] == expected, "Langfuse stored analysis could not be reused")
-    _require(
+    wheel.require(recovered["content"] == expected, "Langfuse stored analysis could not be reused")
+    wheel.require(
         recovered["manifest_digest"] == storage["manifest_digest"],
         "Langfuse recovered manifest differs",
     )
@@ -1712,31 +1407,31 @@ def _langfuse_record_pilot(  # noqa: PLR0913 — keep profile and view smoke inp
         "f'source/{role}.bin',max_bytes=DEFAULT_MAX_BYTES).sha256 "
         "for role in ('observations','scores')}))"
     )
-    source_read = _success([str(cli.parent / "python"), "-c", source_code, str(store)], work)
-    _require(
+    source_read = wheel.success([str(cli.parent / "python"), "-c", source_code, str(store)], work)
+    wheel.require(
         json.loads(source_read.stdout) == expected_hashes,
         "Langfuse verified source recovery changed original bytes",
     )
-    failed = _command([str(cli), *arguments, "--id", "unavailable", "--json"], work)
-    _require(
+    failed = wheel.command([str(cli), *arguments, "--id", "unavailable", "--json"], work)
+    wheel.require(
         failed.returncode == EVIDENCE_ERROR_EXIT and failed.stderr == "",
         "Langfuse diagnostic capture used the wrong channel or exit",
     )
     diagnostic = json.loads(failed.stdout)
-    _require(
+    wheel.require(
         diagnostic["analysis"]["phase"] == "acquisition"
         and diagnostic["storage"]["state"] == "saved",
         "Langfuse acquisition failure lost independent storage",
     )
     for source in diagnostic["sources"].values():
-        _require(
+        wheel.require(
             source["state"] == "unavailable" and "error" in source,
             "Langfuse input failure was not retained",
         )
 
 
 def _langfuse_pilot(cli: Path, work: Path) -> None:
-    golden = ROOT / "fixtures/golden/external/langfuse"
+    golden = wheel.ROOT / "fixtures/golden/external/langfuse"
     observed = golden / "observations_v2-2026-09-14T06-40-00.json"
     scores = golden / "scores-2026-09-14T06-40-00.json"
     report = _cli_json(
@@ -1755,11 +1450,11 @@ def _langfuse_pilot(cli: Path, work: Path) -> None:
     )
     counts = cast(dict[str, object], report["counts"])
     _langfuse_record_pilot(cli, work, observed, scores, report)
-    _require(
+    wheel.require(
         counts["by_data_type"] == {"NUMERIC": 2, "BOOLEAN": 1, "CATEGORICAL": 1, "TEXT": 1},
         "installed Langfuse score kinds changed",
     )
-    _require(
+    wheel.require(
         counts["associations"]
         == {
             "observation_local": 3,
@@ -1768,11 +1463,11 @@ def _langfuse_pilot(cli: Path, work: Path) -> None:
         },
         "installed Langfuse associations changed",
     )
-    _require(
+    wheel.require(
         counts["observations_without_local_scores"] == 1,
         "trace-level scores were incorrectly attached to an observation",
     )
-    _require(
+    wheel.require(
         report["planned"]
         == {
             "status": "unknown",
@@ -1784,31 +1479,31 @@ def _langfuse_pilot(cli: Path, work: Path) -> None:
     rows = cast(list[dict[str, object]], report["scores"])
     for row in rows:
         if row["data_type"] in ("TEXT", "CATEGORICAL"):
-            _require(
+            wheel.require(
                 row["value"] == 0 and isinstance(row["string_value"], str),
                 "non-numeric score fields were not retained",
             )
 
 
 def _native_refusal(cli: Path, args: list[str], work: Path, code: str, reason: str) -> None:
-    result = _command([str(cli), *args, "--json"], work)
-    _require(
+    result = wheel.command([str(cli), *args, "--json"], work)
+    wheel.require(
         result.returncode == EVIDENCE_ERROR_EXIT and result.stdout == "",
         "native refusal wrote success",
     )
     try:
         error: object = json.loads(result.stderr)
     except json.JSONDecodeError as exc:
-        raise SmokeFailure("native refusal did not write JSON stderr") from exc
-    _require(isinstance(error, dict), "native refusal was not an object")
+        raise wheel.SmokeFailure("native refusal did not write JSON stderr") from exc
+    wheel.require(isinstance(error, dict), "native refusal was not an object")
     payload = cast(dict[str, object], error)
-    _require(
+    wheel.require(
         payload.get("code") == code and payload.get("reason") == reason, "wrong native refusal"
     )
 
 
 def _langfuse_cli_pilot(cli: Path, work: Path) -> None:
-    fixtures = ROOT / "fixtures/examples/langfuse-cli"
+    fixtures = wheel.ROOT / "fixtures/examples/langfuse-cli"
     selected: dict[str, Path] = {}
     raw: dict[str, bytes] = {}
     for role in ("observations", "scores"):
@@ -1825,30 +1520,30 @@ def _langfuse_cli_pilot(cli: Path, work: Path) -> None:
         "cli-1.2.4",
     ]
     report = _cli_json(cli, args, work / "langfuse-cli-accounting.json", work)
-    _require(report["schema"] == "langfuse_cli_accounting.v1", "wrong CLI capture schema")
+    wheel.require(report["schema"] == "langfuse_cli_accounting.v1", "wrong CLI capture schema")
     sources = cast(dict[str, dict[str, object]], report["sources"])
     for role, data in raw.items():
-        _require(
+        wheel.require(
             sources[role]["raw_hash"] == "sha256:" + hashlib.sha256(data).hexdigest(),
             "CLI capture source bytes changed",
         )
     native_scores = json.loads(raw["scores"])["body"]["data"]
     scores = cast(list[dict[str, object]], report["scores"])
-    _require(len(scores) == len(native_scores), "CLI capture lost supplied score rows")
+    wheel.require(len(scores) == len(native_scores), "CLI capture lost supplied score rows")
     for score, native in zip(scores, native_scores, strict=True):
-        _require(
+        wheel.require(
             score["data_type"] == native["dataType"]
             and type(score["value"]) is type(native["value"])
             and score["value"] == native["value"],
             "CLI capture changed native score types or values",
         )
     index = _cli_json(cli, [*args, "--view", "row-index"], work / "langfuse-cli-index.json", work)
-    _require(
+    wheel.require(
         index["schema"] == "langfuse_cli_row_index.v1" and index["counts"] == report["counts"],
         "CLI row index changed accounting",
     )
     for row in cast(list[dict[str, object]], index["score_rows"]):
-        _require(
+        wheel.require(
             not {"id", "name", "value", "project_id", "subject"}.intersection(row),
             "CLI row index exposed score content",
         )
@@ -1858,8 +1553,10 @@ def _langfuse_cli_pilot(cli: Path, work: Path) -> None:
         "print(json.dumps(audit_langfuse_cli_bytes("
         "Path(sys.argv[1]).read_bytes(),Path(sys.argv[2]).read_bytes()),sort_keys=True))"
     )
-    api = _success([str(cli.parent / "python"), "-c", api_code, *map(str, selected.values())], work)
-    _require(json.loads(api.stdout) == report, "installed CLI/API capture outcomes differ")
+    api = wheel.success(
+        [str(cli.parent / "python"), "-c", api_code, *map(str, selected.values())], work
+    )
+    wheel.require(json.loads(api.stdout) == report, "installed CLI/API capture outcomes differ")
     _langfuse_record_pilot(
         cli,
         work,
@@ -1885,7 +1582,7 @@ def _langfuse_cli_pilot(cli: Path, work: Path) -> None:
     retrieval = cast(dict[str, dict[str, object]], partial["retrieval"])
     pagination = cast(dict[str, object], retrieval["scores"]["pagination"])
     planned = cast(dict[str, object], partial["planned"])
-    _require(
+    wheel.require(
         pagination["truncated"] is True
         and planned["status"] == "unknown"
         and planned["missing_execution_count"] is None,
@@ -1898,8 +1595,8 @@ def _langfuse_cli_pilot(cli: Path, work: Path) -> None:
 
 
 def _langfuse_auto_pilot(cli: Path, work: Path) -> None:
-    golden = ROOT / "fixtures/golden/external/langfuse"
-    native = ROOT / "fixtures/examples/langfuse-cli"
+    golden = wheel.ROOT / "fixtures/golden/external/langfuse"
+    native = wheel.ROOT / "fixtures/examples/langfuse-cli"
     pairs = (
         (
             golden / "observations_v2-2026-09-14T06-40-00.json",
@@ -1927,13 +1624,13 @@ def _langfuse_auto_pilot(cli: Path, work: Path) -> None:
         selected.mkdir()
         args = ["audit-langfuse", "--observations", str(observed), "--scores", str(scores)]
         report = _cli_json(cli, args, selected / "accounting.json", selected)
-        _require(
+        wheel.require(
             report["schema"] == "langfuse_accounting.v2" and report["reader_profile"] == reader,
             "automatic Langfuse intake selected the wrong reader",
         )
         for role, source in zip(("observations", "scores"), (observed, scores), strict=True):
             identity = cast(dict[str, dict[str, object]], report["sources"])[role]
-            _require(
+            wheel.require(
                 identity["raw_hash"] == "sha256:" + hashlib.sha256(source.read_bytes()).hexdigest()
                 and identity["producer_version"] is None
                 and identity["producer_version_state"] == "unknown"
@@ -1941,7 +1638,7 @@ def _langfuse_auto_pilot(cli: Path, work: Path) -> None:
                 "automatic Langfuse intake changed bytes or invented producer identity",
             )
         rows = _cli_json(cli, [*args, "--view", "row-index"], selected / "rows.json", selected)
-        _require(
+        wheel.require(
             rows["schema"] == "langfuse_row_index.v2"
             and rows["reader_profile"] == reader
             and rows["counts"] == report["counts"],
@@ -1953,10 +1650,12 @@ def _langfuse_auto_pilot(cli: Path, work: Path) -> None:
             "print(json.dumps(audit_langfuse_bytes("
             "Path(sys.argv[1]).read_bytes(),Path(sys.argv[2]).read_bytes()),sort_keys=True))"
         )
-        api = _success(
+        api = wheel.success(
             [str(cli.parent / "python"), "-c", api_code, str(observed), str(scores)], selected
         )
-        _require(json.loads(api.stdout) == report, "automatic Langfuse API/CLI outcomes differ")
+        wheel.require(
+            json.loads(api.stdout) == report, "automatic Langfuse API/CLI outcomes differ"
+        )
         _langfuse_record_pilot(
             cli,
             selected,
@@ -2002,8 +1701,8 @@ def _native_measurement_pilot(cli: Path, fixtures: Path, work: Path) -> None:
             observation,
             work,
         )
-        _require(observed.get("schema") == "observation.v1", "ingest schema mismatch")
-        _require(
+        wheel.require(observed.get("schema") == "observation.v1", "ingest schema mismatch")
+        wheel.require(
             observed.get("source")
             == {
                 "format": "underwrite.evidence-bundle",
@@ -2024,9 +1723,11 @@ def _native_measurement_pilot(cli: Path, fixtures: Path, work: Path) -> None:
             output,
             work,
         )
-        _require(read.get("schema") == "read.v2", "event read schema mismatch")
-        _require(read.get("verdict") == verdict, "event read direction mismatch")
-        _require("score" not in read and "confidence" not in read, "generic confidence returned")
+        wheel.require(read.get("schema") == "read.v2", "event read schema mismatch")
+        wheel.require(read.get("verdict") == verdict, "event read direction mismatch")
+        wheel.require(
+            "score" not in read and "confidence" not in read, "generic confidence returned"
+        )
         reads.append(output)
     candidate = fixtures / "event-acceptance/candidate-single.json"
     claims = fixtures / "event-acceptance/claims.json"
@@ -2045,10 +1746,12 @@ def _native_measurement_pilot(cli: Path, fixtures: Path, work: Path) -> None:
             work / f"accept-{classification}.json",
             work,
         )
-        _require(decision.get("schema") == "acceptance_decision.v2", "decision schema mismatch")
-        _require(decision.get("classification") == classification, "classification mismatch")
-        _require(decision.get("human_review") == "required", "human review mismatch")
-        _require(decision.get("merge_authorized") is False, "merge authorization mismatch")
+        wheel.require(
+            decision.get("schema") == "acceptance_decision.v2", "decision schema mismatch"
+        )
+        wheel.require(decision.get("classification") == classification, "classification mismatch")
+        wheel.require(decision.get("human_review") == "required", "human review mismatch")
+        wheel.require(decision.get("merge_authorized") is False, "merge authorization mismatch")
     _native_refusal(
         cli,
         [
@@ -2113,12 +1816,12 @@ def _baseline_evidence_pilot(cli: Path, exchange: Path, work: Path) -> None:
         work / "baseline-evidence.json",
         work,
     )
-    _require(evidence.get("schema") == "evidence_result.v1", "baseline evidence schema")
-    _require(evidence.get("verification") == [], "baseline invented portable verification")
+    wheel.require(evidence.get("schema") == "evidence_result.v1", "baseline evidence schema")
+    wheel.require(evidence.get("verification") == [], "baseline invented portable verification")
     evidence_source = cast(dict[str, object], evidence["source"])
     identity = cast(dict[str, object], evidence_source["identity"])
     members = cast(dict[str, str], identity["members"])
-    _require(
+    wheel.require(
         identity["manifest_raw_hash"]
         == "sha256:" + hashlib.sha256((exchange / "manifest.json").read_bytes()).hexdigest()
         and members
@@ -2129,12 +1832,12 @@ def _baseline_evidence_pilot(cli: Path, exchange: Path, work: Path) -> None:
         "baseline evidence did not bind each raw source file",
     )
     evidence_population = cast(dict[str, object], evidence["population"])
-    _require(
+    wheel.require(
         evidence_population == {"unit": "case", "observed_count": 4, "planned_count": 4},
         "baseline evidence source-record population changed",
     )
     evidence_items = cast(list[dict[str, object]], evidence["items"])
-    _require(
+    wheel.require(
         [(item["availability"], item["value"]) for item in evidence_items]
         == [("observed", True), ("observed", False), ("observed", False), ("missing", None)],
         "baseline evidence source states changed",
@@ -2144,9 +1847,11 @@ def _baseline_evidence_pilot(cli: Path, exchange: Path, work: Path) -> None:
         "from underwrite.instrument.ingest.goppi_baseline import audit_baseline_exchange; "
         "print(json.dumps(audit_baseline_exchange(Path(sys.argv[1])),sort_keys=True))"
     )
-    api = _success([str(cli.parent / "python"), "-c", api_code, str(exchange)], work)
-    _require(json.loads(api.stdout) == evidence, "installed baseline Python API differs from CLI")
-    _require(
+    api = wheel.success([str(cli.parent / "python"), "-c", api_code, str(exchange)], work)
+    wheel.require(
+        json.loads(api.stdout) == evidence, "installed baseline Python API differs from CLI"
+    )
+    wheel.require(
         "SYNTHETIC_ANSWER_NOT_FOR_PROJECTION" not in json.dumps(evidence)
         and "indeterminate:agent_budget" not in json.dumps(evidence),
         "baseline descriptive result leaked private source content",
@@ -2161,15 +1866,17 @@ def _common_result_inspection_pilot(cli: Path, fixtures: Path, work: Path) -> No
         work / "common-result-inspection.json",
         work,
     )
-    _require(inspection.get("schema") == "common_result_inspection.v1", "result inspection schema")
-    _require(
+    wheel.require(
+        inspection.get("schema") == "common_result_inspection.v1", "result inspection schema"
+    )
+    wheel.require(
         inspection.get("selected_result") == {
             "format": "evidence_result.v1",
             "raw_hash": "sha256:" + hashlib.sha256(selected.read_bytes()).hexdigest(),
         },
         "result inspection raw-byte identity",
     )
-    _require(
+    wheel.require(
         inspection.get("availability_counts")
         == {"observed": 2, "missing": 2, "error": 1, "abstained": 2, "total": 7},
         "result inspection availability",
@@ -2179,8 +1886,8 @@ def _common_result_inspection_pilot(cli: Path, fixtures: Path, work: Path) -> No
         "from underwrite.cli.inspect_result import inspect_result_file; "
         "print(json.dumps(inspect_result_file(Path(sys.argv[1])),sort_keys=True))"
     )
-    api = _success([str(cli.parent / "python"), "-c", api_code, str(selected)], work)
-    _require(json.loads(api.stdout) == inspection, "installed result inspection API differs")
+    api = wheel.success([str(cli.parent / "python"), "-c", api_code, str(selected)], work)
+    wheel.require(json.loads(api.stdout) == inspection, "installed result inspection API differs")
     actions = _cli_json(
         cli,
         ["inspect-result", str(selected), "--view", "actions"],
@@ -2188,7 +1895,7 @@ def _common_result_inspection_pilot(cli: Path, fixtures: Path, work: Path) -> No
         work,
     )
     owner = json.loads(selected.read_bytes())
-    contract = json.loads((ROOT / "contracts/evidence_result.v1.schema.json").read_bytes())
+    contract = json.loads((wheel.ROOT / "contracts/evidence_result.v1.schema.json").read_bytes())
     action_vocab = contract["$defs"]["item"]["properties"]["next_action"]["enum"]
     binding_vocab = [
         branch["properties"]["semantic_binding"]["const"]
@@ -2196,7 +1903,7 @@ def _common_result_inspection_pilot(cli: Path, fixtures: Path, work: Path) -> No
     ]
     action_control = Counter(item["next_action"] for item in owner["items"])
     binding_control = Counter(item["metric"]["semantic_binding"] for item in owner["items"])
-    _require(
+    wheel.require(
         actions.get("schema") == "common_result_inspection_actions.v1"
         and actions.get("item_next_action_counts")
         == {name: action_control[name] for name in action_vocab}
@@ -2211,8 +1918,12 @@ def _common_result_inspection_pilot(cli: Path, fixtures: Path, work: Path) -> No
         "from underwrite.cli.inspect_result import inspect_result_file; "
         "print(json.dumps(inspect_result_file(Path(sys.argv[1]),view='actions'),sort_keys=True))"
     )
-    action_api = _success([str(cli.parent / "python"), "-c", action_api_code, str(selected)], work)
-    _require(json.loads(action_api.stdout) == actions, "installed action inspection API differs")
+    action_api = wheel.success(
+        [str(cli.parent / "python"), "-c", action_api_code, str(selected)], work
+    )
+    wheel.require(
+        json.loads(action_api.stdout) == actions, "installed action inspection API differs"
+    )
     capabilities = _cli_json(cli, ["capabilities"], work / "inspection-capabilities.json", work)
     descriptor = next(
         item for item in cast(list[dict[str, object]], capabilities["commands"])
@@ -2222,25 +1933,25 @@ def _common_result_inspection_pilot(cli: Path, fixtures: Path, work: Path) -> No
         item for item in cast(list[dict[str, object]], descriptor["profiles"])
         if item["name"] == "evidence_result.v1|actions"
     )
-    _require(
+    wheel.require(
         selected_profile["required_inputs"] == ["file", "view"]
         and selected_profile["output_schemas"] == ["common_result_inspection_actions.v1"],
         "installed action inspection capability selector changed",
     )
-    _require(
+    wheel.require(
         str(selected) not in json.dumps(inspection)
         and "goppi.operator_answer_assessment" not in json.dumps(inspection),
         "result inspection leaked input content",
     )
-    _require(
+    wheel.require(
         str(selected) not in json.dumps(actions)
         and "goppi.operator_answer_assessment" not in json.dumps(actions),
         "action inspection leaked input content",
     )
     invalid = work / "private-invalid-result.json"
     invalid.write_bytes(b'{"schema":"private","schema":"private"}')
-    refused = _command([str(cli), "inspect-result", str(invalid), "--json"], work)
-    _require(
+    refused = wheel.command([str(cli), "inspect-result", str(invalid), "--json"], work)
+    wheel.require(
         refused.returncode == EVIDENCE_ERROR_EXIT
         and refused.stdout == ""
         and str(invalid) not in refused.stderr
@@ -2261,9 +1972,9 @@ def _baseline_event_pilot(cli: Path, fixtures: Path, work: Path) -> None:
         work,
     )
     encoded = observation_path.read_text(encoding="utf-8")
-    _require(observation.get("schema") == "observation.v1", "baseline projection schema")
-    _require("SYNTHETIC_ANSWER_NOT_FOR_PROJECTION" not in encoded, "baseline answer leaked")
-    _require("indeterminate:agent_budget" not in encoded, "baseline private reason leaked")
+    wheel.require(observation.get("schema") == "observation.v1", "baseline projection schema")
+    wheel.require("SYNTHETIC_ANSWER_NOT_FOR_PROJECTION" not in encoded, "baseline answer leaked")
+    wheel.require("indeterminate:agent_budget" not in encoded, "baseline private reason leaked")
     choices = json.loads((source / "policy.json").read_bytes())
     policy_options = [
         "--subject-id",
@@ -2284,7 +1995,9 @@ def _baseline_event_pilot(cli: Path, fixtures: Path, work: Path) -> None:
         policy_path,
         work,
     )
-    _require(policy == choices, "prepared policy changed explicit choices or declared bindings")
+    wheel.require(
+        policy == choices, "prepared policy changed explicit choices or declared bindings"
+    )
     missing_inventory = json.loads(observation_path.read_bytes())
     del missing_inventory["payload"]["sources"][0]["expected_case_ids"]
     missing_path = work / "baseline-without-inventory.json"
@@ -2308,22 +2021,22 @@ def _baseline_event_pilot(cli: Path, fixtures: Path, work: Path) -> None:
         work / "baseline-read.json",
         work,
     )
-    _require(read.get("verdict") == "not_measured", "baseline inference was fabricated")
+    wheel.require(read.get("verdict") == "not_measured", "baseline inference was fabricated")
     population = cast(dict[str, object], read["population"])
     predictions = cast(dict[str, object], population["predictions"])
-    _require(
+    wheel.require(
         predictions["status"] == "unavailable" and predictions["observed_count"] is None,
         "baseline predictions were fabricated",
     )
     diagnostics = cast(dict[str, dict[str, object]], read["diagnostics"])
     source_counts = json.loads((source / "exchange/export.json").read_bytes())["counts"]
     event = diagnostics["event_rate"]
-    _require(
+    wheel.require(
         event["positive_count"] == source_counts["observed_true"]
         and event["n"] == source_counts["observed_true"] + source_counts["observed_false"],
         "baseline primary labels changed",
     )
-    _require(diagnostics["brier"]["value"] is None, "baseline forecast loss was fabricated")
+    wheel.require(diagnostics["brier"]["value"] is None, "baseline forecast loss was fabricated")
     altered = work / "altered-baseline-exchange"
     altered.mkdir()
     for path in (source / "exchange").iterdir():
@@ -2358,11 +2071,11 @@ def _baseline_event_pilot(cli: Path, fixtures: Path, work: Path) -> None:
         "else:\n"
         "    raise SystemExit(3)\n"
     )
-    api_refusal = _success(
+    api_refusal = wheel.success(
         [str(cli.parent / "python"), "-c", api_refusal_code, str(altered)], work
     )
     api_error = json.loads(api_refusal.stdout)
-    _require(
+    wheel.require(
         api_refusal.stderr == ""
         and api_error["code"] == "INVALID_INPUT"
         and api_error["reason"] == "BASELINE_FILE_IDENTITY_MISMATCH"
@@ -2389,22 +2102,22 @@ def _baseline_record_pilot(cli: Path, fixtures: Path, work: Path) -> None:
         work / "baseline-record.json",
         work,
     )
-    _require(report.get("schema") == "baseline_record.v1", "baseline record schema")
+    wheel.require(report.get("schema") == "baseline_record.v1", "baseline record schema")
     analysis = cast(dict[str, object], report["analysis"])
     storage = cast(dict[str, object], report["storage"])
-    _require(analysis["state"] == "result", "baseline record did not save a result")
-    _require(
+    wheel.require(analysis["state"] == "result", "baseline record did not save a result")
+    wheel.require(
         analysis["report"] == json.loads((work / "baseline-evidence.json").read_bytes()),
         "baseline record changed descriptive result",
     )
     verification = cast(dict[str, object], storage["verification"])
-    _require(
+    wheel.require(
         storage["state"] == "saved"
         and verification["files_checked"] == BASELINE_RECORD_FILE_COUNT,
         "baseline record did not verify seven retained files",
     )
     encoded = json.dumps(report)
-    _require(
+    wheel.require(
         str(exchange) not in encoded and "SYNTHETIC_ANSWER_NOT_FOR_PROJECTION" not in encoded,
         "baseline record aggregate leaked private source",
     )
@@ -2416,7 +2129,7 @@ def _baseline_record_pilot(cli: Path, fixtures: Path, work: Path) -> None:
         work / "baseline-record-verification.json",
         work,
     )
-    _require(
+    wheel.require(
         verified["valid"] is True
         and verified["files_checked"] == BASELINE_RECORD_FILE_COUNT,
         "baseline record verification failed after source removal",
@@ -2430,7 +2143,9 @@ def _baseline_record_pilot(cli: Path, fixtures: Path, work: Path) -> None:
         work / "baseline-record-selected.json",
         work,
     )
-    _require(selected["content"] == analysis["report"], "baseline saved result cannot be read back")
+    wheel.require(
+        selected["content"] == analysis["report"], "baseline saved result cannot be read back"
+    )
     raw_code = (
         "import hashlib,sys; from pathlib import Path; "
         "from underwrite.service.records import read_record_file; "
@@ -2438,8 +2153,10 @@ def _baseline_record_pilot(cli: Path, fixtures: Path, work: Path) -> None:
         "print(hashlib.sha256(read_record_file(Path(sys.argv[1]),sys.argv[2],"
         "'source/rows.jsonl',max_bytes=ROWS_MAX_BYTES).data).hexdigest())"
     )
-    raw = _success([str(cli.parent / "python"), "-c", raw_code, str(record_root), identifier], work)
-    _require(raw.stdout.strip() == raw_rows_hash, "baseline raw rows changed in record")
+    raw = wheel.success(
+        [str(cli.parent / "python"), "-c", raw_code, str(record_root), identifier], work
+    )
+    wheel.require(raw.stdout.strip() == raw_rows_hash, "baseline raw rows changed in record")
 
 
 def _measurement_record_pilot(cli: Path, work: Path) -> None:
@@ -2464,9 +2181,9 @@ def _measurement_record_pilot(cli: Path, work: Path) -> None:
     analysis = cast(dict[str, object], result["analysis"])
     storage = cast(dict[str, object], result["storage"])
     expected = json.loads((work / "baseline-read.json").read_bytes())
-    _require(result.get("schema") == "measurement_record.v1", "measurement capture schema")
-    _require(analysis.get("report") == expected, "capture changed measurement")
-    _require(storage.get("state") == "saved", "measurement was not retained")
+    wheel.require(result.get("schema") == "measurement_record.v1", "measurement capture schema")
+    wheel.require(analysis.get("report") == expected, "capture changed measurement")
+    wheel.require(storage.get("state") == "saved", "measurement was not retained")
     source = _cli_json(
         cli,
         [
@@ -2482,7 +2199,7 @@ def _measurement_record_pilot(cli: Path, work: Path) -> None:
         work / "measurement-source.json",
         work,
     )
-    _require(
+    wheel.require(
         source.get("sha256") == "sha256:" + hashlib.sha256(raw).hexdigest()
         and source.get("bytes") == len(raw),
         "capture did not preserve exact source bytes",
@@ -2502,10 +2219,10 @@ def _measurement_record_pilot(cli: Path, work: Path) -> None:
         work / "measurement-recovered.json",
         work,
     )
-    _require(recovered.get("content") == expected, "stored read changed")
-    conflict = _command([str(cli), *args, "--json"], work)
+    wheel.require(recovered.get("content") == expected, "stored read changed")
+    conflict = wheel.command([str(cli), *args, "--json"], work)
     conflict_report = json.loads(conflict.stdout)
-    _require(
+    wheel.require(
         conflict.returncode == STORAGE_ERROR_EXIT
         and conflict.stderr == ""
         and conflict_report["storage"]["error"]["code"] == "RECORD_EXISTS"
@@ -2514,7 +2231,7 @@ def _measurement_record_pilot(cli: Path, work: Path) -> None:
     )
     malformed = work / "malformed-measurement.json"
     malformed.write_bytes(b"{broken")
-    failure = _command(
+    failure = wheel.command(
         [
             str(cli),
             "records",
@@ -2532,7 +2249,7 @@ def _measurement_record_pilot(cli: Path, work: Path) -> None:
         work,
     )
     report = json.loads(failure.stdout)
-    _require(
+    wheel.require(
         failure.returncode == EVIDENCE_ERROR_EXIT
         and failure.stderr == ""
         and report["storage"]["state"] == "saved"
@@ -2555,8 +2272,8 @@ def _measurement_replay_pilot(cli: Path, work: Path) -> None:
         work / "measurement-replay.json",
         work,
     )
-    _require(replay.get("schema") == "measurement_replay.v1", "replay schema mismatch")
-    _require(
+    wheel.require(replay.get("schema") == "measurement_replay.v1", "replay schema mismatch")
+    wheel.require(
         replay["comparison"]
         == {"state": "match", "scope": "canonical_outcome_kind_and_full_document"},
         "saved measurement did not recalculate after originals disappeared",
@@ -2570,7 +2287,7 @@ def _measurement_replay_pilot(cli: Path, work: Path) -> None:
     )
     policy.write_bytes(policy_bytes)
     malformed = work / "malformed-measurement.json"
-    diagnostic = _command(
+    diagnostic = wheel.command(
         [
             str(cli),
             "records",
@@ -2587,7 +2304,7 @@ def _measurement_replay_pilot(cli: Path, work: Path) -> None:
         ],
         work,
     )
-    _require(diagnostic.returncode == EVIDENCE_ERROR_EXIT, "diagnostic was not captured")
+    wheel.require(diagnostic.returncode == EVIDENCE_ERROR_EXIT, "diagnostic was not captured")
     error_replay = _cli_json(
         cli,
         ["records", "replay-measure", "--root", str(store), "--id", "complete-diagnostic"],
@@ -2596,7 +2313,7 @@ def _measurement_replay_pilot(cli: Path, work: Path) -> None:
     )
     recomputed = cast(dict[str, object], error_replay["recomputed"])
     outcome = cast(dict[str, object], recomputed["outcome"])
-    _require(
+    wheel.require(
         error_replay["comparison"] == replay["comparison"] and outcome["state"] == "error",
         "matching refusal became a successful measurement",
     )
@@ -2627,8 +2344,8 @@ def _measurement_replay_pilot(cli: Path, work: Path) -> None:
         work / "large-measurement-replay.json",
         work,
     )
-    _require(large_replay["comparison"] == replay["comparison"], "large input replay failed")
-    refused = _command(
+    wheel.require(large_replay["comparison"] == replay["comparison"], "large input replay failed")
+    refused = wheel.command(
         [
             str(cli),
             "records",
@@ -2644,7 +2361,7 @@ def _measurement_replay_pilot(cli: Path, work: Path) -> None:
         work,
     )
     failure = json.loads(refused.stderr)
-    _require(
+    wheel.require(
         refused.returncode == EVIDENCE_ERROR_EXIT
         and refused.stdout == ""
         and failure["schema"] == "record_error.v1"
@@ -2656,11 +2373,13 @@ def _measurement_replay_pilot(cli: Path, work: Path) -> None:
 def _trajectory_pilot(cli: Path, work: Path) -> None:
     """Installed wiring with an explicit stub, not native Goppi validation evidence."""
     exchange = work / "trajectory-exchange"
-    shutil.copytree(ROOT / "fixtures/conformance/goppi-trajectory/exchange", exchange)
+    shutil.copytree(wheel.ROOT / "fixtures/conformance/goppi-trajectory/exchange", exchange)
     verifier = work / "offline-verifier-stub"
     verifier.write_text(
         f"#!{cli.parent / 'python'}\n"
-        + (ROOT / "tests/drivers/goppi_trajectory_verifier_stub.py").read_text(encoding="utf-8"),
+        + (wheel.ROOT / "tests/drivers/goppi_trajectory_verifier_stub.py").read_text(
+            encoding="utf-8"
+        ),
         encoding="utf-8",
     )
     verifier.chmod(0o700)
@@ -2668,10 +2387,10 @@ def _trajectory_pilot(cli: Path, work: Path) -> None:
     report = _cli_json(cli, args, work / "trajectory-review.json", work)
     populations = cast(dict[str, object], report["populations"])
     manifest = json.loads((exchange / "paired/manifest.json").read_bytes())
-    _require(report["schema"] == "goppi_trajectory_review.v1", "trajectory output contract")
-    _require(populations["paired_rows"] == manifest["row_count"], "trajectory row population")
+    wheel.require(report["schema"] == "goppi_trajectory_review.v1", "trajectory output contract")
+    wheel.require(populations["paired_rows"] == manifest["row_count"], "trajectory row population")
     tasks = cast(list[dict[str, object]], report["next_verification_tasks"])
-    _require(
+    wheel.require(
         "inspect_tool_status_difference" in {task["kind"] for task in tasks},
         "trajectory tool difference missing",
     )
@@ -2682,10 +2401,10 @@ def _trajectory_pilot(cli: Path, work: Path) -> None:
         "print(json.dumps(audit_goppi_trajectory(Path(sys.argv[1]),"
         "verifier=GoppiCliVerifier(Path(sys.argv[2])))))"
     )
-    result = _success(
+    result = wheel.success(
         [str(cli.parent / "python"), "-c", code, str(exchange), str(verifier)], work
     )
-    _require(json.loads(result.stdout) == report, "trajectory installed API/CLI mismatch")
+    wheel.require(json.loads(result.stdout) == report, "trajectory installed API/CLI mismatch")
     _native_refusal(
         cli,
         ["audit-trajectory", "--exchange", str(exchange / "paired"),
@@ -2719,9 +2438,9 @@ def _trajectory_record_pilot(
     )
     analysis = cast(dict[str, object], captured["analysis"])
     storage = cast(dict[str, object], captured["storage"])
-    _require(captured["schema"] == "trajectory_record.v1", "trajectory record contract")
-    _require(analysis["report"] == expected, "trajectory retention changed analysis")
-    _require(storage["state"] == "saved", "trajectory retention failed")
+    wheel.require(captured["schema"] == "trajectory_record.v1", "trajectory record contract")
+    wheel.require(analysis["report"] == expected, "trajectory retention changed analysis")
+    wheel.require(storage["state"] == "saved", "trajectory retention failed")
     hashes = {
         path.relative_to(exchange).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in exchange.rglob("*") if path.is_file()
@@ -2733,13 +2452,13 @@ def _trajectory_record_pilot(
         ["records", "read-trajectory", "--root", str(store), "--id", identifier],
         work / "trajectory-record-read.json", work,
     )
-    _require(reopened["analysis"] == analysis, "trajectory reopen changed historical analysis")
-    _require(
+    wheel.require(reopened["analysis"] == analysis, "trajectory reopen changed historical analysis")
+    wheel.require(
         reopened["native_verification_performed_now"] is False,
         "trajectory reopen invented native verification",
     )
     verification = cast(dict[str, object], reopened["current_storage_verification"])
-    _require(verification["valid"] is True, "trajectory retained bytes did not verify")
+    wheel.require(verification["valid"] is True, "trajectory retained bytes did not verify")
     code = (
         "import hashlib,json,sys; from pathlib import Path; "
         "from underwrite.service.records import read_record_file; "
@@ -2748,22 +2467,26 @@ def _trajectory_record_pilot(
         "sys.argv[2],'source/'+name,max_bytes=limit).data).hexdigest() "
         "for name,limit in trajectory_member_limits().items()}))"
     )
-    restored = _success([str(cli.parent / "python"), "-c", code, str(store), identifier], work)
-    _require(json.loads(restored.stdout) == hashes, "trajectory raw source recovery changed bytes")
+    restored = wheel.success([str(cli.parent / "python"), "-c", code, str(store), identifier], work)
+    wheel.require(
+        json.loads(restored.stdout) == hashes, "trajectory raw source recovery changed bytes"
+    )
 
 
 def _smoke(dist: Path) -> None:
-    core_wheel, app_wheel = _wheels(dist)
-    fixtures = ROOT / "fixtures/examples"
+    core_wheel, app_wheel = wheel.wheels(dist)
+    fixtures = wheel.ROOT / "fixtures/examples"
     with tempfile.TemporaryDirectory(prefix="underwrite-wheel-smoke-") as directory:
         work = Path(directory).resolve()
-        _require(not work.is_relative_to(ROOT), "temporary directory must be outside checkout")
+        wheel.require(
+            not work.is_relative_to(wheel.ROOT), "temporary directory must be outside checkout"
+        )
         venv = work / "venv"
         cli = venv / "bin/underwrite"
         wheels = (core_wheel, app_wheel)
-        _install_wheels(work, venv, wheels)
-        _check_wheel_origins(venv, wheels)
-        _stale_core_upgrade(work, wheels)
+        wheel.install_wheels(work, venv, wheels)
+        wheel.check_wheel_origins(venv, wheels)
+        wheel.stale_core_upgrade(work, wheels)
         _evidence_pilots(cli, fixtures, work)
         _record_pilots(cli, fixtures, work)
         _handoff_pilot(cli, work)
@@ -2789,7 +2512,7 @@ def _smoke(dist: Path) -> None:
             '"sources":[],"readings":[],"availability":[]}\n',
             encoding="utf-8",
         )
-        error = _command(
+        error = wheel.command(
             [
                 str(cli),
                 "ingest",
@@ -2803,13 +2526,13 @@ def _smoke(dist: Path) -> None:
             ],
             work,
         )
-        _require(error.returncode == 1, f"malformed ingest exit was {error.returncode}")
-        _require(error.stdout == "", "malformed ingest wrote stdout")
+        wheel.require(error.returncode == 1, f"malformed ingest exit was {error.returncode}")
+        wheel.require(error.stdout == "", "malformed ingest wrote stdout")
         try:
             diagnostic: object = json.loads(error.stderr)
         except json.JSONDecodeError as exc:
-            raise SmokeFailure("malformed ingest did not write JSON stderr") from exc
-        _require(
+            raise wheel.SmokeFailure("malformed ingest did not write JSON stderr") from exc
+        wheel.require(
             diagnostic
             == {
                 "schema": "instrument_error.v1",
@@ -2841,7 +2564,7 @@ def main(argv: list[str] | None = None) -> int:
             _registry_core_smoke(args.dist.resolve())
         else:
             _smoke(args.dist.resolve())
-    except (SmokeFailure, OSError, json.JSONDecodeError) as exc:
+    except (wheel.SmokeFailure, OSError, json.JSONDecodeError) as exc:
         print(f"wheel smoke failed: {exc}", file=sys.stderr)
         return 1
     print(

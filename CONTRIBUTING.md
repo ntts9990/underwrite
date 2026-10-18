@@ -140,7 +140,7 @@ contract, including failure and interpretation boundaries, before refactoring.
 | --- | --- | --- |
 | Bounded local input | `_fileio.read_descriptor`, `_json.decode_json` (re-exported by ingest transport), `cli.local_json.read_source`, `inspection.read_at`, `local_capture.RootReader` | Reuse strict decoding and descriptor reads; captured-byte flows must not reopen source paths for storage |
 | CLI results and errors | `cli/evidence.py`, `service/_record_errors.py` and its CLI/schema projections | Reuse the emitter and owned diagnostics; distinguish analysis, storage, and process exits |
-| Composed record responses | `cli/record_capture.py` | Share response admission, storage verification and storage wording; retain producer-specific analysis, input selection and meaning in their command adapters |
+| Composed record responses | `cli/record_capture.py` | Share storage-subdocument validator construction, response admission, storage verification and storage wording; retain producer-specific analysis, input selection and meaning in their command adapters |
 | Paired calculation and review | `instrument/evidence/paired_review.evaluate_paired_review` | Calculate once; presentations project results rather than derive new verdicts |
 | Measurement meaning and read binding | `measurement_contract` | Share semantic identity and read invariants below independent pure domains; measurement owns statistics, acceptance owns claim binding and classification |
 | Event policy preparation and validation | `measurement/event_policy` | Prepared and supplied policies use one validator; preparation leaves assumptions unknown and requires explicit consumer choices |
@@ -149,6 +149,7 @@ contract, including failure and interpretation boundaries, before refactoring.
 | Immutable records | `service/records.save_record`, `save_captured_record`, and `read_record_file` | Share publication and selected-byte read owners; publication/readback failures remain failures, and selected-file integrity is distinct from whole-record verification and provenance |
 | Capability discovery | `cli/main.py` command descriptors and the trusted codec registry | Advertise actual registered paths and installed schema resources; a package version is insufficient |
 | Completion checks | The preflight skill and `scripts/preflight.py` | Use the maintained selector after the final edit; do not add a competing command list |
+| Installed-wheel environment and identity | `scripts/_wheel_smoke.py` | Own subprocess isolation, installation and archive identity checks; keep CLI task scenarios and orchestration in `scripts/smoke_wheels.py` |
 
 Include the observed user result, relevant regression/entry-point evidence,
 refactoring rationale (including when no change is justified), independent review

@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
 
-from jsonschema import Draft202012Validator
 from underwrite_core.canonical import CanonicalizationError, canonical_bytes, digest_bytes
 
 from underwrite.cli.evidence import (
@@ -24,6 +23,7 @@ from underwrite.cli.record_capture import (
     STORAGE_FAILURE_EXIT,
     admit_record_response,
     render_record_response,
+    storage_validator,
     store_captured_record,
 )
 from underwrite.cli.records import OUTPUT_MAX_BYTES, record_error_payload
@@ -95,15 +95,14 @@ def _contracts(profile: str | None = None, view: View = "accounting") -> _Contra
     aggregate = packaged_validator(record_schema(profile, view))
     if view == "row-index":
         packaged_validator(output_schema(profile, "accounting"))
-    schema = cast(dict[str, Any], aggregate.schema)
-    storage = Draft202012Validator({"$defs": schema["$defs"], "$ref": "#/$defs/storage"})
+    storage = storage_validator(aggregate)
     if profile == BLOB_PROFILE:
         packaged_validator("observation.v1")
     return _Contracts(
         profile,
         view,
         cast(Validator, aggregate),
-        cast(Validator, storage),
+        storage,
         cast(Validator, packaged_validator(output_schema(profile, view))),
         cast(Validator, packaged_validator("evidence_error.v1")),
         cast(Validator, packaged_validator("record_error.v1")),
