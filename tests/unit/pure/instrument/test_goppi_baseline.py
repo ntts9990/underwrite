@@ -96,12 +96,15 @@ def test_common_result_preserves_false_missing_and_exact_file_identities() -> No
     )
     documents = fixture.documents()
     result = project_baseline_result(documents)
-    assert result["schema"] == "evidence_result.v1"
+    assert result["schema"] == "evidence_result.v2"
+    assert result["declaration_source"] is None
     assert result["processing"] == {"state": "analyzed", "reason": None, "next_action": "none"}
     assert result["population"] == {"unit": "case", "observed_count": 4, "planned_count": 4}
     assert result["source"] == {
         "format": "goppi.baseline_case_exchange",
-        "format_version": "v2",
+        "producer_version": None,
+        "producer_version_state": "unknown",
+        "reader_profile": "goppi.baseline-exchange-v2.selected-fields.v1",
         "identity": {
             "kind": "bound_bundle",
             "manifest_raw_hash": documents.identities["manifest.json"][0],

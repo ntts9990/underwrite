@@ -70,7 +70,7 @@ def test_exact_five_bytes_result_and_readback_after_exchange_removal(
     code, report, stdout, stderr = _invoke(exchange, store, capsys)
     assert code == report["exit_code"] == 0 and stderr == ""
     assert PRIVATE not in stdout and str(exchange) not in stdout and str(store) not in stdout
-    packaged_validator("baseline_record.v1").validate(report)  # pyright: ignore[reportUnknownMemberType]
+    packaged_validator("baseline_record.v2").validate(report)  # pyright: ignore[reportUnknownMemberType]
     assert report["source"]["files"] == [
         {"name": name, "raw_hash": digest_bytes(files[name]), "bytes": len(files[name])}
         for name in FILES
@@ -177,7 +177,7 @@ def test_schema_fault_refuses_before_capture(
     original = record_baseline.packaged_validator
 
     def refuse(name: str) -> Any:
-        if name == "baseline_record.v1":
+        if name == "baseline_record.v2":
             raise SchemaConfigurationError("fault")
         return original(name)
 
@@ -220,7 +220,7 @@ def test_schema_evaluation_fault_after_capture_refuses_before_store(
             raise RuntimeError(PRIVATE)
 
     def validator(name: str) -> Any:
-        return BrokenValidator() if name == "evidence_result.v1" else original(name)
+        return BrokenValidator() if name == "evidence_result.v2" else original(name)
 
     monkeypatch.setattr(record_baseline, "packaged_validator", validator)
     code, error, stdout, stderr = _invoke(exchange, store, capsys)

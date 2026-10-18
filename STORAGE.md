@@ -271,7 +271,8 @@ its contents. Keep recovered source data private.
 ## Retain a completed goppi baseline
 
 For the exact five-file baseline exchange v2 profile, retain the already
-captured source bytes and descriptive `evidence_result.v1` together:
+captured source bytes and descriptive `evidence_result.v2` together in the current
+checkout (published 0.2.0 emits v1):
 
 ```sh
 underwrite records audit-baseline --exchange /path/to/exchange \
@@ -286,11 +287,16 @@ under `source/`, `analysis/evidence_result.json` or `analysis/error.json`, and
 `invocation.json`. Each source file is the exact buffer used by the analysis;
 the command never reopens a source path to store it. The private invocation
 contains the fixed command/profile, record ID and analysis state, without a
-source/root display path. `baseline_record.v1` keeps analysis and storage
+source/root display path. Current `baseline_record.v2` keeps analysis and storage
 separate: exit 0 means the result was saved and verified; exit 2 means a
 supported input diagnostic was saved; exit 3 means storage or verification
 failed. `verification.files_checked` is seven for a saved record. These are
 stored-byte claims, not producer authentication, label truth or approval.
+
+Published 0.2.0 uses the old baseline-record v1 envelope. Current baseline results
+keep the software producer version unknown, identify the applied reader and have
+no separate declaration pack. Existing records, source bytes and manifest hashes
+are not rewritten; read/verify them without retired output schema resources.
 
 The source directory may include private answers and usage data. All five raw
 files are retained **only because the caller supplied `--root` and `--id`**;

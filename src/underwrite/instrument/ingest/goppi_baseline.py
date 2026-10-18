@@ -13,6 +13,7 @@ from jsonschema.exceptions import ValidationError
 from underwrite.instrument.evidence.goppi_baseline import (
     FILES,
     MAX_CASES,
+    RESULT_SCHEMA,
     BaselineDocuments,
     BaselineProjectionError,
     project_baseline_result,
@@ -95,7 +96,7 @@ def audit_baseline_exchange(exchange: Path) -> dict[str, object]:
     """Capture a completed exchange once and return its validated descriptive result."""
     result = project_baseline_result(capture_baseline_documents(exchange))
     try:
-        validator = packaged_validator("evidence_result.v1")
+        validator = packaged_validator(RESULT_SCHEMA)
         validator.validate(result)  # pyright: ignore[reportUnknownMemberType]
     except ValidationError:
         raise BaselineProjectionError(

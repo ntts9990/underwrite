@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:underwrite:contract:common_result_inspection.v2",
-  "title": "common_result_inspection.v2",
-  "description": "Content-minimized structural screening of an evidence_result.v2 declaration; no source, pack or decision authority.",
+  "$id": "urn:underwrite:contract:common_result_inspection_actions.v3",
+  "title": "common_result_inspection_actions.v3",
+  "description": "Content-minimized screening with source-declared action and semantic-binding histograms over the exact selected common-result input; no decision authority.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -13,11 +13,13 @@
     "availability_counts",
     "checks",
     "verification_entry_count",
-    "limitations"
+    "limitations",
+    "item_next_action_counts",
+    "declared_semantic_binding_counts"
   ],
   "properties": {
     "schema": {
-      "const": "common_result_inspection.v2"
+      "const": "common_result_inspection_actions.v3"
     },
     "selected_result": {
       "type": "object",
@@ -28,7 +30,10 @@
       ],
       "properties": {
         "format": {
-          "const": "evidence_result.v2"
+          "enum": [
+            "evidence_result.v1",
+            "evidence_result.v2"
+          ]
         },
         "raw_hash": {
           "type": "string",
@@ -183,6 +188,7 @@
               ]
             },
             "observed_count": {
+              "description": "Number of parsed source records in the declared unit, including records whose outcome is missing or errored. This is not a count of successful measurements.",
               "type": "integer",
               "minimum": 0
             },
@@ -282,6 +288,81 @@
         "NO_MEASUREMENT_OR_ACCEPTANCE",
         "RAW_HASH_AND_COUNTS_LINKABLE"
       ]
+    },
+    "item_next_action_counts": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "none",
+            "inspect_source",
+            "supply_plan",
+            "supply_applicability",
+            "supply_definition",
+            "supply_label",
+            "rerun_source"
+          ],
+          "properties": {
+            "none": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "inspect_source": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "supply_plan": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "supply_applicability": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "supply_definition": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "supply_label": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "rerun_source": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      ]
+    },
+    "declared_semantic_binding_counts": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "unbound",
+            "bound"
+          ],
+          "properties": {
+            "unbound": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "bound": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      ]
     }
   },
   "allOf": [
@@ -311,6 +392,12 @@
                 "const": "valid"
               }
             }
+          },
+          "item_next_action_counts": {
+            "type": "object"
+          },
+          "declared_semantic_binding_counts": {
+            "type": "object"
           }
         }
       },
@@ -328,6 +415,12 @@
                 "const": "not_applicable"
               }
             }
+          },
+          "item_next_action_counts": {
+            "type": "null"
+          },
+          "declared_semantic_binding_counts": {
+            "type": "null"
           }
         }
       }

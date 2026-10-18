@@ -1,4 +1,4 @@
-"""Automatic common-result selection preserves v1 while screening v2 declarations."""
+"""One current inspection output retains the exact selected v1 or v2 input identity."""
 
 from __future__ import annotations
 
@@ -22,6 +22,25 @@ ERROR_EXIT = 2
 
 def _v2() -> dict[str, Any]:
     return cast(dict[str, Any], audit_deepeval_bound_file(SOURCE, PACK))
+
+
+@pytest.mark.parametrize("generation", ["v1", "v2"])
+@pytest.mark.parametrize("view", ["summary", "actions"])
+def test_both_input_generations_share_one_current_output_per_view(
+    generation: str, view: str, tmp_path: Path
+) -> None:
+    path = tmp_path / "result.json"
+    if generation == "v1":
+        path.write_bytes(Path("fixtures/examples/evidence/common-result-c55.json").read_bytes())
+    else:
+        path.write_text(json.dumps(_v2()), encoding="utf-8")
+    report = inspect_result.inspect_result_file(path, view=cast(inspect_result.View, view))
+    family = "common_result_inspection" + ("_actions" if view == "actions" else "")
+    assert report["schema"] == family + ".v3"
+    assert report["selected_result"] == {
+        "format": "evidence_result." + generation,
+        "raw_hash": digest_bytes(path.read_bytes()),
+    }
 
 
 @pytest.mark.parametrize("view", ["summary", "actions"])
@@ -66,7 +85,9 @@ def test_v2_api_cli_and_advertised_output_are_content_minimized(
     packaged_validator(cast(str, api["schema"])).validate(api)  # pyright: ignore[reportUnknownMemberType]
 
 
-@pytest.mark.parametrize("schema", [None, [], 1, "../../PRIVATE_CANARY", "evidence_result.v999"])
+@pytest.mark.parametrize(
+    "schema", [None, [], 1, True, "../../PRIVATE_CANARY", "evidence_result.v999"]
+)
 def test_untrusted_schema_never_becomes_a_resource_path(
     schema: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -83,13 +104,14 @@ def test_untrusted_schema_never_becomes_a_resource_path(
     assert CANARY not in str(caught.value.payload)
 
 
-def test_v1_cli_preloads_the_declared_v2_output_before_acquisition(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize("view", ["summary", "actions"])
+def test_cli_preloads_the_current_output_before_acquisition(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], view: str
 ) -> None:
     real = evidence.packaged_validator
 
     def missing(name: str) -> Any:
-        if name == "common_result_inspection.v2":
+        if name == inspect_result.OUTPUT_SCHEMAS[view]:
             raise SchemaConfigurationError(CANARY)
         return real(name)
 
@@ -98,7 +120,7 @@ def test_v1_cli_preloads_the_declared_v2_output_before_acquisition(
 
     monkeypatch.setattr(evidence, "packaged_validator", missing)
     monkeypatch.setattr(inspect_result, "read_source", unexpected)
-    assert main(["inspect-result", "missing", "--json"]) == ERROR_EXIT
+    assert main(["inspect-result", "missing", "--view", view, "--json"]) == ERROR_EXIT
     captured = capsys.readouterr()
     assert captured.out == "" and CANARY not in captured.err
     assert json.loads(captured.err)["code"] == "SCHEMA_CONFIGURATION_ERROR"
@@ -125,4 +147,23 @@ def test_v2_selection_and_analysis_use_the_same_read_buffer(
     assert report["selected_result"] == {
         "format": "evidence_result.v2",
         "raw_hash": digest_bytes(original),
+    }
+
+
+def test_equal_json_content_preserves_different_original_byte_identities(tmp_path: Path) -> None:
+    source = _v2()
+    compact, pretty = tmp_path / "compact.json", tmp_path / "pretty.json"
+    compact.write_text(json.dumps(source, separators=(",", ":")), encoding="utf-8")
+    pretty.write_text(json.dumps(source, indent=2, sort_keys=True), encoding="utf-8")
+    left = inspect_result.inspect_result_file(compact, view="actions")
+    right = inspect_result.inspect_result_file(pretty, view="actions")
+    assert left["selected_result"] == {
+        "format": "evidence_result.v2", "raw_hash": digest_bytes(compact.read_bytes()),
+    }
+    assert right["selected_result"] == {
+        "format": "evidence_result.v2", "raw_hash": digest_bytes(pretty.read_bytes()),
+    }
+    assert left["selected_result"] != right["selected_result"]
+    assert {key: value for key, value in left.items() if key != "selected_result"} == {
+        key: value for key, value in right.items() if key != "selected_result"
     }

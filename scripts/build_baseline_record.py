@@ -5,14 +5,24 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from _record_schema import schema_main
-from _schema_compose import embed_contracts, nullable, object_schema, reference, tagged
+if __package__:
+    from ._record_schema import schema_main
+    from ._schema_compose import embed_contracts, nullable, object_schema, reference, tagged
+else:
+    from _record_schema import schema_main
+    from _schema_compose import embed_contracts, nullable, object_schema, reference, tagged
 
-from underwrite.instrument.evidence.goppi_baseline import FILES
+from underwrite.cli.record_baseline import SCHEMA
+from underwrite.instrument.evidence.goppi_baseline import (
+    FILES,
+    READER_PROFILE,
+    RESULT_SCHEMA,
+    SOURCE_FORMAT,
+)
 from underwrite.instrument.ingest.goppi_baseline import DOCUMENT_MAX_BYTES, ROWS_MAX_BYTES
 
 ROOT = Path(__file__).resolve().parents[1]
-TARGET = ROOT / "contracts/baseline_record.v1.schema.json"
+TARGET = ROOT / f"contracts/{SCHEMA}.schema.json"
 
 
 def _state(field: str, state: str) -> dict[str, Any]:
@@ -20,8 +30,11 @@ def _state(field: str, state: str) -> dict[str, Any]:
 
 
 def build_schema() -> dict[str, Any]:
+    result_owner, result_version = RESULT_SCHEMA.rsplit(".", 1)
     definitions, _ = embed_contracts(
-        ROOT, ("evidence_result", "evidence_error", "record_error", "record_verification")
+        ROOT,
+        (result_owner, "evidence_error", "record_error", "record_verification"),
+        versions={result_owner: result_version},
     )
     identity = object_schema(
         {
@@ -51,7 +64,32 @@ def build_schema() -> dict[str, Any]:
     }
     definitions["analysis"] = tagged(
         [
-            object_schema({"state": {"const": "result"}, "report": reference("evidence_result")}),
+            object_schema(
+                {
+                    "state": {"const": "result"},
+                    "report": {
+                        "allOf": [
+                            reference(result_owner),
+                            {
+                                "properties": {
+                                    "source": {
+                                        "type": "object",
+                                        "properties": {
+                                            "format": {"const": SOURCE_FORMAT},
+                                            "producer_version_state": {"const": "unknown"},
+                                            "reader_profile": {"const": READER_PROFILE},
+                                            "identity": {
+                                                "properties": {"kind": {"const": "bound_bundle"}}
+                                            },
+                                        },
+                                    },
+                                    "declaration_source": {"type": "null"},
+                                }
+                            },
+                        ]
+                    },
+                }
+            ),
             object_schema({"state": {"const": "error"}, "error": reference("evidence_error")}),
         ]
     )
@@ -67,7 +105,7 @@ def build_schema() -> dict[str, Any]:
                             {
                                 "properties": {
                                     "valid": {"const": True},
-                                    "files_checked": {"const": 7},
+                                    "files_checked": {"const": len(FILES) + 2},
                                     "links_checked": {"const": 0},
                                     "findings": {"maxItems": 0},
                                 }
@@ -87,8 +125,8 @@ def build_schema() -> dict[str, Any]:
     )
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "urn:underwrite:contract:baseline_record.v1",
-        "title": "baseline_record.v1",
+        "$id": "urn:underwrite:contract:" + SCHEMA,
+        "title": SCHEMA,
         "description": (
             "Complete five-file baseline capture, descriptive analysis, "
             "and private record outcome. "
@@ -99,7 +137,7 @@ def build_schema() -> dict[str, Any]:
         ),
         **object_schema(
             {
-                "schema": {"const": "baseline_record.v1"},
+                "schema": {"const": SCHEMA},
                 "command": {"const": "records audit-baseline"},
                 "source": object_schema({"state": {"const": "captured"}, "files": files}),
                 "analysis": reference("analysis"),

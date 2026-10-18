@@ -21,6 +21,7 @@ from underwrite.cli.record_capture import (
 from underwrite.cli.records import OUTPUT_MAX_BYTES
 from underwrite.instrument.evidence.goppi_baseline import (
     FILES,
+    RESULT_SCHEMA,
     BaselineProjectionError,
     project_baseline_result,
 )
@@ -37,7 +38,7 @@ from underwrite.service.records import (
     CapturedRecordSpec,
 )
 
-SCHEMA = "baseline_record.v1"
+SCHEMA = "baseline_record.v2"
 COMMAND = "records audit-baseline"
 PROFILE = "goppi-baseline-exchange-v2"
 INVOCATION_MAX_BYTES = 2 * 1024
@@ -59,7 +60,7 @@ def _contracts() -> _Contracts:
     return _Contracts(
         cast(Validator, aggregate),
         storage,
-        cast(Validator, packaged_validator("evidence_result.v1")),
+        cast(Validator, packaged_validator(RESULT_SCHEMA)),
         cast(Validator, packaged_validator("evidence_error.v1")),
         cast(Validator, packaged_validator("record_error.v1")),
         cast(Validator, packaged_validator("record_verification.v1")),
@@ -77,7 +78,7 @@ def configure(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--exchange", type=Path, required=True, metavar="DIR")
     parser.add_argument("--root", type=Path, required=True, help="Explicit private record root.")
     parser.add_argument("--id", type=_identifier, required=True, help="New immutable record ID.")
-    parser.add_argument("--json", action="store_true", help="Emit baseline_record.v1 JSON.")
+    parser.add_argument("--json", action="store_true", help=f"Emit {SCHEMA} JSON.")
     parser.description = (
         "Audit and retain the exact five baseline exchange files, result or finite diagnostic, "
         "and invocation. Complete malformed input consumes the ID when saved. "

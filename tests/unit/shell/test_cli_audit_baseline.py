@@ -71,8 +71,8 @@ def test_api_and_cli_emit_one_descriptive_result_without_private_source(
         assert row["case_id"] not in streams.out
     assert "records" not in api
     assert api == json.loads(streams.out)
-    packaged_validator("evidence_result.v1").validate(api)  # pyright: ignore[reportUnknownMemberType]
-    assert api["schema"] == "evidence_result.v1"
+    packaged_validator("evidence_result.v2").validate(api)  # pyright: ignore[reportUnknownMemberType]
+    assert api["schema"] == "evidence_result.v2"
     assert api["processing"] == {"state": "analyzed", "reason": None, "next_action": "none"}
     assert api["population"] == {"unit": "case", "planned_count": 4, "observed_count": 4}
     assert api["verification"] == []
@@ -209,7 +209,7 @@ def test_usage_refuses_before_capture_and_command_is_discoverable(
             "name": "goppi-baseline-exchange-v2",
             "required_inputs": ["exchange"],
             "input_schemas": [],
-            "output_schemas": ["evidence_result.v1"],
+            "output_schemas": ["evidence_result.v2"],
         }
     ]
 

@@ -1,13 +1,14 @@
 # UME-1 contract vectors
 
 These JSON files are **hand-authored expected results for contract review**.
-`audit-baseline` emits `evidence_result.v1` for the pinned goppi exchange, and
-the published 0.2.0 `audit-deepeval --version 4.2.8 --bindings PACK` route
-also emitted it using an owner-asserted `deepeval_metric_bindings.v1` pack.
-The current checkout instead emits `evidence_result.v2` from a reviewed
-`deepeval_metric_bindings.v2` pack containing complete `metric_definition.v1`
-items. It rejects old packs rather than widening their assertions. These v1
-vectors remain historical data. Neither path makes source claims independent
+Published 0.2.0 `audit-baseline` and the explicit DeepEval
+`audit-deepeval --version 4.2.8 --bindings PACK` route emitted `evidence_result.v1`.
+The latter used an owner-asserted `deepeval_metric_bindings.v1` pack. Current
+checkout baseline emits v2 with no separate declaration pack; current DeepEval
+emits v2 from reviewed `deepeval_metric_bindings.v2` packs containing complete
+`metric_definition.v1` items. Old packs are not widened implicitly. These v1
+vectors remain historical data and actual external v1 inputs remain supported
+by the current inspector. Neither source claims nor schema validity are independent
 truth. A conforming adapter must
 derive each item from its source, validate the result, and independently
 establish every check it claims. Schema validation alone is not verification.

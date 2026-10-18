@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:underwrite:contract:baseline_record.v1",
-  "title": "baseline_record.v1",
+  "$id": "urn:underwrite:contract:baseline_record.v2",
+  "title": "baseline_record.v2",
   "description": "Complete five-file baseline capture, descriptive analysis, and private record outcome. Stored-byte verification does not authenticate the producer or approve claims. Null published_record means no identity was returned, not proven absence. Runtime owns cross-field identity equality. Incomplete capture emits standalone evidence_error.v1 on stderr.",
   "type": "object",
   "additionalProperties": false,
@@ -15,7 +15,7 @@
   ],
   "properties": {
     "schema": {
-      "const": "baseline_record.v1"
+      "const": "baseline_record.v2"
     },
     "command": {
       "const": "records audit-baseline"
@@ -167,8 +167,8 @@
   },
   "$defs": {
     "evidence_result": {
-      "title": "evidence_result.v1",
-      "description": "Artifact-scoped descriptive evidence. Source claims and computed values have no read, acceptance, or gate authority under this contract.",
+      "title": "evidence_result.v2",
+      "description": "Artifact-scoped descriptive evidence with separate producer-version claim, applied reader and owner-declaration byte identity; no decision authority.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -177,14 +177,15 @@
         "processing",
         "population",
         "items",
-        "verification"
+        "verification",
+        "declaration_source"
       ],
       "properties": {
         "schema": {
-          "const": "evidence_result.v1"
+          "const": "evidence_result.v2"
         },
         "source": {
-          "description": "Null only when processing is insufficient or unsupported and no source identity can be established. Keep the identified source object for unsupported formats or versions whose bytes are available.",
+          "description": "Null only when no source identity can be established. Producer version is a declaration or unknown, not authenticated by this contract.",
           "type": [
             "object",
             "null"
@@ -192,15 +193,14 @@
           "additionalProperties": false,
           "required": [
             "format",
-            "format_version",
+            "producer_version",
+            "producer_version_state",
+            "reader_profile",
             "identity"
           ],
           "properties": {
             "format": {
               "$ref": "#/$defs/evidence_result__token"
-            },
-            "format_version": {
-              "$ref": "#/$defs/evidence_result__version"
             },
             "identity": {
               "oneOf": [
@@ -250,8 +250,64 @@
                   }
                 }
               ]
+            },
+            "producer_version": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/evidence_result__version"
+                }
+              ],
+              "description": "A source-declared package version or null; not authenticated."
+            },
+            "producer_version_state": {
+              "enum": [
+                "unknown",
+                "declared"
+              ]
+            },
+            "reader_profile": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/evidence_result__token"
+                }
+              ],
+              "description": "Applied local reader rule, not producer version; null if none."
             }
-          }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "producer_version_state": {
+                    "const": "declared"
+                  }
+                },
+                "required": [
+                  "producer_version_state"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "producer_version": {
+                    "$ref": "#/$defs/evidence_result__version"
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "producer_version": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          ]
         },
         "processing": {
           "type": "object",
@@ -399,6 +455,34 @@
           "items": {
             "$ref": "#/$defs/evidence_result__verification"
           }
+        },
+        "declaration_source": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "format",
+                "raw_hash",
+                "authority"
+              ],
+              "properties": {
+                "format": {
+                  "$ref": "#/$defs/evidence_result__token"
+                },
+                "raw_hash": {
+                  "$ref": "#/$defs/evidence_result__hash"
+                },
+                "authority": {
+                  "const": "owner_asserted_unverified"
+                }
+              }
+            }
+          ],
+          "description": "One separately captured owner declaration, if supplied. Its hash identifies bytes but does not authenticate the owner or declared meaning."
         }
       },
       "allOf": [
@@ -1776,7 +1860,39 @@
                 "const": "result"
               },
               "report": {
-                "$ref": "#/$defs/evidence_result"
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/evidence_result"
+                  },
+                  {
+                    "properties": {
+                      "source": {
+                        "type": "object",
+                        "properties": {
+                          "format": {
+                            "const": "goppi.baseline_case_exchange"
+                          },
+                          "producer_version_state": {
+                            "const": "unknown"
+                          },
+                          "reader_profile": {
+                            "const": "goppi.baseline-exchange-v2.selected-fields.v1"
+                          },
+                          "identity": {
+                            "properties": {
+                              "kind": {
+                                "const": "bound_bundle"
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "declaration_source": {
+                        "type": "null"
+                      }
+                    }
+                  }
+                ]
               }
             }
           }

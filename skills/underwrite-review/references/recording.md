@@ -37,7 +37,9 @@ private retention, use capabilities-listed `records audit-baseline --exchange DI
 then saves the descriptive result as `analysis/evidence_result.json`; recover it
 with `records read-json` and check the whole record with `records verify`. The
 source files can contain private answers and usage data, so choose an explicit
-private store. For `baseline_record.v1` stdout, exit 0 means result saved, 2
+private store. Current checkout returns `baseline_record.v2` with evidence-result v2;
+published 0.2.0 returns the old v1 contracts. Existing stored bytes remain unchanged.
+For stdout, exit 0 means result saved, 2
 means a captured input diagnostic saved, and 3 means storage failed; inspect
 its separate analysis/storage states. A pre-capture `evidence_error.v1` on
 stderr can also exit 2 without a saved record.

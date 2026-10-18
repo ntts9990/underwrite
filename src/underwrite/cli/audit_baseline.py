@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import cast
 
 from underwrite.cli.evidence import EvidenceError, run_cli
-from underwrite.instrument.evidence.goppi_baseline import BaselineProjectionError
+from underwrite.instrument.evidence.goppi_baseline import RESULT_SCHEMA, BaselineProjectionError
 from underwrite.instrument.ingest.goppi_baseline import (
     audit_baseline_exchange,
 )
@@ -26,7 +26,7 @@ def configure(parser: argparse.ArgumentParser) -> None:
         "Case IDs and private text are omitted from the result."
     )
     parser.add_argument("--exchange", type=Path, required=True, metavar="DIR")
-    parser.add_argument("--json", action="store_true", help="Emit evidence_result.v1 JSON.")
+    parser.add_argument("--json", action="store_true", help=f"Emit {RESULT_SCHEMA} JSON.")
 
 
 def produce(args: argparse.Namespace) -> dict[str, object]:
@@ -37,4 +37,4 @@ def produce(args: argparse.Namespace) -> dict[str, object]:
 
 
 def main(argv: list[str]) -> int:
-    return run_cli("audit-baseline", argv, configure, produce, "evidence_result.v1")
+    return run_cli("audit-baseline", argv, configure, produce, RESULT_SCHEMA)
