@@ -4,15 +4,12 @@ from __future__ import annotations
 
 import inspect
 import itertools
-import json
 import math
 from dataclasses import FrozenInstanceError
 from fractions import Fraction
-from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import pytest
-from _repo_paths import repo_root
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -35,12 +32,6 @@ from underwrite.measurement.calibration import (
     project_calibration,
     project_measure,
 )
-
-ROOT = repo_root(Path(__file__))
-READ_SCHEMA = cast(
-    "dict[str, Any]", json.loads((ROOT / "contracts/read.v1.schema.json").read_text())
-)
-DEFS = cast("dict[str, Any]", READ_SCHEMA["$defs"])
 
 FOUR = [make_pair(0.9, 1), make_pair(0.2, 0), make_pair(0.6, 1), make_pair(0.3, 0)]
 TWO_BINS = [make_pair(0.1, 0), make_pair(0.3, 1), make_pair(0.7, 1), make_pair(0.9, 1)]
@@ -72,26 +63,31 @@ def _exact_brier(pairs: list[Pair]) -> Fraction:
     return sum(((Fraction(p.prediction) - p.label) ** 2 for p in pairs), Fraction(0)) / len(pairs)
 
 
-# --- contract fit: the rendered dicts are read.v1's measure / calibration objects ---
-
-
-def test_rendered_views_carry_exactly_the_contract_keys() -> None:
-    measure_keys = set(cast("list[str]", DEFS["measure"]["required"]))
-    ece_extra = set(cast("list[str]", DEFS["calibration"]["properties"]["ece"]["required"]))
-    pass_k_extra = set(cast("list[str]", DEFS["calibration"]["properties"]["pass_k"]["required"]))
+def test_aggregate_projection_keeps_three_distinct_measure_values_and_inputs() -> None:
     rendered = project_calibration(brier(FOUR), ece(TWO_BINS, 2, 2), pass_k(2, 3, 2))
-    assert set(rendered) == set(cast("list[str]", DEFS["calibration"]["required"]))
-    assert set(rendered["brier"]) == measure_keys
-    assert set(rendered["ece"]) == measure_keys | ece_extra
-    assert set(rendered["pass_k"]) == measure_keys | pass_k_extra
-    states = set(cast("list[str]", DEFS["availability_state"]["enum"]))
-    reasons = set(cast("list[str]", DEFS["reason_codes"]["items"]["enum"]))
-    assert {MEASURED, NOT_MEASURED} == states
-    assert {REASON_BIN_BELOW_MIN_N, REASON_N_BELOW_K} <= reasons
-    for view in rendered.values():
-        assert view["availability"] in states
-        assert isinstance(view["reason_codes"], list)
-        assert set(view["reason_codes"]) <= reasons
+    assert rendered == {
+        "brier": {
+            "availability": MEASURED,
+            "value": pytest.approx(0.075),
+            "n": 4,
+            "reason_codes": [],
+        },
+        "ece": {
+            "availability": MEASURED,
+            "value": pytest.approx(0.25),
+            "n": 4,
+            "reason_codes": [],
+            "bins": 2,
+            "min_bin_n": 2,
+        },
+        "pass_k": {
+            "availability": MEASURED,
+            "value": pytest.approx(1 / 3),
+            "n": 3,
+            "reason_codes": [],
+            "k": 2,
+        },
+    }
 
 
 def test_project_measure_renders_values_and_reasons_faithfully() -> None:

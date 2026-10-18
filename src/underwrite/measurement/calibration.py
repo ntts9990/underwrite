@@ -174,7 +174,7 @@ def _base(measure: BrierMeasure | ECEMeasure | PassKMeasure) -> dict[str, Any]:
 
 
 def project_measure(measure: BrierMeasure | ECEMeasure | PassKMeasure) -> dict[str, Any]:
-    """The read.v1 ``$defs.measure`` object for one view, plus that view's own inputs."""
+    """Render one standalone measure with its value, availability and required inputs."""
     rendered = _base(measure)
     if isinstance(measure, ECEMeasure):
         rendered["bins"] = measure.bins
@@ -187,7 +187,7 @@ def project_measure(measure: BrierMeasure | ECEMeasure | PassKMeasure) -> dict[s
 def project_calibration(
     brier_measure: BrierMeasure, ece_measure: ECEMeasure, pass_k_measure: PassKMeasure
 ) -> dict[str, Any]:
-    """The read.v1 ``$defs.calibration`` object: the three views, each rendered above."""
+    """Render the three distinct calibration measures without combining their meanings."""
     return {
         "brier": project_measure(brier_measure),
         "ece": project_measure(ece_measure),

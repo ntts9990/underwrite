@@ -118,7 +118,9 @@ def _declared_claims() -> JSON:
         {
             "id": {
                 **_identity(),
-                "description": "Copied from read.v1 $defs.subject.subject_id (bound by test).",
+                "description": (
+                    "Acceptance-owned ASCII grammar for candidate, claim and subject identifiers."
+                ),
             },
             "sha256_digest": _digest(),
             "basis_claims": {

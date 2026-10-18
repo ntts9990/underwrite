@@ -75,7 +75,7 @@
       "type": "string",
       "minLength": 1,
       "pattern": "^[A-Za-z0-9_.:-]+$",
-      "description": "Copied from read.v1 $defs.subject.subject_id (bound by test)."
+      "description": "Acceptance-owned ASCII grammar for candidate, claim and subject identifiers."
     },
     "sha256_digest": {
       "type": "string",

@@ -214,6 +214,19 @@ tails retain correct states. Shared Brier/ECE/pass-k/e-process edge behavior rem
 covered through current owners. Actual old records reopen but incompatible replay
 refuses honestly rather than invoking a removed evaluator.
 
+The removed Python API includes `measurement.read.assemble_read`, legacy
+`read_input.prepare`, and the old availability/jury/stratification composition.
+`read_input.select_slots` now requires an explicit decoder; current event measurement
+already supplies one. Standalone calibration and e-process numerical APIs remain,
+with caller-supplied parameters and their own validation. The old global seed
+resource is removed; stochastic APIs continue requiring explicit seeds.
+
+The claims-v2 identifier description now names its actual acceptance parser owner;
+this changes no validation rule. S7 must resolve the existing difference between
+measurement subject IDs (bounded nonblank text) and acceptance's ASCII identifier
+grammar through a real measure-to-claim example, rather than silently declaring
+those contracts equivalent.
+
 ### S7 — All remaining domains and interface closure
 
 Verify retained single-current families in the ledger against implementation:

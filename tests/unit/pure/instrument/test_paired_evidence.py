@@ -3,17 +3,14 @@
 from __future__ import annotations
 
 import itertools
-import json
 import math
 import random
 import sys
 from dataclasses import FrozenInstanceError, asdict
 from fractions import Fraction
-from pathlib import Path
 from typing import cast
 
 import pytest
-from _repo_paths import repo_root
 
 from underwrite.instrument.evidence._resampling import (
     ResamplingError,
@@ -37,10 +34,8 @@ MIN_UNCERTAINTY_POPULATION = 2
 
 @pytest.fixture
 def seed() -> int:
-    schema = repo_root(Path(__file__).resolve()) / "contracts/statistical_seed.v1.schema.json"
-    value: object = json.loads(schema.read_text())["const"]
-    assert type(value) is int
-    return value
+    """Explicit local experiment seed, not a package-wide default."""
+    return 42
 
 
 def _policy(seed: int, iterations: int = 1000) -> ResamplingPolicy:

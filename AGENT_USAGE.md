@@ -161,8 +161,10 @@ The secondary event in `fixtures/examples/event-acceptance` has a distinct meani
 the candidate selection-history inventory is separate from the measurement inventory.
 
 Historical `measurement_policy.v1/v2`, `read.v1`, `declared_claims.v1`, and their
-examples remain available for inspection/reproduction. Current `measure` and
-`accept` explicitly refuse them. Do not change a schema label or reuse a legacy
+retained examples remain readable as data. Their old runtime schemas and measurement
+composer are removed from the development package; replay requires a compatible
+current measurement record. Current `measure` and `accept` explicitly refuse
+these old inputs. Do not change a schema label or reuse a legacy
 verdict: obtain the actual event/label/forecast declarations and expected cases,
 bind a new policy, remeasure, and reseal claims for the new reads. A supplied
 read's structural/binding validation neither recomputes its statistics nor

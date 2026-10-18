@@ -11,14 +11,13 @@ from typing import Any, Protocol, cast
 
 import pytest
 from _repo_paths import repo_root
-from jsonschema import Draft202012Validator, ValidationError
+from jsonschema import Draft202012Validator
 from underwrite_core.canonical import content_digest
 
 from underwrite.cli import measure, measurement_flow
 from underwrite.cli.main import main
 
 ROOT = repo_root(Path(__file__).resolve())
-LEGACY_FIXTURES = ROOT / "fixtures/examples/measurement"
 FIXTURES = ROOT / "fixtures/examples/event-measurement"
 ERROR_EXIT = 2
 
@@ -258,140 +257,6 @@ def test_one_observation_budget_is_inconclusive_not_successful_absence(
     assert output["directional"]["consumed_count"] == 1
 
 
-def _assets(tmp_path: Path) -> Path:
-    root = tmp_path / "trusted"
-    folder = root / "_contracts"
-    folder.mkdir(parents=True)
-    for name in ("read.v1", "measurement_policy.v2", "statistical_seed.v1"):
-        filename = name + ".schema.json"
-        (folder / filename).write_bytes((ROOT / "contracts" / filename).read_bytes())
-    return root
-
-
-@pytest.mark.parametrize(
-    "fault",
-    [
-        "missing",
-        "invalid-json",
-        "wrong-id",
-        "http",
-        "file",
-        "urn",
-        "nested-id",
-        "dynamic-remote",
-        "dynamic-local",
-        "wrong-position",
-        "subject-pointer",
-        "subject-sibling",
-        "subject-missing",
-        "dependent-subject",
-        "invalid-type",
-        "unresolved",
-        "seed-missing-const",
-        "seed-boolean",
-        "seed-dependent",
-    ],
-)
-def test_hostile_trusted_resources_fail_without_retrieval_or_cwd_repair(
-    fault: str,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    root = _assets(tmp_path)
-    path = root / "_contracts/measurement_policy.v2.schema.json"
-    doc = json.loads(path.read_bytes())
-    root_changes = {
-        "wrong-id": {"$id": "urn:secret"},
-        "http": {"$ref": "https://secret.invalid/schema"},
-        "file": {"$ref": "file:///secret"},
-        "urn": {"$ref": "urn:secret"},
-        "nested-id": {"$defs": {"x": {"$id": "urn:secret"}}},
-        "dynamic-local": {"$dynamicRef": "#"},
-        "dynamic-remote": {"$dynamicRef": "https://secret.invalid"},
-        "wrong-position": {"$ref": "urn:underwrite:contract:statistical_seed.v1"},
-        "invalid-type": {"type": "secret"},
-        "unresolved": {"$ref": "#/$defs/secret"},
-    }
-    doc.update(root_changes.get(fault, {}))
-    if fault == "subject-pointer":
-        doc["properties"]["subject"]["$ref"] = "urn:underwrite:contract:read.v1#/$defs/secret"
-    elif fault == "subject-sibling":
-        doc["properties"]["subject"]["maxProperties"] = 0
-    elif fault in {"subject-missing", "dependent-subject"}:
-        path = root / "_contracts/read.v1.schema.json"
-        doc = json.loads(path.read_bytes())
-        if fault == "subject-missing":
-            del doc["$defs"]["subject"]
-        else:
-            doc["$defs"]["subject"]["$ref"] = "#/$defs/subject"
-    elif fault.startswith("seed-"):
-        path = root / "_contracts/statistical_seed.v1.schema.json"
-        doc = json.loads(path.read_bytes())
-        if fault == "seed-missing-const":
-            del doc["const"]
-        else:
-            doc.update(
-                {"seed-boolean": {"const": True}, "seed-dependent": {"$ref": "#/$defs/subject"}}[
-                    fault
-                ]
-            )
-    if fault == "missing":
-        path.unlink()
-    else:
-        path.write_text("secret{" if fault == "invalid-json" else json.dumps(doc))
-    # Valid files in CWD cannot repair a broken package.
-    (tmp_path / "measurement_policy.v2.schema.json").write_bytes(
-        (ROOT / "contracts/measurement_policy.v2.schema.json").read_bytes()
-    )
-    monkeypatch.chdir(tmp_path)
-
-    def resources(name: str) -> Path:
-        assert name == "underwrite"
-        return root
-
-    monkeypatch.setattr(measure, "files", resources)
-
-    def forbidden(*args: object, **kwargs: object) -> None:
-        pytest.fail("schema attempted external retrieval")
-
-    monkeypatch.setattr(socket, "create_connection", forbidden)
-    monkeypatch.setattr(urllib.request, "urlopen", forbidden)
-    with pytest.raises(measure.SchemaConfigurationError):
-        _, validator = measure.legacy_measurement_validators()
-        measure.validate(
-            validator,
-            json.loads((LEGACY_FIXTURES / "policy.json").read_bytes()),
-            measure.MeasurementError,
-            "INVALID_POLICY",
-            "/policy",
-        )
-
-
-def test_localization_inherits_owner_without_mutation_or_stale_cache(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    root = _assets(tmp_path)
-
-    def resources(name: str) -> Path:
-        assert name == "underwrite"
-        return root
-
-    monkeypatch.setattr(measure, "files", resources)
-    paths = list((root / "_contracts").iterdir())
-    before = {p: p.read_bytes() for p in paths}
-    _, validator = measure.legacy_measurement_validators()
-    validator.validate(json.loads((LEGACY_FIXTURES / "policy.json").read_bytes()))
-    assert before == {p: p.read_bytes() for p in paths}
-    owner = root / "_contracts/read.v1.schema.json"
-    schema = json.loads(owner.read_bytes())
-    schema["$defs"]["subject"]["properties"]["subject_id"]["const"] = "changed-owner"
-    owner.write_text(json.dumps(schema))
-    _, changed = measure.legacy_measurement_validators()
-    with pytest.raises(ValidationError):
-        changed.validate(json.loads((LEGACY_FIXTURES / "policy.json").read_bytes()))
-
-
 def test_usage_and_unexpected_exception_are_closed(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -476,7 +341,7 @@ def test_unrecognized_pure_error_is_not_echoed(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     def broken(*args: object, **kwargs: object) -> None:
-        error = measure.ReadInputError("INVALID_POLICY", "NO_TRIALS", "/policy")
+        error = measure.ReadInputError("INVALID_POLICY", "INVALID_IDENTITY", "/policy")
         error.reason = "secret"
         raise error
 

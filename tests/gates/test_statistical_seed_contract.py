@@ -1,44 +1,15 @@
-"""Standalone behavior and boundary checks."""
+"""Stochastic evidence uses caller-supplied seeds and local RNG instances."""
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 from _random_policy import seed_violations
 from _repo_paths import repo_root
-from jsonschema import Draft202012Validator, ValidationError, validate
 
 ROOT = repo_root(Path(__file__).resolve())
-OWNER = ROOT / "contracts/statistical_seed.v1.schema.json"
 EVIDENCE = ROOT / "src/underwrite/instrument/evidence"
-_APPROVED_POLICY_SEED = 42  # Independent contract oracle, never used as a RNG default.
-
-
-def test_statistical_seed_schema_owns_the_approved_value() -> None:
-    schema = json.loads(OWNER.read_text())
-    Draft202012Validator.check_schema(schema)
-
-    assert schema["const"] == _APPROVED_POLICY_SEED
-    assert type(schema["const"]) is int
-    assert schema["type"] == "integer"
-    assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
-    assert schema["$id"] == "urn:underwrite:contract:statistical_seed.v1"
-    validate(schema["const"], schema)
-    validate(float(schema["const"]), schema)  # JSON-number integer semantics.
-    invalid_values: tuple[object, ...] = (True, False, None, "42", schema["const"] + 1, [])
-    for invalid in invalid_values:
-        with pytest.raises(ValidationError):
-            validate(invalid, schema)
-
-
-def test_present_future_read_contract_references_seed_owner() -> None:
-    owner = json.loads(OWNER.read_text())
-    read = ROOT / "contracts/read.v1.schema.json"
-    if read.exists():
-        seed = json.loads(read.read_text())["properties"]["seed"]
-        assert seed == {"$ref": owner["$id"]}
 
 
 def test_implemented_stochastic_evidence_has_explicit_local_rngs() -> None:

@@ -275,9 +275,11 @@ def test_input_is_not_mutated() -> None:
     assert json.dumps(document, sort_keys=True) == before
 
 
-def test_subject_pattern_is_read_v1s() -> None:
-    schema = json.loads((ROOT / "contracts/read.v1.schema.json").read_text(encoding="utf-8"))
-    owner = schema["$defs"]["subject"]["properties"]["subject_id"]["pattern"]
+def test_identifier_pattern_matches_current_claims_contract() -> None:
+    schema = json.loads(
+        (ROOT / "contracts/declared_claims.v2.schema.json").read_text(encoding="utf-8")
+    )
+    owner = schema["$defs"]["id"]["pattern"]
     assert cl.ID_PATTERN == owner
 
 
