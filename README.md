@@ -31,14 +31,11 @@ or assign one quality score across tools. Checking supported local files needs
 no Docker, dashboard, or provider credentials.
 
 > [!NOTE]
-> **This guide targets `underwrite==0.1.1`.** Its CLI and Python workflows work
-> without a checkout. The older `0.0.1` artifacts lack these workflows and have
-> a separate `pins refresh` caution; see [Install](#install).
-
-Development checkouts advertising `promptfoo.eval-output|auto` can read SummaryV3
-with `underwrite audit-promptfoo FILE --json`, without a producer-version option.
-This automatic default is newer than the published 0.1.1 package; see the
-[input workflow](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#audit-promptfoo-counts).
+> **Choose an entry path:** [published PyPI 0.1.1](#published-package--pypi-011) for the
+> released workflows, or [current main checkout](#development-checkout--current-main) for newer
+> automatic input handling and trajectory comparison. Both currently report
+> `0.1.1`; use `capabilities --json` to discover what your executable supports.
+> The older `0.0.1` has a separate pin-manifest caution; see [Install](#install).
 
 ## Quickstart
 
@@ -46,6 +43,8 @@ Requires **Python 3.12+** and [uv](https://docs.astral.sh/uv/); the optional
 synthetic download below uses `curl`.
 File-based CLI workflows are tested with CPython 3.12 on Linux and macOS. They
 require Unix/POSIX file APIs, including for ordinary artifact reads.
+
+### Published package · PyPI 0.1.1
 
 **1. Install and check a file.** The app-only install resolves a compatible
 `underwrite-core` automatically. Download the public synthetic example; no
@@ -96,21 +95,40 @@ explicit. Exit `0` means the report was produced, not that the counts agree or
 the source's verdict was verified. To keep the input and analysis together,
 [save them in a local record](#keep-results-you-can-return-to).
 
-For your own completed Promptfoo export, replace the example path and select its
-supported source version. The synthetic download above is a constructed example,
-not an unchanged producer export.
+For your own completed Promptfoo export, replace the path and use a
+[supported published profile](#supported-formats). The downloaded file is a
+constructed example, not an unchanged producer export.
 
-<details>
-<summary><strong>Try the native measurement → acceptance workflow</strong></summary>
+### Development checkout · current main
 
-This example uses policies and fixtures in the GitHub checkout; they are not
-included in the installed package. To run it, prepare a checkout first:
+Use a checkout for the newer workflows. Run its commands through `uv run` inside
+that directory, keeping the published tool installation separate. If you already
+have a checkout, open its root and start at `uv sync` below:
 
 ```sh
 git clone https://github.com/ntts9990/underwrite.git
 cd underwrite
 uv sync --frozen --all-groups
+uv run --frozen --no-sync underwrite capabilities --json
+uv run --frozen --no-sync underwrite audit-promptfoo \
+  fixtures/examples/evidence/synthetic-promptfoo-count-mismatch.json --json
+```
 
+This uses the same synthetic counts as above: 3 declared results versus 2 rows.
+The automatic reader produces `promptfoo_accounting.v2` and preserves this
+fixture's declared `0.123.0` version as an unverified source claim. Inputs without
+a version declaration retain an unknown release. No version flag, producer
+installation, Goppi, or provider call is needed for this example.
+Use this `uv run --frozen --no-sync underwrite` prefix for all checkout commands.
+See [development additions](#development-checkout--additions-on-current-main) for the other routes.
+
+<details>
+<summary><strong>Try the native measurement → acceptance workflow</strong></summary>
+
+After preparing the checkout above, run this example from its root. Its policies
+and fixtures live in the repository, outside the installed package:
+
+```sh
 mkdir -p output
 uv run --frozen --no-sync underwrite ingest \
   --format underwrite.evidence-bundle --version v1 \
@@ -159,27 +177,27 @@ explicit policy, not arbitrary external scores.
 
 ## Agent use
 
-Give your coding agent the installed CLI and a completed local export. It can
-discover the available routes, execute them, and use the JSON in its response:
-
-```sh
-underwrite --help
-underwrite capabilities --json
-```
+Give your coding agent a completed local export and your chosen entry path.
+Have it inspect `capabilities --json` and the command's `--help` using that same
+executable: `underwrite` for the published tool, or
+`uv run --frozen --no-sync underwrite` from the checkout. Package version alone
+does not identify the available workflows.
 
 Python callers can use
-`underwrite.instrument.ingest.accounting.audit_promptfoo_file(Path(...))` for
-the same result as a dictionary. Select an exact supported profile before
-interpreting any producer-specific field.
+`underwrite.instrument.ingest.accounting.audit_promptfoo_file(Path(...))` in
+the chosen environment. For the published package, confirm that the input matches
+a supported profile; select it explicitly when it differs from the documented
+default. Current automatic intake does not require guessing a producer release.
 
 Example task for an agent with terminal access:
 
-> Review `/absolute/path/to/completed-promptfoo-export.json` with the installed
-> `underwrite` 0.1.1 CLI as a Promptfoo 0.123.0 export. Use `capabilities --json`
-> and `audit-promptfoo --version 0.123.0`.
-> Report `declared_relation`, `producer_stats`, `row_tallies`, `raw_hash`,
-> `limitations`, and the next useful action. Do not rerun the producer or treat
-> exit `0` as agreement or approval.
+> Review `/absolute/path/to/completed-promptfoo-export.json` using our selected
+> Underwrite entry path. Inspect its capabilities and help, then use the
+> supported accounting route. Use automatic intake when advertised; otherwise
+> require evidence of a supported published profile rather than guessing a version.
+> Report count differences, input identity, missing evidence, interpretation
+> limits, and the next useful check. Do not rerun the producer or treat exit `0`
+> as agreement or approval.
 
 The optional [underwrite-review skill](https://github.com/ntts9990/underwrite/blob/main/skills/underwrite-review/SKILL.md) provides
 reusable guidance for Codex and Claude Code. [Setup and usage](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#optional-artifact-review-skill)
@@ -189,70 +207,58 @@ The same CLI and importable Python APIs are available to your own automation.
 
 ## Supported formats
 
-Support is for the **specific local payload profiles below**, not every API,
-export, or version offered by each producer. Check installed capabilities;
-explicit selectors reproduce older contracts.
+Support covers selected local payloads, not every producer API, export, or
+version. Use capabilities from your chosen executable and the linked workflows
+for exact input requirements.
+
+### Published profiles · PyPI 0.1.1
 
 | Your input | Supported profile | Start here |
 | --- | --- | --- |
-| **goppi** | Completed baseline exchange manifest v2; separate paired-handoff route | [`audit-baseline`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#audit-a-completed-goppi-baseline-as-common-evidence) for descriptive common JSON · [`project-baseline`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#project-a-completed-goppi-baseline-into-event-observations) for native measurement · [`review-handoff`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#review-a-completed-paired-handoff-in-one-call)  · [`audit-trajectory`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#compare-a-goppi-paired-trajectory) (development; requires installed Goppi) |
-| **Langfuse** | Published `0.1.1`: `4.35.0` server blob arrays. Development automatic intake: compatible blob arrays or official-CLI list captures. | [`audit-langfuse`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-langfuse-score-kinds-and-associations), with an optional content-minimized row index |
-| **DeepEval** | Published `0.1.1`: ordinary `4.1.1` or `4.2.8` TestRun. Development automatic intake: compatible old/current ordinary or selected trace structure. | [`audit-deepeval`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors) |
-| **Promptfoo** | Eval output JSON, `0.123.0` or `0.124.1` | [`audit-promptfoo`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#source-checkout-pilot-audit-promptfoo-counts) |
-| **External common result** | Published `0.1.1`: `evidence_result.v1`. Development inspection also accepts `evidence_result.v2`. | [`inspect-result`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#inspect-an-external-common-result) for structural screening, availability and optional evidence-item action counts |
+| **Goppi** | Completed baseline exchange manifest v2; P7 paired handoff | [`audit-baseline`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#audit-a-completed-goppi-baseline-as-common-evidence) · [`project-baseline`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#project-a-completed-goppi-baseline-into-event-observations) · [`review-handoff`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#review-a-completed-paired-handoff-in-one-call) |
+| **Langfuse** | `4.35.0` server blob arrays | [`audit-langfuse`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-langfuse-score-kinds-and-associations) |
+| **DeepEval** | Ordinary TestRun, `4.1.1` (default) or explicit `4.2.8` | [`audit-deepeval`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors) |
+| **Promptfoo** | Eval output, `0.123.0` (default) or explicit `0.124.1` | [`audit-promptfoo`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#audit-promptfoo-counts) |
+| **External common result** | `evidence_result.v1` | [`inspect-result`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#inspect-an-external-common-result) |
 | **Native evidence** | `underwrite.evidence-bundle` / `v1` | `ingest` → `measure` → `accept` |
 | **Inspect AI** | `inspect.eval-log` / `0.3.263` | `ingest` |
 | **OpenInference** | `openinference.traces` / `0.1.38` | `ingest` |
 | **OTLP JSON** | `otlp-json.traces` / `0.160.0` | `ingest` |
 
-For completed exports already on your machine, the installed CLI accepts them
-directly; select the exact producer profile you have:
+### Development checkout · additions on current main
 
-```sh
-underwrite audit-promptfoo /path/to/promptfoo-output.json --version 0.124.1 --json
-underwrite audit-deepeval /path/to/deepeval-test-run.json --version 4.2.8 --json
-underwrite audit-langfuse --observations /path/to/blob-observations.json \
-  --scores /path/to/blob-scores.json --json
-underwrite audit-baseline --exchange /path/to/goppi-baseline-exchange --json
-```
+- **Automatic intake:** compatible Promptfoo SummaryV3, DeepEval TestRun, and
+  Langfuse blob arrays or [official-CLI list captures](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#read-official-langfuse-cli-captures-offline)
+  without selecting a producer version/profile. Actual producer release stays
+  unknown when the payload does not establish it; explicit selectors remain for
+  reproducing older contracts.
+- **Focused views and storage:** selected DeepEval trace structure, version-neutral
+  `deepeval_metric_bindings.v2` packs, and Langfuse row-index recording. Follow the
+  linked producer workflows above for their separate contracts and limits.
+- **Common results:** `inspect-result` also accepts `evidence_result.v2`.
+- **Goppi steps:** [`audit-trajectory`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#compare-a-goppi-paired-trajectory)
+  compares recorded tool states and evaluation results from a paired+trajectory
+  export, including runs that stopped early. This optional route requires installed
+  Goppi for offline verification; it does not run providers, establish causality,
+  or measure retry effects.
 
-Published `0.1.1` defaults DeepEval accounting to `4.1.1`; select
-`--version 4.2.8` there. Development builds advertising automatic intake read
-compatible TestRuns without a version flag, reporting the producer release as
-unknown. Select `--view trace-index` for recorded steps; metric/expectation
-evaluation is outside that view. Development builds advertising neutral binding
-accept an owner-authored `deepeval_metric_bindings.v2` pack without a version flag;
-the pack declares metric-name meaning, not producer release or verified semantics.
-The historical v1 pack still requires explicit `--version 4.2.8`.
-See the [binding workflow](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors).
-Published `0.1.1` defaults Promptfoo to `0.123.0`; select `--version 0.124.1`
-there. Published Langfuse intake defaults to the 4.35.0 server blob export.
-Development builds advertising automatic Langfuse intake read compatible blob
-arrays or [official-CLI list captures](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#read-official-langfuse-cli-captures-offline)
-without `--profile`; the selected reader does not establish the actual producer
-release. Their explicit blob/CLI profiles retain historical v1 outputs. The
-controlled CLI fixture proves local file-format handling, not live-server
-interoperability or complete export.
 See [artifact requirements](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#get-the-right-producer-artifact) and
-[producer checks](https://github.com/ntts9990/underwrite/blob/main/EVIDENCE_REVIEW.md) for the tested scope and fixture origins.
+[producer checks](https://github.com/ntts9990/underwrite/blob/main/EVIDENCE_REVIEW.md)
+for fixture origins and tested scope. A controlled fixture does not prove
+live-server interoperability or export completeness.
 
-Generic `ingest` / `project` normalizes supported exports to an observation;
-external observations do not enter the current `measure` path. goppi uses its
-explicit exchange adapters: `audit-baseline` produces descriptive
-`evidence_result.v1` without a policy or directional verdict, while
-`project-baseline` can produce native event observations. `prepare-event-policy`
-binds a consumer configuration while leaving statistical assumptions unknown.
-For an already produced `evidence_result.v1` file, or v2 when advertised by a
-development build, `inspect-result` checks the installed contract and item counts
-without verifying the producer's source or owner pack, or admitting that result
-to measurement or acceptance.
-Its optional action view counts recorded next actions for evidence remediation,
-not executed tool calls or an agent trajectory.
+Generic `ingest` / `project` normalizes supported exports; external observations
+do not enter the current `measure` path. Goppi `audit-baseline` produces
+descriptive common evidence, while `project-baseline` can produce native event
+observations. `inspect-result` screens the installed common-result contract and
+counts items without verifying source truth or admitting them to measurement
+or acceptance. Its action view counts recorded next checks, not executed tools.
 
 ## Keep results you can return to
 
 Use `records` when you want the analysis and its selected source bytes retained
-together. For a completed local Promptfoo export:
+together. This example uses the **published package** with a completed local
+Promptfoo export:
 
 ```sh
 underwrite records audit-promptfoo /path/to/promptfoo-output.json \
@@ -263,7 +269,9 @@ underwrite records read-json \
   --name analysis/accounting.json --json
 ```
 
-Use a fresh ID for each capture; existing records are never overwritten.
+In the checkout, prefix both commands with `uv run --frozen --no-sync`; omit
+`--version` for automatic intake. Use a fresh ID for each capture; existing
+records are never overwritten.
 `records verify` checks stored integrity. `records measure` captures a native
 measurement, and `records replay-measure` recalculates it from verified saved
 inputs using the current engine, without executing the original producer.
