@@ -18,7 +18,7 @@ from underwrite_core.canonical import digest_bytes
 
 from scripts import build_deepeval_neutral_binding
 from underwrite.cli.evidence import EvidenceError
-from underwrite.cli.inspect_result import View, inspect_result_file
+from underwrite.cli.inspect_result import INPUT_SCHEMAS, OUTPUT_SCHEMAS, View, inspect_result_file
 from underwrite.cli.record_capture import saved_record
 from underwrite.cli.record_deepeval_bound import AUTO_SCHEMA as RECORD_SCHEMA
 from underwrite.cli.records import record_error_payload
@@ -40,19 +40,14 @@ INSPECTION_SOURCE = ROOT / "fixtures/examples/evidence/common-result-c55.json"
 INSTALLED_NAMES = (
     AUTO_PACK_SCHEMA,
     AUTO_RESULT_SCHEMA,
-    "common_result_inspection.v2",
-    "common_result_inspection_actions.v2",
+    "common_result_inspection.v3",
+    "common_result_inspection_actions.v3",
     RECORD_SCHEMA,
 )
-S5_FROZEN_HASHES = {
+EXTERNAL_RESULT_HASHES = {
     "evidence_result.v1": "d36d9179ffdc28f6be43727dc5ed6ff3c006f100f523c5f3a2e8677c5b019631",
-    "common_result_inspection.v1": (
-        "8e4527b045097aa3f91a0d5befe15950b4631bec66ff05b8871f11fba4b26786"
-    ),
-    "common_result_inspection_actions.v1": (
-        "59b9b808911ec400ddfb8d3ada3bf64db7049e6e0737526b98b8a65785920b56"
-    ),
 }
+
 DIGEST = "sha256:" + "0" * 64
 
 
@@ -129,7 +124,7 @@ def test_current_binding_generation_uses_only_authored_current_inputs(tmp_path: 
     assert checked.returncode == 0, checked.stdout + checked.stderr
 
 
-def test_generated_targets_authored_owner_and_frozen_inspector_assets() -> None:
+def test_generated_targets_authored_owner_and_external_input_are_packaged() -> None:
     result = subprocess.run(
         [sys.executable, "scripts/build_deepeval_neutral_binding.py", "--check"],
         cwd=ROOT,
@@ -149,7 +144,7 @@ def test_generated_targets_authored_owner_and_frozen_inspector_assets() -> None:
         assert packaged.read_bytes() == authored.read_bytes()
         assert f"contracts/{authored.name}" in source_includes
         _validator(name)
-    for name, digest in S5_FROZEN_HASHES.items():
+    for name, digest in EXTERNAL_RESULT_HASHES.items():
         assert (
             hashlib.sha256((ROOT / "contracts" / f"{name}.schema.json").read_bytes()).hexdigest()
             == digest
@@ -209,33 +204,28 @@ def test_result_requires_separate_source_and_declaration_identities() -> None:
         validator.validate(declared)
 
 
-def test_frozen_inspection_contracts_keep_shape_and_actual_input_identity(tmp_path: Path) -> None:
+def test_current_inspection_keeps_each_actual_input_identity(tmp_path: Path) -> None:
     owner = _schema(AUTO_RESULT_SCHEMA)
-    for name, old_name in (
-        ("common_result_inspection.v2", "common_result_inspection.v1"),
-        ("common_result_inspection_actions.v2", "common_result_inspection_actions.v1"),
-    ):
+    for name in OUTPUT_SCHEMAS.values():
         contract = _schema(name)
-        old = _schema(old_name)
         assert contract["properties"]["declared_processing"] == owner["properties"]["processing"]
         assert contract["properties"]["selected_result"]["properties"]["format"] == {
-            "const": AUTO_RESULT_SCHEMA
+            "enum": list(INPUT_SCHEMAS)
         }
-        for key in old["properties"]:
-            if key not in {"schema", "selected_result"}:
-                assert contract["properties"][key] == old["properties"][key]
     current_path = tmp_path / "current-result.json"
     current_path.write_text(json.dumps(_result()[0]), encoding="utf-8")
-    views: tuple[tuple[View, str], ...] = (
-        ("summary", "common_result_inspection"),
-        ("actions", "common_result_inspection_actions"),
-    )
-    for path, generation in ((INSPECTION_SOURCE, "v1"), (current_path, "v2")):
-        for view, family in views:
+    for path, original_schema in (
+        (INSPECTION_SOURCE, "evidence_result.v1"),
+        (current_path, "evidence_result.v2"),
+    ):
+        views: tuple[View, ...] = ("summary", "actions")
+        for view in views:
+            output_schema = OUTPUT_SCHEMAS[view]
             report = inspect_result_file(path, view=view)
-            _validator(f"{family}.{generation}").validate(report)
+            _validator(output_schema).validate(report)
+            assert report["schema"] == output_schema
             assert report["selected_result"] == {
-                "format": f"evidence_result.{generation}",
+                "format": original_schema,
                 "raw_hash": digest_bytes(path.read_bytes()),
             }
 

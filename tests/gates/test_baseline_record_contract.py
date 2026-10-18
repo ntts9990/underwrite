@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -14,12 +15,13 @@ import pytest
 from _baseline_exchange import build_baseline_exchange
 from jsonschema import Draft202012Validator, ValidationError
 
+from scripts import build_baseline_record
 from underwrite.cli.records import record_error_payload
 from underwrite.instrument.evidence.goppi_baseline import FILES, project_baseline_result
 from underwrite.service.records import RecordError
 
 ROOT = Path(__file__).resolve().parents[2]
-NAME = "baseline_record.v1.schema.json"
+NAME = "baseline_record.v2.schema.json"
 DIGEST = "sha256:" + "0" * 64
 
 
@@ -81,7 +83,7 @@ def _envelope(*, analysis_error: bool = False, storage_error: bool = False) -> d
         }
     )
     return {
-        "schema": "baseline_record.v1",
+        "schema": "baseline_record.v2",
         "command": "records audit-baseline",
         "source": {
             "state": "captured",
@@ -116,6 +118,81 @@ def test_generated_contract_is_current_and_packaged() -> None:
     Draft202012Validator.check_schema(_schema())
     for owner in ("evidence_result", "evidence_error", "record_error", "record_verification"):
         assert owner in _schema()["$defs"]
+    assert (ROOT / "contracts" / NAME).read_bytes() == (
+        json.dumps(build_baseline_record.build_schema(), indent=2) + "\n"
+    ).encode()
+
+
+def test_current_generation_needs_no_old_or_existing_baseline_target(tmp_path: Path) -> None:
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    for name in ("build_baseline_record.py", "_record_schema.py", "_schema_compose.py"):
+        shutil.copyfile(ROOT / "scripts" / name, scripts / name)
+    contracts = tmp_path / "contracts"
+    contracts.mkdir()
+    for owner in (
+        "evidence_result.v2",
+        "evidence_error.v1",
+        "record_error.v1",
+        "record_verification.v1",
+    ):
+        filename = owner + ".schema.json"
+        shutil.copyfile(ROOT / "contracts" / filename, contracts / filename)
+    before = {path.name: path.read_bytes() for path in contracts.iterdir()}
+    expected = (ROOT / "contracts" / NAME).read_bytes()
+    command = [sys.executable, str(scripts / "build_baseline_record.py")]
+    built = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True, check=False)
+    assert built.returncode == 0, built.stdout + built.stderr
+    assert {path.name: path.read_bytes() for path in contracts.iterdir()} == {
+        **before,
+        NAME: expected,
+    }
+    checked = subprocess.run(
+        [*command, "--check"], cwd=tmp_path, capture_output=True, text=True, check=False
+    )
+    assert checked.returncode == 0, checked.stdout + checked.stderr
+
+
+@pytest.mark.parametrize("change", ["format", "reader", "producer", "identity", "declaration"])
+def test_baseline_capture_rejects_valid_generic_result_with_other_source_claims(
+    change: str,
+) -> None:
+    envelope = _envelope()
+    report = envelope["analysis"]["report"]
+    if change == "format":
+        report["source"]["format"] = "other.producer"
+    elif change == "reader":
+        report["source"]["reader_profile"] = "other.reader"
+    elif change == "producer":
+        report["source"].update(producer_version="1.2.3", producer_version_state="declared")
+    elif change == "identity":
+        report["source"]["identity"] = {"kind": "single_file", "raw_hash": DIGEST}
+    else:
+        report["declaration_source"] = {
+            "format": "owner.pack",
+            "raw_hash": DIGEST,
+            "authority": "owner_asserted_unverified",
+        }
+    generic = Draft202012Validator(
+        json.loads((ROOT / "contracts/evidence_result.v2.schema.json").read_bytes())
+    )
+    generic.validate(report)  # pyright: ignore[reportUnknownMemberType]
+    _reject(envelope)
+
+
+def test_baseline_capture_rejects_valid_external_v1_result_without_relabeling() -> None:
+    original = ROOT / "fixtures/conformance/goppi-c55-common/evidence-result.json"
+    raw = original.read_bytes()
+    report = json.loads(raw)
+    validator = Draft202012Validator(
+        json.loads((ROOT / "contracts/evidence_result.v1.schema.json").read_bytes())
+    )
+    validator.validate(report)  # pyright: ignore[reportUnknownMemberType]
+    assert report["schema"] == "evidence_result.v1"
+    envelope = _envelope()
+    envelope["analysis"]["report"] = report
+    _reject(envelope)
+    assert original.read_bytes() == raw
 
 
 @pytest.mark.parametrize(

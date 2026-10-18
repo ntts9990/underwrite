@@ -28,6 +28,7 @@ from underwrite.cli import (
     pair_binary,
     prepare_event_policy,
     project_baseline,
+    record_baseline,
     record_deepeval,
     record_deepeval_bound,
     record_langfuse,
@@ -141,7 +142,7 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 "goppi-baseline-exchange-v2",
                 ("exchange",),
                 (),
-                ("evidence_result.v1",),
+                (audit_baseline.RESULT_SCHEMA,),
             ),
         ),
         _standalone(audit_baseline.main),
@@ -171,8 +172,8 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 (source,),
                 (output,),
             )
-            for source, views in inspect_result.RESULT_SCHEMAS.items()
-            for view, output in views.items()
+            for source in inspect_result.INPUT_SCHEMAS
+            for view, output in inspect_result.OUTPUT_SCHEMAS.items()
         ),
         _standalone(inspect_result.main),
     ),
@@ -256,7 +257,7 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 "audit-baseline",
                 ("exchange", "root", "id"),
                 (),
-                ("baseline_record.v1",),
+                (record_baseline.SCHEMA,),
             ),
             profile("replay-measure", ("root", "id"), (), ("measurement_replay.v1",)),
             profile(

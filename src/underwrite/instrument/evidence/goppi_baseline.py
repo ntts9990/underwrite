@@ -29,6 +29,9 @@ from underwrite.measurement_contract.semantics import (
 )
 
 FILES = ("manifest.json", "export.json", "rows.jsonl", "schema.json", "scope.json")
+RESULT_SCHEMA = "evidence_result.v2"
+SOURCE_FORMAT = "goppi.baseline_case_exchange"
+READER_PROFILE = "goppi.baseline-exchange-v2.selected-fields.v1"
 MAX_CASES = 200
 FORMAT_SCOPE = "single_product_baseline_run_with_approved_scope"
 MANIFEST_SCHEMA = "goppi.baseline_case_exchange.manifest.v2"
@@ -644,10 +647,12 @@ def project_baseline_result(documents: BaselineDocuments) -> dict[str, object]:
             }
         )
     result: dict[str, object] = {
-        "schema": "evidence_result.v1",
+        "schema": RESULT_SCHEMA,
         "source": {
-            "format": "goppi.baseline_case_exchange",
-            "format_version": "v2",
+            "format": SOURCE_FORMAT,
+            "producer_version": None,
+            "producer_version_state": "unknown",
+            "reader_profile": READER_PROFILE,
             "identity": {
                 "kind": "bound_bundle",
                 "manifest_raw_hash": documents.identities["manifest.json"][0],
@@ -662,6 +667,7 @@ def project_baseline_result(documents: BaselineDocuments) -> dict[str, object]:
         },
         "items": items,
         "verification": [],
+        "declaration_source": None,
     }
     try:
         check_result_invariants(result)

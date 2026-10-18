@@ -69,9 +69,30 @@ diagnostic. It checks both source and pack hashes on success. Reopening old
 records needs neither retired result schemas nor a producer.
 
 The current generic `evidence_result.v2` is an authored contract consumed by
-DeepEval pack/record composition. Inspection remains unchanged in this slice;
-its separate consolidation follows in S5. Published 0.2.0 still retains the old
+DeepEval pack/record composition. The inspection contract transition is described in the next section. Published 0.2.0 still retains the old
 DeepEval selectors and writers; the package metadata has not been bumped.
+
+## Unreleased checkout: one common inspection output per view
+
+`inspect-result` accepts genuine `evidence_result.v1` or v2 inputs by exact schema
+and emits summary/actions v3. Its `selected_result.format` and raw hash preserve
+the original selected document, including v1; no implicit result conversion occurs.
+Migrate consumers from inspection/action output v1/v2 to v3. Views, error channels,
+exit meanings and unchecked source-claim limits remain the same. Unknown future
+schemas refuse, and invalid installed output contracts fail before input reads.
+
+`audit-baseline` now emits `evidence_result.v2`; baseline capture returns
+`baseline_record.v2`. The Goppi exchange wire remains v2 with the same five source
+members, same hashes and seven saved files. Software producer version remains
+unknown, the applied reader is explicit, and `declaration_source` is null because
+no neutral metric-meaning pack was supplied. Native event projection/measurement
+and external Goppi/C55 source contracts are unchanged.
+
+Published 0.2.0 still emits the old baseline/inspection contracts. Retired output
+schemas are absent from the checkout package, but old records remain byte-readable
+and verifiable without a producer or result reanalysis. `evidence_result.v1` remains
+an exact external-input validator, not an Underwrite result writer. No package
+version increase or publication is included in this development change.
 
 ## Released history: migration from 0.1.1 to 0.2.0
 

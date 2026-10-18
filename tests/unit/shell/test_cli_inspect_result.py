@@ -73,7 +73,7 @@ def test_c55_file_api_cli_and_capability(
         "contract_shape": "valid", "item_invariants": "valid", "source_bytes": "not_checked",
         "producer_authentication": "not_checked", "verification_refs": "not_reperformed",
     }
-    packaged_validator("common_result_inspection.v1").validate(api)  # pyright: ignore[reportUnknownMemberType]
+    packaged_validator("common_result_inspection.v3").validate(api)  # pyright: ignore[reportUnknownMemberType]
     assert _cli(path) == 0
     streams = capsys.readouterr()
     assert streams.err == ""
@@ -87,7 +87,7 @@ def test_c55_file_api_cli_and_capability(
     assert main(["capabilities", "--json"]) == 0
     capabilities = json.loads(capsys.readouterr().out)
     entry = next(item for item in capabilities["commands"] if item["command"] == "inspect-result")
-    assert entry["profiles"][0]["output_schemas"] == ["common_result_inspection.v1"]
+    assert entry["profiles"][0]["output_schemas"] == ["common_result_inspection.v3"]
 
 
 def test_actions_view_matches_same_byte_control_and_preserves_default(
@@ -104,7 +104,7 @@ def test_actions_view_matches_same_byte_control_and_preserves_default(
     assert control_bindings == {"unbound": 7, "bound": 0}
     default = inspect_result.inspect_result_file(path)
     actions = inspect_result.inspect_result_file(path, view="actions")
-    assert actions["schema"] == "common_result_inspection_actions.v1"
+    assert actions["schema"] == "common_result_inspection_actions.v3"
     assert actions["selected_result"] == default["selected_result"] == {
         "format": "evidence_result.v1", "raw_hash": digest_bytes(raw)
     }
@@ -114,8 +114,8 @@ def test_actions_view_matches_same_byte_control_and_preserves_default(
     assert sum(control_actions.values()) == sum(control_bindings.values()) == count
     assert {key: value for key, value in actions.items() if key not in {
         "item_next_action_counts", "declared_semantic_binding_counts"
-    }} == {**default, "schema": "common_result_inspection_actions.v1"}
-    packaged_validator("common_result_inspection_actions.v1").validate(actions)  # pyright: ignore[reportUnknownMemberType]
+    }} == {**default, "schema": "common_result_inspection_actions.v3"}
+    packaged_validator("common_result_inspection_actions.v3").validate(actions)  # pyright: ignore[reportUnknownMemberType]
     assert _cli(path, view="actions") == 0
     streams = capsys.readouterr()
     assert streams.err == "" and json.loads(streams.out) == actions
@@ -131,10 +131,10 @@ def test_actions_view_matches_same_byte_control_and_preserves_default(
     assert [row for row in entry["profiles"] if row["name"].startswith("evidence_result.v1")] == [
         {"name": "evidence_result.v1", "required_inputs": ["file"],
          "input_schemas": ["evidence_result.v1"],
-         "output_schemas": ["common_result_inspection.v1"]},
+         "output_schemas": ["common_result_inspection.v3"]},
         {"name": "evidence_result.v1|actions", "required_inputs": ["file", "view"],
          "input_schemas": ["evidence_result.v1"],
-         "output_schemas": ["common_result_inspection_actions.v1"]},
+         "output_schemas": ["common_result_inspection_actions.v3"]},
     ]
 
 
@@ -387,7 +387,7 @@ def test_selected_hash_identifies_raw_bytes_not_canonical_document(tmp_path: Pat
     assert selected["raw_hash"] != content_digest(document)
 
 
-@pytest.mark.parametrize("broken_contract", ["evidence_result.v1", "common_result_inspection.v1"])
+@pytest.mark.parametrize("broken_contract", ["evidence_result.v1", "common_result_inspection.v3"])
 def test_packaged_contract_fault_is_configuration_error(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -415,7 +415,7 @@ def test_packaged_contract_fault_is_configuration_error(
 
 
 @pytest.mark.parametrize(
-    "broken_contract", ["evidence_result.v1", "common_result_inspection_actions.v1"]
+    "broken_contract", ["evidence_result.v1", "common_result_inspection_actions.v3"]
 )
 def test_actions_view_contract_fault_is_finite_and_private(
     tmp_path: Path,

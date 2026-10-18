@@ -662,8 +662,8 @@ def _bound_deepeval_record_pilot(
     )
     wheel.require(direct == result, "automatic direct and retained bound results differ")
     for view, schema in (
-        ("summary", "common_result_inspection.v2"),
-        ("actions", "common_result_inspection_actions.v2"),
+        ("summary", "common_result_inspection.v3"),
+        ("actions", "common_result_inspection_actions.v3"),
     ):
         inspection = _cli_json(
             cli,
@@ -672,7 +672,14 @@ def _bound_deepeval_record_pilot(
             work,
         )
         wheel.require(
-            inspection["schema"] == schema, "automatic bound result used wrong inspection"
+            inspection["schema"] == schema
+            and inspection["selected_result"] == {
+                "format": "evidence_result.v2",
+                "raw_hash": "sha256:" + hashlib.sha256(
+                    (work / "bound-direct.json").read_bytes()
+                ).hexdigest(),
+            },
+            "current bound inspection changed its original input identity",
         )
     source.unlink()
     bindings.unlink()
@@ -1919,9 +1926,17 @@ def _baseline_evidence_pilot(cli: Path, exchange: Path, work: Path) -> None:
         work / "baseline-evidence.json",
         work,
     )
-    wheel.require(evidence.get("schema") == "evidence_result.v1", "baseline evidence schema")
+    wheel.require(evidence.get("schema") == "evidence_result.v2", "baseline evidence schema")
     wheel.require(evidence.get("verification") == [], "baseline invented portable verification")
     evidence_source = cast(dict[str, object], evidence["source"])
+    wheel.require(
+        evidence_source["format"] == "goppi.baseline_case_exchange"
+        and evidence_source["producer_version"] is None
+        and evidence_source["producer_version_state"] == "unknown"
+        and evidence_source["reader_profile"] == "goppi.baseline-exchange-v2.selected-fields.v1"
+        and evidence["declaration_source"] is None,
+        "baseline invented a producer version or separate owner declaration",
+    )
     identity = cast(dict[str, object], evidence_source["identity"])
     members = cast(dict[str, str], identity["members"])
     wheel.require(
@@ -1954,6 +1969,26 @@ def _baseline_evidence_pilot(cli: Path, exchange: Path, work: Path) -> None:
     wheel.require(
         json.loads(api.stdout) == evidence, "installed baseline Python API differs from CLI"
     )
+    for view, schema in (
+        ("summary", "common_result_inspection.v3"),
+        ("actions", "common_result_inspection_actions.v3"),
+    ):
+        inspected = _cli_json(
+            cli,
+            ["inspect-result", str(work / "baseline-evidence.json"), "--view", view],
+            work / f"baseline-inspection-{view}.json",
+            work,
+        )
+        wheel.require(
+            inspected["schema"] == schema
+            and inspected["selected_result"] == {
+                "format": "evidence_result.v2",
+                "raw_hash": "sha256:" + hashlib.sha256(
+                    (work / "baseline-evidence.json").read_bytes()
+                ).hexdigest(),
+            },
+            "baseline inspection changed the original result format or bytes",
+        )
     wheel.require(
         "SYNTHETIC_ANSWER_NOT_FOR_PROJECTION" not in json.dumps(evidence)
         and "indeterminate:agent_budget" not in json.dumps(evidence),
@@ -1962,6 +1997,20 @@ def _baseline_evidence_pilot(cli: Path, exchange: Path, work: Path) -> None:
 
 
 def _common_result_inspection_pilot(cli: Path, fixtures: Path, work: Path) -> None:
+    wheel.success(
+        [
+            str(cli.parent / "python"),
+            "-I",
+            "-c",
+            "from importlib.resources import files; r=files('underwrite').joinpath('_contracts'); "
+            "assert all(not r.joinpath(n+'.schema.json').is_file() for n in "
+            "('common_result_inspection.v1','common_result_inspection.v2',"
+            "'common_result_inspection_actions.v1','common_result_inspection_actions.v2',"
+            "'baseline_record.v1')); "
+            "assert r.joinpath('evidence_result.v1.schema.json').is_file()",
+        ],
+        work,
+    )
     selected = fixtures / "evidence/common-result-c55.json"
     inspection = _cli_json(
         cli,
@@ -1970,7 +2019,7 @@ def _common_result_inspection_pilot(cli: Path, fixtures: Path, work: Path) -> No
         work,
     )
     wheel.require(
-        inspection.get("schema") == "common_result_inspection.v1", "result inspection schema"
+        inspection.get("schema") == "common_result_inspection.v3", "result inspection schema"
     )
     wheel.require(
         inspection.get("selected_result") == {
@@ -2007,7 +2056,7 @@ def _common_result_inspection_pilot(cli: Path, fixtures: Path, work: Path) -> No
     action_control = Counter(item["next_action"] for item in owner["items"])
     binding_control = Counter(item["metric"]["semantic_binding"] for item in owner["items"])
     wheel.require(
-        actions.get("schema") == "common_result_inspection_actions.v1"
+        actions.get("schema") == "common_result_inspection_actions.v3"
         and actions.get("item_next_action_counts")
         == {name: action_control[name] for name in action_vocab}
         and actions.get("declared_semantic_binding_counts")
@@ -2038,7 +2087,7 @@ def _common_result_inspection_pilot(cli: Path, fixtures: Path, work: Path) -> No
     )
     wheel.require(
         selected_profile["required_inputs"] == ["file", "view"]
-        and selected_profile["output_schemas"] == ["common_result_inspection_actions.v1"],
+        and selected_profile["output_schemas"] == ["common_result_inspection_actions.v3"],
         "installed action inspection capability selector changed",
     )
     wheel.require(
@@ -2205,7 +2254,7 @@ def _baseline_record_pilot(cli: Path, fixtures: Path, work: Path) -> None:
         work / "baseline-record.json",
         work,
     )
-    wheel.require(report.get("schema") == "baseline_record.v1", "baseline record schema")
+    wheel.require(report.get("schema") == "baseline_record.v2", "baseline record schema")
     analysis = cast(dict[str, object], report["analysis"])
     storage = cast(dict[str, object], report["storage"])
     wheel.require(analysis["state"] == "result", "baseline record did not save a result")

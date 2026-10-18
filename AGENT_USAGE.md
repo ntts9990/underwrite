@@ -994,15 +994,17 @@ underwrite inspect-result /path/to/evidence-result.json --json
 
 The importable equivalent is
 `underwrite.cli.inspect_result.inspect_result_file(Path("/path/to/evidence-result.json"))`.
-Published `0.1.1` accepts `evidence_result.v1` and returns
-`common_result_inspection.v1`. Underwrite 0.2.0 builds advertising v2 inspection
-accept either v1 or `evidence_result.v2` without another selector: the decoded
-closed schema token chooses a code-known installed validator, not a source-supplied
-schema path. A v2 input returns `common_result_inspection.v2`; valid v1 output
-remains byte-exact. Both report the selected file's raw-byte hash,
-source-declared processing and population, computed availability counts for
-analyzed items, and explicit unchecked claims. The selected file is read once,
-with a 4 MiB byte limit and 64-level JSON depth limit. Output omits item values,
+The current checkout accepts exact `evidence_result.v1` and `evidence_result.v2`
+inputs and always returns `common_result_inspection.v3` for the summary view.
+`selected_result.format` remains the original input schema and `raw_hash` hashes
+its exact selected file bytes; neither input is relabeled. The closed token chooses
+a code-known installed validator, never a source-supplied schema path. Published
+0.2.0 instead returns summary v1/v2 according to input; published 0.1.1 accepts
+only v1. See [migration](MIGRATION.md) and the actual executable's capabilities.
+
+The report retains source-declared processing and population, computed availability
+counts for analyzed items, and explicit unchecked claims. The selected file is read
+once, with a 4 MiB byte limit and 64-level JSON depth limit. Output omits item values,
 metric identities, evidence references, source identities, and the input path.
 The hash and count pattern can still link outputs to known inputs.
 
@@ -1014,8 +1016,9 @@ underwrite inspect-result /path/to/evidence-result.json --view actions --json
 ```
 
 The Python equivalent is `inspect_result_file(path, view="actions")`. It returns
-`common_result_inspection_actions.v1` for v1 input or, when advertised,
-`common_result_inspection_actions.v2` for v2 input. Its two additional histograms
+`common_result_inspection_actions.v3` for either accepted input in the current
+checkout. Published 0.2.0 still returns its older per-input output contracts.
+Its two additional histograms
 count items by `next_action` and by the producer's declared metric
 `semantic_binding`. All contract categories appear with zero counts for an
 analyzed empty result; both histograms are null for `insufficient` or
@@ -1024,8 +1027,8 @@ are not distinct causes or work units. A declared binding is not an
 independently checked metric identity. The view withholds metric IDs,
 namespaces, values, source identities, evidence references, and the path;
 raw hashes and count patterns remain linkable. Omitting `--view` or using
-`--view summary` selects the matching v1/v2 summary contract; v1 bytes remain
-unchanged.
+`--view summary` selects the current v3 summary contract. Old saved inspection
+reports remain original data; generic record reads do not upgrade them.
 
 Exit 0 means the file was inspected. A valid source-declared `insufficient` or
 `unsupported` result also exits 0 and has null availability counts. Invalid JSON,
@@ -1141,11 +1144,16 @@ report = audit_goppi_trajectory(
 ## Audit a completed goppi baseline as common evidence
 
 For the exact completed baseline exchange v2 directory, get a descriptive
-`evidence_result.v1` in one call:
+`evidence_result.v2` in the current checkout with one call:
 
 ```sh
 underwrite audit-baseline --exchange /path/to/agent-exchange --json
 ```
+
+Published 0.2.0 emits baseline result v1. The current v2 result identifies its
+applied Underwrite reader, keeps the Goppi software version unknown and sets
+`declaration_source:null`: the original scope file is not a separate neutral
+metric-meaning pack. The exchange wire version v2 is not a software version.
 
 The result lists the raw SHA-256 identity of `manifest.json` and each of the
 five fixed exchange files, plus planned and parsed source-record counts. Each

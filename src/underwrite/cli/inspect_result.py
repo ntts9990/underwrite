@@ -20,14 +20,10 @@ from underwrite.instrument.ingest.schema import SchemaConfigurationError, packag
 
 INPUT_MAX_BYTES = 4 * 1024 * 1024
 INPUT_MAX_DEPTH = 64
-SCHEMA = "common_result_inspection.v1"
-ACTIONS_SCHEMA = "common_result_inspection_actions.v1"
-SCHEMA_V2 = "common_result_inspection.v2"
-ACTIONS_SCHEMA_V2 = "common_result_inspection_actions.v2"
-RESULT_SCHEMAS = {
-    "evidence_result.v1": {"summary": SCHEMA, "actions": ACTIONS_SCHEMA},
-    "evidence_result.v2": {"summary": SCHEMA_V2, "actions": ACTIONS_SCHEMA_V2},
-}
+SCHEMA = "common_result_inspection.v3"
+ACTIONS_SCHEMA = "common_result_inspection_actions.v3"
+INPUT_SCHEMAS = ("evidence_result.v1", "evidence_result.v2")
+OUTPUT_SCHEMAS = {"summary": SCHEMA, "actions": ACTIONS_SCHEMA}
 View = Literal["summary", "actions"]
 LIMITATIONS = [
     "SOURCE_CLAIMS_UNVERIFIED",
@@ -40,7 +36,7 @@ LIMITATIONS = [
 ]
 
 
-def _vocabulary(schema: object) -> tuple[tuple[str, ...], tuple[str, ...]]:
+def inspection_vocabulary(schema: object) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """Read only the two closed item vocabularies from the trusted input contract."""
     try:
         owner = cast(dict[str, object], schema)
@@ -59,10 +55,11 @@ def _vocabulary(schema: object) -> tuple[tuple[str, ...], tuple[str, ...]]:
             bindings.append(semantic["const"])
     except (KeyError, TypeError, IndexError, AttributeError):
         raise SchemaConfigurationError("INVALID_COMMON_RESULT_VOCABULARY") from None
-    return _closed_names(actions), _closed_names(bindings)
+    return closed_vocabulary_names(actions), closed_vocabulary_names(bindings)
 
 
-def _closed_names(values: object) -> tuple[str, ...]:
+def closed_vocabulary_names(values: object) -> tuple[str, ...]:
+    """Require one nonempty, unique string vocabulary in a trusted contract."""
     if not isinstance(values, list) or not values:
         raise SchemaConfigurationError("INVALID_COMMON_RESULT_VOCABULARY")
     entries = cast(list[object], values)
@@ -87,11 +84,11 @@ def inspect_result_file(path: Path, *, view: View = "summary") -> dict[str, obje
         raw, INPUT_MAX_BYTES, INPUT_MAX_DEPTH, "/result", "INVALID_INPUT", EvidenceError
     )
     selected_format = document.get("schema")
-    if type(selected_format) is not str or selected_format not in RESULT_SCHEMAS:
+    if type(selected_format) is not str or selected_format not in INPUT_SCHEMAS:
         raise EvidenceError("INVALID_INPUT", "UNSUPPORTED_RESULT_SCHEMA", "/result/schema")
     # Only exact keys in this code-owned map can select trusted installed contracts.
     input_schema = selected_format
-    output_schema = RESULT_SCHEMAS[input_schema][view]
+    output_schema = OUTPUT_SCHEMAS[view]
     input_validator = packaged_validator(input_schema)
     validate(
         input_validator,
@@ -128,7 +125,7 @@ def inspect_result_file(path: Path, *, view: View = "summary") -> dict[str, obje
         "limitations": LIMITATIONS.copy(),
     }
     if view == "actions":
-        action_names, binding_names = _vocabulary(input_validator.schema)
+        action_names, binding_names = inspection_vocabulary(input_validator.schema)
         action_counts, binding_counts = item_histograms(document, action_names, binding_names)
         report["item_next_action_counts"] = action_counts
         report["declared_semantic_binding_counts"] = binding_counts
@@ -177,7 +174,7 @@ def render_human(report: dict[str, object]) -> str:
 
 def render_selected_human(report: dict[str, object]) -> str:
     summary = render_human(report)
-    if report["schema"] in (SCHEMA, SCHEMA_V2):
+    if report["schema"] == SCHEMA:
         return summary
     action_counts = report["item_next_action_counts"]
     binding_counts = report["declared_semantic_binding_counts"]
@@ -206,7 +203,7 @@ def main(argv: list[str]) -> int:
         configure,
         produce,
         ReportOutput(
-            lambda args: tuple(views[args.view] for views in RESULT_SCHEMAS.values()),
+            lambda args: (OUTPUT_SCHEMAS[args.view],),
             human=render_selected_human,
         ),
     )

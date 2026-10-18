@@ -12,7 +12,12 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, TypedDict, cast
 
-from underwrite.instrument.evidence.goppi_baseline import FILES
+from underwrite.instrument.evidence.goppi_baseline import (
+    FILES,
+    READER_PROFILE,
+    RESULT_SCHEMA,
+    SOURCE_FORMAT,
+)
 from underwrite.instrument.ingest.goppi_baseline import audit_baseline_exchange
 
 STATUSES = ("observed_true", "observed_false", "missing")
@@ -75,9 +80,15 @@ def compare_exchange(exchange: Path, neutral_path: Path) -> Comparison:
     checks: dict[str, bool] = {
         "neutral_result_profile": neutral.get("schema")
         == "goppi.product_baseline_neutral_interpretation.v1",
-        "underwrite_result_profile": underwrite.get("schema") == "evidence_result.v1"
+        "underwrite_result_profile": underwrite.get("schema") == RESULT_SCHEMA
         and underwrite.get("processing")
-        == {"state": "analyzed", "reason": None, "next_action": "none"},
+        == {"state": "analyzed", "reason": None, "next_action": "none"}
+        and source.get("format") == SOURCE_FORMAT
+        and source.get("producer_version") is None
+        and source.get("producer_version_state") == "unknown"
+        and source.get("reader_profile") == READER_PROFILE
+        and "declaration_source" in underwrite
+        and underwrite["declaration_source"] is None,
         "captured_bytes_unchanged": unchanged,
         "ordered_scope_row_roster": selection == scope_cases == row_cases,
         "manifest_member_bytes": set(claimed_members) == set(FILES) - {"manifest.json"}
