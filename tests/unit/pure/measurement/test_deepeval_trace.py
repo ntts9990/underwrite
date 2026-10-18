@@ -204,7 +204,7 @@ def test_long_parent_chain_is_iterative_and_global_budget_is_enforced() -> None:
     )
 
 
-def test_maximum_case_span_report_fits_atomic_one_mebibyte_output() -> None:
+def test_maximum_case_span_body_fits_report_byte_budget() -> None:
     cases = [
         case(
             {
@@ -217,17 +217,9 @@ def test_maximum_case_span_report_fits_atomic_one_mebibyte_output() -> None:
     ]
     result = run(cases)
     assert result["counts"]["spans"]["total"] == MAX_SPANS
-    assembled = {
-        "schema": "deepeval_trace_index.v1",
-        "source": {
-            "format": "deepeval.test-run",
-            "format_version": "4.2.8",
-            "claims_verified": False,
-        },
-        "raw_hash": "sha256:" + "a" * 64,
-        **result,
-    }
-    assert len(canonical_bytes(assembled)) + 1 <= OUTPUT_MAX_BYTES
+    # The shell's actual maximal-report test owns the current envelope/newline budget.
+    # This pure check covers only the index body returned by its calculation owner.
+    assert len(canonical_bytes(result)) <= OUTPUT_MAX_BYTES
 
 
 MALFORMED: list[tuple[object, str, str, str]] = [

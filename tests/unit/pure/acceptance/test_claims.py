@@ -15,7 +15,7 @@ from underwrite_core.canonical import canonical_bytes, tagged_digest
 from underwrite.acceptance import claims as cl
 from underwrite.acceptance.claims import ClaimsInputError, parse_claims
 from underwrite.instrument.evidence.split import assign_split
-from underwrite.measurement_contract.semantics import MAX_CASES
+from underwrite.measurement_contract.semantics import MAX_CASES, MAX_IDENTITY
 
 ROOT = repo_root(Path(__file__))
 POLICY_A = "sha256:" + "a" * 64
@@ -38,7 +38,7 @@ def _document() -> dict[str, Any]:
         _claim("latency", "suite.latency"),
     ]
     return {
-        "schema": "declared_claims.v2",
+        "schema": "declared_claims.v3",
         "candidate_id": "prompt-v2",
         "required_claims": {
             "same_batch": copy.deepcopy(pair),
@@ -196,7 +196,7 @@ REFUSALS: list[tuple[str, object, str, str]] = [
     ),
     (
         "bad subject id",
-        _set(("required_claims", "same_batch", 0, "subject_id"), "a/b"),
+        _set(("required_claims", "same_batch", 0, "subject_id"), " "),
         "INVALID_CLAIMS",
         f"{REQ}/same_batch/0/subject_id",
     ),
@@ -277,7 +277,7 @@ def test_input_is_not_mutated() -> None:
 
 def test_identifier_pattern_matches_current_claims_contract() -> None:
     schema = json.loads(
-        (ROOT / "contracts/declared_claims.v2.schema.json").read_text(encoding="utf-8")
+        (ROOT / "contracts/declared_claims.v3.schema.json").read_text(encoding="utf-8")
     )
     owner = schema["$defs"]["id"]["pattern"]
     assert cl.ID_PATTERN == owner
@@ -338,9 +338,10 @@ def test_limitations_name_the_unverified_preconditions() -> None:
     assert all(re.fullmatch(r"[a-z][a-z0-9_]*", code) for code in cl.LIMITATIONS)
 
 
-def test_legacy_claims_require_explicit_migration() -> None:
+@pytest.mark.parametrize("schema", ["declared_claims.v1", "declared_claims.v2"])
+def test_legacy_claims_require_explicit_migration(schema: str) -> None:
     document = _document()
-    document["schema"] = "declared_claims.v1"
+    document["schema"] = schema
     with pytest.raises(ClaimsInputError) as caught:
         parse_claims(document)
     assert caught.value.reason == "LEGACY_CLAIMS_REQUIRES_MIGRATION"
@@ -354,3 +355,65 @@ def test_claim_semantic_digest_is_required_and_canonical(value: object) -> None:
         parse_claims(document)
     assert caught.value.code == "INVALID_CLAIMS"
     assert caught.value.detail == "/required_claims/same_batch/0/semantic_digest"
+
+
+@pytest.mark.parametrize(
+    "subject",
+    [
+        "정확도",
+        "quality score",
+        "quality/rate",
+        " quality ",
+        "x" * MAX_IDENTITY,
+        "quality\x1b[31m\nnext",
+    ],
+)
+def test_subject_identity_uses_measured_text_contract_without_normalizing(subject: str) -> None:
+    document = _document()
+    document["required_claims"]["same_batch"][0]["subject_id"] = subject
+    parsed = parse_claims(document)
+    assert (
+        next(claim for claim in parsed.same_batch if claim.claim_id == "quality").subject_id
+        == subject
+    )
+
+
+@pytest.mark.parametrize(
+    "subject", ["", " \t\n", "x" * (MAX_IDENTITY + 1), "e\u0301", "\ud800", None, True, [], {}]
+)
+def test_invalid_subject_is_structural_finite_refusal(subject: object) -> None:
+    document = _document()
+    document["required_claims"]["same_batch"][0]["subject_id"] = subject
+    with pytest.raises(ClaimsInputError) as caught:
+        parse_claims(document)
+    assert (caught.value.code, caught.value.reason, caught.value.detail) == (
+        "INVALID_CLAIMS",
+        "INVALID_CLAIMS",
+        "/required_claims/same_batch/0/subject_id",
+    )
+
+
+@pytest.mark.parametrize(
+    "identifier", ["정확도", "quality score", "quality/rate", "quality\x1b[31m\nnext"]
+)
+@pytest.mark.parametrize("field", ["candidate_id", "claim_id"])
+def test_other_identifier_meanings_keep_ascii_grammar(field: str, identifier: str) -> None:
+    document = _document()
+    if field == "candidate_id":
+        document[field] = identifier
+        location = "/candidate_id"
+    else:
+        document["required_claims"]["same_batch"][0][field] = identifier
+        location = "/required_claims/same_batch/0/claim_id"
+    with pytest.raises(ClaimsInputError) as caught:
+        parse_claims(document)
+    assert caught.value.detail == location
+
+
+@pytest.mark.parametrize("schema", [None, 3, True, [], {}, "declared_claims.v99"])
+def test_unknown_claim_schema_is_finite_refusal(schema: object) -> None:
+    document = _document()
+    document["schema"] = schema
+    with pytest.raises(ClaimsInputError) as caught:
+        parse_claims(document)
+    assert (caught.value.code, caught.value.detail) == ("INVALID_CLAIMS", "/schema")

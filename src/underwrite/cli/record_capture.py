@@ -1,4 +1,4 @@
-"""Card: record-reuse | Paper: langfuse_record.v1 | Stage: storage-capture
+"""Card: record-reuse | Paper: current evidence capture boundary | Stage: storage-capture
 
 Shared response admission, rendering, and storage of captured producer evidence."""
 

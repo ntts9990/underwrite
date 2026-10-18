@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from _schema_compose import nullable, object_schema
+from _schema_compose import bounded_nonblank_string, nullable, object_schema
 
 from underwrite.measurement_contract.semantics import (
     ALPHA_TOTAL,
@@ -52,7 +52,7 @@ def array(item: JSON, maximum: int = MAX_CASES, minimum: int = 0, unique: bool =
 
 
 def string(maximum: int = MAX_IDENTITY) -> JSON:
-    return {"type": "string", "minLength": 1, "maxLength": maximum, "pattern": r"\S"}
+    return bounded_nonblank_string(maximum)
 
 
 def probability() -> JSON:

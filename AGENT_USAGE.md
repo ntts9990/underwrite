@@ -119,11 +119,12 @@ approved a change. Acceptance always requires human review and sets
 
 ## Measurement meaning and migration
 
-The current native path uses `measurement_policy.v3`, profile
-`binary-event-directional.v1`, `read.v2`, `declared_claims.v2`, and
-`acceptance_decision.v2`. These workflows were introduced in published `0.1.0`
-and remain available in `0.2.0`; older PyPI `0.0.1` lacks them. Use the
-installed CLI or a checkout for the selected version.
+The unreleased checkout uses `measurement_policy.v3`, profile
+`binary-event-directional.v1`, `read.v2`, `declared_claims.v3`, and
+`acceptance_decision.v3`. The measurement workflow was introduced in published `0.1.0`
+and remains available in `0.2.0`; older PyPI `0.0.1` lacks it. Published `0.2.0`
+still uses claims/decision v2. See [the migration guide](MIGRATION.md) for the
+checkout’s shared subject-ID rule and required new claim seal.
 
 The native bundle declares `payload.measurement_semantics` (`measurement_semantics.v1`):
 the construct, binary event and positive meaning, desirable direction, unit,
@@ -160,7 +161,7 @@ constructed regression controls, not empirical validity or real-user evidence.
 The secondary event in `fixtures/examples/event-acceptance` has a distinct meaning;
 the candidate selection-history inventory is separate from the measurement inventory.
 
-Historical `measurement_policy.v1/v2`, `read.v1`, `declared_claims.v1`, and their
+Historical `measurement_policy.v1/v2`, `read.v1`, `declared_claims.v1/v2`, and their
 retained examples remain readable as data. Their old runtime schemas and measurement
 composer are removed from the development package; replay requires a compatible
 current measurement record. Current `measure` and `accept` explicitly refuse
@@ -1465,7 +1466,7 @@ For `project-baseline`, `raw.hash` identifies the generated native bundle;
 original producer file identities are in `payload.sources`. Retain the original
 input files for byte-exact audits or replay in either route.
 
-An `acceptance_decision.v2` carries `classification`, `reason_codes`,
+An `acceptance_decision.v3` carries `classification`, `reason_codes`,
 `limitations`, and the projected lifecycle state. Keep the read verdict
 `not_measured` (directional conclusion withheld; some diagnostics may still be
 measured) distinct from `indeterminate` (acceptance cannot settle the

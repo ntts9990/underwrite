@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:underwrite:contract:acceptance_error.v1",
   "title": "acceptance_error.v1",
-  "description": "Closed local acceptance refusal: no acceptance_decision.v1 was produced. Every code exits 2 (a produced decision exits 0 whatever its classification). reason is a finer code from a finite internal mapping, never exception or input text; location is a structural JSON pointer into the refused input (/candidate, /claims or /reads/<index>), never an input value. A claims digest mismatch shows the digest computed over the supplied claims so an author can declare it; a lifecycle refusal shows the state, the classification it would have received and that classification's reason codes.",
+  "description": "Closed local acceptance refusal: no acceptance decision was produced. Every code exits 2 (a produced decision exits 0 whatever its classification). reason is a finer code from a finite internal mapping, never exception or input text; location is a structural JSON pointer into the refused input (/candidate, /claims or /reads/<index>), never an input value. A claims digest mismatch shows the digest computed over the supplied claims so an author can declare it; a lifecycle refusal shows the state, the classification it would have received and that classification's reason codes.",
   "type": "object",
   "additionalProperties": false,
   "required": [

@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from scripts import build_acceptance_v2
+from scripts import build_acceptance_contracts
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -25,7 +25,7 @@ def test_event_contract_assets_match_generator() -> None:
 
 
 def test_current_acceptance_contract_assets_match_generator() -> None:
-    for name, schema in build_acceptance_v2.build_schemas().items():
+    for name, schema in build_acceptance_contracts.build_schemas().items():
         assert (ROOT / "contracts" / f"{name}.schema.json").read_bytes() == (
             json.dumps(schema, indent=2) + "\n"
         ).encode()
@@ -36,16 +36,16 @@ def test_acceptance_generation_needs_no_contract_templates(
 ) -> None:
     expected = {
         f"{name}.schema.json": (ROOT / "contracts" / f"{name}.schema.json").read_bytes()
-        for name in ("declared_claims.v2", "acceptance_decision.v2")
+        for name in ("declared_claims.v3", "acceptance_decision.v3")
     }
     scripts = tmp_path / "scripts"
     scripts.mkdir()
-    for name in ("build_acceptance_v2.py", "_schema_compose.py"):
+    for name in ("build_acceptance_contracts.py", "_schema_compose.py"):
         shutil.copyfile(ROOT / "scripts" / name, scripts / name)
     contracts = tmp_path / "contracts"
     contracts.mkdir()
     generated = subprocess.run(
-        [sys.executable, str(scripts / "build_acceptance_v2.py")],
+        [sys.executable, str(scripts / "build_acceptance_contracts.py")],
         cwd=tmp_path,
         capture_output=True,
         text=True,
@@ -53,3 +53,16 @@ def test_acceptance_generation_needs_no_contract_templates(
     )
     assert generated.returncode == 0, generated.stdout + generated.stderr
     assert {path.name: path.read_bytes() for path in contracts.iterdir()} == expected
+
+
+def test_subject_shape_matches_measured_subject_and_other_ids_stay_separate() -> None:
+    policy = json.loads((ROOT / "contracts/measurement_policy.v3.schema.json").read_bytes())
+    subject = policy["properties"]["subject"]["properties"]["subject_id"]
+    built = build_acceptance_contracts.build_schemas()
+    for schema in built.values():
+        assert schema["$defs"]["subject_id"] == subject
+        assert schema["$defs"]["id"]["pattern"] == r"^[A-Za-z0-9_.:-]+$"
+        assert schema["$defs"]["subject_id"] != schema["$defs"]["id"]
+        assert schema["$defs"]["claim"]["properties"]["subject_id"] == {
+            "$ref": "#/$defs/subject_id"
+        }

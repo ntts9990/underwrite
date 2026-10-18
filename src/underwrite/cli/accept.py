@@ -1,7 +1,7 @@
 """Card: measurement-semantics | Paper: ADR-020 | Stage: semantic-repair.
 
 ``underwrite accept``: one change candidate, its declared claims and the reads supplied
-for its basis, to one ``acceptance_decision.v2`` on stdout (exit 0 whatever the
+for its basis, to one ``acceptance_decision.v3`` on stdout (exit 0 whatever the
 classification) or one ``acceptance_error.v1`` on stderr (exit 2). I/O only: the read
 count is bounded before any file is opened, authority fields are refused before any
 schema is applied, candidate and claims are validated before any read is opened, each
@@ -20,6 +20,7 @@ from underwrite_core.canonical import canonical_bytes
 
 from underwrite.acceptance import decision as dc
 from underwrite.acceptance.claims import MAX_CLAIMS_PER_BASIS
+from underwrite.acceptance.claims import SCHEMA as CLAIMS_SCHEMA
 from underwrite.cli.evidence import display
 from underwrite.cli.local_json import read_document, validate
 from underwrite.cli.measurement_flow import (
@@ -40,7 +41,7 @@ DOCUMENT_MAX_DEPTH = 16
 # output depth; its observation depth is a loose ceiling on any read it writes.
 READ_MAX_BYTES = MEASUREMENT_OUTPUT_MAX_BYTES
 READ_MAX_DEPTH = OBSERVATION_MAX_DEPTH
-# declared_claims.v2 basis_claims maxItems: one basis binds at most this many reads.
+# declared_claims.v3 basis_claims maxItems: one basis binds at most this many reads.
 MAX_READS = MAX_CLAIMS_PER_BASIS
 OUTPUT_MAX_BYTES = MEASUREMENT_OUTPUT_MAX_BYTES
 _INVALID = {"candidate": "INVALID_CANDIDATE", "claims": "INVALID_CLAIMS", "reads": "INVALID_READ"}
@@ -84,7 +85,7 @@ class _Parser(argparse.ArgumentParser):
 
 def configure(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--candidate", required=True, type=Path, help="change_candidate.v1.")
-    parser.add_argument("--claims", required=True, type=Path, help="declared_claims.v2.")
+    parser.add_argument("--claims", required=True, type=Path, help="declared_claims.v3.")
     parser.add_argument(
         "--read",
         required=True,
@@ -118,9 +119,9 @@ def _decide(args: argparse.Namespace) -> dict[str, Any]:
             raise AcceptError("AUTHORITY_FIELD_REFUSED", "AUTHORITY_FIELD_REFUSED", f"/{name}")
     candidate_validator = packaged_validator(dc.CANDIDATE_SCHEMA)
     validate(candidate_validator, candidate, AcceptError, "INVALID_CANDIDATE", "/candidate")
-    if claims.get("schema") == "declared_claims.v1":
+    if claims.get("schema") in ("declared_claims.v1", "declared_claims.v2"):
         raise AcceptError("INVALID_CLAIMS", "LEGACY_CLAIMS_REQUIRES_MIGRATION", "/claims/schema")
-    claims_validator = packaged_validator("declared_claims.v2")
+    claims_validator = packaged_validator(CLAIMS_SCHEMA)
     validate(claims_validator, claims, AcceptError, "INVALID_CLAIMS", "/claims")
     read_validator = measurement_validators()[0]
     reads: list[dict[str, Any]] = []
@@ -160,7 +161,7 @@ def _human(decision: dict[str, Any]) -> str:
     for claim in decision["claims"]:
         read = claim["read"]
         lines.append(
-            f"claim {claim['claim_id']} ({claim['effect']}, {claim['subject_id']}): "
+            f"claim {claim['claim_id']} ({claim['effect']}, {display(claim['subject_id'])}): "
             + ("no read supplied" if read is None else display(read))
         )
     lines.append("inputs: " + display(decision["inputs"]))

@@ -38,7 +38,7 @@ def claims_document() -> dict[str, Any]:
         for c, s, e in CLAIMS
     ]
     return {
-        "schema": "declared_claims.v2",
+        "schema": "declared_claims.v3",
         "candidate_id": "prompt-v2",
         "required_claims": {basis: copy.deepcopy(entries) for basis in dc.BASES},
         "selection": {"salt": "author-salt", "confirm_fraction": 0.25, "case_ids": ["c1", "c2"]},
@@ -106,7 +106,7 @@ def test_screened_decision_is_the_whole_document() -> None:
         }
 
     assert run(candidate, reads) == {
-        "schema": "acceptance_decision.v2",
+        "schema": "acceptance_decision.v3",
         "candidate_id": "prompt-v2",
         "basis": "same_batch",
         "classification": "screened",

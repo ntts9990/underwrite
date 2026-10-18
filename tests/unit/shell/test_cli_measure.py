@@ -573,3 +573,26 @@ def test_shared_measurement_preserves_configuration_faults(
     with pytest.raises(measure.SchemaConfigurationError):
         measure.read_measurement(reader)
     assert consumed == ["observation", "policy"]
+
+
+@pytest.mark.parametrize(
+    "schema", [[], {}, None, True, 3, "measurement_policy.v99", "../../secret"]
+)
+def test_unknown_policy_schema_is_finite_refusal_before_computation(
+    schema: object,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policy = _load("policy.json")
+    policy["schema"] = schema
+    path = tmp_path / "policy.json"
+    path.write_text(json.dumps(policy))
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        pytest.fail("unsupported policy schema reached measurement")
+
+    monkeypatch.setattr(measurement_flow, "assemble_event_read", forbidden)
+    assert main(_args(policy=path)) == ERROR_EXIT
+    error = _error(capsys, "UNSUPPORTED_PROFILE")
+    assert (error["reason"], error["location"]) == ("UNSUPPORTED_POLICY_PROFILE", "/policy")

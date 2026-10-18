@@ -1,4 +1,4 @@
-"""Card: record-reuse | Paper: deepeval_record.v1 | Stage: storage-capture
+"""Card: record-reuse | Paper: current evidence capture boundary | Stage: storage-capture
 
 Compose single-source capture envelopes from their accounting and storage owners.
 """

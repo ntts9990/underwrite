@@ -1795,7 +1795,8 @@ def _langfuse_auto_pilot(cli: Path, work: Path) -> None:
 def _native_measurement_pilot(cli: Path, fixtures: Path, work: Path) -> None:
     retired = (
         "read.v1", "measurement_policy.v1", "measurement_policy.v2",
-        "declared_claims.v1", "acceptance_decision.v1", "statistical_seed.v1",
+        "declared_claims.v1", "declared_claims.v2",
+        "acceptance_decision.v1", "acceptance_decision.v2", "statistical_seed.v1",
     )
     assets = wheel.success(
         [
@@ -1879,11 +1880,12 @@ def _native_measurement_pilot(cli: Path, fixtures: Path, work: Path) -> None:
             work,
         )
         wheel.require(
-            decision.get("schema") == "acceptance_decision.v2", "decision schema mismatch"
+            decision.get("schema") == "acceptance_decision.v3", "decision schema mismatch"
         )
         wheel.require(decision.get("classification") == classification, "classification mismatch")
         wheel.require(decision.get("human_review") == "required", "human review mismatch")
         wheel.require(decision.get("merge_authorized") is False, "merge authorization mismatch")
+    _native_subject_pilot(cli, fixtures, work)
     _native_refusal(
         cli,
         [
@@ -2015,6 +2017,65 @@ def _baseline_evidence_pilot(cli: Path, exchange: Path, work: Path) -> None:
         "SYNTHETIC_ANSWER_NOT_FOR_PROJECTION" not in json.dumps(evidence)
         and "indeterminate:agent_budget" not in json.dumps(evidence),
         "baseline descriptive result leaked private source content",
+    )
+
+
+def _native_subject_pilot(cli: Path, fixtures: Path, work: Path) -> None:
+    subject = "정확도 / quality\nFORGED_STATUS=PASS\x1b[31m"
+    wheel.success(
+        [
+            str(cli.with_name("python")), "-I", "-c",
+            """
+import json, sys
+from pathlib import Path
+from underwrite.acceptance.claims import parse_claims
+from underwrite_core.canonical import canonical_bytes, content_digest
+source, work = map(Path, sys.argv[1:3])
+subject = sys.argv[3]
+policy = json.loads((source / 'policy.json').read_bytes())
+previous = policy['subject']['subject_id']
+policy['subject']['subject_id'] = subject
+policy_digest = content_digest(policy)
+claims = json.loads((source / 'claims.json').read_bytes())
+for basis in claims['required_claims'].values():
+    for claim in basis:
+        if claim['subject_id'] == previous:
+            claim.update(subject_id=subject, policy_digest=policy_digest)
+candidate = json.loads((source / 'candidate-single.json').read_bytes())
+candidate['claims_digest'] = parse_claims(claims).digest
+for name, value in [('policy', policy), ('claims', claims), ('candidate', candidate)]:
+    (work / ('subject-' + name + '.json')).write_bytes(canonical_bytes(value))
+""",
+            str(fixtures / "event-acceptance"), str(work), subject,
+        ],
+        work,
+    )
+    read = work / "subject-read.json"
+    _cli_json(
+        cli,
+        ["measure", "--observation", str(work / "observation.json"),
+         "--policy", str(work / "subject-policy.json")],
+        read,
+        work,
+    )
+    arguments = [
+        "accept", "--candidate", str(work / "subject-candidate.json"),
+        "--claims", str(work / "subject-claims.json"), "--read", str(read),
+    ]
+    decision = _cli_json(cli, arguments, work / "subject-decision.json", work)
+    claims = cast(list[dict[str, object]], decision["claims"])
+    wheel.require(
+        decision["schema"] == "acceptance_decision.v3"
+        and decision["classification"] == "screened"
+        and claims[0]["subject_id"] == subject
+        and decision["merge_authorized"] is False,
+        "installed acceptance failed to bind the exact measured subject",
+    )
+    human = wheel.success([str(cli), *arguments], work)
+    wheel.require(
+        not human.stderr and json.dumps(subject, ensure_ascii=True) in human.stdout
+        and "\x1b" not in human.stdout and "\nFORGED_STATUS" not in human.stdout,
+        "human acceptance output did not escape the measured subject",
     )
 
 
