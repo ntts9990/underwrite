@@ -273,6 +273,37 @@ def test_explicit_older_record_profile_does_not_fallback(
     assert report["storage"]["state"] == "saved"
 
 
+@pytest.mark.parametrize("family", ["blob", "cli"])
+def test_langfuse_auto_capabilities_need_no_profile_and_run_both_families(
+    family: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main.main(["capabilities", "--json"]) == 0
+    catalog = json.loads(capsys.readouterr().out)
+    commands = {row["command"]: row for row in catalog["commands"]}
+    audit = next(row for row in commands["audit-langfuse"]["profiles"] if row["name"] == "auto")
+    record = next(row for row in commands["records"]["profiles"] if row["name"] == "audit-langfuse")
+    assert audit["required_inputs"] == ["observations", "scores"]
+    assert audit["output_schemas"] == ["langfuse_accounting.v2"]
+    assert record["required_inputs"] == ["observations", "scores", "root", "id"]
+    assert record["output_schemas"] == ["langfuse_record.v2"]
+    if family == "blob":
+        directory = ROOT / "fixtures/golden/external/langfuse"
+        observations = directory / "observations_v2-2026-09-14T06-40-00.json"
+        scores = directory / "scores-2026-09-14T06-40-00.json"
+    else:
+        directory = ROOT / "fixtures/examples/langfuse-cli"
+        observations, scores = directory / "observations.json", directory / "scores.json"
+    args = ["audit-langfuse", "--observations", str(observations), "--scores", str(scores)]
+    assert main.main([*args, "--json"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    _validator(audit["output_schemas"][0]).validate(report)
+    assert main.main(["records", *args, "--root", str(tmp_path), "--id", "auto", "--json"]) == 0
+    saved = json.loads(capsys.readouterr().out)
+    _validator(record["output_schemas"][0]).validate(saved)
+    assert saved["analysis"]["report"] == report
+    assert saved["storage"]["state"] == "saved"
+
+
 def test_help_and_dispatch_names_come_from_each_descriptor(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

@@ -215,7 +215,7 @@ def test_missing_packaged_contract_precedes_source_read(
     )
 
 
-def test_capabilities_and_explicit_blob_default_route_are_stable(
+def test_capabilities_and_explicit_blob_route_are_stable(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     assert main.main(["capabilities", "--json"]) == 0
@@ -233,8 +233,6 @@ def test_capabilities_and_explicit_blob_default_route_are_stable(
         str(GOLDEN / "scores-2026-09-14T06-40-00.json"),
         "--json",
     ]
-    assert main.main(["audit-langfuse", *argv]) == 0
-    default = capsys.readouterr().out
     assert main.main(["audit-langfuse", *argv, "--profile", "blob-4.35.0"]) == 0
-    assert capsys.readouterr().out == default
-    assert json.loads(default)["schema"] == "langfuse_accounting.v1"
+    explicit = capsys.readouterr().out
+    assert json.loads(explicit)["schema"] == "langfuse_accounting.v1"

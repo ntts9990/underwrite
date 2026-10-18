@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from underwrite.instrument.ingest import langfuse_accounting as adapter
+from underwrite.instrument.ingest import langfuse_compat as auto_adapter
 
 GOLDEN = Path(__file__).resolve().parents[4] / "fixtures/golden/external/langfuse"
 OBSERVATIONS = GOLDEN / "observations_v2-2026-09-14T06-40-00.json"
@@ -18,12 +19,15 @@ def test_bytes_match_existing_file_accounting() -> None:
 
 
 @pytest.mark.parametrize("role", ["observations", "scores"])
-def test_bytes_retain_per_source_limits(role: str, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("profile", [None, "blob-4.35.0"])
+def test_bytes_retain_per_source_limits(
+    role: str, profile: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
     buffers = {"observations": b"[]", "scores": b"[]"}
     buffers[role] = b"[ ]"
-    monkeypatch.setattr(adapter, "DEFAULT_MAX_BYTES", 2)
+    monkeypatch.setattr(auto_adapter if profile is None else adapter, "DEFAULT_MAX_BYTES", 2)
     with pytest.raises(adapter.LangfuseFileError) as caught:
-        adapter.audit_langfuse_bytes(buffers["observations"], buffers["scores"])
+        adapter.audit_langfuse_bytes(buffers["observations"], buffers["scores"], profile=profile)
     assert caught.value.code == "INPUT_LIMIT_EXCEEDED"
     assert caught.value.location == "/" + role
 

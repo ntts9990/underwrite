@@ -311,6 +311,7 @@ def test_langfuse_record_result_requires_both_complete_sources() -> None:
     report = audit_langfuse_files(
         golden / "observations_v2-2026-09-14T06-40-00.json",
         golden / "scores-2026-09-14T06-40-00.json",
+        profile="blob-4.35.0",
     )
     validator = cast(
         Validator,

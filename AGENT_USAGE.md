@@ -91,7 +91,7 @@ is ready; obtain the completed producer artifact and its version context first.
 | Producer | Input boundary |
 | --- | --- |
 | goppi | `audit-baseline` and `project-baseline` accept the exact baseline exchange manifest v2 described below; P7 paired handoffs, the separate C55 operator-answer assessment, and older grounded-pilot exchanges have different contracts. No generic ingest profile. A CLI summary is insufficient; do not manufacture rows from counts. |
-| Langfuse | Published `0.1.1` defaults to the `4.35.0` **server blob-export profile**: complete-field, uncompressed JSON arrays for `observations_v2` and `scores`; wait for its completed manifest. A development checkout may advertise the separate `--profile cli-1.2.4` for two local official-CLI Observations v2 / Scores v3 captures from API snapshot 4.35.0, in native `--json` envelope or `--output` body form. Check capabilities before using it. Neither is an arbitrary REST/UI JSON, Parquet, or SDK flush result. See [the pinned CLI example](fixtures/examples/langfuse-cli/SOURCE.md). |
+| Langfuse | Published `0.1.1` defaults to the `4.35.0` **server blob-export profile**: complete-field, uncompressed JSON arrays for `observations_v2` and `scores`. Development builds advertising automatic Langfuse intake accept either that array pair or local official-CLI Observations v2 / Scores v3 `--json` envelopes or `--output` bodies without `--profile`. Check capabilities; file shape selects an Underwrite reader, not a verified server/CLI release. Neither path accepts arbitrary REST/UI JSON, Parquet, or an SDK flush result. See [the pinned CLI example](fixtures/examples/langfuse-cli/SOURCE.md). |
 | DeepEval | Supply the ordinary `4.1.1` or `4.2.8` TestRun JSON written by the tool, with the producer version recorded separately. Select `--version 4.2.8` explicitly for that profile; the default remains `4.1.1`. A failed test run can still write a valid artifact. Zero, evaluator errors, and absent verdicts remain distinct. |
 | Promptfoo | Supply a SummaryV3 eval output JSON. Development builds advertising `promptfoo.eval-output\|auto` read it without a version flag, recording any valid declared producer version separately from their reader policy. Published 0.1.1 predates auto input; its strict profiles require the supported version selection. An assertion-failure exit can accompany a valid export. A supplied `audit-counts` manifest retains its explicit source version and expected-hash check. |
 
@@ -238,8 +238,12 @@ unscored metrics or Langfuse observations without scores as unexecuted planned u
 
 ## Account for Langfuse score kinds and associations
 
-Use the complete-field, uncompressed JSON exports from the supported Langfuse
-server profile 4.35.0 (not its SDK version):
+In a development build advertising automatic Langfuse intake, supply two local
+files: either complete-field, uncompressed blob JSON arrays or official-CLI
+Observations v2 / Scores v3 list captures. The command selects the reader from
+both file shapes; it does not infer or verify a producer release. Published
+`0.1.1` accepts only the pinned 4.35.0 blob arrays at this route. Inspect
+capabilities before using a development route:
 
 ```sh
 underwrite audit-langfuse --observations observations_v2.json --scores scores.json --json
@@ -253,39 +257,50 @@ underwrite audit-langfuse --observations observations_v2.json --scores scores.js
   --view row-index --json
 ```
 
-`langfuse_row_index.v1` keeps score order, kind, numeric-field presence, nullable
-string-field presence, association, and target observation ordinal. It withholds
-the field contents, so a numeric zero and nonzero look the same. Null, empty, and
-nonempty strings are `null`, `present`, and `present` respectively. The result
-retains each selected file's raw hash, supplied-row counts, unknown planned and
-export-completeness states, and no verification or task verdict. Hashes and row
-patterns can still link artifacts, so this view is content-minimized, not
-anonymized. The two files are independently selected, not an atomic snapshot.
-Python callers can use `audit_langfuse_row_index_files(observations, scores)` from
+The automatic `langfuse_row_index.v2` keeps each family's score order, kind,
+association and source-row coordinates while withholding score names, IDs, values,
+free text and headers. Blob numeric-field and nullable-string presence retain
+their existing meanings; typed CLI values and subjects retain theirs. A zero and
+nonzero score cannot be distinguished from this minimized view. Both original
+file hashes, supplied-row counts, unknown planned/export-completeness states and
+row patterns remain linkable, so this is content-minimized, not anonymous. The
+files are independently selected, not an atomic producer snapshot. Python callers
+can use `audit_langfuse_row_index_files(observations, scores)` from
 `underwrite.instrument.ingest.langfuse_accounting`. Match both role raw hashes
 before relating a separate private record to a row-index result; a hash proves
-byte identity, not provenance. The default `audit-langfuse` output is unchanged.
+byte identity, not provenance. Explicit legacy profiles retain their v1 row
+contracts and outputs.
 
-`langfuse_accounting.v1` preserves score rows in source order, counts them by
-NUMERIC, BOOLEAN, CATEGORICAL, or TEXT kind, and explains each association using
-explicit rules. Numeric value and nullable text remain separate source fields: stored
-category/text zero is not a failed evaluation, and BOOLEAN does not grant task
-success. No custom query or producer execution is required.
+The automatic `langfuse_accounting.v2` reports the selected reader family and
+`producer_version:null`/`unknown` separately. It preserves the applicable
+family's existing score, association and pagination meanings; extra unconsumed
+fields are outside its selected scope. Blob values remain numeric even for
+BOOLEAN/CATEGORICAL/TEXT, with nullable string text separate; CLI values remain
+typed, including boolean `false` and `CORRECTION`. A stored zero, false or score
+kind is a source claim, not a task verdict. Full accounting can include selected
+score names, IDs and values; use the row index when those contents are unnecessary.
+No custom query or producer execution is required.
 
-An exact `(project_id, trace_id, observation_id)` match identifies a supplied
-observation. A null observation ID is trace-level and never attaches to a root
-span. A non-null unmatched ID is an unresolved reference in these supplied files.
+For blob arrays, an exact `(project_id, trace_id, observation_id)` match identifies
+a supplied observation. A null observation ID is trace-level only when no
+contradictory session/dataset-run target is declared; such contradictory rows
+are refused. A non-null unmatched ID is an unresolved reference in these supplied
+files. For CLI captures, the typed `subject` controls association; an absent or
+null subject stays unknown rather than becoming trace-level.
+
 Observations without local scores are counted separately; planned evaluations,
 missing execution counts, and export completeness remain unknown. See the
 [planned inventory next action](#planned-inventory-next-action) for its conditional
 evidence requirement and current input boundary.
 
 Original IDs are checked before joining. Non-NFC opaque IDs and ambiguous duplicate
-observation keys are explicitly refused rather than merged or rewritten. Repeated
-score IDs remain separate source rows. Display text is NFC-normalized; original
-row coordinates and each file's raw hash preserve the link to source bytes.
-Observation digests identify normalized input content, not independent provenance.
-Raw prompts, answers, metadata, and file paths are excluded from the report.
+observation keys are explicitly refused rather than merged or rewritten. Blob
+repeated score IDs remain separate source rows; CLI score identity has its own
+project/ID rule. Display labels may be NFC-normalized, while original row
+coordinates and each file's raw hash preserve the link to source bytes. The new
+selected-field result does not claim a whole-source observation digest or a
+matching request window. Raw prompts, answers, metadata, headers and file paths
+are excluded from the report.
 
 Exit 0 means descriptive accounting completed, including unresolved references.
 Input, unsupported-identifier, resource, and ambiguity refusals use the existing
@@ -304,12 +319,14 @@ underwrite records read-json --root /private/review-store --id langfuse.review-0
 
 This retains the entire selected files, including source content omitted from the
 accounting report. Analysis and storage use the same captured bytes; the two exports
-are not an atomic producer snapshot. `langfuse_record.v1` separates input acquisition,
+are not an atomic producer snapshot. The default development `langfuse_record.v2`
+embeds automatic full accounting; explicit legacy profiles retain their v1 record
+contracts and stored invocation/manifest bytes. Both versions separate acquisition,
 analysis, and storage. Exit 0 means a result was saved, exit 2 means a diagnostic was
 saved, and exit 3 means storage failed; inspect analysis even on exit 3. Configuration
 and output-capacity refusals occur before storage and use `evidence_error.v1` stderr.
 
-Both explicit inputs are attempted independently. Complete malformed bytes can be
+Both supplied inputs are attempted independently. Complete malformed bytes can be
 retained, while failed acquisition retains no partial input. Each unavailable input
 keeps its error; the first in observations/scores order is the primary acquisition
 diagnostic. A diagnostic record consumes its new ID. Recover a saved failure from
@@ -321,40 +338,41 @@ Analysis-only `audit-langfuse` remains available without creating a store.
 
 ### Read official Langfuse CLI captures offline
 
-This profile is available in a development checkout when `capabilities --json`
-lists `cli-1.2.4`; published `underwrite==0.1.1` predates it. For a selected
-`@langfuse/cli` 1.2.4 / API-snapshot 4.35.0 pair, save the
-Observations v2 and Scores v3 list outputs as local files, then choose the CLI
-profile explicitly. It accepts the CLI's `--json` response envelopes or
-`--output` bodies; the default command above continues to expect blob arrays.
+This route is available in a development checkout when capabilities advertises
+automatic Langfuse intake; published `underwrite==0.1.1` predates CLI intake.
+For a selected `@langfuse/cli` 1.2.4 / API-snapshot 4.35.0 pair, save the
+Observations v2 and Scores v3 list outputs as local files. Automatic intake
+accepts the CLI's `--json` response envelopes or `--output` bodies without a
+profile flag. This pinned example does not establish live interoperability with
+a newer server or complete capture of its data.
+
 The included [exact synthetic CLI captures](fixtures/examples/langfuse-cli/SOURCE.md)
 show both channels and the bounded collection case:
 
 ```sh
 uv run --frozen --no-sync underwrite audit-langfuse \
-  --observations observations.json --scores scores.json \
-  --profile cli-1.2.4 --json
+  --observations observations.json --scores scores.json --json
 uv run --frozen --no-sync underwrite audit-langfuse \
   --observations observations.json --scores scores.json \
-  --profile cli-1.2.4 --view row-index --json
+  --view row-index --json
 ```
 
-`langfuse_cli_accounting.v1` keeps the five original typed score kinds, including
+The CLI branch of `langfuse_accounting.v2` keeps the five typed score kinds, including
 `CORRECTION`, and relates observation subjects only by matching non-null project,
 trace, and observation IDs in the supplied rows. Missing/null subject context is
-unknown, not trace-level. The minimized `langfuse_cli_row_index.v1` withholds
+unknown, not trace-level. The minimized `langfuse_row_index.v2` withholds
 names, IDs and values but its source hashes and ordinal patterns remain linkable.
 The report preserves each file's pagination/truncation state. A remaining cursor
 or `truncated` collection is partial; even a reported exhausted collection does
 not establish matching query windows, full producer data, planned executions or
 an atomic snapshot. A source file hash is byte identity, not authentication.
-When capabilities lists `records audit-langfuse|cli-1.2.4` and retention is
-requested, capture the same two selected files and their full accounting in one
+When capabilities lists the automatic `records audit-langfuse` route and retention
+is requested, capture the same two selected files and their full accounting in one
 private record; no handwritten record spec or second source read is needed:
 
 ```sh
 uv run --frozen --no-sync underwrite records audit-langfuse \
-  --observations observations.json --scores scores.json --profile cli-1.2.4 \
+  --observations observations.json --scores scores.json \
   --root /private/review-store --id langfuse.cli-001 --json
 uv run --frozen --no-sync underwrite records verify \
   --root /private/review-store --id langfuse.cli-001 --json
@@ -363,8 +381,8 @@ uv run --frozen --no-sync underwrite records read-json \
   --name analysis/accounting.json --json
 ```
 
-`langfuse_cli_record.v1` keeps analysis and storage separate: exit 0 means the
-result was saved, 2 a diagnostic was saved, and 3 storage failed. Inspect the
+The automatic `langfuse_record.v2` keeps analysis and storage separate: exit 0
+means the result was saved, 2 a diagnostic was saved, and 3 storage failed. Inspect the
 actual response schema, analysis and storage states; a pre-storage usage or
 configuration refusal can instead put `evidence_error.v1` on stderr at exit 2.
 The saved `analysis/accounting.json` is full accounting, **not** the minimized
@@ -372,9 +390,12 @@ row index. You can verify and retrieve it after the original temporary inputs
 are removed. The record retains the **entire** native files, including possible
 HTTP headers, score text, IDs and observation I/O. A saved error may consume the
 new ID; after uncertain storage failure, inspect that ID before retrying. The
-private `invocation.json` and manifest metadata identify the selected profile
-even when `analysis/error.json` cannot. Verification proves stored-byte integrity,
-not Langfuse provenance, matching request windows, complete export or approval.
+private `invocation.json` and manifest identify automatic selection. They name an
+applied reader only after successful analysis; diagnostics do not invent one.
+Verification proves stored-byte integrity, not Langfuse provenance, matching
+request windows, complete export or approval. Explicit `--profile cli-1.2.4`
+retains `langfuse_cli_accounting.v1`, `langfuse_cli_row_index.v1` and
+`langfuse_cli_record.v1`; `--profile blob-4.35.0` retains the blob v1 contracts.
 The published `0.1.1` artifacts predate this development-checkout route.
 
 ## Inspect recorded DeepEval agent steps

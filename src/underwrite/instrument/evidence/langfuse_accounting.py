@@ -165,6 +165,14 @@ def _score(
     identifier = _identifier(row, "id", location)
     project_id = _identifier(row, "project_id", location)
     trace_id = _identifier(row, "trace_id", location)
+    for target in ("session_id", "dataset_run_id"):
+        selected = row.get(target)
+        if selected is None:
+            continue
+        if type(selected) is not str:
+            raise _error("LANGFUSE_SCORE_TARGET_INVALID", location + "/" + target)
+        if selected != "":
+            raise _error("LANGFUSE_SCORE_TARGET_CONFLICT", location, "UNSUPPORTED_PROFILE")
     observation_id = _field(row, "observation_id", location)
     if observation_id is not None:
         observation_id = _text(

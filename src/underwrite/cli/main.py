@@ -39,6 +39,7 @@ from underwrite.cli.capabilities import CommandDescriptor, Handler, profile
 from underwrite.instrument.evidence.deepeval_trace import SCHEMA as DEEPEVAL_TRACE_SCHEMA
 from underwrite.instrument.evidence.deepeval_trace import SOURCE_VERSION as DEEPEVAL_TRACE_VERSION
 from underwrite.instrument.evidence.langfuse_accounting import RULE_PROFILE as LANGFUSE_RULE_PROFILE
+from underwrite.instrument.evidence.langfuse_compat import AUTO_PROFILE as LANGFUSE_AUTO_PROFILE
 from underwrite.instrument.evidence.promptfoo_compat import (
     ACCOUNTING_SCHEMA as PROMPTFOO_AUTO_ACCOUNTING_SCHEMA,
 )
@@ -246,6 +247,12 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 "audit-langfuse",
                 ("observations", "scores", "root", "id"),
                 (),
+                (record_langfuse.record_schema(LANGFUSE_AUTO_PROFILE),),
+            ),
+            profile(
+                f"audit-langfuse|{BLOB_PROFILE}",
+                ("observations", "scores", "profile", "root", "id"),
+                (),
                 (record_langfuse.record_schema(BLOB_PROFILE),),
             ),
             profile(
@@ -300,14 +307,26 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
         audit_langfuse.configure,
         (
             profile(
-                LANGFUSE_RULE_PROFILE,
+                LANGFUSE_AUTO_PROFILE,
                 ("observations", "scores"),
+                (),
+                (langfuse_output_schema(LANGFUSE_AUTO_PROFILE, "accounting"),),
+            ),
+            profile(
+                f"{LANGFUSE_AUTO_PROFILE}|row-index",
+                ("observations", "scores", "view"),
+                (),
+                (langfuse_output_schema(LANGFUSE_AUTO_PROFILE, "row-index"),),
+            ),
+            profile(
+                LANGFUSE_RULE_PROFILE,
+                ("observations", "scores", "profile"),
                 (),
                 (langfuse_output_schema(BLOB_PROFILE, "accounting"),),
             ),
             profile(
                 "langfuse.row-index.v1",
-                ("observations", "scores", "view"),
+                ("observations", "scores", "profile", "view"),
                 (),
                 (langfuse_output_schema(BLOB_PROFILE, "row-index"),),
             ),

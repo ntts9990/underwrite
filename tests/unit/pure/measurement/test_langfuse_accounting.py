@@ -125,6 +125,54 @@ def test_duplicate_observation_keys_refuse_but_duplicate_score_ids_remain_occurr
     assert result["counts"]["scores"] == len(result["scores"])
 
 
+@pytest.mark.parametrize("target", ["session_id", "dataset_run_id"])
+def test_trace_and_other_primary_target_refuse_before_association(target: str) -> None:
+    with pytest.raises(LangfuseAccountingError) as caught:
+        run([observation()], [score(**{target: "other-target"})])
+    assert (caught.value.code, caught.value.reason, caught.value.location) == (
+        "UNSUPPORTED_PROFILE",
+        "LANGFUSE_SCORE_TARGET_CONFLICT",
+        "/scores/0",
+    )
+
+
+@pytest.mark.parametrize(
+    "targets",
+    [{"session_id": ""}, {"dataset_run_id": ""}, {"session_id": "", "dataset_run_id": ""}],
+)
+def test_empty_other_target_columns_remain_absent_for_blob_association(
+    targets: dict[str, str],
+) -> None:
+    result = run([observation()], [score(**targets)])
+    assert result["scores"][0]["association"] == "observation_local"
+    assert result["scores"][0]["target_observation_index"] == 0
+
+
+@pytest.mark.parametrize("target", ["session_id", "dataset_run_id"])
+@pytest.mark.parametrize("value", [False, 0, [], {}])
+def test_nonstring_other_target_columns_refuse_without_python_truthiness(
+    target: str, value: object
+) -> None:
+    with pytest.raises(LangfuseAccountingError) as caught:
+        run([observation()], [score(**{target: value})])
+    assert (caught.value.code, caught.value.reason, caught.value.location) == (
+        "INVALID_INPUT",
+        "LANGFUSE_SCORE_TARGET_INVALID",
+        f"/scores/0/{target}",
+    )
+
+
+@pytest.mark.parametrize("target", ["session_id", "dataset_run_id"])
+def test_null_trace_session_or_run_remains_outside_blob_reader(target: str) -> None:
+    with pytest.raises(LangfuseAccountingError) as caught:
+        run([], [score(trace_id=None, **{target: "only-target"})])
+    assert (caught.value.code, caught.value.reason, caught.value.location) == (
+        "INVALID_INPUT",
+        "LANGFUSE_IDENTIFIER_INVALID",
+        "/scores/0/trace_id",
+    )
+
+
 def test_display_text_normalizes_without_mutation_or_deduplication() -> None:
     observations = [observation(type="cafe\u0301")]
     scores = [

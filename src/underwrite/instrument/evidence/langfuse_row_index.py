@@ -40,19 +40,11 @@ def _source_identity(source: dict[str, object]) -> dict[str, object]:
     }
 
 
-def index_langfuse_accounting(accounting: dict[str, object]) -> dict[str, object]:
-    """Allowlist only structural facts already decided by the accounting owner."""
-    sources = cast(dict[str, dict[str, object]], accounting["sources"])
+def index_langfuse_body(accounting: dict[str, object]) -> dict[str, object]:
+    """Allowlist blob score facts without asserting a source-file version."""
     rows = cast(list[dict[str, Any]], accounting["scores"])
     counts = cast(dict[str, Any], accounting["counts"])
     return {
-        "schema": "langfuse_row_index.v1",
-        "source_rule_profile": RULE_PROFILE,
-        "sources": {
-            role: _source_identity(sources[role])
-            for role in ("observations", "scores")
-        },
-        "scope": dict(SCOPE),
         "counts": {
             "observations": counts["observations"],
             "scores": counts["scores"],
@@ -77,4 +69,16 @@ def index_langfuse_accounting(accounting: dict[str, object]) -> dict[str, object
         "verification": [],
         "limitations": list(LIMITATIONS),
         "next_actions": cast(list[str], accounting["next_actions"]).copy(),
+    }
+
+
+def index_langfuse_accounting(accounting: dict[str, object]) -> dict[str, object]:
+    """Preserve the pinned blob row contract over shared counted row facts."""
+    sources = cast(dict[str, dict[str, object]], accounting["sources"])
+    return {
+        "schema": "langfuse_row_index.v1",
+        "source_rule_profile": RULE_PROFILE,
+        "sources": {role: _source_identity(sources[role]) for role in ("observations", "scores")},
+        "scope": dict(SCOPE),
+        **index_langfuse_body(accounting),
     }

@@ -11,12 +11,13 @@ from typing import Any
 
 from _schema_compose import embed_contracts, nullable, object_schema, reference, tagged
 
-from underwrite.cli.record_langfuse import CLI_RECORD_SCHEMA, SCHEMA
+from underwrite.cli.record_langfuse import AUTO_RECORD_SCHEMA, CLI_RECORD_SCHEMA, SCHEMA
 from underwrite.instrument.ingest.application import DEFAULT_MAX_BYTES
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / f"contracts/{SCHEMA}.schema.json"
 CLI_TARGET = ROOT / f"contracts/{CLI_RECORD_SCHEMA}.schema.json"
+AUTO_TARGET = ROOT / f"contracts/{AUTO_RECORD_SCHEMA}.schema.json"
 OWNERS = ("langfuse_accounting", "evidence_error", "record_error", "record_verification")
 
 
@@ -41,8 +42,14 @@ def _source_states(observations: bool, scores: bool) -> dict[str, Any]:
     }
 
 
-def _build_schema(record_name: str, accounting_owner: str) -> dict[str, Any]:
-    definitions, _ = embed_contracts(ROOT, (accounting_owner, *OWNERS[1:]))
+def _build_schema(
+    record_name: str, accounting_owner: str, *, accounting_version: str = "v1"
+) -> dict[str, Any]:
+    definitions, _ = embed_contracts(
+        ROOT,
+        (accounting_owner, *OWNERS[1:]),
+        versions={accounting_owner: accounting_version},
+    )
     identity = object_schema(
         {
             "record_id": reference("record_verification__record_id"),
@@ -110,7 +117,11 @@ def _build_schema(record_name: str, accounting_owner: str) -> dict[str, Any]:
         "$id": f"urn:underwrite:contract:{record_name}",
         "title": record_name,
         "description": (
-            "Independent Langfuse "
+            "Selected Langfuse wire-family accounting and private capture outcomes. "
+            "Stored-byte verification is not producer authentication or approval. "
+            "Null published_record means no returned identity, not proven absence."
+            if record_name == AUTO_RECORD_SCHEMA
+            else "Independent Langfuse "
             + ("CLI accounting" if record_name == CLI_RECORD_SCHEMA else "accounting")
             + " and private capture outcomes. "
             "A saved record verifies stored bytes, not producer execution or approval. "
@@ -201,11 +212,20 @@ def build_cli_schema() -> dict[str, Any]:
     return _build_schema(CLI_RECORD_SCHEMA, "langfuse_cli_accounting")
 
 
+def build_auto_schema() -> dict[str, Any]:
+    """Embed the selected-family v2 report in the existing two-source envelope."""
+    return _build_schema(AUTO_RECORD_SCHEMA, "langfuse_accounting", accounting_version="v2")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
-    targets = ((TARGET, build_schema()), (CLI_TARGET, build_cli_schema()))
+    targets = (
+        (TARGET, build_schema()),
+        (CLI_TARGET, build_cli_schema()),
+        (AUTO_TARGET, build_auto_schema()),
+    )
     for target, schema in targets:
         raw = (json.dumps(schema, ensure_ascii=False, indent=2) + "\n").encode()
         if args.check:

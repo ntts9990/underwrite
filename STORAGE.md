@@ -130,15 +130,19 @@ stored-byte integrity does not authenticate the owner declaration. Exits 0/2/3
 retain the result, diagnostic, and storage-failure meanings above. The no-bindings
 route and its existing logical names remain unchanged.
 
-For the default two-file Langfuse **blob export**, use
+In a development build advertising automatic Langfuse intake, use
 `records audit-langfuse --observations FILE --scores FILE --root ROOT --id NEW_ID --json`.
+It accepts a supported pair of blob arrays or official-CLI list envelopes/bodies
+without a profile flag and returns `langfuse_record.v2`. The selected reader
+family is an Underwrite policy; the actual producer release remains unknown.
 It analyzes and retains the same complete input buffers, the result or diagnostic,
 and invocation metadata. Both paths are attempted independently; incomplete reads
 are never retained as complete sources. Per-input acquisition errors remain in the
 output and saved invocation. The entire selected files may contain sensitive source
-content; they are not redacted. Two files are not an atomic producer snapshot.
+content, including CLI headers; they are not redacted. Two files are not an atomic
+producer snapshot or proof of export completeness.
 
-The `langfuse_record.v1` envelope keeps analysis and storage independent: exits
+The automatic v2 record keeps analysis and storage independent: exits
 0/2/3 mean result saved, diagnostic saved, or storage failed. Even a diagnostic-only
 record consumes the ID. Read `analysis/accounting.json` or `analysis/error.json`
 with `records read-json`; `invocation.json` preserves input acquisition details.
@@ -146,21 +150,21 @@ Generated analysis is admitted within the selected-read limit before storage.
 Large original files can be retained without being readable through that JSON route.
 See [the Langfuse workflow](AGENT_USAGE.md#account-for-langfuse-score-kinds-and-associations).
 
-When capabilities lists the separate `audit-langfuse|cli-1.2.4` record profile,
-use the same composed command with `--profile cli-1.2.4` for two selected native
-CLI Observations v2 and Scores v3 files. It stores the exact captured buffers
-once and emits `langfuse_cli_record.v1`, embedding full
-`langfuse_cli_accounting.v1` or a finite diagnostic. It does not store a
-row-index view or authenticate the official CLI, server, request windows, or
-completeness. The private invocation and manifest metadata retain the selected
-profile/source selectors even for a saved analysis error. Recover
+For historical reproduction, explicit `--profile blob-4.35.0` retains the old
+`langfuse_record.v1`; `--profile cli-1.2.4` retains `langfuse_cli_record.v1`.
+Their valid supported results, invocation and manifest bytes remain stable.
+The automatic v2 route embeds full `langfuse_accounting.v2` or a finite diagnostic;
+it does not store a row-index view or authenticate the producer, request windows,
+or completeness. Its private invocation and manifest record `selection_mode:auto`
+even for a saved analysis error, but name an applied reader only on success. Recover
 `analysis/accounting.json` or `analysis/error.json` by exact logical name after
 the originals are removed; run `records verify` for whole-record integrity.
 Saved source files may contain HTTP headers, scores, identifiers and observation
 I/O. `read-json` has its unchanged 1 MiB selected-input cap; larger retained
 source members need the bounded Python `read_record_file(..., max_bytes=...)`
 path, while a selected-file read does not replace whole-record verification.
-The default blob `langfuse_record.v1` contract and invocation remain unchanged.
+Published `0.1.1` still defaults to the blob `langfuse_record.v1` contract;
+development builds intentionally migrate omitted `--profile` to v2.
 
 For an exact supported goppi paired handoff, `review-handoff` can analyze and save
 in one call with `--record-root ROOT --record-id ID`; see

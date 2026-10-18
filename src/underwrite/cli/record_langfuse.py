@@ -27,6 +27,7 @@ from underwrite.cli.record_capture import (
     store_captured_record,
 )
 from underwrite.cli.records import OUTPUT_MAX_BYTES, record_error_payload
+from underwrite.instrument.evidence.langfuse_compat import AUTO_PROFILE
 from underwrite.instrument.ingest.langfuse_accounting import (
     BLOB_PROFILE,
     CLI_PROFILE,
@@ -41,6 +42,7 @@ from underwrite.instrument.ingest.langfuse_cli import (
     SOURCE_VERSION,
     audit_langfuse_cli_bytes,
 )
+from underwrite.instrument.ingest.langfuse_compat import audit_langfuse_compatible_bytes
 from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
 from underwrite.service._record_format import FormatError, record_id
 from underwrite.service.records import (
@@ -52,11 +54,14 @@ from underwrite.service.records import (
 
 SCHEMA = "langfuse_record.v1"
 CLI_RECORD_SCHEMA = "langfuse_cli_record.v1"
+AUTO_RECORD_SCHEMA = "langfuse_record.v2"
 COMMAND = "records audit-langfuse"
 
 
-def record_schema(profile: str) -> str:
+def record_schema(profile: str | None) -> str:
     """Select the record-layer contract without guessing the producer file shape."""
+    if profile is None or profile == AUTO_PROFILE:
+        return AUTO_RECORD_SCHEMA
     if profile == BLOB_PROFILE:
         return SCHEMA
     if profile == CLI_PROFILE:
@@ -72,16 +77,16 @@ def _source_selectors(profile: str) -> dict[str, tuple[str, str]]:
 
 @dataclass(frozen=True)
 class _Contracts:
-    profile: str
+    profile: str | None
     aggregate: Validator
     storage: Validator
-    accounting: Validator
+    analysis: Validator
     evidence_error: Validator
     record_error: Validator
     verification: Validator
 
 
-def _contracts(profile: str = BLOB_PROFILE) -> _Contracts:
+def _contracts(profile: str | None = None) -> _Contracts:
     aggregate = packaged_validator(record_schema(profile))
     schema = cast(dict[str, Any], aggregate.schema)
     storage = Draft202012Validator({"$defs": schema["$defs"], "$ref": "#/$defs/storage"})
@@ -102,6 +107,14 @@ def _check(validator: Validator, value: object) -> None:
     validate(validator, value, EvidenceError, "INTERNAL_ERROR")
 
 
+def _applied_reader(analysis: dict[str, Any]) -> dict[str, str]:
+    """Only successful auto analysis has an applied reader family."""
+    if analysis["state"] != "result":
+        return {}
+    report = cast(dict[str, Any], analysis["report"])
+    return {"reader_profile": cast(str, report["reader_profile"])}
+
+
 def _identifier(value: str) -> str:
     try:
         return record_id(value)
@@ -119,21 +132,25 @@ def configure(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--profile",
         choices=(BLOB_PROFILE, CLI_PROFILE),
-        default=BLOB_PROFILE,
-        help="Select blob 4.35.0 (default) or pinned CLI 1.2.4/API 4.35.0 capture files.",
+        default=None,
+        help=(
+            "Optional strict historical blob or CLI profile; omitted selects "
+            "a reader from both files."
+        ),
     )
     parser.add_argument("--root", type=Path, required=True, help="Explicit private record root.")
     parser.add_argument("--id", type=_identifier, required=True, help="New immutable record ID.")
     parser.add_argument(
         "--json",
         action="store_true",
-        help=f"Emit {SCHEMA} (blob) or {CLI_RECORD_SCHEMA} (CLI) JSON by selected profile.",
+        help="Emit the selected Langfuse record JSON contract.",
     )
     parser.description = (
         "Audit two selected local Langfuse files in process and retain the exact complete input, "
         "result or diagnostic, and effective invocation. Malformed complete input is retained "
         "in full; a diagnostic record consumes the ID. No producer or subprocess is run. "
-        "The CLI profile retains whole native captures, including possible private "
+        "Without --profile, reader family is selected from both captured files; release "
+        "identity remains unknown. All profiles retain whole private files, including possible "
         "headers and text. "
         "Exit 0 means result saved, 2 analysis failed but diagnostic saved, and 3 storage failed."
     )
@@ -163,14 +180,20 @@ def _acquire(
 
 
 def _analyze(
-    paths: dict[str, Path], profile: str = BLOB_PROFILE
+    paths: dict[str, Path], profile: str | None = None
 ) -> tuple[dict[str, bytes], dict[str, object], dict[str, Any]]:
     captured, sources, errors = _acquire(paths)
     if errors:
         return captured, sources, {"state": "error", "phase": "acquisition", "error": errors[0]}
     try:
-        audit = audit_langfuse_bytes if profile == BLOB_PROFILE else audit_langfuse_cli_bytes
-        report = audit(captured["observations"], captured["scores"])
+        if profile is None:
+            report = audit_langfuse_compatible_bytes(captured["observations"], captured["scores"])
+        elif profile == BLOB_PROFILE:
+            report = audit_langfuse_bytes(
+                captured["observations"], captured["scores"], profile=BLOB_PROFILE
+            )
+        else:
+            report = audit_langfuse_cli_bytes(captured["observations"], captured["scores"])
         identities = cast(dict[str, dict[str, object]], report["sources"])
         if any(identities[role]["raw_hash"] != digest_bytes(raw) for role, raw in captured.items()):
             raise EvidenceError("INTERNAL_ERROR", "RAW_IDENTITY_MISMATCH")
@@ -206,7 +229,7 @@ def _files(
     analysis = envelope["analysis"]
     result = analysis["state"] == "result"
     document = analysis["report"] if result else analysis["error"]
-    _check(contracts.accounting if result else contracts.evidence_error, document)
+    _check(contracts.analysis if result else contracts.evidence_error, document)
     encoded = canonical_bytes(document) + b"\n"
     if len(encoded) > RECORD_READ_MAX_BYTES:
         raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
@@ -225,7 +248,10 @@ def _files(
         "analysis_exit_code_scope": "component_contract_not_os_process",
         "aggregate_outcome_location": "command_output",
     }
-    if profile == CLI_PROFILE:
+    if profile is None:
+        invocation["selection_mode"] = AUTO_PROFILE
+        invocation.update(_applied_reader(analysis))
+    elif profile == CLI_PROFILE:
         invocation["profile"] = profile
         invocation["source_selectors"] = {
             role: {"format": source, "format_version": version}
@@ -272,8 +298,10 @@ def run_record_langfuse(
     identifier: str,
     *,
     as_json: bool = True,
-    profile: str = BLOB_PROFILE,
+    profile: str | None = None,
 ) -> dict[str, object]:
+    if profile == AUTO_PROFILE:
+        profile = None
     try:
         record_id(identifier)
     except FormatError:
@@ -319,21 +347,31 @@ def run_record_langfuse(
         as_json=as_json,
         max_bytes=OUTPUT_MAX_BYTES,
     )
-    selectors = _source_selectors(profile)
-    metadata = {
-        **{
-            f"{role}_{key}": value[index]
-            for role, value in selectors.items()
-            for index, key in enumerate(("format", "format_version"))
-        },
-        "analysis_state": analysis["state"],
-    }
-    if profile == CLI_PROFILE:
-        metadata["profile"] = profile
+    metadata = {"analysis_state": analysis["state"]}
+    if profile is None:
+        metadata["selection_mode"] = AUTO_PROFILE
+        metadata.update(_applied_reader(analysis))
+    else:
+        selectors = _source_selectors(profile)
+        metadata.update(
+            {
+                f"{role}_{key}": value[index]
+                for role, value in selectors.items()
+                for index, key in enumerate(("format", "format_version"))
+            }
+        )
+        if profile == CLI_PROFILE:
+            metadata["profile"] = profile
     spec = CapturedRecordSpec(
         record_id=identifier,
-        kind="langfuse.accounting" if profile == BLOB_PROFILE else "langfuse.cli-accounting",
-        label="Langfuse accounting capture"
+        kind="langfuse.local-accounting"
+        if profile is None
+        else "langfuse.accounting"
+        if profile == BLOB_PROFILE
+        else "langfuse.cli-accounting",
+        label="Langfuse local accounting capture"
+        if profile is None
+        else "Langfuse accounting capture"
         if profile == BLOB_PROFILE
         else "Langfuse CLI accounting capture",
         metadata=metadata,
@@ -361,7 +399,7 @@ def produce(args: argparse.Namespace) -> dict[str, object]:
         cast(Path, args.root),
         cast(str, args.id),
         as_json=cast(bool, args.json),
-        profile=cast(str, args.profile),
+        profile=cast(str | None, args.profile),
     )
 
 

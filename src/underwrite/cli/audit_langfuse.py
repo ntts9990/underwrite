@@ -4,9 +4,16 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 from underwrite.cli.evidence import EvidenceError, ReportOutput, run_cli
+from underwrite.instrument.evidence.langfuse_compat import (
+    ACCOUNTING_SCHEMA as AUTO_ACCOUNTING_SCHEMA,
+)
+from underwrite.instrument.evidence.langfuse_compat import BLOB_READER, CLI_READER
+from underwrite.instrument.evidence.langfuse_compat import (
+    ROW_INDEX_SCHEMA as AUTO_ROW_INDEX_SCHEMA,
+)
 from underwrite.instrument.ingest.langfuse_accounting import (
     BLOB_PROFILE,
     CLI_PROFILE,
@@ -15,7 +22,6 @@ from underwrite.instrument.ingest.langfuse_accounting import (
     audit_langfuse_row_index_files,
     output_schema,
 )
-from underwrite.instrument.ingest.langfuse_cli import audit_langfuse_cli_files
 
 _INVENTORY_GUIDANCE = (
     "SUPPLY_PLANNED_INVENTORY_FOR_MISSINGNESS applies only when missing-execution "
@@ -43,8 +49,11 @@ def configure(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--profile",
         choices=(BLOB_PROFILE, CLI_PROFILE),
-        default=BLOB_PROFILE,
-        help="Select the blob 4.35.0 default or pinned CLI 1.2.4/API 4.35.0 file shape.",
+        default=None,
+        help=(
+            "Optional strict historical blob or CLI profile; omitted selects "
+            "a reader from both files."
+        ),
     )
     parser.add_argument(
         "--view",
@@ -55,12 +64,12 @@ def configure(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--json", action="store_true", help="Emit the selected view as JSON.")
     parser.description = (
         "Account for score kinds and local associations in two supplied Langfuse files. "
-        "The default is the pinned server 4.35.0 blob export; --profile cli-1.2.4 "
-        "accepts official CLI JSON captures from API snapshot 4.35.0. "
+        "Without --profile, choose one supported array or CLI-list reader family from both "
+        "files. Their shapes do not establish server or CLI release identity. "
+        "Explicit --profile retains historical strict results. "
         "CLI collection status does not establish matching windows or complete source data. "
         "Unresolved references remain descriptive results. "
         "No producer execution, export-completeness claim, task success, or approval. "
-        "The source profile is explicitly selected, not detected. "
         "If missing-execution accounting is required, the inventory next action asks for "
         "external planned evidence from the evaluation owner. This command has no inventory "
         "input; planned and missing-execution counts remain unknown."
@@ -69,14 +78,12 @@ def configure(parser: argparse.ArgumentParser) -> None:
 
 def produce(args: argparse.Namespace) -> dict[str, object]:
     try:
-        if args.profile == CLI_PROFILE:
-            return audit_langfuse_cli_files(
-                cast(Path, args.observations),
-                cast(Path, args.scores),
-                view=cast(Literal["accounting", "row-index"], args.view),
-            )
         audit = audit_langfuse_row_index_files if args.view == "row-index" else audit_langfuse_files
-        return audit(cast(Path, args.observations), cast(Path, args.scores))
+        return audit(
+            cast(Path, args.observations),
+            cast(Path, args.scores),
+            profile=cast(str | None, args.profile),
+        )
     except LangfuseFileError as exc:
         raise EvidenceError(exc.code, exc.reason, exc.location) from None
 
@@ -102,12 +109,17 @@ def render_human(report: dict[str, object]) -> str:
 
 
 def render_selected_human(report: dict[str, object]) -> str:
-    if report["schema"] == "langfuse_accounting.v1":
+    if report["schema"] == "langfuse_accounting.v1" or (
+        report["schema"] == AUTO_ACCOUNTING_SCHEMA and report.get("reader_profile") == BLOB_READER
+    ):
         return render_human(report)
     if report["schema"] in {
         output_schema(CLI_PROFILE, "accounting"),
         output_schema(CLI_PROFILE, "row-index"),
-    }:
+    } or (
+        report["schema"] in {AUTO_ACCOUNTING_SCHEMA, AUTO_ROW_INDEX_SCHEMA}
+        and report.get("reader_profile") == CLI_READER
+    ):
         return render_cli_human(report)
     counts = cast(dict[str, Any], report["counts"])
     return (
