@@ -1,10 +1,17 @@
-"""Generate both pinned Langfuse CLI result contracts from their pure owner."""
+"""Build current CLI-list branches from their typed source and retrieval rules."""
 
 from __future__ import annotations
 
-import argparse
-import json
-from pathlib import Path
+if __package__:
+    from ._schema_compose import object_schema as _object
+    from .build_langfuse_accounting import count_schema as _count
+    from .build_langfuse_accounting import scope_schema, source_schema
+    from .build_langfuse_accounting import tag_schema as _tag
+else:
+    from _schema_compose import object_schema as _object
+    from build_langfuse_accounting import count_schema as _count
+    from build_langfuse_accounting import scope_schema, source_schema
+    from build_langfuse_accounting import tag_schema as _tag
 
 from underwrite.instrument.evidence.langfuse_accounting import (
     MAX_ID_LENGTH,
@@ -14,7 +21,6 @@ from underwrite.instrument.evidence.langfuse_accounting import (
     MAX_STRING_VALUE_LENGTH,
 )
 from underwrite.instrument.evidence.langfuse_cli import (
-    ACCOUNTING_SCHEMA,
     ASSOCIATIONS,
     CAPTURE_KINDS,
     CURSOR_STATES,
@@ -23,33 +29,21 @@ from underwrite.instrument.evidence.langfuse_cli import (
     MAX_CLI_PAGES,
     NEXT_ACTIONS,
     PAGINATION_MODES,
-    ROW_INDEX_SCHEMA,
     ROW_LIMITATIONS,
     ROW_SCOPE,
     RULE_PROFILE,
     SCOPE,
     SOURCE_FORMATS,
-    SOURCE_VERSION,
     SUBJECT_AVAILABILITY,
     SUBJECT_KINDS,
     VALUE_TYPES,
 )
-
-ROOT = Path(__file__).resolve().parents[1]
-HASH = {"type": "string", "pattern": "^sha256:[a-f0-9]{64}(?![\\s\\S])"}
-
-
-def _object(properties: dict[str, object]) -> dict[str, object]:
-    return {
-        "type": "object",
-        "additionalProperties": False,
-        "required": list(properties),
-        "properties": properties,
-    }
-
-
-def _count(maximum: int) -> dict[str, object]:
-    return {"type": "integer", "minimum": 0, "maximum": maximum}
+from underwrite.instrument.evidence.langfuse_compat import (
+    ACCOUNTING_SCHEMA,
+    CLI_READER,
+    ROW_INDEX_SCHEMA,
+    extended_limitations,
+)
 
 
 def _identity() -> dict[str, object]:
@@ -58,29 +52,6 @@ def _identity() -> dict[str, object]:
 
 def _optional_identity() -> dict[str, object]:
     return {"type": ["string", "null"], "minLength": 1, "maxLength": MAX_ID_LENGTH}
-
-
-def _tag(field: str, value: str, properties: dict[str, object]) -> dict[str, object]:
-    return {
-        "if": {"properties": {field: {"const": value}}, "required": [field]},
-        "then": {"properties": properties},
-    }
-
-
-def _sources() -> dict[str, object]:
-    return _object(
-        {
-            role: _object(
-                {
-                    "format": {"const": selector},
-                    "format_version": {"const": SOURCE_VERSION},
-                    "raw_hash": HASH,
-                    "claims_verified": {"const": False},
-                }
-            )
-            for role, selector in SOURCE_FORMATS.items()
-        }
-    )
 
 
 def _pagination(maximum: int) -> dict[str, object]:
@@ -301,13 +272,13 @@ def _score_row() -> dict[str, object]:
 
 def _shared_properties(*, row: bool) -> dict[str, object]:
     return {
-        "sources": _sources(),
+        "sources": source_schema(CLI_READER),
         "retrieval": _retrieval(),
-        "scope": _object(
-            {key: {"const": value} for key, value in (ROW_SCOPE if row else SCOPE).items()}
-        ),
+        "scope": scope_schema(ROW_SCOPE if row else SCOPE),
         "counts": _counts(),
-        "limitations": {"const": list(ROW_LIMITATIONS if row else LIMITATIONS)},
+        "limitations": {
+            "const": extended_limitations(list(ROW_LIMITATIONS if row else LIMITATIONS))
+        },
         "next_actions": {
             "type": "array",
             "minItems": 1,
@@ -318,7 +289,7 @@ def _shared_properties(*, row: bool) -> dict[str, object]:
     }
 
 
-def build_accounting_schema() -> dict[str, object]:
+def build_accounting_branch() -> dict[str, object]:
     schema = _object(
         {
             "schema": {"const": ACCOUNTING_SCHEMA},
@@ -346,58 +317,24 @@ def build_accounting_schema() -> dict[str, object]:
                     "missing_execution_count": {"const": None},
                 }
             ),
+            "reader_profile": {"const": CLI_READER},
         }
     )
-    return {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": f"urn:underwrite:contract:{ACCOUNTING_SCHEMA}",
-        "title": ACCOUNTING_SCHEMA,
-        "description": "Selected CLI rows, typed scores, local associations and retrieval limits.",
-        **schema,
-    }
+    return schema
 
 
-def build_row_index_schema() -> dict[str, object]:
+def build_row_branch() -> dict[str, object]:
     schema = _object(
         {
             "schema": {"const": ROW_INDEX_SCHEMA},
             "source_rule_profile": {"const": RULE_PROFILE},
             **_shared_properties(row=True),
             "score_rows": {"type": "array", "maxItems": MAX_SCORES, "items": _score_row()},
+            "reader_profile": {"const": CLI_READER},
         }
     )
-    return {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": f"urn:underwrite:contract:{ROW_INDEX_SCHEMA}",
-        "title": ROW_INDEX_SCHEMA,
-        "description": "Content-minimized ordinal view over the same selected CLI rows.",
-        **schema,
-    }
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true")
-    args = parser.parse_args()
-    targets = {
-        ROOT / f"contracts/{ACCOUNTING_SCHEMA}.schema.json": build_accounting_schema(),
-        ROOT / f"contracts/{ROW_INDEX_SCHEMA}.schema.json": build_row_index_schema(),
-    }
-    if args.check:
-        return (
-            0
-            if all(
-                target.exists()
-                and target.read_text(encoding="utf-8")
-                == json.dumps(schema, indent=2, ensure_ascii=False) + "\n"
-                for target, schema in targets.items()
-            )
-            else 1
-        )
-    for target, schema in targets.items():
-        target.write_text(json.dumps(schema, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    return 0
+    return schema
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit("Use build_langfuse_compat.py to generate current Langfuse contracts.")

@@ -63,7 +63,7 @@ def test_generated_handoff_contract_matches_owners(name: str) -> None:
     [
         ("paired_handoff_review", "v1"),
         ("promptfoo_record", "v2"),
-        ("langfuse_record", "v1"),
+        ("langfuse_record", "v2"),
         ("deepeval_record", "v1"),
         ("deepeval_record", "v2"),
     ],
@@ -234,7 +234,7 @@ def test_langfuse_record_binds_sources_capture_count_phase_and_exit(
     validator = cast(
         Validator,
         Draft202012Validator(
-            json.loads((ROOT / "contracts/langfuse_record.v1.schema.json").read_bytes())
+            json.loads((ROOT / "contracts/langfuse_record.v2.schema.json").read_bytes())
         ),
     )
     error = EvidenceError("INVALID_INPUT", "INVALID_INPUT").payload
@@ -256,7 +256,7 @@ def test_langfuse_record_binds_sources_capture_count_phase_and_exit(
     phase = "analysis" if observations and scores else "acquisition"
     analysis = {"state": "error", "phase": phase, "error": error}
     envelope: dict[str, Any] = {
-        "schema": "langfuse_record.v1",
+        "schema": "langfuse_record.v2",
         "command": "records audit-langfuse",
         "sources": sources,
         "analysis": analysis,
@@ -306,17 +306,16 @@ def test_langfuse_record_result_requires_both_complete_sources() -> None:
     report = audit_langfuse_files(
         golden / "observations_v2-2026-09-14T06-40-00.json",
         golden / "scores-2026-09-14T06-40-00.json",
-        profile="blob-4.35.0",
     )
     validator = cast(
         Validator,
         Draft202012Validator(
-            json.loads((ROOT / "contracts/langfuse_record.v1.schema.json").read_bytes())
+            json.loads((ROOT / "contracts/langfuse_record.v2.schema.json").read_bytes())
         ),
     )
     captured = {"state": "captured", "raw_hash": "sha256:" + "a" * 64, "bytes": 1}
     envelope = {
-        "schema": "langfuse_record.v1",
+        "schema": "langfuse_record.v2",
         "command": "records audit-langfuse",
         "sources": {"observations": captured, "scores": captured},
         "analysis": {"state": "result", "report": report},

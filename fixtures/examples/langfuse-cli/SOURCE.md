@@ -42,14 +42,14 @@ hashes above matched exactly in a local run. This is a controlled API mock, not
 a live-service interoperability claim.
 
 For a real task, use the official CLI to capture each chosen local file, inspect
-its actual status and pagination metadata, then select the matching Underwrite
-profile explicitly from a development checkout that advertises it. Published
-`underwrite==0.1.1` predates this route:
+its actual status and pagination metadata, then use the advertised current
+Underwrite intake. The development checkout selects the supported family from
+both files and no longer accepts `--profile`. Published `underwrite==0.1.1`
+predates this route; published 0.2.0 supports automatic intake too:
 
 ```sh
 uv run --frozen --no-sync underwrite audit-langfuse \
-  --observations observations.json --scores scores.json \
-  --profile cli-1.2.4 --json
+  --observations observations.json --scores scores.json --json
 ```
 
 Keep the original captures private when they include score text, comments,

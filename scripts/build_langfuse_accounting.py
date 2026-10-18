@@ -1,10 +1,13 @@
-"""Generate Langfuse accounting's contract from the owned rules and limits."""
+"""Build current Langfuse blob branches from their score and association owners."""
 
 from __future__ import annotations
 
-import argparse
-import json
-from pathlib import Path
+from collections.abc import Mapping
+
+if __package__:
+    from ._schema_compose import object_schema as _object
+else:
+    from _schema_compose import object_schema as _object
 
 from underwrite.instrument.evidence.langfuse_accounting import (
     ASSOCIATION_RULES,
@@ -19,44 +22,63 @@ from underwrite.instrument.evidence.langfuse_accounting import (
     RULE_PROFILE,
     SCOPE,
 )
+from underwrite.instrument.evidence.langfuse_compat import (
+    ACCOUNTING_SCHEMA,
+    BLOB_READER,
+    EXTRA_SCOPE,
+    ROLES,
+    ROW_INDEX_SCHEMA,
+    SOURCE_FORMATS,
+    extended_limitations,
+)
 from underwrite.instrument.evidence.langfuse_row_index import (
     LIMITATIONS as ROW_INDEX_LIMITATIONS,
 )
 from underwrite.instrument.evidence.langfuse_row_index import (
     SCOPE as ROW_INDEX_SCOPE,
 )
-from underwrite.instrument.ingest.langfuse_accounting import SOURCES
 
-ROOT = Path(__file__).resolve().parents[1]
-
-
-def _object(properties: dict[str, object]) -> dict[str, object]:
-    return {
-        "type": "object",
-        "additionalProperties": False,
-        "required": list(properties),
-        "properties": properties,
-    }
+HASH = {"type": "string", "pattern": "^sha256:[a-f0-9]{64}(?![\\s\\S])"}
 
 
-def _count(maximum: int) -> dict[str, object]:
+def source_schema(reader: str) -> dict[str, object]:
+    return _object(
+        {
+            role: _object(
+                {
+                    "format": {"const": SOURCE_FORMATS[reader][role]},
+                    "raw_hash": dict(HASH),
+                    "producer_version": {"type": "null"},
+                    "producer_version_state": {"const": "unknown"},
+                    "claims_verified": {"const": False},
+                }
+            )
+            for role in ROLES
+        }
+    )
+
+
+def scope_schema(values: Mapping[str, object]) -> dict[str, object]:
+    return _object({key: {"const": value} for key, value in {**values, **EXTRA_SCOPE}.items()})
+
+
+def count_schema(maximum: int) -> dict[str, object]:
     return {"type": "integer", "minimum": 0, "maximum": maximum}
 
 
-def _tag(field: str, value: str, properties: dict[str, object]) -> dict[str, object]:
+def tag_schema(field: str, value: str, properties: dict[str, object]) -> dict[str, object]:
     return {
         "if": {"properties": {field: {"const": value}}, "required": [field]},
         "then": {"properties": properties},
     }
 
 
-def build_schema() -> dict[str, object]:
+def build_accounting_branch() -> dict[str, object]:
     identifier = {"type": "string", "minLength": 1, "maxLength": MAX_ID_LENGTH}
     label = {"type": "string", "maxLength": MAX_LABEL_LENGTH}
-    digest = {"type": "string", "pattern": "^sha256:[a-f0-9]{64}(?![\\s\\S])"}
     score = _object(
         {
-            "score_index": _count(MAX_SCORES - 1),
+            "score_index": count_schema(MAX_SCORES - 1),
             "id": identifier,
             "project_id": identifier,
             "trace_id": identifier,
@@ -80,11 +102,12 @@ def build_schema() -> dict[str, object]:
         }
     )
     branches = [
-        _tag("data_type", kind, {"kind_rule": {"const": rule}}) for kind, rule in KIND_RULES.items()
+        tag_schema("data_type", kind, {"kind_rule": {"const": rule}})
+        for kind, rule in KIND_RULES.items()
     ]
     for association, rule in ASSOCIATION_RULES.items():
         branches.append(
-            _tag(
+            tag_schema(
                 "association",
                 association,
                 {
@@ -92,7 +115,7 @@ def build_schema() -> dict[str, object]:
                     "observation_id": {"type": "null"}
                     if association == "trace_level"
                     else identifier,
-                    "target_observation_index": _count(MAX_OBSERVATIONS - 1)
+                    "target_observation_index": count_schema(MAX_OBSERVATIONS - 1)
                     if association == "observation_local"
                     else {"type": "null"},
                 },
@@ -101,42 +124,31 @@ def build_schema() -> dict[str, object]:
     score["allOf"] = branches
     observation = _object(
         {
-            "observation_index": _count(MAX_OBSERVATIONS - 1),
+            "observation_index": count_schema(MAX_OBSERVATIONS - 1),
             "id": identifier,
             "project_id": identifier,
             "trace_id": identifier,
             "type": label,
-            "local_score_count": _count(MAX_SCORES),
+            "local_score_count": count_schema(MAX_SCORES),
         }
     )
     schema = _object(
         {
-            "schema": {"const": "langfuse_accounting.v1"},
+            "schema": {"const": ACCOUNTING_SCHEMA},
             "rule_profile": {"const": RULE_PROFILE},
-            "sources": _object(
-                {
-                    role: _object(
-                        {
-                            "format": {"const": selector[0]},
-                            "format_version": {"const": selector[1]},
-                            "raw_hash": digest,
-                            "observation_digest": digest,
-                            "claims_verified": {"const": False},
-                        }
-                    )
-                    for role, selector in SOURCES.items()
-                }
-            ),
-            "scope": _object({key: {"const": value} for key, value in SCOPE.items()}),
+            "sources": source_schema(BLOB_READER),
+            "scope": scope_schema(SCOPE),
             "observations": {"type": "array", "maxItems": MAX_OBSERVATIONS, "items": observation},
             "scores": {"type": "array", "maxItems": MAX_SCORES, "items": score},
             "counts": _object(
                 {
-                    "observations": _count(MAX_OBSERVATIONS),
-                    "scores": _count(MAX_SCORES),
-                    "by_data_type": _object({key: _count(MAX_SCORES) for key in KIND_RULES}),
-                    "associations": _object({key: _count(MAX_SCORES) for key in ASSOCIATION_RULES}),
-                    "observations_without_local_scores": _count(MAX_OBSERVATIONS),
+                    "observations": count_schema(MAX_OBSERVATIONS),
+                    "scores": count_schema(MAX_SCORES),
+                    "by_data_type": _object({key: count_schema(MAX_SCORES) for key in KIND_RULES}),
+                    "associations": _object(
+                        {key: count_schema(MAX_SCORES) for key in ASSOCIATION_RULES}
+                    ),
+                    "observations_without_local_scores": count_schema(MAX_OBSERVATIONS),
                 }
             ),
             "planned": _object(
@@ -146,34 +158,23 @@ def build_schema() -> dict[str, object]:
                     "missing_execution_count": {"const": None},
                 }
             ),
-            "limitations": {
-                "type": "array",
-                "maxItems": len(LIMITATIONS),
-                "items": {"type": "string", "enum": list(LIMITATIONS)},
-                "const": list(LIMITATIONS),
-            },
+            "limitations": {"const": extended_limitations(list(LIMITATIONS))},
             "next_actions": {
                 "type": "array",
                 "maxItems": len(NEXT_ACTIONS),
                 "items": {"type": "string", "enum": list(NEXT_ACTIONS)},
                 "uniqueItems": True,
             },
+            "reader_profile": {"const": BLOB_READER},
         }
     )
-    return {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "urn:underwrite:contract:langfuse_accounting.v1",
-        "title": "langfuse_accounting.v1",
-        "description": "Supplied score rows and exact field links; no task verdict.",
-        **schema,
-    }
+    return schema
 
 
-def build_row_index_schema() -> dict[str, object]:
-    digest = {"type": "string", "pattern": "^sha256:[a-f0-9]{64}(?![\\s\\S])"}
+def build_row_branch() -> dict[str, object]:
     row = _object(
         {
-            "score_index": _count(MAX_SCORES - 1),
+            "score_index": count_schema(MAX_SCORES - 1),
             "data_type": {"enum": list(KIND_RULES)},
             "numeric_field_presence": {"const": "present"},
             "string_field_presence": {"enum": ["present", "null"]},
@@ -186,11 +187,11 @@ def build_row_index_schema() -> dict[str, object]:
         }
     )
     row["allOf"] = [
-        _tag(
+        tag_schema(
             "association",
             association,
             {
-                "target_observation_index": _count(MAX_OBSERVATIONS - 1)
+                "target_observation_index": count_schema(MAX_OBSERVATIONS - 1)
                 if association == "observation_local"
                 else {"type": "null"}
             },
@@ -199,70 +200,35 @@ def build_row_index_schema() -> dict[str, object]:
     ]
     schema = _object(
         {
-            "schema": {"const": "langfuse_row_index.v1"},
+            "schema": {"const": ROW_INDEX_SCHEMA},
             "source_rule_profile": {"const": RULE_PROFILE},
-            "sources": _object(
-                {
-                    role: _object(
-                        {
-                            "format": {"const": selector[0]},
-                            "format_version": {"const": selector[1]},
-                            "raw_hash": digest,
-                            "claims_verified": {"const": False},
-                        }
-                    )
-                    for role, selector in SOURCES.items()
-                }
-            ),
-            "scope": _object({key: {"const": value} for key, value in ROW_INDEX_SCOPE.items()}),
+            "sources": source_schema(BLOB_READER),
+            "scope": scope_schema(ROW_INDEX_SCOPE),
             "counts": _object(
                 {
-                    "observations": _count(MAX_OBSERVATIONS),
-                    "scores": _count(MAX_SCORES),
-                    "by_data_type": _object({key: _count(MAX_SCORES) for key in KIND_RULES}),
-                    "associations": _object({key: _count(MAX_SCORES) for key in ASSOCIATION_RULES}),
-                    "observations_without_local_scores": _count(MAX_OBSERVATIONS),
+                    "observations": count_schema(MAX_OBSERVATIONS),
+                    "scores": count_schema(MAX_SCORES),
+                    "by_data_type": _object({key: count_schema(MAX_SCORES) for key in KIND_RULES}),
+                    "associations": _object(
+                        {key: count_schema(MAX_SCORES) for key in ASSOCIATION_RULES}
+                    ),
+                    "observations_without_local_scores": count_schema(MAX_OBSERVATIONS),
                 }
             ),
             "score_rows": {"type": "array", "maxItems": MAX_SCORES, "items": row},
             "verification": {"const": []},
-            "limitations": {"const": list(ROW_INDEX_LIMITATIONS)},
+            "limitations": {"const": extended_limitations(list(ROW_INDEX_LIMITATIONS))},
             "next_actions": {
                 "type": "array",
                 "maxItems": len(NEXT_ACTIONS),
                 "items": {"enum": list(NEXT_ACTIONS)},
                 "uniqueItems": True,
             },
+            "reader_profile": {"const": BLOB_READER},
         }
     )
-    return {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "urn:underwrite:contract:langfuse_row_index.v1",
-        "title": "langfuse_row_index.v1",
-        "description": "Content-minimized structural view of two independently selected exports.",
-        **schema,
-    }
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true")
-    args = parser.parse_args()
-    targets = {
-        ROOT / "contracts/langfuse_accounting.v1.schema.json": build_schema(),
-        ROOT / "contracts/langfuse_row_index.v1.schema.json": build_row_index_schema(),
-    }
-    if args.check:
-        return 0 if all(
-            target.exists()
-            and target.read_text(encoding="utf-8")
-            == json.dumps(schema, indent=2, ensure_ascii=False) + "\n"
-            for target, schema in targets.items()
-        ) else 1
-    for target, schema in targets.items():
-        target.write_text(json.dumps(schema, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    return 0
+    return schema
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit("Use build_langfuse_compat.py to generate current Langfuse contracts.")

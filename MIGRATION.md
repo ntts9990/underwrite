@@ -28,10 +28,34 @@ A new analysis is a new result/record; it never updates an existing stored repor
 See [the complete consolidation milestone](CONTRACT_MIGRATION.md) for the remaining
 families; their planned changes are not claimed implemented here.
 
+## Unreleased checkout: one Langfuse flow per view
+
+Langfuse audit and capture choose the supported blob-array or CLI-list family
+from both input files. Their distinct typed-score, association and collection
+meanings remain intact; file shape never establishes a producer release.
+Accounting/row reports use v2, accounting capture uses `langfuse_record.v2`, and
+row capture now uses `langfuse_row_record.v2` with only current row reports.
+
+Remove `--profile` from audit/capture commands and `profile=` from Python calls.
+Removed flags fail before acquisition/storage; removed keywords raise `TypeError`.
+Replace the retired `instrument.ingest.langfuse_cli` APIs with
+`instrument.ingest.langfuse_accounting.audit_langfuse_files` for accounting,
+`audit_langfuse_row_index_files` for file-based rows, or `audit_langfuse_bytes`
+with `view="row-index"` for rows from captured bytes. These APIs support the same
+compatible CLI shapes automatically. Low-level source codec selectors
+are unchanged. Published 0.2.0 still has the old selectors and row-record v1;
+check the actual executable's advertised contracts.
+
+No stored record is converted. Read and verify old blob/CLI/row records as their
+original bytes without the retired analysis schemas. A new analysis/capture gets
+a new record ID; do not relabel an old result or widen its source assertions.
+Row analysis minimizes exposed content, while capture still retains both full
+private source files. Analysis and storage outcomes remain separate.
+
 ## Released history: migration from 0.1.1 to 0.2.0
 
 The remainder describes the **published 0.2.0 release**, including historical
-selectors that the development checkout above has removed for Promptfoo.
+selectors that the development checkout above has removed for Promptfoo and Langfuse.
 
 This guide targets **underwrite 0.2.0**. Upgrade the app; the unchanged core remains
 0.1.1 and the app keeps its compatible `underwrite-core>=0.1.0,<0.2` requirement.

@@ -11,7 +11,7 @@ from _repo_paths import repo_root
 from underwrite_core.canonical import canonical_bytes, digest_bytes
 
 from underwrite.cli import main
-from underwrite.instrument.ingest import langfuse_cli as adapter
+from underwrite.instrument.ingest import langfuse_compat as adapter
 from underwrite.instrument.ingest.langfuse_accounting import LangfuseFileError
 from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
 
@@ -31,8 +31,6 @@ def _args(observations: Path, scores: Path, *, view: str = "accounting") -> list
         str(observations),
         "--scores",
         str(scores),
-        "--profile",
-        "cli-1.2.4",
     ]
     if view != "accounting":
         argv.extend(("--view", view))
@@ -59,10 +57,10 @@ def test_exact_cli_envelopes_produce_typed_accounting_and_minimized_view(
     code, report, stdout, stderr = _invoke(capsys, observations, scores)
     assert code == 0 and stderr == ""
     assert stdout.encode() == canonical_bytes(report) + b"\n"
-    assert report == adapter.audit_langfuse_cli_bytes(
+    assert report == adapter.audit_langfuse_compatible_bytes(
         observations.read_bytes(), scores.read_bytes()
     )
-    assert report["schema"] == "langfuse_cli_accounting.v1"
+    assert report["schema"] == "langfuse_accounting.v2"
     assert report["counts"]["observations"] == OBSERVATION_COUNT
     assert report["counts"]["scores"] == SCORE_COUNT
     assert report["counts"]["by_data_type"] == dict.fromkeys(
@@ -73,15 +71,15 @@ def test_exact_cli_envelopes_produce_typed_accounting_and_minimized_view(
     for role, path in (("observations", observations), ("scores", scores)):
         assert report["sources"][role]["raw_hash"] == digest_bytes(path.read_bytes())
         assert report["sources"][role]["claims_verified"] is False
-    packaged_validator("langfuse_cli_accounting.v1").validate(report)  # pyright: ignore[reportUnknownMemberType]
+    packaged_validator("langfuse_accounting.v2").validate(report)  # pyright: ignore[reportUnknownMemberType]
 
     code, index, stdout, stderr = _invoke(capsys, observations, scores, view="row-index")
     assert code == 0 and stderr == ""
     assert stdout.encode() == canonical_bytes(index) + b"\n"
-    assert index == adapter.audit_langfuse_cli_bytes(
+    assert index == adapter.audit_langfuse_compatible_bytes(
         observations.read_bytes(), scores.read_bytes(), view="row-index"
     )
-    assert index["schema"] == "langfuse_cli_row_index.v1"
+    assert index["schema"] == "langfuse_row_index.v2"
     assert len(index["score_rows"]) == SCORE_COUNT
     assert set(index["score_rows"][0]) == {
         "score_index",
@@ -94,7 +92,7 @@ def test_exact_cli_envelopes_produce_typed_accounting_and_minimized_view(
     assert not {"scores", "observations"} & index.keys()
     assert "quality" not in stdout and "score-1" not in stdout
     assert "value" not in index["score_rows"][0]
-    packaged_validator("langfuse_cli_row_index.v1").validate(index)  # pyright: ignore[reportUnknownMemberType]
+    packaged_validator("langfuse_row_index.v2").validate(index)  # pyright: ignore[reportUnknownMemberType]
 
 
 def test_native_body_and_truncated_capture_report_their_actual_scope(
@@ -164,8 +162,8 @@ def test_file_api_reads_each_role_once_and_matches_bytes_api(
         return original(path, role)
 
     monkeypatch.setattr(adapter, "read_langfuse_file", read)
-    report = adapter.audit_langfuse_cli_files(observations, scores)
-    assert report == adapter.audit_langfuse_cli_bytes(
+    report = adapter.audit_langfuse_compatible_files(observations, scores)
+    assert report == adapter.audit_langfuse_compatible_bytes(
         observations.read_bytes(), scores.read_bytes()
     )
     assert reads == ["observations", "scores"]
@@ -207,7 +205,7 @@ def test_missing_packaged_contract_precedes_source_read(
     monkeypatch.setattr(adapter, "packaged_validator", missing)
     monkeypatch.setattr(adapter, "read_langfuse_file", forbidden)
     with pytest.raises(LangfuseFileError) as caught:
-        adapter.audit_langfuse_cli_files(tmp_path / "missing", tmp_path / "missing")
+        adapter.audit_langfuse_compatible_files(tmp_path / "missing", tmp_path / "missing")
     assert (caught.value.code, caught.value.reason, caught.value.location) == (
         "SCHEMA_CONFIGURATION_ERROR",
         "INVALID_PACKAGED_CONTRACT",
@@ -215,24 +213,19 @@ def test_missing_packaged_contract_precedes_source_read(
     )
 
 
-def test_capabilities_and_explicit_blob_route_are_stable(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
+def test_capabilities_and_current_blob_route(capsys: pytest.CaptureFixture[str]) -> None:
     assert main.main(["capabilities", "--json"]) == 0
     catalog = json.loads(capsys.readouterr().out)
     command = next(row for row in catalog["commands"] if row["command"] == "audit-langfuse")
     profiles = {item["name"]: item for item in command["profiles"]}
-    assert profiles["cli-1.2.4"]["required_inputs"] == ["observations", "scores", "profile"]
-    assert profiles["cli-1.2.4"]["output_schemas"] == ["langfuse_cli_accounting.v1"]
-    assert profiles["cli-1.2.4|row-index"]["output_schemas"] == ["langfuse_cli_row_index.v1"]
-
-    argv = [
-        "--observations",
-        str(GOLDEN / "observations_v2-2026-09-14T06-40-00.json"),
-        "--scores",
-        str(GOLDEN / "scores-2026-09-14T06-40-00.json"),
-        "--json",
-    ]
-    assert main.main(["audit-langfuse", *argv, "--profile", "blob-4.35.0"]) == 0
-    explicit = capsys.readouterr().out
-    assert json.loads(explicit)["schema"] == "langfuse_accounting.v1"
+    assert set(profiles) == {"auto", "auto|row-index"}
+    assert profiles["auto"]["required_inputs"] == ["observations", "scores"]
+    assert profiles["auto"]["output_schemas"] == ["langfuse_accounting.v2"]
+    assert profiles["auto|row-index"]["output_schemas"] == ["langfuse_row_index.v2"]
+    code, report, _, stderr = _invoke(
+        capsys,
+        GOLDEN / "observations_v2-2026-09-14T06-40-00.json",
+        GOLDEN / "scores-2026-09-14T06-40-00.json",
+    )
+    assert code == 0 and stderr == ""
+    assert report["schema"] == "langfuse_accounting.v2"

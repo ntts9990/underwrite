@@ -14,16 +14,29 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
 from underwrite.cli.local_json import Validator
-from underwrite.instrument.evidence.langfuse_accounting import account_langfuse
-from underwrite.instrument.evidence.langfuse_row_index import index_langfuse_accounting
-from underwrite.instrument.ingest.langfuse_accounting import SOURCES
+from underwrite.instrument.evidence.langfuse_compat import (
+    ACCOUNTING_SCHEMA,
+    ROW_INDEX_SCHEMA,
+    account_langfuse_compatible,
+    index_langfuse_compatible,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def _report(observations: object, scores: object) -> dict[str, Any]:
+    report: dict[str, Any] = {
+        "schema": ACCOUNTING_SCHEMA,
+        **account_langfuse_compatible(observations, scores),
+    }
+    for source in report["sources"].values():
+        source["raw_hash"] = "sha256:" + "a" * 64
+    return report
+
+
 def test_generated_contract_is_current_and_valid() -> None:
     result = subprocess.run(
-        [sys.executable, "scripts/build_langfuse_accounting.py", "--check"],
+        [sys.executable, "scripts/build_langfuse_compat.py", "--check"],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -31,10 +44,10 @@ def test_generated_contract_is_current_and_valid() -> None:
     )
     assert result.returncode == 0, result.stdout + result.stderr
     Draft202012Validator.check_schema(
-        json.loads((ROOT / "contracts/langfuse_accounting.v1.schema.json").read_bytes())
+        json.loads((ROOT / "contracts/langfuse_accounting.v2.schema.json").read_bytes())
     )
     Draft202012Validator.check_schema(
-        json.loads((ROOT / "contracts/langfuse_row_index.v1.schema.json").read_bytes())
+        json.loads((ROOT / "contracts/langfuse_row_index.v2.schema.json").read_bytes())
     )
 
 
@@ -42,7 +55,7 @@ def test_rule_bindings_reject_cross_kind_and_false_associations() -> None:
     validator = cast(
         Validator,
         Draft202012Validator(
-            json.loads((ROOT / "contracts/langfuse_accounting.v1.schema.json").read_bytes())
+            json.loads((ROOT / "contracts/langfuse_accounting.v2.schema.json").read_bytes())
         ),
     )
     observation = {"id": "o", "project_id": "p", "trace_id": "t", "type": "SPAN"}
@@ -55,23 +68,10 @@ def test_rule_bindings_reject_cross_kind_and_false_associations() -> None:
         "value": 0,
         "string_value": "text",
     }
-    report: dict[str, Any] = {
-        "schema": "langfuse_accounting.v1",
-        "sources": {
-            role: {
-                "format": selector[0],
-                "format_version": selector[1],
-                "raw_hash": "sha256:" + "a" * 64,
-                "observation_digest": "sha256:" + "b" * 64,
-                "claims_verified": False,
-            }
-            for role, selector in SOURCES.items()
-        },
-        **account_langfuse(
-            [observation],
-            [{**base, "observation_id": reference} for reference in ("o", None, "unknown")],
-        ),
-    }
+    report = _report(
+        [observation],
+        [{**base, "observation_id": reference} for reference in ("o", None, "unknown")],
+    )
     validator.validate(report)
     for index, patch in (
         (0, {"target_observation_index": None}),
@@ -88,36 +88,24 @@ def test_rule_bindings_reject_cross_kind_and_false_associations() -> None:
 
 
 def test_row_index_contract_refuses_private_fields_and_false_target() -> None:
-    schema = json.loads((ROOT / "contracts/langfuse_row_index.v1.schema.json").read_bytes())
+    schema = json.loads((ROOT / "contracts/langfuse_row_index.v2.schema.json").read_bytes())
     validator = Draft202012Validator(schema)
-    accounting: dict[str, Any] = {
-        "sources": {
-            role: {
-                "format": selector[0],
-                "format_version": selector[1],
-                "raw_hash": "sha256:" + "a" * 64,
-                "observation_digest": "sha256:" + "b" * 64,
-                "claims_verified": False,
+    accounting = _report(
+        [{"id": "o", "project_id": "p", "trace_id": "t", "type": "SPAN"}],
+        [
+            {
+                "id": "s",
+                "project_id": "p",
+                "trace_id": "t",
+                "observation_id": None,
+                "name": "private",
+                "data_type": "TEXT",
+                "value": 0,
+                "string_value": "private",
             }
-            for role, selector in SOURCES.items()
-        },
-        **account_langfuse(
-            [{"id": "o", "project_id": "p", "trace_id": "t", "type": "SPAN"}],
-            [
-                {
-                    "id": "s",
-                    "project_id": "p",
-                    "trace_id": "t",
-                    "observation_id": None,
-                    "name": "private",
-                    "data_type": "TEXT",
-                    "value": 0,
-                    "string_value": "private",
-                }
-            ],
-        ),
-    }
-    result = index_langfuse_accounting(accounting)
+        ],
+    )
+    result = {"schema": ROW_INDEX_SCHEMA, **index_langfuse_compatible(accounting)}
     validator.validate(result)  # pyright: ignore[reportUnknownMemberType]
     for section, field, value in (
         ("score_rows", "name", "private"),

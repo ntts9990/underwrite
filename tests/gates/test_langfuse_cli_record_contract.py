@@ -1,8 +1,7 @@
-"""Both concrete Langfuse record contracts retain their own analysis meaning."""
+"""Current Langfuse captures bind accounting or rows without legacy report branches."""
 
 from __future__ import annotations
 
-import hashlib
 import json
 import subprocess
 import sys
@@ -16,12 +15,14 @@ from jsonschema.exceptions import ValidationError
 
 from underwrite.cli.evidence import EvidenceError
 from underwrite.cli.record_capture import saved_record
-from underwrite.cli.record_langfuse import CLI_RECORD_SCHEMA, COMMAND, SCHEMA
-from underwrite.instrument.ingest.langfuse_cli import audit_langfuse_cli_files
+from underwrite.cli.record_langfuse import AUTO_RECORD_SCHEMA, COMMAND, ROW_RECORD_SCHEMA
+from underwrite.instrument.ingest.langfuse_accounting import (
+    audit_langfuse_files,
+    audit_langfuse_row_index_files,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "fixtures/examples/langfuse-cli"
-OLD_SCHEMA_SHA256 = "f21cb89b8551e5cfa8d7b2b72344c09a0ec18690760e6e3d4cba5748c425d583"
 GENERATED_FILE_COUNT = 2
 
 
@@ -39,10 +40,11 @@ def _captured() -> dict[str, object]:
     return {"state": "captured", "raw_hash": "sha256:" + "a" * 64, "bytes": 1}
 
 
-def _result_envelope() -> dict[str, Any]:
-    report = audit_langfuse_cli_files(FIXTURES / "observations.json", FIXTURES / "scores.json")
+def _result_envelope(*, row_index: bool = False) -> dict[str, Any]:
+    audit = audit_langfuse_row_index_files if row_index else audit_langfuse_files
+    report = audit(FIXTURES / "observations.json", FIXTURES / "scores.json")
     return {
-        "schema": CLI_RECORD_SCHEMA,
+        "schema": ROW_RECORD_SCHEMA if row_index else AUTO_RECORD_SCHEMA,
         "command": COMMAND,
         "sources": {role: _captured() for role in ("observations", "scores")},
         "analysis": {"state": "result", "report": report},
@@ -51,9 +53,7 @@ def _result_envelope() -> dict[str, Any]:
     }
 
 
-def test_builder_keeps_blob_bytes_and_emits_current_cli_contract() -> None:
-    old = (ROOT / "contracts" / f"{SCHEMA}.schema.json").read_bytes()
-    assert hashlib.sha256(old).hexdigest() == OLD_SCHEMA_SHA256
+def test_builder_emits_only_current_accounting_and_row_contracts() -> None:
     result = subprocess.run(
         [sys.executable, "scripts/build_langfuse_record.py", "--check"],
         cwd=ROOT,
@@ -62,14 +62,16 @@ def test_builder_keeps_blob_bytes_and_emits_current_cli_contract() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    _validator(SCHEMA)
-    _validator(CLI_RECORD_SCHEMA)
-    assert (ROOT / "contracts" / f"{SCHEMA}.schema.json").read_bytes() == old
+    _validator(ROW_RECORD_SCHEMA)
+    _validator(AUTO_RECORD_SCHEMA)
 
 
-def test_cli_record_contract_accepts_saved_result_and_acquisition_diagnostic() -> None:
-    validator = _validator(CLI_RECORD_SCHEMA)
-    result = _result_envelope()
+@pytest.mark.parametrize("row_index", [False, True])
+def test_cli_record_contract_accepts_saved_result_and_acquisition_diagnostic(
+    row_index: bool,
+) -> None:
+    result = _result_envelope(row_index=row_index)
+    validator = _validator(result["schema"])
     validator.validate(result)
     error = EvidenceError("SOURCE_READ_FAILED", "SOURCE_READ_FAILED", "/scores").payload
     diagnostic = {
@@ -94,23 +96,35 @@ def test_cli_record_contract_accepts_saved_result_and_acquisition_diagnostic() -
         (("unrecognized_private_path",), "/private/source"),
     ],
 )
+@pytest.mark.parametrize("row_index", [False, True])
 def test_cli_record_contract_rejects_false_saved_claims(
-    path: tuple[str, ...], value: object
+    path: tuple[str, ...], value: object, row_index: bool
 ) -> None:
-    invalid = deepcopy(_result_envelope())
+    invalid = deepcopy(_result_envelope(row_index=row_index))
     selected: Any = invalid
     for field in path[:-1]:
         selected = selected[field]
     selected[path[-1]] = value
     with pytest.raises(ValidationError):
-        _validator(CLI_RECORD_SCHEMA).validate(invalid)
+        _validator(invalid["schema"]).validate(invalid)
 
 
-def test_cli_record_contract_rejects_analysis_phase_after_failed_capture() -> None:
-    invalid = _result_envelope()
+@pytest.mark.parametrize("row_index", [False, True])
+def test_cli_record_contract_rejects_analysis_phase_after_failed_capture(row_index: bool) -> None:
+    invalid = _result_envelope(row_index=row_index)
     error = EvidenceError("SOURCE_READ_FAILED", "SOURCE_READ_FAILED", "/scores").payload
     invalid["sources"]["scores"] = {"state": "unavailable", "error": error}
     invalid["analysis"] = {"state": "error", "phase": "analysis", "error": error}
     invalid["exit_code"] = 2
     with pytest.raises(ValidationError):
-        _validator(CLI_RECORD_SCHEMA).validate(invalid)
+        _validator(invalid["schema"]).validate(invalid)
+
+
+@pytest.mark.parametrize("row_index", [False, True])
+def test_current_capture_contract_rejects_the_other_valid_analysis_view(row_index: bool) -> None:
+    selected = _result_envelope(row_index=row_index)
+    other = _result_envelope(row_index=not row_index)
+    _validator(other["schema"]).validate(other)
+    selected["analysis"] = other["analysis"]
+    with pytest.raises(ValidationError):
+        _validator(selected["schema"]).validate(selected)

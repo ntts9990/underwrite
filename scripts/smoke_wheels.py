@@ -1327,18 +1327,17 @@ def _deepeval_auto_pilot(cli: Path, work: Path) -> None:
     )
 
 
-def _langfuse_record_pilot(  # noqa: PLR0913 — keep profile and view smoke inputs explicit
+def _langfuse_record_pilot(  # noqa: PLR0913 — keep both source roles and view explicit
     cli: Path,
     work: Path,
     observed: Path,
     scores: Path,
     expected: dict[str, object],
     *,
-    capture_profile: tuple[str | None, str] = ("blob-4.35.0", "langfuse_record.v1"),
     view: str = "accounting",
 ) -> None:
-    profile, record_schema = capture_profile
-    slug = "langfuse-auto" if profile is None else f"langfuse-{profile}"
+    record_schema = "langfuse_row_record.v2" if view == "row-index" else "langfuse_record.v2"
+    slug = "langfuse-current"
     if view != "accounting":
         slug += "-" + view
     input_directory = work / f"{slug}-record-inputs"
@@ -1358,8 +1357,6 @@ def _langfuse_record_pilot(  # noqa: PLR0913 — keep profile and view smoke inp
         str(store),
     ]
     arguments.extend(("--view", view))
-    if profile is not None:
-        arguments.extend(("--profile", profile))
     report = _cli_json(cli, [*arguments, "--id", "captured"], work / f"{slug}-record.json", work)
     analysis = cast(dict[str, object], report["analysis"])
     storage = cast(dict[str, object], report["storage"])
@@ -1445,14 +1442,11 @@ def _langfuse_pilot(cli: Path, work: Path) -> None:
             str(observed),
             "--scores",
             str(scores),
-            "--profile",
-            "blob-4.35.0",
         ],
         work / "langfuse-accounting.json",
         work,
     )
     counts = cast(dict[str, object], report["counts"])
-    _langfuse_record_pilot(cli, work, observed, scores, report)
     wheel.require(
         counts["by_data_type"] == {"NUMERIC": 2, "BOOLEAN": 1, "CATEGORICAL": 1, "TEXT": 1},
         "installed Langfuse score kinds changed",
@@ -1519,11 +1513,9 @@ def _langfuse_cli_pilot(cli: Path, work: Path) -> None:
         str(selected["observations"]),
         "--scores",
         str(selected["scores"]),
-        "--profile",
-        "cli-1.2.4",
     ]
     report = _cli_json(cli, args, work / "langfuse-cli-accounting.json", work)
-    wheel.require(report["schema"] == "langfuse_cli_accounting.v1", "wrong CLI capture schema")
+    wheel.require(report["schema"] == "langfuse_accounting.v2", "wrong CLI capture schema")
     sources = cast(dict[str, dict[str, object]], report["sources"])
     for role, data in raw.items():
         wheel.require(
@@ -1542,7 +1534,7 @@ def _langfuse_cli_pilot(cli: Path, work: Path) -> None:
         )
     index = _cli_json(cli, [*args, "--view", "row-index"], work / "langfuse-cli-index.json", work)
     wheel.require(
-        index["schema"] == "langfuse_cli_row_index.v1" and index["counts"] == report["counts"],
+        index["schema"] == "langfuse_row_index.v2" and index["counts"] == report["counts"],
         "CLI row index changed accounting",
     )
     for row in cast(list[dict[str, object]], index["score_rows"]):
@@ -1552,28 +1544,18 @@ def _langfuse_cli_pilot(cli: Path, work: Path) -> None:
         )
     api_code = (
         "import json,sys; from pathlib import Path; "
-        "from underwrite.instrument.ingest.langfuse_cli import audit_langfuse_cli_bytes; "
-        "print(json.dumps(audit_langfuse_cli_bytes("
+        "from underwrite.instrument.ingest.langfuse_accounting import audit_langfuse_bytes; "
+        "print(json.dumps(audit_langfuse_bytes("
         "Path(sys.argv[1]).read_bytes(),Path(sys.argv[2]).read_bytes()),sort_keys=True))"
     )
     api = wheel.success(
         [str(cli.parent / "python"), "-c", api_code, *map(str, selected.values())], work
     )
     wheel.require(json.loads(api.stdout) == report, "installed CLI/API capture outcomes differ")
-    _langfuse_record_pilot(
-        cli,
-        work,
-        selected["observations"],
-        selected["scores"],
-        report,
-        capture_profile=("cli-1.2.4", "langfuse_cli_record.v1"),
-    )
     partial = _cli_json(
         cli,
         [
             "audit-langfuse",
-            "--profile",
-            "cli-1.2.4",
             "--observations",
             str(fixtures / "observations-body.json"),
             "--scores",
@@ -1598,6 +1580,35 @@ def _langfuse_cli_pilot(cli: Path, work: Path) -> None:
 
 
 def _langfuse_auto_pilot(cli: Path, work: Path) -> None:
+    wheel.success(
+        [
+            str(cli.parent / "python"),
+            "-I",
+            "-c",
+            "from importlib.resources import files; r=files('underwrite').joinpath('_contracts'); "
+            "assert all(not r.joinpath(n+'.v1.schema.json').is_file() for n in "
+            "('langfuse_accounting','langfuse_row_index','langfuse_cli_accounting',"
+            "'langfuse_cli_row_index','langfuse_record','langfuse_cli_record',"
+            "'langfuse_row_record')); "
+            "assert r.joinpath('langfuse_row_record.v2.schema.json').is_file()",
+        ],
+        work,
+    )
+    _native_refusal(
+        cli,
+        [
+            "audit-langfuse",
+            "--observations",
+            "not-read.json",
+            "--scores",
+            "not-read.json",
+            "--profile",
+            "blob-4.35.0",
+        ],
+        work,
+        "USAGE_ERROR",
+        "INVALID_ARGUMENTS_SEE_HELP",
+    )
     golden = wheel.ROOT / "fixtures/golden/external/langfuse"
     native = wheel.ROOT / "fixtures/examples/langfuse-cli"
     pairs = (
@@ -1665,7 +1676,6 @@ def _langfuse_auto_pilot(cli: Path, work: Path) -> None:
             observed,
             scores,
             report,
-            capture_profile=(None, "langfuse_record.v2"),
         )
         _langfuse_record_pilot(
             cli,
@@ -1673,7 +1683,6 @@ def _langfuse_auto_pilot(cli: Path, work: Path) -> None:
             observed,
             scores,
             rows,
-            capture_profile=(None, "langfuse_row_record.v1"),
             view="row-index",
         )
     _native_refusal(

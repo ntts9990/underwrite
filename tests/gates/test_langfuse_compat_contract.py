@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -16,9 +16,10 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 from underwrite_core.canonical import digest_bytes
 
+from scripts import build_langfuse_compat, build_langfuse_record
 from underwrite.cli.evidence import EvidenceError
 from underwrite.cli.record_capture import saved_record
-from underwrite.cli.record_langfuse import AUTO_RECORD_SCHEMA, COMMAND
+from underwrite.cli.record_langfuse import AUTO_RECORD_SCHEMA, COMMAND, ROW_RECORD_SCHEMA
 from underwrite.cli.records import record_error_payload
 from underwrite.instrument.evidence.langfuse_compat import (
     ACCOUNTING_SCHEMA,
@@ -34,16 +35,6 @@ ROOT = Path(__file__).resolve().parents[2]
 EXTERNAL = ROOT / "fixtures/golden/external/langfuse"
 CLI = ROOT / "fixtures/examples/langfuse-cli"
 DIGEST = "sha256:" + "0" * 64
-OLD_SHA256 = {
-    "langfuse_accounting.v1": "7a97dc8092a55b6152afc009a92add551ace88cca54d2c885536c48c396f34a4",
-    "langfuse_row_index.v1": "f564a485dff960a9e1b43ae7d359348303bccab946ac2ab3b0365da47f8b30f4",
-    "langfuse_cli_accounting.v1": (
-        "0608cd2b394a9ba816e31eb81af138018531229ff67a3ded7a9fc8fdeee7f3cc"
-    ),
-    "langfuse_cli_row_index.v1": "096ccc0cb2281b9e81a7068582c36576927bf6f9859c1fadb2c30acc53bb2291",
-    "langfuse_record.v1": "f21cb89b8551e5cfa8d7b2b72344c09a0ec18690760e6e3d4cba5748c425d583",
-    "langfuse_cli_record.v1": "42231c0296f90a5cab8cd6cccb935ecf8fb89cedaac52891387fb596e791b2ea",
-}
 
 
 class Validator(Protocol):
@@ -94,7 +85,38 @@ def _record(family: str) -> dict[str, Any]:
     }
 
 
-def test_generated_packaged_contracts_and_explicit_v1_bytes_are_stable() -> None:
+def test_current_generation_needs_no_legacy_or_existing_target_files(tmp_path: Path) -> None:
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    for name in (
+        "build_langfuse_accounting.py",
+        "build_langfuse_cli_accounting.py",
+        "build_langfuse_compat.py",
+        "build_langfuse_record.py",
+        "_schema_compose.py",
+    ):
+        shutil.copyfile(ROOT / "scripts" / name, scripts / name)
+    contracts = tmp_path / "contracts"
+    contracts.mkdir()
+    for name in ("evidence_error", "record_error", "record_verification"):
+        filename = f"{name}.v1.schema.json"
+        shutil.copyfile(ROOT / "contracts" / filename, contracts / filename)
+    expected = {
+        f"{name}.schema.json": (ROOT / "contracts" / f"{name}.schema.json").read_bytes()
+        for name in (ACCOUNTING_SCHEMA, ROW_INDEX_SCHEMA, AUTO_RECORD_SCHEMA, ROW_RECORD_SCHEMA)
+    }
+    command = [sys.executable, str(scripts / "build_langfuse_compat.py")]
+    generated = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True, check=False)
+    assert generated.returncode == 0, generated.stdout + generated.stderr
+    for name, raw in expected.items():
+        assert (contracts / name).read_bytes() == raw
+    checked = subprocess.run(
+        [*command, "--check"], cwd=tmp_path, capture_output=True, text=True, check=False
+    )
+    assert checked.returncode == 0, checked.stdout + checked.stderr
+
+
+def test_generated_packaged_contracts_are_current() -> None:
     for script in ("build_langfuse_compat.py", "build_langfuse_record.py"):
         check = subprocess.run(
             [sys.executable, "scripts/" + script, "--check"],
@@ -107,7 +129,7 @@ def test_generated_packaged_contracts_and_explicit_v1_bytes_are_stable() -> None
     includes = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]["uv"]["build-backend"][
         "source-include"
     ]
-    for name in (ACCOUNTING_SCHEMA, ROW_INDEX_SCHEMA, AUTO_RECORD_SCHEMA):
+    for name in (ACCOUNTING_SCHEMA, ROW_INDEX_SCHEMA, AUTO_RECORD_SCHEMA, ROW_RECORD_SCHEMA):
         filename = name + ".schema.json"
         authored = ROOT / "contracts" / filename
         packaged = ROOT / "src/underwrite/_contracts" / filename
@@ -116,11 +138,15 @@ def test_generated_packaged_contracts_and_explicit_v1_bytes_are_stable() -> None
         assert packaged.read_bytes() == authored.read_bytes()
         assert "contracts/" + filename in includes
         _validator(name)
-    for name, expected in OLD_SHA256.items():
-        assert (
-            hashlib.sha256((ROOT / "contracts" / f"{name}.schema.json").read_bytes()).hexdigest()
-            == expected
-        )
+    for name, build in (
+        (ACCOUNTING_SCHEMA, build_langfuse_compat.build_accounting_schema),
+        (ROW_INDEX_SCHEMA, build_langfuse_compat.build_row_index_schema),
+        (AUTO_RECORD_SCHEMA, build_langfuse_record.build_auto_schema),
+        (ROW_RECORD_SCHEMA, build_langfuse_record.build_row_schema),
+    ):
+        assert (ROOT / "contracts" / f"{name}.schema.json").read_bytes() == (
+            json.dumps(build(), ensure_ascii=False, indent=2) + "\n"
+        ).encode()
 
 
 @pytest.mark.parametrize(("family", "reader"), [("blob", BLOB_READER), ("cli", CLI_READER)])

@@ -19,15 +19,12 @@ def test_bytes_match_existing_file_accounting() -> None:
 
 
 @pytest.mark.parametrize("role", ["observations", "scores"])
-@pytest.mark.parametrize("profile", [None, "blob-4.35.0"])
-def test_bytes_retain_per_source_limits(
-    role: str, profile: str | None, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_bytes_retain_per_source_limits(role: str, monkeypatch: pytest.MonkeyPatch) -> None:
     buffers = {"observations": b"[]", "scores": b"[]"}
     buffers[role] = b"[ ]"
-    monkeypatch.setattr(auto_adapter if profile is None else adapter, "DEFAULT_MAX_BYTES", 2)
+    monkeypatch.setattr(auto_adapter, "DEFAULT_MAX_BYTES", 2)
     with pytest.raises(adapter.LangfuseFileError) as caught:
-        adapter.audit_langfuse_bytes(buffers["observations"], buffers["scores"], profile=profile)
+        adapter.audit_langfuse_bytes(buffers["observations"], buffers["scores"])
     assert caught.value.code == "INPUT_LIMIT_EXCEEDED"
     assert caught.value.location == "/" + role
 

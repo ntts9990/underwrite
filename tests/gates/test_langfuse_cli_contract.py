@@ -13,11 +13,11 @@ import pytest
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
-from underwrite.instrument.evidence.langfuse_cli import (
-    SOURCE_FORMATS,
-    SOURCE_VERSION,
-    account_langfuse_cli,
-    index_langfuse_cli_accounting,
+from underwrite.instrument.evidence.langfuse_compat import (
+    ACCOUNTING_SCHEMA,
+    ROW_INDEX_SCHEMA,
+    account_langfuse_compatible,
+    index_langfuse_compatible,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -63,28 +63,22 @@ def _report() -> dict[str, Any]:
         ],
         "meta": {"pages": 1, "fetchedItems": 1, "truncated": False},
     }
-    counted = account_langfuse_cli(observations, scores)
-    return cast(
-        dict[str, Any],
-        {
-            "schema": "langfuse_cli_accounting.v1",
-            "sources": {
-                role: {
-                    "format": selector,
-                    "format_version": SOURCE_VERSION,
-                    "raw_hash": HASH,
-                    "claims_verified": False,
-                }
-                for role, selector in SOURCE_FORMATS.items()
-            },
-            **counted,
-        },
-    )
+    report: dict[str, Any] = {
+        "schema": ACCOUNTING_SCHEMA,
+        **account_langfuse_compatible(observations, scores),
+    }
+    for source in report["sources"].values():
+        source["raw_hash"] = HASH
+    return report
+
+
+def _index(report: dict[str, Any]) -> dict[str, Any]:
+    return {"schema": ROW_INDEX_SCHEMA, **index_langfuse_compatible(report)}
 
 
 def test_generated_contracts_are_current_and_admit_both_owned_views() -> None:
     check = subprocess.run(
-        [sys.executable, "scripts/build_langfuse_cli_accounting.py", "--check"],
+        [sys.executable, "scripts/build_langfuse_compat.py", "--check"],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -92,9 +86,9 @@ def test_generated_contracts_are_current_and_admit_both_owned_views() -> None:
     )
     assert check.returncode == 0, check.stdout + check.stderr
     report = _report()
-    _validator("langfuse_cli_accounting.v1").validate(report)
-    index = index_langfuse_cli_accounting(report)
-    _validator("langfuse_cli_row_index.v1").validate(index)
+    _validator("langfuse_accounting.v2").validate(report)
+    index = _index(report)
+    _validator("langfuse_row_index.v2").validate(index)
     assert index["counts"] == report["counts"]
     assert index["retrieval"] == report["retrieval"]
     serialized = json.dumps(index)
@@ -120,7 +114,7 @@ def test_full_contract_refuses_cross_kind_target_retrieval_and_source_claims(
     invalid = deepcopy(_report())
     _assign(invalid, path, value)
     with pytest.raises(ValidationError):
-        _validator("langfuse_cli_accounting.v1").validate(invalid)
+        _validator("langfuse_accounting.v2").validate(invalid)
 
 
 @pytest.mark.parametrize(
@@ -137,7 +131,7 @@ def test_minimized_contract_refuses_content_and_false_structural_claims(
     path: tuple[str | int, ...],
     value: object,
 ) -> None:
-    invalid = cast(dict[str, Any], deepcopy(index_langfuse_cli_accounting(_report())))
+    invalid = deepcopy(_index(_report()))
     _assign(invalid, path, value)
     with pytest.raises(ValidationError):
-        _validator("langfuse_cli_row_index.v1").validate(invalid)
+        _validator("langfuse_row_index.v2").validate(invalid)

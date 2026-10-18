@@ -21,11 +21,7 @@ from underwrite.instrument.evidence.langfuse_accounting import (
     langfuse_label,
 )
 
-CLI_PROFILE = "cli-1.2.4"
 RULE_PROFILE = "langfuse.cli-accounting.v1"
-ACCOUNTING_SCHEMA = "langfuse_cli_accounting.v1"
-ROW_INDEX_SCHEMA = "langfuse_cli_row_index.v1"
-SOURCE_VERSION = "1.2.4-api-4.35.0"
 HTTP_OK = 200
 # Pinned CLI 1.2.4 caps collection at 100 requests; API 4.35.0 limits each
 # observations/scores request to 1000/100 rows respectively.
@@ -443,24 +439,4 @@ def index_langfuse_cli_body(accounting: dict[str, object]) -> dict[str, object]:
         ],
         "limitations": list(ROW_LIMITATIONS),
         "next_actions": cast(list[str], accounting["next_actions"]).copy(),
-    }
-
-
-def index_langfuse_cli_accounting(accounting: dict[str, object]) -> dict[str, object]:
-    """Preserve the pinned CLI row contract over shared counted row facts."""
-    sources = cast(dict[str, dict[str, object]], accounting["sources"])
-    return {
-        "schema": ROW_INDEX_SCHEMA,
-        "source_rule_profile": RULE_PROFILE,
-        "sources": {
-            role: {
-                "format": sources[role]["format"],
-                "format_version": sources[role]["format_version"],
-                "raw_hash": sources[role]["raw_hash"],
-                "claims_verified": False,
-            }
-            for role in SOURCE_FORMATS
-        },
-        "scope": dict(ROW_SCOPE),
-        **index_langfuse_cli_body(accounting),
     }

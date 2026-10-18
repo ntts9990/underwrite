@@ -143,9 +143,10 @@ Only the analysis is content-minimized: both whole private inputs and invocation
 paths remain in the record. Apply the same separate analysis/storage and diagnostic
 handling above. Do not describe the record as redacted or anonymous.
 
-For historical v1 capture, select advertised `--profile blob-4.35.0` or
-`--profile cli-1.2.4` explicitly. The latter retains `langfuse_cli_record.v1`;
-the former retains `langfuse_record.v1`. Their valid supported bytes remain stable.
+Current development removes Langfuse `--profile` and Python `profile=`;
+published 0.2.0 retains the old selectors. Follow actual capabilities and never
+retry a retired profile after refusal. Current row capture returns
+`langfuse_row_record.v2`; published 0.2.0 returns v1. Preserve old record bytes.
 Pre-storage usage/configuration exit 2 may instead be typed stderr with no saved
 record. Read `analysis/accounting.json` or `analysis/error.json` by exact logical
 name and verify the whole record, even after original files are gone. Whole CLI

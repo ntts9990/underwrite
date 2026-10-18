@@ -14,8 +14,8 @@ from underwrite_core.canonical import canonical_bytes, digest_bytes
 from underwrite.cli import main
 from underwrite.cli import record_capture as storage
 from underwrite.cli import record_langfuse as command
+from underwrite.instrument.evidence.langfuse_compat import CLI_READER
 from underwrite.instrument.ingest.application import DEFAULT_MAX_BYTES
-from underwrite.instrument.ingest.langfuse_cli import CLI_PROFILE, SOURCE_FORMATS, SOURCE_VERSION
 from underwrite.instrument.ingest.schema import SchemaConfigurationError
 from underwrite.service import records
 from underwrite.service.records import read_record, read_record_file, verify_record
@@ -45,8 +45,6 @@ def _argv(paths: dict[str, Path], store: Path, *, identifier: str = "sample") ->
         str(paths["observations"]),
         "--scores",
         str(paths["scores"]),
-        "--profile",
-        "cli-1.2.4",
         "--root",
         str(store),
         "--id",
@@ -58,9 +56,7 @@ def _argv(paths: dict[str, Path], store: Path, *, identifier: str = "sample") ->
 def _run(paths: dict[str, Path], store: Path, identifier: str = "sample") -> dict[str, Any]:
     return cast(
         dict[str, Any],
-        command.run_record_langfuse(
-            paths["observations"], paths["scores"], store, identifier, profile=CLI_PROFILE
-        ),
+        command.run_record_langfuse(paths["observations"], paths["scores"], store, identifier),
     )
 
 
@@ -73,24 +69,25 @@ def test_cli_profile_saves_exact_captured_bytes_and_recovers_after_source_remova
     streams = capsys.readouterr()
     assert streams.err == ""
     result: dict[str, Any] = json.loads(streams.out)
-    assert result["schema"] == "langfuse_cli_record.v1"
+    assert result["schema"] == "langfuse_record.v2"
     assert result["analysis"]["state"] == "result"
     assert result["storage"]["state"] == "saved"
-    assert result["analysis"]["report"]["schema"] == "langfuse_cli_accounting.v1"
+    assert result["analysis"]["report"]["schema"] == "langfuse_accounting.v2"
     manifest = cast(dict[str, Any], read_record(store, "sample").manifest)
-    assert manifest["kind"] == "langfuse.cli-accounting"
-    assert manifest["metadata"]["profile"] == "cli-1.2.4"
+    assert manifest["kind"] == "langfuse.local-accounting"
+    assert manifest["metadata"]["selection_mode"] == "auto"
+    assert manifest["metadata"]["reader_profile"] == CLI_READER
     stored_files = {item["name"]: item for item in manifest["files"]}
     for role, raw in originals.items():
         expected = digest_bytes(raw)
         assert result["sources"][role]["raw_hash"] == expected
         assert result["analysis"]["report"]["sources"][role]["raw_hash"] == expected
         assert stored_files[f"source/{role}.bin"]["sha256"] == expected
-        assert manifest["metadata"][f"{role}_format"] == SOURCE_FORMATS[role]
-        assert manifest["metadata"][f"{role}_format_version"] == SOURCE_VERSION
+        assert result["analysis"]["report"]["sources"][role]["producer_version"] is None
     invocation = json.loads(read_record_file(store, "sample", "invocation.json").data)
-    assert invocation["profile"] == "cli-1.2.4"
-    assert set(invocation["source_selectors"]) == set(originals)
+    assert invocation["selection_mode"] == "auto"
+    assert invocation["reader_profile"] == CLI_READER
+    assert "source_selectors" not in invocation
     for path in paths.values():
         path.unlink()
     assert main.main(["records", "verify", "--root", str(store), "--id", "sample", "--json"]) == 0
@@ -156,7 +153,7 @@ def test_cli_profile_attempts_both_roles_and_saves_only_complete_captures(
     assert result["analysis"]["error"] == result["sources"][missing[0]]["error"]
     assert result["storage"]["state"] == "saved"
     invocation = json.loads(read_record_file(store, "sample", "invocation.json").data)
-    assert invocation["profile"] == "cli-1.2.4"
+    assert invocation["selection_mode"] == "auto"
     for role in ("observations", "scores"):
         if role in missing:
             assert result["sources"][role]["state"] == "unavailable"
@@ -194,7 +191,7 @@ def test_complete_invalid_cli_score_saves_finite_diagnostic_and_raw_bytes(
         == raw
     )
     invocation = json.loads(read_record_file(store, "sample", "invocation.json").data)
-    assert invocation["profile"] == "cli-1.2.4"
+    assert invocation["selection_mode"] == "auto"
     assert "private" not in canonical_bytes(result).decode()
 
 
@@ -205,18 +202,17 @@ def test_unknown_profile_and_missing_contract_refuse_before_any_read(
         pytest.fail("source read occurred before selection/contracts")
 
     monkeypatch.setattr(command, "read_langfuse_file", forbidden)
-    with pytest.raises(command.EvidenceError) as unknown:
-        command.run_record_langfuse(
+    with pytest.raises(TypeError, match="profile"):
+        cast(Any, command.run_record_langfuse)(
             tmp_path / "obs",
             tmp_path / "scores",
             tmp_path / "store",
             "sample",
             profile="unsupported",
         )
-    assert unknown.value.payload["code"] == "UNSUPPORTED_FORMAT"
 
     def missing(name: str) -> Any:
-        if name == command.CLI_RECORD_SCHEMA:
+        if name == command.AUTO_RECORD_SCHEMA:
             raise SchemaConfigurationError("private schema path")
         return original(name)
 
@@ -228,7 +224,6 @@ def test_unknown_profile_and_missing_contract_refuse_before_any_read(
             tmp_path / "scores",
             tmp_path / "store",
             "sample",
-            profile="cli-1.2.4",
         )
     assert not (tmp_path / "store").exists()
 
