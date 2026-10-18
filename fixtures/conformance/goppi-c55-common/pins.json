@@ -1,0 +1,27 @@
+{
+  "schema": "underwrite.goppi_c55_common_fixture_pins.v1",
+  "source_commit": "ff037e517830dec3a311ac652a52cd3ca3ad0140",
+  "source_directory": "fixtures/conformance/operator-answer-exchange",
+  "members": {
+    "assessment.json": {
+      "bytes": 1766,
+      "sha256": "sha256:84c2b157823aaef6f19320efd4b33b00f5e5524184076f6e46a5501575af7974"
+    },
+    "evidence-result.json": {
+      "bytes": 2552,
+      "sha256": "sha256:5475c11c8e5ca0d6eb7f2134383fbffa3e47a6b4c96e952354c47a81a6bff16f"
+    },
+    "schema.json": {
+      "bytes": 7167,
+      "sha256": "sha256:f7a5bd09ccc3fe1459eedf544628be4cb16e5f2b107eefb79f7166a4dc074e7c"
+    },
+    "ume1-schema.json": {
+      "bytes": 13048,
+      "sha256": "sha256:d36d9179ffdc28f6be43727dc5ed6ff3c006f100f523c5f3a2e8677c5b019631"
+    },
+    "manifest.json": {
+      "bytes": 913,
+      "sha256": "sha256:a2da171dc0fd83b8726fcb63bcb1bc273eee7b42c536bc7572cb8bde24891dc2"
+    }
+  }
+}
