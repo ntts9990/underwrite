@@ -38,6 +38,13 @@ from underwrite.instrument.ingest.accounting import SOURCE as PROMPTFOO_SOURCE
 from underwrite.instrument.ingest.codecs.promptfoo import SUPPORTED_VERSIONS as PROMPTFOO_VERSIONS
 from underwrite.instrument.ingest.deepeval_accounting import PROFILES as DEEPEVAL_PROFILES
 from underwrite.instrument.ingest.deepeval_accounting import SOURCE as DEEPEVAL_SOURCE
+from underwrite.instrument.ingest.langfuse_accounting import (
+    BLOB_PROFILE,
+    CLI_PROFILE,
+)
+from underwrite.instrument.ingest.langfuse_accounting import (
+    output_schema as langfuse_output_schema,
+)
 
 Standalone = Callable[[list[str]], int]
 
@@ -269,13 +276,25 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 LANGFUSE_RULE_PROFILE,
                 ("observations", "scores"),
                 (),
-                ("langfuse_accounting.v1",),
+                (langfuse_output_schema(BLOB_PROFILE, "accounting"),),
             ),
             profile(
                 "langfuse.row-index.v1",
                 ("observations", "scores", "view"),
                 (),
-                ("langfuse_row_index.v1",),
+                (langfuse_output_schema(BLOB_PROFILE, "row-index"),),
+            ),
+            profile(
+                CLI_PROFILE,
+                ("observations", "scores", "profile"),
+                (),
+                (langfuse_output_schema(CLI_PROFILE, "accounting"),),
+            ),
+            profile(
+                f"{CLI_PROFILE}|row-index",
+                ("observations", "scores", "profile", "view"),
+                (),
+                (langfuse_output_schema(CLI_PROFILE, "row-index"),),
             ),
         ),
         _standalone(audit_langfuse.main),

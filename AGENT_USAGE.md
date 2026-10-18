@@ -91,7 +91,7 @@ is ready; obtain the completed producer artifact and its version context first.
 | Producer | Input boundary |
 | --- | --- |
 | goppi | `audit-baseline` and `project-baseline` accept the exact baseline exchange manifest v2 described below; P7 paired handoffs, the separate C55 operator-answer assessment, and older grounded-pilot exchanges have different contracts. No generic ingest profile. A CLI summary is insufficient; do not manufacture rows from counts. |
-| Langfuse | The supported `4.35.0` denotes the **server export profile**, not the SDK version. Supply the worker's `observations_v2` or `scores` blob-export file as an uncompressed JSON array with the complete field groups. A REST response, Parquet file, or partially selected export is a different shape. Wait for a completed export manifest; SDK flush alone is insufficient. |
+| Langfuse | Published `0.1.1` defaults to the `4.35.0` **server blob-export profile**: complete-field, uncompressed JSON arrays for `observations_v2` and `scores`; wait for its completed manifest. A development checkout may advertise the separate `--profile cli-1.2.4` for two local official-CLI Observations v2 / Scores v3 captures from API snapshot 4.35.0, in native `--json` envelope or `--output` body form. Check capabilities before using it. Neither is an arbitrary REST/UI JSON, Parquet, or SDK flush result. See [the pinned CLI example](fixtures/examples/langfuse-cli/SOURCE.md). |
 | DeepEval | Supply the ordinary `4.1.1` or `4.2.8` TestRun JSON written by the tool, with the producer version recorded separately. Select `--version 4.2.8` explicitly for that profile; the default remains `4.1.1`. A failed test run can still write a valid artifact. Zero, evaluator errors, and absent verdicts remain distinct. |
 | Promptfoo | Supply the `0.123.0` or `0.124.1` eval output JSON (summary version 3). An assertion-failure exit can accompany a valid export. Direct `audit-promptfoo FILE --json` defaults to 0.123.0; select `--version 0.124.1` explicitly for that producer. With a supplied manifest, `audit-counts` uses its explicit source version and expected hash. |
 
@@ -318,6 +318,39 @@ returned verification and manifest digest concern stored byte integrity, not sou
 provenance or export completeness. Null `published_record` means no identity was
 returned, not proof that the ID is free. Use a new ID after inspecting failure.
 Analysis-only `audit-langfuse` remains available without creating a store.
+
+### Read official Langfuse CLI captures offline
+
+This profile is available in a development checkout when `capabilities --json`
+lists `cli-1.2.4`; published `underwrite==0.1.1` predates it. For a selected
+`@langfuse/cli` 1.2.4 / API-snapshot 4.35.0 pair, save the
+Observations v2 and Scores v3 list outputs as local files, then choose the CLI
+profile explicitly. It accepts the CLI's `--json` response envelopes or
+`--output` bodies; the default command above continues to expect blob arrays.
+The included [exact synthetic CLI captures](fixtures/examples/langfuse-cli/SOURCE.md)
+show both channels and the bounded collection case:
+
+```sh
+uv run --frozen --no-sync underwrite audit-langfuse \
+  --observations observations.json --scores scores.json \
+  --profile cli-1.2.4 --json
+uv run --frozen --no-sync underwrite audit-langfuse \
+  --observations observations.json --scores scores.json \
+  --profile cli-1.2.4 --view row-index --json
+```
+
+`langfuse_cli_accounting.v1` keeps the five original typed score kinds, including
+`CORRECTION`, and relates observation subjects only by matching non-null project,
+trace, and observation IDs in the supplied rows. Missing/null subject context is
+unknown, not trace-level. The minimized `langfuse_cli_row_index.v1` withholds
+names, IDs and values but its source hashes and ordinal patterns remain linkable.
+The report preserves each file's pagination/truncation state. A remaining cursor
+or `truncated` collection is partial; even a reported exhausted collection does
+not establish matching query windows, full producer data, planned executions or
+an atomic snapshot. A source file hash is byte identity, not authentication.
+The existing `records audit-langfuse` route above is for the blob profile only;
+do not use it to retain CLI captures unless capabilities advertises a dedicated
+CLI record profile.
 
 ## Account for DeepEval scores and evaluator errors
 

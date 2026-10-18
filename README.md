@@ -205,8 +205,8 @@ directly; select the exact producer profile you have:
 ```sh
 underwrite audit-promptfoo /path/to/promptfoo-output.json --version 0.124.1 --json
 underwrite audit-deepeval /path/to/deepeval-test-run.json --version 4.2.8 --json
-underwrite audit-langfuse --observations /path/to/observations.json \
-  --scores /path/to/scores.json --json
+underwrite audit-langfuse --observations /path/to/blob-observations.json \
+  --scores /path/to/blob-scores.json --json
 underwrite audit-baseline --exchange /path/to/goppi-baseline-exchange --json
 ```
 
@@ -214,7 +214,11 @@ DeepEval accounting defaults to `4.1.1`; select `--version 4.2.8` for that
 profile. For a reusable owner-asserted metric-name pack and common descriptive
 JSON, see the [DeepEval binding workflow](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors).
 Promptfoo accounting defaults to `0.123.0`; select `--version 0.124.1`
-for that profile. Langfuse's version identifies the server export, not its SDK.
+for that profile. Langfuse's version identifies the server blob export, not its SDK.
+Published `0.1.1` supports that blob path. A development checkout may also
+advertise an explicit [CLI-capture profile](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#read-official-langfuse-cli-captures-offline);
+check `capabilities --json` before using it. Its synthetic fixture proves the
+local file format, not live-server completeness.
 See [artifact requirements](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#get-the-right-producer-artifact) and
 [producer checks](https://github.com/ntts9990/underwrite/blob/main/EVIDENCE_REVIEW.md) for the tested scope and fixture origins.
 
