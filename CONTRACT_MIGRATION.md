@@ -1,13 +1,17 @@
 # Current contract consolidation milestone
 
-Status: implementation in progress; unreleased development changes. Published
+Scope: unreleased development changes across the entire repository. Published
 0.2.0 remains unchanged. [Milestone #2](https://github.com/ntts9990/underwrite/milestone/2)
-covers the entire repository. Package versions and publication are outside this
-milestone. A reviewed plan is not completed implementation.
+tracks checkpoint delivery and final verification. Package versions and publication
+are outside this milestone. The decisions and migration boundaries below describe
+the current implementation; a planning decision alone is not validation evidence.
 
 Initial inventory: 93 authored schemas, all assigned a decision below, plus
-non-schema identities. Four new envelopes are required only where the selected
-input or embedded result changes an existing public contract.
+non-schema identities. The initial plan required four new envelopes. S7 found a
+real subject-ID binding defect and adds two acceptance successors: the final
+disposition is 31 retired initial schemas, one external-input-only schema and 61
+retained current schemas, plus six new schemas (68 authored schemas in total).
+The initial inventory denominator stays 93; the discovered amendment is explicit.
 
 ## Target architecture and what “v2 consolidation” means
 
@@ -99,7 +103,8 @@ not a second runtime source of truth.
    revive a retired computation. Generic history read/verify must work with retired
    producer schemas absent from the installed package.
 10. **Current measurement is directional event measurement only.** Preserve policy
-    v3/read v2/claims v2/decision v2. Extract shared current input/numeric helpers
+    v3/read v2 and their numerical meaning. S7 replaces claims/decision v2 with v3
+    to repair the confirmed shared-subject admission defect. Extract current helpers
     before deleting legacy read orchestration and old-only jury/availability/
     stratification composition. Preserve calibration/e-process arithmetic still
     used by current logic. Unknown assumptions, missing data and incomplete
@@ -130,7 +135,8 @@ field owners until S2/S7 retires them. No new product behavior in this checkpoin
 
 Owned surfaces: `scripts/build_promptfoo_compat.py`, old Promptfoo row/record
 builders as necessary, minimal same-meaning schema fragment owner, and
-`scripts/build_acceptance_v2.py`; existing generator contract tests. Prove current
+the acceptance contract builder (now `scripts/build_acceptance_contracts.py`);
+existing generator contract tests. Prove current
 generation in a temporary root where legacy template files genuinely do not exist,
 not merely by scanning source text. Existing valid/invalid contract vectors stay
 valid/invalid. Neither package manifest nor active runtime retirement is premature.
@@ -221,11 +227,9 @@ already supplies one. Standalone calibration and e-process numerical APIs remain
 with caller-supplied parameters and their own validation. The old global seed
 resource is removed; stochastic APIs continue requiring explicit seeds.
 
-The claims-v2 identifier description now names its actual acceptance parser owner;
-this changes no validation rule. S7 must resolve the existing difference between
-measurement subject IDs (bounded nonblank text) and acceptance's ASCII identifier
-grammar through a real measure-to-claim example, rather than silently declaring
-those contracts equivalent.
+S6 corrected the claims-v2 identifier description without changing validation.
+The actual measure-to-claim probe then confirmed that its ASCII subject restriction
+conflicts with current measurement; the S7 amendment below repairs this separately.
 
 ### S7 — All remaining domains and interface closure
 
@@ -241,6 +245,32 @@ In affected slices update `main.py` descriptors, Python docs, `AGENT_USAGE.md`,
 `STORAGE.md`, agent skill/recording reference, and current-development migration
 guidance. Keep released 0.2.0/0.1.1 claims as history. The cleanup changes supported
 APIs without changing package metadata; mark checkout differences explicitly.
+
+S7 found that valid measured subjects such as `정확도`, `quality score` and
+`quality/rate` cannot pass claims-v2 admission, while overlong ASCII subjects can
+be sealed but never measured. Claims now use the existing pure measurement text
+owner for subject IDs; candidate/claim IDs retain their separate ASCII grammar.
+Matching remains exact, with no slugging, trimming or normalization. The human
+renderer escapes control-bearing subject text through its existing display owner;
+JSON retains the exact identity.
+
+This changes admission semantics, so introduce `declared_claims.v3` and
+`acceptance_decision.v3`, retire the old v2 runtime contracts, and use a new tagged
+claims seal. Candidates must bind that actual new seal; published v2 validators
+and stored bytes are not redefined. Old v1/v2 declarations receive the finite
+migration refusal before reads/computation. Policy/read/semantic/candidate schemas
+and mathematical outputs remain unchanged. Synthetic current fixtures are rebuilt
+through actual sealing/evaluation; genuine published v2 histories remain separate
+read/verify fixtures. See [migration instructions](MIGRATION.md).
+
+The retained audit distinguishes authored contracts from installed schema admission.
+`bundle_index.v1`, `receipt.v1`, `term_registry.v1` and `instrument_error.v1` are
+not deployed through the app's schema-resource loader. Their core/fixed-diagnostic
+owners and tests remain; consumed-field readers are not described as full JSON
+Schema validators. In particular, `Registry.from_dict` parses a semantic subset
+and does not execute the registry schema's `first_mention_rules`. Exact low-level
+producer codec selectors remain source-format contracts, including multiple
+supported source versions where registered, without restoring old output writers.
 
 ### S8 — Installed artifact and complete-goal audit
 
@@ -296,7 +326,8 @@ but drops real accepted Goppi C55 v1 input and historical interoperability. Reje
 in favor of one next inspector contract over honest external-format identities.
 
 **Selected architecture** accepts documented development API breaks and two new
-inspection v3 schemas plus Langfuse row-record v2 and baseline-record v2. It reduces active generations
+inspection v3 schemas plus Langfuse row-record v2 and baseline-record v2. S7 adds
+claims/decision v3 for the demonstrated subject-ID defect. It reduces active generations
 without claiming incompatible things share one schema; stable identity protocols
 remain unchanged. Cost: migration guidance and exact cold/history boundaries must
 remain explicit. Benefit: one maintained computation/producer path per owned
@@ -315,7 +346,7 @@ family and useful interoperable input without hidden downgrade engines.
 | `binary-event-directional.v1` | Retain current method profile backing policy v3/read v2; do not confuse method generation with output generation. |
 | `underwrite.measurement_semantics.v1` | Retain digest domain; otherwise semantics→policy→claims→candidate→read identity would change for no semantic reason. |
 | `underwrite.regression_case.v1` | Retain case-ID hash namespace and stable split assignment; no relabel/repartition of old cases. |
-| Five current diagnostic method v1 labels | Retain observed-event-fraction, uniform-subset-all-success, Brier MSE, fixed-width gap, beta-mixture directional method identities and numerical coverage. |
+| Four diagnostic methods plus the directional method | Retain observed-event-fraction, uniform-subset-all-success, Brier MSE, fixed-width gap, beta-mixture directional method identities and numerical coverage. |
 | DeepEval rule-profile v1/v2 and reader policy IDs | Preserve actual no-flaky/flaky interpretation identities used by current v3; retire only package-version/output selection. |
 | Langfuse blob/CLI rule-profile IDs, Promptfoo SummaryV3 and selected-reader IDs | Preserve semantic source-shape/reader identities, not fake producer release claims. |
 | External Promptfoo/DeepEval/Langfuse/Inspect/OpenInference/OTLP selectors | Preserve supported exact source wire profiles and fixture provenance; ordinary audits stop requiring them, low-level ingest stays explicit. |
@@ -339,7 +370,7 @@ need their full schema/CLI/API/installed/migration acceptance.
 | Initial schema | Decision | Slice | Required meaning / evidence |
 |---|---|---|---|
 | `acceptance_decision.v1` | RETIRE | S1/S6 | Superseded native engine/resource; current helper extraction and current builder independence first. |
-| `acceptance_decision.v2` | KEEP_CURRENT_NATIVE | S1/S6/S7 | Current event/acceptance path; own generation and digest domain; no obsolete alternative writer. |
+| `acceptance_decision.v2` | RETIRE | S7 amendment | Confirmed subject-ID composition defect requires v3 admission/decision; old bytes and seal remain historical data. |
 | `acceptance_error.v1` | KEEP_CURRENT_NATIVE | S1/S6/S7 | Current event/acceptance path; own generation and digest domain; no obsolete alternative writer. |
 | `artifact_case.v1` | KEEP_CURRENT_LINKAGE | S2/S7 | Single bounded artifact/release linkage workflow; codec version and source identity not new accounting generation. |
 | `artifact_inspection.v1` | KEEP_CURRENT_LINKAGE | S2/S7 | Single bounded artifact/release linkage workflow; codec version and source identity not new accounting generation. |
@@ -357,7 +388,7 @@ need their full schema/CLI/API/installed/migration acceptance.
 | `common_result_inspection_actions.v1` | RETIRE | S5 | One new v3 inspector output truthfully labels original v1/v2 input; no schema relabeling. |
 | `common_result_inspection_actions.v2` | RETIRE | S5 | One new v3 inspector output truthfully labels original v1/v2 input; no schema relabeling. |
 | `declared_claims.v1` | RETIRE | S1/S6 | Superseded native engine/resource; current helper extraction and current builder independence first. |
-| `declared_claims.v2` | KEEP_CURRENT_NATIVE | S1/S6/S7 | Current event/acceptance path; own generation and digest domain; no obsolete alternative writer. |
+| `declared_claims.v2` | RETIRE | S7 amendment | Confirmed subject-ID composition defect requires v3 admission/decision; old bytes and seal remain historical data. |
 | `declared_comparison.v1` | KEEP_CURRENT_SEMANTIC | S2/S4 | Independent single current declaration/meaning owner, not producer accounting generation. |
 | `declared_comparison_case.v1` | KEEP_CURRENT_SEMANTIC | S2/S4 | Independent single current declaration/meaning owner, not producer accounting generation. |
 | `deepeval_accounting.v1` | RETIRE | S4 | Remove old emitters/pack scope/selectors; current v3 or v2 preserves true meanings. |
@@ -427,7 +458,7 @@ need their full schema/CLI/API/installed/migration acceptance.
 | `release_inspection_error.v1` | KEEP_CURRENT_LINKAGE | S2/S7 | Single bounded artifact/release linkage workflow; codec version and source identity not new accounting generation. |
 | `result_record.v1` | KEEP_STORAGE | S7/S8 | Single current request/manifest/read/error protocol; preserve immutable identity and linked historical reads. |
 | `statistical_seed.v1` | RETIRE | S1/S6 | Superseded native engine/resource; current helper extraction and current builder independence first. |
-| `term_registry.v1` | KEEP_CONFIG | S7 | One current configuration format, no competing engine; preserve expiry/unknown rules. |
+| `term_registry.v1` | KEEP_CONFIG | S7 | Authored term-data shape; core Registry.from_dict parses its documented semantic subset, without a CLI writer or full-schema admission claim. |
 | `trajectory_record.v1` | KEEP_TRAJECTORY | S7 | Single current report/history/read workflow; retain seven-file binding, full limit, historical verification distinction. |
 | `trajectory_record_read.v1` | KEEP_TRAJECTORY | S7 | Single current report/history/read workflow; retain seven-file binding, full limit, historical verification distinction. |
 | `trajectory_verification_history.v1` | KEEP_TRAJECTORY | S7 | Single current report/history/read workflow; retain seven-file binding, full limit, historical verification distinction. |
@@ -440,5 +471,7 @@ New schema decisions (not hidden in initial denominator):
 | `baseline_record.v2` | S5 | Sole current baseline writer embeds evidence_result.v2; old nested-result identity and stored history remain intact. |
 | `common_result_inspection.v3` | S5 | Sole summary output, exact selected input v1/v2 plus original raw hash; no upgraded input fiction. |
 | `common_result_inspection_actions.v3` | S5 | Sole actions output, source-owned vocabularies and same identity guarantee as summary. |
+| `declared_claims.v3` | S7 amendment | Shared measured-subject admission, separate candidate/claim grammar, new actual tagged seal. |
+| `acceptance_decision.v3` | S7 amendment | Sole decision writer admits exact shared subject IDs and retains policy/semantic/seal binding and human-review boundary. |
 
 Ledger set check: 93 initial names matched the initial tracked contract inventory exactly; no duplicates, missing names or added initial names. This is planning coverage only.

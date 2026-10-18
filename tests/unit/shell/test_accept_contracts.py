@@ -21,9 +21,9 @@ from underwrite.instrument.ingest.schema import packaged_validator
 
 ROOT = repo_root(Path(__file__).resolve())
 NAMES = (
-    "declared_claims.v2",
+    "declared_claims.v3",
     "change_candidate.v1",
-    "acceptance_decision.v2",
+    "acceptance_decision.v3",
     "acceptance_error.v1",
 )
 FIXTURES = ROOT / "fixtures/examples/measurement"
@@ -71,7 +71,7 @@ def claims_document() -> dict[str, Any]:
         },
     ]
     return {
-        "schema": "declared_claims.v2",
+        "schema": "declared_claims.v3",
         "candidate_id": "prompt-v2",
         "required_claims": {basis: copy.deepcopy(entries) for basis in cf.BASES},
         "selection": {"salt": "author-salt", "confirm_fraction": 0.25, "case_ids": ["c1"]},
@@ -134,7 +134,7 @@ def test_contract_is_a_self_contained_packaged_schema(name: str) -> None:
 
 
 def test_claims_contract_restates_its_owners() -> None:
-    claims = schema("declared_claims.v2")
+    claims = schema("declared_claims.v3")
     identifier = claims["$defs"]["id"]
     assert identifier["minLength"] == 1
     assert identifier["pattern"] == cl.ID_PATTERN
@@ -162,7 +162,7 @@ def test_candidate_contract_restates_its_owners() -> None:
 
 
 def test_decision_contract_restates_its_owners() -> None:
-    decision = schema("acceptance_decision.v2")
+    decision = schema("acceptance_decision.v3")
     properties, defs = decision["properties"], decision["$defs"]
     assert tuple(properties["classification"]["enum"]) == cf.CLASSIFICATIONS
     assert tuple(properties["reason_codes"]["items"]["enum"]) == cf.REASON_CODES
@@ -177,7 +177,7 @@ def test_decision_contract_restates_its_owners() -> None:
     assert limitations["items"]["enum"] == [*dc.LIMITATIONS, cf.PARTIAL_FAIL]
     assert [rule["contains"]["const"] for rule in limitations["allOf"]] == list(dc.LIMITATIONS)
     selection = properties["selection"]["properties"]
-    declared = schema("declared_claims.v2")["properties"]["selection"]["properties"]
+    declared = schema("declared_claims.v3")["properties"]["selection"]["properties"]
     assert selection["confirm_fraction"] == declared["confirm_fraction"]
     assert selection["case_count"]["maximum"] == declared["case_ids"]["maxItems"]
     assert "selection" in decision["required"]
@@ -198,7 +198,7 @@ def test_decision_contract_restates_its_owners() -> None:
 
 
 def test_every_emitted_decision_validates() -> None:
-    check = validator("acceptance_decision.v2")
+    check = validator("acceptance_decision.v3")
     found = decisions()
     assert {d["classification"] for d in found} == set(cf.CLASSIFICATIONS)
     for decision in found:
@@ -224,14 +224,14 @@ def test_decision_contract_refuses_authority_and_dropped_limitations(
     path: str, value: object
 ) -> None:
     decision = decisions()[0]
-    assert valid("acceptance_decision.v2", decision)
-    assert not valid("acceptance_decision.v2", {**decision, path: value})
+    assert valid("acceptance_decision.v3", decision)
+    assert not valid("acceptance_decision.v3", {**decision, path: value})
 
 
 def test_decision_contract_requires_the_selection_summary() -> None:
     decision = decisions()[0]
     del decision["selection"]
-    assert not valid("acceptance_decision.v2", decision)
+    assert not valid("acceptance_decision.v3", decision)
 
 
 def test_not_measured_summary_needs_a_reason() -> None:
@@ -244,11 +244,11 @@ def test_not_measured_summary_needs_a_reason() -> None:
     for claim in broken["claims"]:
         if claim["read"] and claim["read"]["verdict"] == "not_measured":
             claim["read"]["reason_codes"] = []
-    assert valid("acceptance_decision.v2", decision) and not valid("acceptance_decision.v2", broken)
+    assert valid("acceptance_decision.v3", decision) and not valid("acceptance_decision.v3", broken)
 
 
 def test_documents_the_pure_layer_accepts_validate() -> None:
-    assert valid("declared_claims.v2", claims_document())
+    assert valid("declared_claims.v3", claims_document())
     assert valid("change_candidate.v1", candidate_document())
     over = claims_document()
     over["required_claims"]["held_in"] = [
@@ -261,7 +261,7 @@ def test_documents_the_pure_layer_accepts_validate() -> None:
         }
         for i in range(cl.MAX_CLAIMS_PER_BASIS + 1)
     ]
-    assert not valid("declared_claims.v2", over)
+    assert not valid("declared_claims.v3", over)
     with pytest.raises(cl.ClaimsInputError):
         cl.parse_claims(over)
 

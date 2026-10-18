@@ -432,5 +432,5 @@ def test_native_profiles_advertise_only_current_semantics() -> None:
     assert measurement.input_schemas == ("observation.v1", "measurement_policy.v3")
     assert measurement.output_schemas == ("read.v2",)
     acceptance = descriptors["accept"].profiles[0]
-    assert acceptance.input_schemas == ("change_candidate.v1", "declared_claims.v2", "read.v2")
-    assert acceptance.output_schemas == ("acceptance_decision.v2",)
+    assert acceptance.input_schemas == ("change_candidate.v1", "declared_claims.v3", "read.v2")
+    assert acceptance.output_schemas == ("acceptance_decision.v3",)

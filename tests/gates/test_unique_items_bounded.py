@@ -216,7 +216,7 @@ def test_a_reference_into_another_packaged_contract_is_followed() -> None:
 GOLDEN = ROOT / "fixtures/examples/event-acceptance"
 WHOLE: tuple[object, ...] = (None, True, 0, 1.5, "x", [], {}, [None])
 REWRITES: dict[str, tuple[tuple[str, ...], list[object]]] = {
-    "acceptance_decision.v2": (
+    "acceptance_decision.v3": (
         ("$defs", "claim", "properties", "read"),
         [
             {"type": "null"},

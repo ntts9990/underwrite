@@ -54,9 +54,19 @@ def test_current_measurement_read_pairs_bind_to_classifier(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     observation_path, policy_path = _measurement_case(scenario, tmp_path)
-    assert main(
-        ["measure", "--observation", str(observation_path), "--policy", str(policy_path), "--json"]
-    ) == 0
+    assert (
+        main(
+            [
+                "measure",
+                "--observation",
+                str(observation_path),
+                "--policy",
+                str(policy_path),
+                "--json",
+            ]
+        )
+        == 0
+    )
     output = capsys.readouterr()
     assert output.err == ""
     read = json.loads(output.out)
@@ -138,7 +148,7 @@ def decision(capsys: pytest.CaptureFixture[str], argv: list[str]) -> dict[str, A
     output = capsys.readouterr()
     assert output.err == ""
     produced = json.loads(output.out)
-    validator("acceptance_decision.v2").validate(produced)
+    validator("acceptance_decision.v3").validate(produced)
     return produced
 
 
@@ -281,7 +291,7 @@ def test_goldens_are_the_command_output(
     assert output.err == ""
     assert output.out == (GOLDEN / golden).read_text(encoding="utf-8")
     produced = json.loads(output.out)
-    validator("acceptance_decision.v2").validate(produced)
+    validator("acceptance_decision.v3").validate(produced)
     assert (produced["classification"], produced["next_state"]) == (classification, next_state)
     assert produced["reason_codes"] == reasons
     assert produced["inputs"]["read_digests"] == sorted(
@@ -308,7 +318,7 @@ def test_human_mode_explains_each_claim_and_claims_no_authority(
     assert "not approval" in lines[0] and "merge_authorized is false" in lines[0]
     assert "classification: indeterminate (proposed -> proposed)" in lines
     assert any(
-        line.startswith("claim secondary (validity, synthetic.secondary-event-rate): ")
+        line.startswith('claim secondary (validity, "synthetic.secondary-event-rate"): ')
         for line in lines
     )
     assert any(
@@ -320,7 +330,7 @@ def test_human_mode_explains_each_claim_and_claims_no_authority(
 def test_missing_claim_read_is_named_in_human_mode(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(args(reads=("read.json",))[:-1]) == 0
     assert (
-        "claim secondary (validity, synthetic.secondary-event-rate): no read supplied"
+        'claim secondary (validity, "synthetic.secondary-event-rate"): no read supplied'
         in capsys.readouterr().out
     )
 
@@ -347,9 +357,9 @@ def test_accept_is_listed_in_the_top_level_help(capsys: pytest.CaptureFixture[st
 
 
 def test_read_bound_is_the_claims_contract_bound() -> None:
-    claims = schema("declared_claims.v2")
+    claims = schema("declared_claims.v3")
     assert accept.MAX_READS == claims["$defs"]["basis_claims"]["maxItems"]
-    assert accept.MAX_READS == schema("acceptance_decision.v2")["properties"]["claims"]["maxItems"]
+    assert accept.MAX_READS == schema("acceptance_decision.v3")["properties"]["claims"]["maxItems"]
 
 
 def test_the_bound_itself_is_admitted(capsys: pytest.CaptureFixture[str]) -> None:
@@ -849,3 +859,50 @@ def test_next_actions_are_the_contract_s_and_the_shared_table_s() -> None:
     assert {code: table[code] for code in NEXT_ACTIONS} == NEXT_ACTIONS
     actions = schema("acceptance_error.v1")["properties"]["next_action"]["enum"]
     assert set(actions) == set(table.values()) | set(dc.REFUSAL_ACTIONS.values())
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        "declared_claims.v1",
+        "declared_claims.v2",
+        "declared_claims.v99",
+        "../../private",
+        None,
+        3,
+        True,
+        [],
+        {},
+    ],
+)
+def test_claim_generation_refuses_before_read_acquisition_or_split(
+    schema: object,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    claims = load("claims.json")
+    claims["schema"] = schema
+    document = write(tmp_path, "generation.json", claims)
+    calls: list[str] = []
+    original = accept.read_document
+
+    def read_document(*args: Any, **kwargs: Any) -> Any:
+        location = args[3]
+        assert not location.startswith("/reads"), "invalid claims must precede read acquisition"
+        calls.append(location)
+        return original(*args, **kwargs)
+
+    def forbidden(*args: Any, **kwargs: Any) -> Any:
+        pytest.fail("invalid claims reached split computation")
+
+    monkeypatch.setattr(accept, "read_document", read_document)
+    monkeypatch.setattr(accept, "assign_split", forbidden)
+    assert main(args(claims=document, reads=(tmp_path / "unopened.json",))) == ERROR_EXIT
+    payload = error(capsys, "INVALID_CLAIMS")
+    assert calls == ["/candidate", "/claims"]
+    if schema in ("declared_claims.v1", "declared_claims.v2"):
+        assert payload["reason"] == "LEGACY_CLAIMS_REQUIRES_MIGRATION"
+        assert payload["location"] == "/claims/schema"
+    else:
+        assert payload["reason"] == "SCHEMA_VALIDATION_FAILED"

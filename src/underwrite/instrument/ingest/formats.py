@@ -34,7 +34,7 @@ def native_codecs() -> dict[tuple[str, str], Codec]:
 
 
 def external_codecs() -> dict[tuple[str, str], Codec]:
-    """Vendor-captured external profiles, one exact version each."""
+    """Vendor-captured external profiles, keyed by their exact supported versions."""
     return _merge(
         (
             deepeval.CODECS,

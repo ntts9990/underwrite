@@ -75,7 +75,7 @@ def read_measurement(reader: InputReader) -> dict[str, Any]:
         "INVALID_OBSERVATION",
         "/observation",
     )
-    if policy.get("schema") in {"measurement_policy.v1", "measurement_policy.v2"}:
+    if policy.get("schema") in ("measurement_policy.v1", "measurement_policy.v2"):
         raise MeasurementError("INVALID_POLICY", "LEGACY_POLICY_REQUIRES_MIGRATION", "/policy")
     if policy.get("schema") != "measurement_policy.v3" or policy.get("profile") != PROFILE:
         raise MeasurementError("UNSUPPORTED_PROFILE", "UNSUPPORTED_POLICY_PROFILE", "/policy")

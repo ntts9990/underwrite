@@ -1,6 +1,6 @@
 """Card: measurement-semantics | Paper: ADR-020 | Stage: semantic-repair.
 
-Declared claims (``declared_claims.v2``), sealed by digest before any read is bound.
+Declared claims (``declared_claims.v3``), sealed by digest before any read is bound.
 Every basis (``same_batch``/``held_in``/``held_out``) names 1..64 claims, each bound to
 one read subject and to the digest of the measurement policy that holds its thresholds;
 no threshold lives here. The seal is a digest over the canonical, order-normalized
@@ -20,7 +20,7 @@ from typing import Final, Literal, TypeGuard
 from underwrite_core.canonical import CanonicalizationError, canonical_bytes, tagged_digest
 
 from underwrite.acceptance.classify import BASES, EFFECTS, Basis, Effect
-from underwrite.measurement_contract.semantics import MAX_CASES
+from underwrite.measurement_contract.semantics import MAX_CASES, ContractError, text
 
 ClaimsErrorCode = Literal[
     "INVALID_CLAIMS",
@@ -34,14 +34,14 @@ ClaimsErrorCode = Literal[
     "SELECTION_LEAKS_CONFIRM",
 ]
 
-SCHEMA: Final = "declared_claims.v2"
+SCHEMA: Final = "declared_claims.v3"
 MAX_CLAIMS_PER_BASIS: Final = 64
 # Bound the selection by the maximum population across all required reads.
 MAX_SELECTION_CASES: Final = MAX_CLAIMS_PER_BASIS * MAX_CASES
 # Candidate/claim identifiers retain their established ASCII vocabulary.
 ID_PATTERN: Final = r"^[A-Za-z0-9_.:-]+$"
 DIGEST_PATTERN: Final = r"^sha256:[0-9a-f]{64}$"
-DIGEST_TAG: Final = "underwrite.declared_claims.v2"
+DIGEST_TAG: Final = "underwrite.declared_claims.v3"
 LIMITATIONS: Final = ("claims_sealing_is_digest_binding", "split_parameters_author_chosen")
 _ID_RE = re.compile(ID_PATTERN)
 _DIGEST_RE = re.compile(DIGEST_PATTERN)
@@ -129,9 +129,14 @@ def _effect(value: object, location: str) -> Effect:
 
 def _claim(raw: object, location: str) -> Claim:
     item = _object(raw, _CLAIM_KEYS, "INVALID_CLAIMS", location)
+    claim_id = _text(item.get("claim_id"), _ID_RE, "INVALID_CLAIMS", f"{location}/claim_id")
+    try:
+        subject_id = text(item.get("subject_id"))
+    except ContractError:
+        raise ClaimsInputError("INVALID_CLAIMS", f"{location}/subject_id") from None
     return Claim(
-        _text(item.get("claim_id"), _ID_RE, "INVALID_CLAIMS", f"{location}/claim_id"),
-        _text(item.get("subject_id"), _ID_RE, "INVALID_CLAIMS", f"{location}/subject_id"),
+        claim_id,
+        subject_id,
         _effect(item.get("effect"), f"{location}/effect"),
         _text(
             item.get("policy_digest"),
@@ -176,9 +181,9 @@ def _selection(raw: object) -> Selection:
 
 
 def parse_claims(document: object) -> DeclaredClaims:
-    """Parse and seal one decoded ``declared_claims.v2`` document."""
+    """Parse and seal one decoded ``declared_claims.v3`` document."""
     item = _object(document, _DOCUMENT_KEYS, "INVALID_CLAIMS", "/")
-    if item.get("schema") == "declared_claims.v1":
+    if item.get("schema") in ("declared_claims.v1", "declared_claims.v2"):
         raise ClaimsInputError("INVALID_CLAIMS", "/schema", "LEGACY_CLAIMS_REQUIRES_MIGRATION")
     _require(item.get("schema") == SCHEMA, "INVALID_CLAIMS", "/schema")
     candidate_id = _text(item.get("candidate_id"), _ID_RE, "INVALID_CLAIMS", "/candidate_id")

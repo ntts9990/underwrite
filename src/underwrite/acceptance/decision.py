@@ -40,7 +40,7 @@ RefusalCode = Literal[
     "INVALID_STATE_FOR_EVALUATION",
 ]
 
-SCHEMA: Final = "acceptance_decision.v2"
+SCHEMA: Final = "acceptance_decision.v3"
 CANDIDATE_SCHEMA: Final = "change_candidate.v1"
 KINDS: Final = ("prompt_version", "retrieval_method", "harness_patch", "model_version")
 AUTHORITY_KEYS: Final = frozenset(
@@ -218,7 +218,7 @@ def _summary(claim: cl.Claim, bound: Mapping[str, ReadBinding]) -> dict[str, Any
 def decide(
     candidate: object, claims: object, reads: Sequence[object], assignment: Mapping[str, str]
 ) -> dict[str, Any]:
-    """The ``acceptance_decision.v2`` for one candidate, or an ``AcceptanceRefusal``.
+    """The ``acceptance_decision.v3`` for one candidate, or an ``AcceptanceRefusal``.
 
     ``assignment`` is the shell's stable split of the claims' selection case ids.
     """

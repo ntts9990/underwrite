@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import Any
 
 if __package__:
-    from ._schema_compose import object_schema, reference
+    from ._schema_compose import bounded_nonblank_string, object_schema, reference
 else:
-    from _schema_compose import object_schema, reference
+    from _schema_compose import bounded_nonblank_string, object_schema, reference
 
 from underwrite.acceptance import claims, decision
 from underwrite.acceptance.classify import (
@@ -24,7 +24,7 @@ from underwrite.acceptance.classify import (
     VERDICTS,
 )
 from underwrite.acceptance.lifecycle import STATES
-from underwrite.measurement_contract.semantics import DECISION_REASONS, PROFILE
+from underwrite.measurement_contract.semantics import DECISION_REASONS, MAX_IDENTITY, PROFILE
 
 ROOT = Path(__file__).resolve().parents[1]
 JSON = dict[str, Any]
@@ -73,7 +73,7 @@ def _declared_claims() -> JSON:
     claim = _object(
         {
             "claim_id": reference("id"),
-            "subject_id": reference("id"),
+            "subject_id": reference("subject_id"),
             "effect": {
                 **_enum(EFFECTS),
                 "description": (
@@ -119,9 +119,10 @@ def _declared_claims() -> JSON:
             "id": {
                 **_identity(),
                 "description": (
-                    "Acceptance-owned ASCII grammar for candidate, claim and subject identifiers."
+                    "Acceptance-owned ASCII grammar for candidate and claim identifiers."
                 ),
             },
+            "subject_id": bounded_nonblank_string(MAX_IDENTITY),
             "sha256_digest": _digest(),
             "basis_claims": {
                 "type": "array",
@@ -160,7 +161,7 @@ def _decision_claim() -> JSON:
     return _object(
         {
             "claim_id": reference("id"),
-            "subject_id": reference("id"),
+            "subject_id": reference("subject_id"),
             "effect": _enum(EFFECTS),
             "policy_digest": reference("sha256_digest"),
             "read": {
@@ -255,6 +256,7 @@ def _acceptance_decision() -> JSON:
         _decision_properties(),
         {
             "id": _identity(),
+            "subject_id": bounded_nonblank_string(MAX_IDENTITY),
             "sha256_digest": _digest(),
             "state": _enum(STATES),
             "read_reason_codes": {

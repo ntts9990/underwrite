@@ -16,6 +16,11 @@ def object_schema(properties: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def bounded_nonblank_string(maximum: int) -> dict[str, Any]:
+    """JSON shape of bounded text; semantic Unicode admission belongs to runtime."""
+    return {"type": "string", "minLength": 1, "maxLength": maximum, "pattern": r"\S"}
+
+
 def reference(name: str) -> dict[str, str]:
     return {"$ref": "#/$defs/" + name}
 

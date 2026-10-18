@@ -1,1 +1,1 @@
-{"basis":"held_out","candidate_id":"synthetic-event-change","claims_digest":"sha256:c37fac2cfd42ac1a4d6e3555a800e048afd574be074ff7a95aa82dbcee35955d","current_state":"screened","hard_failures":[],"kind":"harness_patch","schema":"change_candidate.v1"}
+{"basis":"held_out","candidate_id":"synthetic-event-change","claims_digest":"sha256:e9d36259858659d44a4113a2d01687340af0c7d17259dcc545735922e921edf5","current_state":"screened","hard_failures":[],"kind":"harness_patch","schema":"change_candidate.v1"}

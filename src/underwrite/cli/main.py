@@ -7,6 +7,8 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from underwrite.acceptance import claims as acceptance_claims
+from underwrite.acceptance import decision as acceptance_decision
 from underwrite.cli import (
     accept,
     audit_baseline,
@@ -485,8 +487,8 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
             profile(
                 "declared-claims",
                 ("candidate", "claims", "read"),
-                ("change_candidate.v1", "declared_claims.v2", "read.v2"),
-                ("acceptance_decision.v2",),
+                (acceptance_decision.CANDIDATE_SCHEMA, acceptance_claims.SCHEMA, "read.v2"),
+                (acceptance_decision.SCHEMA,),
             ),
         ),
         _standalone(accept.main),

@@ -25,8 +25,8 @@ Old Promptfoo result schemas and their generators are removed from the current
 package. Saved records remain immutable and readable with `records read-json`
 and verifiable with `records verify`, without the retired schemas or a producer.
 A new analysis is a new result/record; it never updates an existing stored report.
-See [the complete consolidation milestone](CONTRACT_MIGRATION.md) for the remaining
-families; their planned changes are not claimed implemented here.
+See [the complete consolidation milestone](CONTRACT_MIGRATION.md) for the complete
+family inventory, decisions and validation requirements.
 
 ## Unreleased checkout: one Langfuse flow per view
 
@@ -93,6 +93,42 @@ schemas are absent from the checkout package, but old records remain byte-readab
 and verifiable without a producer or result reanalysis. `evidence_result.v1` remains
 an exact external-input validator, not an Underwrite result writer. No package
 version increase or publication is included in this development change.
+
+## Unreleased checkout: one current native measurement and acceptance flow
+
+The old read-v1 composer and policy-v1/v2 schemas are removed. Current measurement
+still uses policy v3, read v2 and the same semantic/directional rules. Standalone
+calibration and e-process math APIs remain. Remove imports of
+`measurement.read.assemble_read`, legacy `read_input.prepare`, and
+`cli.measure.legacy_measurement_validators`; `read_input.select_slots` now requires
+an explicit role decoder. Actual event declarations and expected cases are needed
+to produce a new current measurement; a legacy verdict cannot be converted by
+changing its schema label.
+
+Current acceptance uses `declared_claims.v3` and `acceptance_decision.v3`.
+The old v2 subject-ID restriction prevented valid measured identities such as
+`정확도`, `quality score` and `quality/rate` from reaching acceptance. Claim subject
+IDs now use the same bounded, nonblank, NFC/UTF-8 text rule as measurement. Values
+are matched exactly; no trimming or aliasing occurs. Candidate and claim IDs keep
+their separate ASCII grammar. The changed subject population gets new contracts,
+so published v2 validators and stored v2 artifacts are not silently redefined.
+
+Create a new v3 declaration using the owner's actual current subject, policy and
+semantic identities, then compute its seal with
+`underwrite.acceptance.claims.parse_claims(document).digest` and bind that digest
+in a new `change_candidate.v1` document. A schema-label edit alone leaves the old
+seal invalid. Old v1/v2 declarations receive `LEGACY_CLAIMS_REQUIRES_MIGRATION`;
+a stale candidate seal receives `CLAIMS_DIGEST_MISMATCH`. Policies and measured
+reads need no recomputation solely for this claim-generation change if their
+actual subject/semantic/policy identities remain correct. Do not reinterpret old
+claims that never described a valid current subject.
+
+Old records remain readable with `records read-json` and verifiable with
+`records verify`, preserving original bytes and hashes. Verification checks stored
+integrity, not continued support for their original evaluator. Replay accepts a
+compatible current measurement record; a generic legacy read is not one. No
+existing store is rewritten. Published 0.2.0 keeps its original APIs and v2
+acceptance; check the running installation's capabilities, not metadata alone.
 
 ## Released history: migration from 0.1.1 to 0.2.0
 
