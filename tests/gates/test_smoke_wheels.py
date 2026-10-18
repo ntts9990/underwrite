@@ -8,7 +8,7 @@ import sys
 import tomllib
 import zipfile
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -112,7 +112,11 @@ def test_cli_output_failures_are_not_written_as_evidence(
     failure: str,
 ) -> None:
     def response(
-        args: list[str], cwd: Path, *, project_environment: Path | None = None
+        args: list[str],
+        cwd: Path,
+        *,
+        project_environment: Path | None = None,
+        registry_only: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(args, returncode, stdout, stderr)
 
@@ -142,7 +146,11 @@ def test_native_refusal_gate_rejects_wrong_exit_output_or_reason(
     payload: object,
 ) -> None:
     def response(
-        args: list[str], cwd: Path, *, project_environment: Path | None = None
+        args: list[str],
+        cwd: Path,
+        *,
+        project_environment: Path | None = None,
+        registry_only: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(args, returncode, stdout, json.dumps(payload))
 
@@ -155,3 +163,159 @@ def test_native_refusal_gate_rejects_wrong_exit_output_or_reason(
             "INVALID_READ",
             "SEMANTIC_DIGEST_MISMATCH",
         )
+
+
+def test_registry_core_install_has_no_local_dependency_sources(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("UV_INDEX", "https://untrusted.invalid/simple")
+    monkeypatch.setenv("UV_FIND_LINKS", str(tmp_path / "local-core"))
+    monkeypatch.setenv("PIP_INDEX_URL", "https://untrusted.invalid/simple")
+    monkeypatch.setenv("UV_CONSTRAINT", str(tmp_path / "constraint.txt"))
+    monkeypatch.setenv("PYTHONPATH", str(smoke_wheels.ROOT))
+    calls: list[tuple[list[str], dict[str, str]]] = []
+    checked: list[tuple[Path, tuple[Path, Path]]] = []
+    venv, app = tmp_path / "venv", tmp_path / "underwrite-0.1.1-py3-none-any.whl"
+    core = tmp_path / "registry-core.whl"
+
+    def record(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append((args, cast(dict[str, str], kwargs["env"])))
+        return subprocess.CompletedProcess(
+            args, 0, "0.1.1\n" if args[0] == str(venv / "bin/python") else "", ""
+        )
+
+    def published(work: Path, version: str) -> tuple[Path, dict[str, object]]:
+        assert work == tmp_path and version == "0.1.1"
+        return core, {"version": version}
+
+    monkeypatch.setattr(smoke_wheels.subprocess, "run", record)
+    monkeypatch.setattr(smoke_wheels, "_published_core", published)
+
+    def origin(venv: Path, wheels: tuple[Path, Path]) -> None:
+        checked.append((venv, wheels))
+
+    monkeypatch.setattr(smoke_wheels, "_check_wheel_origins", origin)
+    smoke_wheels._install_registry_core(tmp_path, venv, app)  # pyright: ignore[reportPrivateUsage]
+    create, install, check, version = (args for args, _ in calls)
+    assert create[:4] == ["uv", "--no-config", "--no-cache", "venv"]
+    assert {
+        "--no-config",
+        "--no-cache",
+        "--no-sources",
+        "--default-index",
+        smoke_wheels.REGISTRY_INDEX,
+        str(app),
+    } <= set(install)
+    assert not {"--find-links", "--no-deps", "--offline", "--no-index"} & set(install)
+    assert str(core) not in install
+    assert check[:4] == ["uv", "--no-config", "pip", "check"]
+    assert version[:2] == [str(venv / "bin/python"), "-I"]
+    assert all(not any(key.startswith(("UV_", "PIP_")) for key in env) for _, env in calls)
+    assert all("PYTHONPATH" not in env for _, env in calls)
+    assert checked == [(venv, (core, app))]
+
+
+def test_registry_install_failure_prevents_fetch_and_tasks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "underwrite-0.1.1-py3-none-any.whl").write_bytes(b"candidate")
+    calls: list[list[str]] = []
+
+    def response(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        return subprocess.CompletedProcess(
+            args, 1 if "install" in args else 0, "", "no compatible registry core"
+        )
+
+    def forbidden(*args: object) -> None:
+        pytest.fail("failed dependency resolution must stop before origin fetch or tasks")
+
+    monkeypatch.setattr(smoke_wheels.subprocess, "run", response)
+    monkeypatch.setattr(smoke_wheels, "_published_core", forbidden)
+    monkeypatch.setattr(smoke_wheels, "_native_measurement_pilot", forbidden)
+    assert smoke_wheels.main(["--dist", str(tmp_path), "--registry-core"]) == 1
+    assert ["venv" in args for args in calls] == [True, False]
+    assert "install" in calls[-1]
+
+
+@pytest.mark.parametrize("fault", ["hash", "name", "version", "missing"])
+def test_published_core_identity_failure_is_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fault: str,
+) -> None:
+    metadata: dict[str, Any] = {
+        "info": {"name": "underwrite-core", "version": "0.1.1"},
+        "urls": [
+            {
+                "packagetype": "bdist_wheel",
+                "filename": "underwrite_core-0.1.1-py3-none-any.whl",
+                "url": "https://files.pythonhosted.org/core.whl",
+                "digests": {"sha256": "wrong"},
+            }
+        ],
+    }
+    if fault == "name":
+        metadata["info"]["name"] = "other"
+    elif fault == "version":
+        metadata["info"]["version"] = "0.0.0"
+    elif fault == "missing":
+        metadata["urls"] = []
+
+    def read(url: str) -> bytes:
+        return json.dumps(metadata).encode() if url.endswith("/json") else b"wrong archive"
+
+    monkeypatch.setattr(smoke_wheels, "_registry_bytes", read)
+    with pytest.raises(smoke_wheels.SmokeFailure):
+        smoke_wheels._published_core(tmp_path, "0.1.1")  # pyright: ignore[reportPrivateUsage]
+    assert list(tmp_path.glob("*.whl")) == []
+
+
+def test_registry_download_disallows_alternate_host() -> None:
+    with pytest.raises(smoke_wheels.SmokeFailure, match="unexpected registry artifact URL"):
+        smoke_wheels._registry_bytes("https://untrusted.invalid/core.whl")  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.parametrize("raw", [b"{}", b"[]", b"null", b"not JSON"])
+def test_malformed_registry_metadata_has_finite_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    raw: bytes,
+) -> None:
+    def read(url: str) -> bytes:
+        return raw
+
+    monkeypatch.setattr(smoke_wheels, "_registry_bytes", read)
+    with pytest.raises(
+        smoke_wheels.SmokeFailure, match="invalid published core metadata or archive"
+    ):
+        smoke_wheels._published_core(tmp_path, "0.1.1")  # pyright: ignore[reportPrivateUsage]
+
+
+def test_registry_redirect_is_refused_before_following(monkeypatch: pytest.MonkeyPatch) -> None:
+    from http.client import HTTPMessage
+    from io import BytesIO
+    from urllib.request import HTTPRedirectHandler, Request
+
+    requested: list[str] = []
+
+    class RedirectResponse:
+        def __init__(self, handler: HTTPRedirectHandler) -> None:
+            self.handler = handler
+
+        def open(self, url: str, *, timeout: int) -> None:
+            requested.append(url)
+            headers = HTTPMessage()
+            headers["Location"] = "https://untrusted.invalid/core.whl"
+            self.handler.http_error_302(Request(url), BytesIO(), 302, "Found", headers)
+            pytest.fail("redirect must stop before another request")
+
+    def opener(handler: HTTPRedirectHandler) -> RedirectResponse:
+        return RedirectResponse(handler)
+
+    monkeypatch.setattr(smoke_wheels.urllib.request, "build_opener", opener)
+    with pytest.raises(smoke_wheels.SmokeFailure, match="registry redirects are not accepted"):
+        smoke_wheels._registry_bytes("https://pypi.org/pypi/underwrite-core/0.1.1/json")  # pyright: ignore[reportPrivateUsage]
+    assert requested == ["https://pypi.org/pypi/underwrite-core/0.1.1/json"]

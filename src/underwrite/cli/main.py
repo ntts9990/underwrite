@@ -313,6 +313,13 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 ("baseline_record.v1",),
             ),
             profile("replay-measure", ("root", "id"), (), ("measurement_replay.v1",)),
+            profile(
+                "audit-trajectory",
+                ("exchange", "root", "id"),
+                (),
+                ("trajectory_record.v1",),
+            ),
+            profile("read-trajectory", ("root", "id"), (), ("trajectory_record_read.v1",)),
             profile("list", ("root",), (), ("record_catalog.v1",)),
             profile("show", ("root", "id"), (), ("record_view.v1",)),
             profile("read-json", ("root", "id", "name"), (), ("record_document.v1",)),

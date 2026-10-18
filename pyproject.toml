@@ -29,6 +29,9 @@ module-root = "src"
 source-include = [
     "contracts/goppi_trajectory_review.v1.schema.json",
     "contracts/goppi_trajectory_verifier_response.v1.schema.json",
+    "contracts/trajectory_record.v1.schema.json",
+    "contracts/trajectory_record_read.v1.schema.json",
+    "contracts/trajectory_verification_history.v1.schema.json",
     "contracts/evidence_result.v1.schema.json",
     "contracts/common_result_inspection.v1.schema.json",
     "contracts/common_result_inspection_actions.v1.schema.json",

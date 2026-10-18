@@ -236,11 +236,17 @@ Claude Code에서 재사용할 수 있는 지침을 제공합니다.
   조기 중단된 실행을 포함해 paired+trajectory 내보내기의 도구 상태와 평가 결과를
   비교합니다. 이 선택형 경로는 오프라인 검증을 위해 설치된 Goppi가 필요합니다.
   제공자를 실행하거나 인과관계를 확립하거나 재시도 효과를 측정하지 않습니다.
+  [`records audit-trajectory`](https://github.com/ntts9990/underwrite/blob/main/STORAGE.md#retain-a-goppi-paired-trajectory)로
+  같은 입력과 결과를 보관하고, `records read-trajectory`로 원본 내보내기와
+  Goppi 없이 다시 확인할 수 있습니다.
 
 fixture 출처와 검사 범위는
 [아티팩트 요구사항](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#get-the-right-producer-artifact)과
 [생성 도구 검증](https://github.com/ntts9990/underwrite/blob/main/EVIDENCE_REVIEW.md)에 있습니다.
 통제된 fixture는 실제 서버와의 상호 운용성이나 내보내기 완전성을 증명하지 않습니다.
+
+배포된 0.1.1에서 이동한다면 [마이그레이션 안내](https://github.com/ntts9990/underwrite/blob/main/MIGRATION.md)에서
+기본 JSON 계약 변경, 기존 선택자와 저장 기록의 유지 방법을 확인하세요.
 
 범용 `ingest` / `project`는 지원되는 내보내기를 정규화하며, 외부 관측은 현재
 `measure` 경로로 이어지지 않습니다. Goppi `audit-baseline`은 설명용 공통 근거를,

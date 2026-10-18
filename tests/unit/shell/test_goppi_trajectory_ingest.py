@@ -360,3 +360,272 @@ def test_bare_paired_directory_requires_complete_handoff(exchange: Path) -> None
         "/exchange",
     )
     assert verifier.snapshots == []
+
+
+def test_source_decode_failure_preserves_facade_error(exchange: Path) -> None:
+    (exchange / "paired/execution.json").write_bytes(b"not json")
+    verifier = StubVerifier()
+    with pytest.raises(CaptureError) as caught:
+        app.audit_goppi_trajectory(exchange, verifier=verifier)
+    assert (caught.value.code, caught.value.reason, caught.value.location) == (
+        "INVALID_INPUT",
+        "CAPTURE_INVALID_JSON",
+        "/exchange/paired/execution.json",
+    )
+    assert verifier.snapshots == []
+
+
+def test_post_native_semantic_failure_preserves_facade_error(exchange: Path) -> None:
+    _edit(exchange, "trajectory/trajectory.json", lambda value: value.update(schema="unsupported"))
+    verifier = StubVerifier()
+    from underwrite.instrument.evidence.goppi_trajectory import TrajectoryError
+
+    with pytest.raises(TrajectoryError):
+        app.audit_goppi_trajectory(exchange, verifier=verifier)
+    assert len(verifier.snapshots) == 1
+
+
+def test_captured_analysis_survives_original_removal(exchange: Path) -> None:
+    captured = app.capture_goppi_trajectory(exchange)
+    originals = {name: item.data for name, item in captured.items()}
+    shutil.rmtree(exchange)
+    verifier = StubVerifier()
+    outcome = app.audit_captured_goppi_trajectory(captured, verifier=verifier)
+    assert outcome.report is not None and outcome.error is None
+    assert {name: item.data for name, item in captured.items()} == originals
+    history = outcome.verification_history
+    assert history == {
+        "schema": app.HISTORY_SCHEMA,
+        "state": "verified",
+        "source_members": [
+            {"name": name, "raw_hash": captured[name].sha256, "bytes": len(originals[name])}
+            for name in app.MEMBERS
+        ],
+        "integrity_scope": "self_consistent_content_closure",
+        "authenticity": "content_digest_only",
+        "source_authentication_independently_verified": False,
+        "producer_projection_independently_verified": False,
+    }
+    assert len(verifier.snapshots) == 1
+
+
+def test_capture_mapping_and_analysis_mapping_cannot_be_replaced(exchange: Path) -> None:
+    captured = app.capture_goppi_trajectory(exchange)
+    with pytest.raises(TypeError):
+        cast(dict[str, local_capture.CapturedBytes], captured)[app.MEMBERS[0]] = captured[
+            app.MEMBERS[1]
+        ]
+    mutable = dict(captured)
+
+    class ReplacingCallerVerifier(StubVerifier):
+        def verify(self, snapshot: Path) -> bytes:
+            mutable.clear()
+            return super().verify(snapshot)
+
+    outcome = app.audit_captured_goppi_trajectory(mutable, verifier=ReplacingCallerVerifier())
+    assert not mutable
+    assert outcome.report is not None
+    assert len(cast(list[object], outcome.verification_history["source_members"])) == len(
+        app.MEMBERS
+    )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("logical_name", "wrong"),
+        ("sha256", "sha256:" + "0" * 64),
+        ("size", True),
+        ("size", 0),
+        ("data", bytearray(b"{}")),
+    ],
+)
+def test_forged_capture_identity_raises_before_process(
+    exchange: Path, field: str, value: object
+) -> None:
+    from dataclasses import replace
+
+    captured = dict(app.capture_goppi_trajectory(exchange))
+    name = app.MEMBERS[0]
+    captured[name] = replace(captured[name], **{field: value})
+    verifier = StubVerifier()
+    with pytest.raises(app.TrajectoryInputError, match="TRAJECTORY_CAPTURE_IDENTITY_INVALID"):
+        app.audit_captured_goppi_trajectory(captured, verifier=verifier)
+    assert not verifier.snapshots
+
+
+@pytest.mark.parametrize("change", ["missing", "extra", "wrong_type"])
+def test_captured_input_requires_exact_members(exchange: Path, change: str) -> None:
+    captured = dict(app.capture_goppi_trajectory(exchange))
+    if change == "missing":
+        captured.pop(app.MEMBERS[0])
+    elif change == "extra":
+        captured["extra"] = captured[app.MEMBERS[0]]
+    else:
+        captured[app.MEMBERS[0]] = cast(local_capture.CapturedBytes, object())
+    verifier = StubVerifier()
+    with pytest.raises(app.TrajectoryInputError):
+        app.audit_captured_goppi_trajectory(captured, verifier=verifier)
+    assert not verifier.snapshots
+
+
+@pytest.mark.parametrize("limit", ["MAX_DOCUMENT_BYTES", "MAX_FAMILY_BYTES", "MAX_MANIFEST_BYTES"])
+def test_captured_input_rechecks_original_byte_limits(
+    exchange: Path, monkeypatch: pytest.MonkeyPatch, limit: str
+) -> None:
+    captured = app.capture_goppi_trajectory(exchange)
+    monkeypatch.setattr(app, limit, 1)
+    verifier = StubVerifier()
+    with pytest.raises((CaptureError, app.TrajectoryInputError)) as caught:
+        app.audit_captured_goppi_trajectory(captured, verifier=verifier)
+    assert caught.value.code == "INPUT_LIMIT_EXCEEDED"
+    assert not verifier.snapshots
+
+
+@pytest.mark.parametrize("kind", ["json", "shape", "rows", "spans"])
+def test_safe_source_diagnostic_has_no_native_verification(
+    exchange: Path, monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    if kind == "json":
+        (exchange / "paired/execution.json").write_bytes(b"invalid")
+    elif kind == "shape":
+        (exchange / "trajectory/trajectory.json").write_bytes(b"[]")
+    elif kind == "rows":
+        monkeypatch.setattr(app, "MAX_ROWS", 1)
+    else:
+        monkeypatch.setattr(app, "MAX_SPANS_PER_UNIT", 1)
+    verifier = StubVerifier()
+    outcome = app.audit_captured_goppi_trajectory(
+        app.capture_goppi_trajectory(exchange), verifier=verifier
+    )
+    assert outcome.report is None and outcome.error is not None
+    assert outcome.verification_history["state"] == "not_performed"
+    assert outcome.verification_history["integrity_scope"] is None
+    assert outcome.verification_history["authenticity"] is None
+    assert not verifier.snapshots
+
+
+def test_post_native_diagnostic_preserves_verified_history(exchange: Path) -> None:
+    _edit(exchange, "trajectory/trajectory.json", lambda value: value.update(schema="unsupported"))
+    verifier = StubVerifier()
+    outcome = app.audit_captured_goppi_trajectory(
+        app.capture_goppi_trajectory(exchange), verifier=verifier
+    )
+    assert outcome.report is None and outcome.error is not None
+    assert outcome.verification_history["state"] == "verified"
+    assert len(verifier.snapshots) == 1
+    with pytest.raises(type(outcome.error)) as caught:
+        app.audit_goppi_trajectory(exchange, verifier=StubVerifier())
+    assert (caught.value.code, caught.value.reason, caught.value.location) == (
+        outcome.error.code,
+        outcome.error.reason,
+        outcome.error.location,
+    )
+
+
+@pytest.mark.parametrize(
+    "reason", ["GOPPI_VERIFIER_REFUSED", "GOPPI_VERIFIER_TIMEOUT", "GOPPI_VERIFIER_NOT_FOUND"]
+)
+def test_captured_analysis_never_retains_verifier_failures(exchange: Path, reason: str) -> None:
+    class FailedVerifier:
+        def verify(self, snapshot: Path) -> bytes:
+            raise VerifierError("INVALID_INPUT", reason)
+
+    with pytest.raises(app.TrajectoryInputError, match=reason):
+        app.audit_captured_goppi_trajectory(
+            app.capture_goppi_trajectory(exchange), verifier=FailedVerifier()
+        )
+
+
+def test_captured_analysis_does_not_retain_internal_failures(exchange: Path) -> None:
+    error = RuntimeError("unexpected process fault")
+
+    class FailedVerifier:
+        def verify(self, snapshot: Path) -> bytes:
+            raise error
+
+    with pytest.raises(RuntimeError) as caught:
+        app.audit_captured_goppi_trajectory(
+            app.capture_goppi_trajectory(exchange), verifier=FailedVerifier()
+        )
+    assert caught.value is error
+
+
+def test_history_contract_is_loaded_before_source_capture(monkeypatch: pytest.MonkeyPatch) -> None:
+    original = app.packaged_validator
+    loaded: list[str] = []
+
+    def validator(name: str) -> object:
+        loaded.append(name)
+        if name == app.HISTORY_SCHEMA:
+            raise SchemaConfigurationError("MISSING_HISTORY_CONTRACT")
+        return original(name)
+
+    def forbidden_capture(exchange: Path) -> None:
+        pytest.fail("source capture must follow all required contract loads")
+
+    monkeypatch.setattr(app, "packaged_validator", validator)
+    monkeypatch.setattr(app, "_capture", forbidden_capture)
+    with pytest.raises(SchemaConfigurationError, match="MISSING_HISTORY_CONTRACT"):
+        app.capture_goppi_trajectory(Path("/not-read"))
+    assert app.HISTORY_SCHEMA in loaded
+
+
+@pytest.mark.parametrize("limit", ["count", "total", "family"])
+def test_captured_input_checks_aggregate_limits(
+    exchange: Path, monkeypatch: pytest.MonkeyPatch, limit: str
+) -> None:
+    from dataclasses import replace
+
+    captured = app.capture_goppi_trajectory(exchange)
+    if limit == "family":
+        monkeypatch.setattr(app, "MAX_FAMILY_BYTES", max(item.size for item in captured.values()))
+        expected = "TRAJECTORY_FAMILY_BYTE_LIMIT"
+    else:
+        field = "max_files" if limit == "count" else "max_total_bytes"
+        monkeypatch.setattr(app, "CAPTURE_POLICY", replace(app.CAPTURE_POLICY, **{field: 1}))
+        expected = (
+            "CAPTURE_FILE_COUNT_EXCEEDED" if limit == "count" else "CAPTURE_TOTAL_LIMIT_EXCEEDED"
+        )
+    with pytest.raises((CaptureError, app.TrajectoryInputError), match=expected):
+        app.audit_captured_goppi_trajectory(captured, verifier=StubVerifier())
+
+
+def test_captured_analysis_output_failure_is_not_source_diagnostic(
+    exchange: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured = app.capture_goppi_trajectory(exchange)
+    monkeypatch.setattr(app, "MAX_REPORT_BYTES", 1)
+    with pytest.raises(app.TrajectoryInputError, match="TRAJECTORY_REPORT_LIMIT"):
+        app.audit_captured_goppi_trajectory(captured, verifier=StubVerifier())
+
+
+def test_analysis_requires_exactly_one_outcome() -> None:
+    error = app.TrajectoryInputError("INVALID_INPUT", "TEST")
+    with pytest.raises(ValueError, match="TRAJECTORY_ANALYSIS_REQUIRES_ONE_OUTCOME"):
+        app.TrajectoryAnalysis(None, None, {})
+    with pytest.raises(ValueError, match="TRAJECTORY_ANALYSIS_REQUIRES_ONE_OUTCOME"):
+        app.TrajectoryAnalysis({}, error, {})
+
+
+@pytest.mark.parametrize(
+    "code,reason,state,expected",
+    [
+        ("INVALID_INPUT", "CAPTURE_INVALID_JSON", "not_performed", True),
+        ("INVALID_INPUT", "CAPTURE_INVALID_JSON", "verified", False),
+        ("INPUT_LIMIT_EXCEEDED", "TRAJECTORY_SPAN_LIMIT", "not_performed", True),
+        ("INVALID_INPUT", "TRAJECTORY_SPAN_LIMIT", "not_performed", False),
+        ("INVALID_INPUT", "TRAJECTORY_BINDING_MISMATCH", "verified", True),
+        ("INVALID_INPUT", "TRAJECTORY_BINDING_MISMATCH", "not_performed", False),
+        ("UNSUPPORTED_FORMAT", "TRAJECTORY_UNSUPPORTED_VALUE", "verified", True),
+        ("INVALID_INPUT", "TRAJECTORY_UNSUPPORTED_VALUE", "verified", False),
+        ("INVALID_INPUT", "GOPPI_VERIFIER_REFUSED", "verified", False),
+        ("INVALID_INPUT", "GOPPI_VERIFIER_REFUSED", "not_performed", False),
+        ("INVALID_INPUT", "UNKNOWN_REASON", "not_performed", False),
+        ("INVALID_INPUT", "TRAJECTORY_VALUE_INVALID", "refused", False),
+    ],
+)
+def test_diagnostic_history_admission_is_stage_and_code_specific(
+    code: str, reason: str, state: str, expected: bool
+) -> None:
+    assert app.trajectory_diagnostic_history_matches(code, reason, state) is expected

@@ -119,6 +119,16 @@ def configure(parser: argparse.ArgumentParser) -> None:
         "audit-baseline", help="Audit and retain an exact baseline exchange."
     )
     record_baseline.configure(baseline)
+    from underwrite.cli import record_trajectory
+
+    trajectory = commands.add_parser(
+        "audit-trajectory", help="Audit and retain a complete Goppi paired trajectory."
+    )
+    record_trajectory.configure(trajectory)
+    trajectory_read = commands.add_parser(
+        "read-trajectory", help="Reopen a retained trajectory after verifying stored bytes."
+    )
+    record_trajectory.configure_read(trajectory_read)
     from underwrite.cli import replay_measure
 
     replay = commands.add_parser(
@@ -261,6 +271,14 @@ def _emit_error(error: _CliError, *, as_json: bool) -> int:
 
 
 def _capture_command(argv: list[str]) -> int | None:  # noqa: PLR0911 - lazy command dispatch
+    if argv and argv[0] == "audit-trajectory":
+        from underwrite.cli import record_trajectory
+
+        return record_trajectory.main(argv[1:])
+    if argv and argv[0] == "read-trajectory":
+        from underwrite.cli import record_trajectory
+
+        return record_trajectory.main_read(argv[1:])
     if argv and argv[0] == "audit-baseline":
         from underwrite.cli import record_baseline
 

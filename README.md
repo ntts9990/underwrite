@@ -240,12 +240,17 @@ for exact input requirements.
   compares recorded tool states and evaluation results from a paired+trajectory
   export, including runs that stopped early. This optional route requires installed
   Goppi for offline verification; it does not run providers, establish causality,
-  or measure retry effects.
+  or measure retry effects. [`records audit-trajectory`](https://github.com/ntts9990/underwrite/blob/main/STORAGE.md#retain-a-goppi-paired-trajectory)
+  retains the same inputs and result; `records read-trajectory` reopens them
+  without Goppi or the original export.
 
 See [artifact requirements](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#get-the-right-producer-artifact) and
 [producer checks](https://github.com/ntts9990/underwrite/blob/main/EVIDENCE_REVIEW.md)
 for fixture origins and tested scope. A controlled fixture does not prove
 live-server interoperability or export completeness.
+
+Moving from published 0.1.1? See the [migration guide](https://github.com/ntts9990/underwrite/blob/main/MIGRATION.md)
+for changed default JSON contracts, historical selectors, and existing records.
 
 Generic `ingest` / `project` normalizes supported exports; external observations
 do not enter the current `measure` path. Goppi `audit-baseline` produces

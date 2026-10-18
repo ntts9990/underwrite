@@ -23,6 +23,10 @@ of inferring support from the package version alone. Published `0.1.0` has
 does not. Use help-based discovery with any installed version. Capability
 availability is not evidence that an arbitrary export satisfies a profile.
 
+For development changes since published 0.1.1, see [migration](MIGRATION.md).
+Automatic reader selection changes some default JSON contracts; explicit
+historical selectors and existing stored bytes retain their original meanings.
+
 Choose the input path first. An `underwrite.evidence-bundle` v1 observation can
 enter the native `ingest` → `measure` → `accept` workflow with an explicit policy
 and declared claims. A supported external export can be ingested as source claims
@@ -1130,6 +1134,8 @@ the exact bounded input bytes to a private temporary directory, invokes only
 `goppi run verify-paired`, and analyzes those same bytes. Temporary files are
 removed afterward. A missing or incompatible verifier is a typed refusal, not a
 fallback to weaker validation. Source-supplied schemas and strings are data.
+For `GOPPI_VERIFIER_UNAVAILABLE`, check the existing trusted executable and pass
+its path with `--goppi-executable`; changing the export cannot supply a verifier.
 
 `goppi_trajectory_review.v1` separates `populations`, `comparisons`, `trust_scope`
 and `next_verification_tasks`. Compare within the complete case/stage/repeat key;
@@ -1148,8 +1154,37 @@ case and tool names can remain identifying even when payload text is omitted.
 Exit 0 means analysis completed, including partial capture or unfavorable results.
 Portable verification checks content consistency; it does not authenticate the
 producer or independently verify its private projection. Privacy checks on the
-temporary copy say nothing about the original directory. Keep the original export
-and save the JSON output to resolve its byte identities and source references later.
+temporary copy say nothing about the original directory. The standalone command
+does not save a record. To keep the exact source bytes and analysis together, use
+the advertised `records audit-trajectory` route:
+
+```sh
+underwrite records audit-trajectory --exchange /absolute/path/to/export \
+  --root /private/review-store --id trajectory.review-001 --json
+underwrite records read-trajectory --root /private/review-store \
+  --id trajectory.review-001 --json
+```
+
+Recording uses the same already-installed offline verifier and accepts the same
+`--goppi-executable` option. All seven source files are retained in full: choose a
+private store, as source metadata may identify cases and tools. The record also
+contains the analysis or a safely classified diagnostic, invocation, and native
+verification history. The source files saved are the buffers analyzed, even if
+the original paths later change.
+
+`trajectory_record.v1` separates analysis, native verification history, and
+storage: exit 0 is a saved result, exit 2 a retained diagnostic or a pre-store
+refusal, and exit 3 a storage/verification failure. Inspect the typed envelope;
+an error does not imply a record was created. Missing/incompatible verifiers and
+all verifier execution failures publish no record. Existing IDs are not replaced.
+
+`trajectory_record_read.v1` returns the original analysis and verification history
+after checking the whole retained record. It needs neither the original export
+nor Goppi, and explicitly reports `native_verification_performed_now: false`.
+It supports the trajectory report's 8 MiB bound; generic `records read-json`
+keeps its 1 MiB selected-file limit. See [storage and recovery](STORAGE.md#retain-a-goppi-paired-trajectory)
+for diagnostic states and raw-source recovery.
+
 The Python entry point also discovers `goppi` on PATH. To select an existing
 trusted installation explicitly:
 
