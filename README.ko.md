@@ -30,14 +30,11 @@ underwrite는 평가를 다시 실행하거나, 생성 도구의 판정을 독�
 검사하는 데 Docker, 대시보드, 제공자 인증 정보는 필요하지 않습니다.
 
 > [!NOTE]
-> **이 안내는 `underwrite==0.1.1`을 대상으로 합니다.** CLI와 Python 작업 흐름은 체크아웃 없이
-> 사용할 수 있습니다. 이전 `0.0.1`에는 이 작업 흐름이 없고 `pins refresh`에
-> 별도 주의 사항이 있습니다. [설치](#설치)를 참고하세요.
-
-개발본의 capabilities에 `promptfoo.eval-output|auto`가 있으면
-`underwrite audit-promptfoo FILE --json`으로 SummaryV3를 읽을 수 있습니다.
-생성 도구 버전 옵션은 필요 없습니다. 이 자동 기본값은 배포된 0.1.1 이후의 기능이며,
-[입력 안내](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#audit-promptfoo-counts)를 참고하세요.
+> **사용 경로를 선택하세요:** 배포된 기능은 [PyPI 0.1.1](#배포판--pypi-011),
+> 새 자동 입력 처리와 실행 단계 비교는 [현재 main 체크아웃](#개발본--현재-main-체크아웃)을
+> 사용합니다. 둘 다 현재 `0.1.1`로 표시되므로 `capabilities --json`으로
+> 실행 파일이 실제로 지원하는 기능을 확인하세요. 이전 `0.0.1`의 핀 매니페스트
+> 주의 사항은 [설치](#설치)에 있습니다.
 
 ## 빠른 시작
 
@@ -45,6 +42,8 @@ underwrite는 평가를 다시 실행하거나, 생성 도구의 판정을 독�
 합성 예제 다운로드에는 `curl`을 사용합니다.
 파일 기반 CLI 작업은 Linux와 macOS의 CPython 3.12에서 테스트했습니다.
 일반 아티팩트 읽기를 포함해 Unix/POSIX 파일 API가 필요합니다.
+
+### 배포판 · PyPI 0.1.1
 
 **1. 설치하고 파일을 검사합니다.** 앱만 설치해도 호환되는 `underwrite-core`가
 함께 설치됩니다. 공개 합성 예제를 다운로드하세요. 체크아웃이나 API 키는 필요하지 않습니다.
@@ -93,21 +92,40 @@ underwrite audit-promptfoo "$example_dir/promptfoo.json" \
 검증됐다는 뜻이 아닙니다. 입력과 분석을 함께 보관하려면
 [로컬 기록으로 저장하세요](#다시-찾아볼-수-있는-결과-보관).
 
-직접 만든 완료된 Promptfoo 내보내기 파일은 로컬 경로와 지원되는 원천 버전을 지정하세요.
-예: `underwrite audit-promptfoo /path/to/export.json --version 0.123.0 --json`.
-위 다운로드 파일은 구성한 합성 예제이며, 생성 도구의 원본 내보내기 파일은 아닙니다.
+직접 만든 완료된 Promptfoo 내보내기 파일에는 로컬 경로와
+[배포판이 지원하는 프로필](#지원-형식)을 사용하세요. 다운로드한 파일은 구성한
+합성 예제이며, 생성 도구의 원본 내보내기 파일은 아닙니다.
 
-<details>
-<summary><strong>네이티브 측정 → 수락 분류 흐름 실행하기</strong></summary>
+### 개발본 · 현재 main 체크아웃
 
-아래 정책과 fixture는 GitHub 체크아웃에 있으며 설치된 패키지에는 포함되지
-않습니다. 먼저 체크아웃을 준비한 뒤 합성 이진 사건 예제를 실행합니다.
+새 작업 흐름은 체크아웃에서 사용하세요. 배포판 설치와 구분되도록 해당 디렉터리
+안에서 `uv run`으로 실행합니다. 이미 체크아웃이 있다면 저장소 루트에서 아래
+`uv sync`부터 실행하세요.
 
 ```sh
 git clone https://github.com/ntts9990/underwrite.git
 cd underwrite
 uv sync --frozen --all-groups
+uv run --frozen --no-sync underwrite capabilities --json
+uv run --frozen --no-sync underwrite audit-promptfoo \
+  fixtures/examples/evidence/synthetic-promptfoo-count-mismatch.json --json
+```
 
+위 배포판 예제와 같은 합성 집계인 선언 결과 3개와 행 2개를 대조합니다.
+자동 reader는 `promptfoo_accounting.v2`를 만들고, 이 fixture에 선언된 `0.123.0`을
+검증되지 않은 원천 주장으로 보존합니다. 버전 선언이 없는 입력에서는 버전을
+알 수 없는 상태로 유지합니다. 이 예제에는 버전 옵션, 생성 도구 설치, Goppi,
+제공자 호출이 필요하지 않습니다.
+체크아웃 명령에는 항상 `uv run --frozen --no-sync underwrite` 접두사를 사용하세요.
+다른 경로는 [개발본 추가 기능](#개발본--현재-main의-추가-기능)에 있습니다.
+
+<details>
+<summary><strong>네이티브 측정 → 수락 분류 흐름 실행하기</strong></summary>
+
+위에서 체크아웃을 준비했다면 저장소 루트에서 실행하세요. 이 예제의 정책과
+fixture는 저장소에 있으며 설치된 패키지에는 포함되지 않습니다.
+
+```sh
 mkdir -p output
 uv run --frozen --no-sync underwrite ingest \
   --format underwrite.evidence-bundle --version v1 \
@@ -156,25 +174,25 @@ uv run --frozen --no-sync underwrite accept \
 
 ## 에이전트 사용
 
-코딩 에이전트에 설치된 CLI와 완료된 로컬 내보내기 파일을 제공하세요. 에이전트는 사용 가능한
-경로를 찾고 실행한 뒤 JSON을 답변에 활용할 수 있습니다.
+코딩 에이전트에 완료된 로컬 내보내기 파일과 선택한 사용 경로를 알려주세요.
+배포판은 `underwrite`, 체크아웃은 해당 디렉터리의
+`uv run --frozen --no-sync underwrite`로 `capabilities --json`과 명령의
+`--help`를 확인하게 하세요. 패키지 버전만으로 지원 기능을 판단하지 않습니다.
 
-```sh
-underwrite --help
-underwrite capabilities --json
-```
-
-Python에서는 `underwrite.instrument.ingest.accounting.audit_promptfoo_file(Path(...))`로
-같은 결과를 딕셔너리로 받을 수 있습니다. 생성 도구별 필드를 해석하기 전에 정확히
-지원되는 프로필을 선택하세요.
+Python에서는 선택한 환경의
+`underwrite.instrument.ingest.accounting.audit_promptfoo_file(Path(...))`를
+사용할 수 있습니다. 배포판에서는 입력이 지원 프로필과 일치하는지 확인하고,
+문서의 기본값과 다를 때 프로필을 명시하세요. 현재 자동 입력 경로에서는
+생성 도구의 버전을 추측할 필요가 없습니다.
 
 터미널을 사용할 수 있는 에이전트에게 다음과 같이 요청할 수 있습니다.
 
-> 설치된 `underwrite` 0.1.1 CLI로
-> `/absolute/path/to/completed-promptfoo-export.json`을 Promptfoo 0.123.0
-> 내보내기 파일로 검토하세요. `capabilities --json`과
-> `audit-promptfoo --version 0.123.0`을 사용하세요. `declared_relation`, `producer_stats`,
-> `row_tallies`, `raw_hash`, `limitations`와 다음으로 할 만한 작업을 보고하세요.
+> 선택한 Underwrite 사용 경로로
+> `/absolute/path/to/completed-promptfoo-export.json`을 검토하세요.
+> capabilities와 도움말을 확인하고 지원되는 집계 경로를 사용하세요.
+> 자동 입력이 지원되면 그 경로를 사용하고, 그렇지 않으면 버전을 추측하지 말고
+> 배포판이 지원하는 프로필임을 확인할 근거를 요구하세요.
+> 집계 차이, 입력 식별 정보, 부족한 근거, 해석 한계와 다음 확인 작업을 보고하세요.
 > 생성 도구를 다시 실행하거나 종료 코드 `0`을 일치 또는 승인으로 해석하지 마세요.
 
 선택 설치형 [underwrite-review 스킬](https://github.com/ntts9990/underwrite/blob/main/skills/underwrite-review/SKILL.md)은 Codex와
@@ -186,72 +204,54 @@ Claude Code에서 재사용할 수 있는 지침을 제공합니다.
 
 ## 지원 형식
 
-지원 범위는 **아래의 구체적인 로컬 페이로드 프로필**입니다. 각 도구가 제공하는 모든
-API, 내보내기 형식, 버전을 지원한다는 뜻은 아닙니다. 설치된 capabilities를 확인하세요.
-이전 계약을 재현할 때는 명시적인 선택자를 사용합니다.
+지원 범위는 선택된 로컬 페이로드이며, 각 도구의 모든 API·내보내기·버전을
+뜻하지 않습니다. 선택한 실행 파일의 capabilities와 연결된 안내에서 정확한
+입력 요구사항을 확인하세요.
+
+### 배포판 지원 프로필 · PyPI 0.1.1
 
 | 입력 | 지원 프로필 | 시작 경로 |
 | --- | --- | --- |
-| **goppi** | 완료된 baseline exchange manifest v2; paired handoff는 별도 경로 | 설명용 공통 JSON은 [`audit-baseline`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#audit-a-completed-goppi-baseline-as-common-evidence) · 네이티브 측정용 관측은 [`project-baseline`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#project-a-completed-goppi-baseline-into-event-observations) · [`review-handoff`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#review-a-completed-paired-handoff-in-one-call)  · [`audit-trajectory`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#compare-a-goppi-paired-trajectory) (개발본; Goppi 설치 필요) |
-| **Langfuse** | 배포된 `0.1.1`: `4.35.0` 서버 blob 배열. 개발본의 자동 입력: 호환되는 blob 배열 또는 공식 CLI 목록 캡처. | [`audit-langfuse`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-langfuse-score-kinds-and-associations), 선택형 내용 최소화 행 인덱스 제공 |
-| **DeepEval** | 배포된 `0.1.1`: 일반 `4.1.1` 또는 `4.2.8` TestRun. 개발본의 자동 입력: 호환되는 이전/현재 일반 결과 또는 선택된 trace 구조. | [`audit-deepeval`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors) |
-| **Promptfoo** | Eval output JSON, `0.123.0` 또는 `0.124.1` | [`audit-promptfoo`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#source-checkout-pilot-audit-promptfoo-counts) |
-| **외부 공통 결과** | 배포된 `0.1.1`: `evidence_result.v1`. 개발본에서는 `evidence_result.v2`도 검사. | [`inspect-result`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#inspect-an-external-common-result)로 구조, 가용성과 선택형 근거 항목 조치 개수를 검사 |
+| **Goppi** | 완료된 baseline exchange manifest v2; P7 paired handoff | [`audit-baseline`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#audit-a-completed-goppi-baseline-as-common-evidence) · [`project-baseline`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#project-a-completed-goppi-baseline-into-event-observations) · [`review-handoff`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#review-a-completed-paired-handoff-in-one-call) |
+| **Langfuse** | `4.35.0` 서버 blob 배열 | [`audit-langfuse`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-langfuse-score-kinds-and-associations) |
+| **DeepEval** | 일반 TestRun, `4.1.1`(기본값) 또는 명시적 `4.2.8` | [`audit-deepeval`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors) |
+| **Promptfoo** | Eval output, `0.123.0`(기본값) 또는 명시적 `0.124.1` | [`audit-promptfoo`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#audit-promptfoo-counts) |
+| **외부 공통 결과** | `evidence_result.v1` | [`inspect-result`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#inspect-an-external-common-result) |
 | **네이티브 근거** | `underwrite.evidence-bundle` / `v1` | `ingest` → `measure` → `accept` |
 | **Inspect AI** | `inspect.eval-log` / `0.3.263` | `ingest` |
 | **OpenInference** | `openinference.traces` / `0.1.38` | `ingest` |
 | **OTLP JSON** | `otlp-json.traces` / `0.160.0` | `ingest` |
 
-이미 로컬에 있는 완료된 내보내기 파일은 설치된 CLI로 바로 검사할 수 있습니다.
-보유한 파일의 원천 프로필을 정확히 선택하세요.
+### 개발본 · 현재 main의 추가 기능
 
-```sh
-underwrite audit-promptfoo /path/to/promptfoo-output.json --version 0.124.1 --json
-underwrite audit-deepeval /path/to/deepeval-test-run.json --version 4.2.8 --json
-underwrite audit-langfuse --observations /path/to/blob-observations.json \
-  --scores /path/to/blob-scores.json --json
-underwrite audit-baseline --exchange /path/to/goppi-baseline-exchange --json
-```
+- **자동 입력:** 호환되는 Promptfoo SummaryV3, DeepEval TestRun, Langfuse blob
+  배열 또는 [공식 CLI 목록 캡처](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#read-official-langfuse-cli-captures-offline)를
+  생성 도구 버전·프로필 선택 없이 읽습니다. 페이로드에서 실제 배포 버전을
+  확인할 수 없으면 알 수 없는 상태로 두며, 이전 계약 재현용 선택자는 유지합니다.
+- **목적별 보기와 저장:** 선택된 DeepEval trace 구조, 생성 도구 버전에 독립적인
+  `deepeval_metric_bindings.v2` 팩, Langfuse 행 인덱스 저장을 제공합니다.
+  각 계약과 한계는 위 생성 도구별 안내를 따르세요.
+- **공통 결과:** `inspect-result`가 `evidence_result.v2`도 받습니다.
+- **Goppi 단계:** [`audit-trajectory`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#compare-a-goppi-paired-trajectory)는
+  조기 중단된 실행을 포함해 paired+trajectory 내보내기의 도구 상태와 평가 결과를
+  비교합니다. 이 선택형 경로는 오프라인 검증을 위해 설치된 Goppi가 필요합니다.
+  제공자를 실행하거나 인과관계를 확립하거나 재시도 효과를 측정하지 않습니다.
 
-배포된 `0.1.1`의 DeepEval 집계 기본값은 `4.1.1`이며, 그 버전에서
-`4.2.8`에는 `--version 4.2.8`을 지정합니다. 자동 입력을 광고하는 개발본은
-호환되는 TestRun을 버전 옵션 없이 읽고 생성 도구의 실제 버전을 알 수 없는 상태로
-보고합니다. 기록된 단계는 `--view trace-index`로 선택하며, 이 보기에서 메트릭이나
-expectation 평가는 분석하지 않습니다. 중립 결합을 광고하는 개발본은 소유자가
-작성한 `deepeval_metric_bindings.v2` 팩을 버전 옵션 없이 받습니다. 이 팩은
-메트릭 이름의 의미를 선언할 뿐, 생성 도구의 배포 버전이나 의미의 진위를
-검증하지 않습니다. 기존 v1 팩은 계속 명시적인 `--version 4.2.8`이
-필요합니다. [결합 경로](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors)를
-참고하세요.
-배포된 `0.1.1`의 Promptfoo 기본값은
-`0.123.0`이며, 그 버전에서 `0.124.1`에는 `--version 0.124.1`을 지정합니다.
-배포된 Langfuse 입력의 기본값은 4.35.0 서버 blob export입니다. 개발본에서
-자동 Langfuse 입력을 광고하면 호환되는 blob 배열이나
-[공식 CLI 목록 캡처](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#read-official-langfuse-cli-captures-offline)를
-`--profile` 없이 읽습니다. 선택된 reader는 생성 도구의 실제 배포 버전을 입증하지
-않습니다. 명시적인 blob/CLI 프로필은 이전 v1 출력을 유지합니다. 통제된 CLI fixture는
-로컬 형식 처리를 보여 줄 뿐, 실제 서버와의 상호 운용성이나 내보내기의 완전성을
-증명하지 않습니다.
-검사한 범위와 fixture의 출처는
+fixture 출처와 검사 범위는
 [아티팩트 요구사항](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#get-the-right-producer-artifact)과
-[생성 도구 검증](https://github.com/ntts9990/underwrite/blob/main/EVIDENCE_REVIEW.md)을 참고하세요.
+[생성 도구 검증](https://github.com/ntts9990/underwrite/blob/main/EVIDENCE_REVIEW.md)에 있습니다.
+통제된 fixture는 실제 서버와의 상호 운용성이나 내보내기 완전성을 증명하지 않습니다.
 
-범용 `ingest` / `project`는 지원되는 내보내기를 관측으로 정규화합니다.
-외부 관측은 현재 `measure` 경로로 이어지지 않습니다. goppi는 명시적인 exchange
-어댑터를 사용합니다. `audit-baseline`은 정책이나 방향성 판정 없이 설명용
-`evidence_result.v1`을 만들고, `project-baseline`은 네이티브 사건 관측을 만들 수 있습니다.
-`prepare-event-policy`는 소비자 설정을 결합하면서 통계 가정은 알 수 없는 상태로 둡니다.
-이미 생성된 `evidence_result.v1` 파일과 개발본에서 광고하는 v2 파일은
-`inspect-result`로 설치된 계약과 항목 수를 검사할 수 있습니다. 이 명령은
-생성 도구의 원본 파일이나 소유자 팩을 확인하거나 측정·수락
-권한을 부여하지 않습니다.
-선택형 조치 뷰의 `next_action`은 근거 보완을 위한 후속 조치이며, 에이전트가 실행한
-도구 호출이나 작업 경로를 뜻하지 않습니다.
+범용 `ingest` / `project`는 지원되는 내보내기를 정규화하며, 외부 관측은 현재
+`measure` 경로로 이어지지 않습니다. Goppi `audit-baseline`은 설명용 공통 근거를,
+`project-baseline`은 네이티브 사건 관측을 만들 수 있습니다. `inspect-result`는
+설치된 공통 결과 계약과 항목 수를 검사할 뿐, 원천의 진위를 검증하거나 측정·수락
+경로로 연결하지 않습니다. 조치 보기는 실행된 도구가 아닌 기록된 다음 확인 작업을 셉니다.
 
 ## 다시 찾아볼 수 있는 결과 보관
 
 분석과 선택한 원본 바이트를 함께 보관하려면 `records`를 사용하세요.
-완료된 로컬 Promptfoo 내보내기 파일이 있다면:
+다음은 완료된 로컬 Promptfoo 내보내기 파일을 **배포판**으로 저장하는 예제입니다.
 
 ```sh
 underwrite records audit-promptfoo /path/to/promptfoo-output.json \
@@ -262,10 +262,13 @@ underwrite records read-json \
   --name analysis/accounting.json --json
 ```
 
-캡처할 때마다 새 ID를 사용하세요. 기존 기록은 덮어쓰지 않습니다.
+체크아웃에서는 두 명령 앞에 `uv run --frozen --no-sync`를 붙이고, 자동 입력에는
+`--version`을 생략하세요. 캡처할 때마다 새 ID를 사용하며 기존 기록은 덮어쓰지 않습니다.
 `records verify`는 저장된 데이터의 무결성을 검사합니다. `records measure`는
 네이티브 측정을 캡처하고, `records replay-measure`는 검증된 저장 입력을 현재 엔진으로
-다시 계산합니다. 원래 생성 도구를 실행하지 않습니다.
+다시 계산합니다. 원래 생성 도구를 실행하지 않습니다. 완료된 Goppi baseline v2 디렉터리는
+`records audit-baseline`으로 다섯 파일과 설명용 결과를 함께 보관할 수 있습니다.
+[Goppi 기록 안내](https://github.com/ntts9990/underwrite/blob/main/STORAGE.md#retain-a-completed-goppi-baseline)를 참고하세요.
 
 기록에는 비공개 내용이 담길 수 있는 원본 입력이 보관됩니다. 비공개 로컬 POSIX
 파일시스템과 백업 전략을 선택하세요. `./review-store`는 시연용 위치이며 백업이
