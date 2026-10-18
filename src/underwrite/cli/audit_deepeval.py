@@ -8,6 +8,8 @@ from typing import Any, cast
 
 from underwrite.cli.evidence import EvidenceError, ReportOutput, run_cli
 from underwrite.instrument.evidence.deepeval_binding import DeepevalBindingError
+from underwrite.instrument.evidence.deepeval_trace import SCHEMA as TRACE_SCHEMA
+from underwrite.instrument.evidence.deepeval_trace import SOURCE_VERSION as TRACE_VERSION
 from underwrite.instrument.ingest.deepeval_accounting import (
     PROFILES,
     SOURCE,
@@ -16,6 +18,7 @@ from underwrite.instrument.ingest.deepeval_accounting import (
     profile_for,
 )
 from underwrite.instrument.ingest.deepeval_binding import audit_deepeval_bound_file
+from underwrite.instrument.ingest.deepeval_trace import audit_deepeval_trace_file
 
 
 def configure(parser: argparse.ArgumentParser) -> None:
@@ -38,15 +41,26 @@ def configure(parser: argparse.ArgumentParser) -> None:
         help="Reusable owner-asserted DeepEval 4.2.8 metric declaration pack.",
     )
     parser.add_argument(
+        "--view",
+        choices=("accounting", "trace-index"),
+        default="accounting",
+        help=(
+            "Explicit trace-index selects bounded native 4.2.8 step statuses; "
+            "default is accounting."
+        ),
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
-        help="Emit the selected deepeval_accounting or evidence_result JSON contract.",
+        help="Emit the selected accounting, binding, or trace-index JSON contract.",
     )
     parser.description = (
         "Account for case flags, observed metric scores, evaluator errors, and unscored metrics "
         "in the selected DeepEval 4.1.1 or 4.2.8 file. "
+        "The explicit 4.2.8 trace-index view reports source-claimed step statuses and local "
+        "parent links; instrumentation coverage and causality remain unknown. "
         "No manifest or evaluator execution is needed. "
-        "A report exits 0 even when source counts disagree or metrics contain errors. "
+        "An accounting report exits 0 even when source counts disagree or metrics contain errors. "
         "The profile is explicitly selected, not detected from the file. "
         "If missing-execution accounting is required, the inventory next action asks for "
         "external planned evidence from the evaluation owner. This command has no inventory "
@@ -56,6 +70,20 @@ def configure(parser: argparse.ArgumentParser) -> None:
 
 def produce(args: argparse.Namespace) -> dict[str, object]:
     try:
+        if args.view == "trace-index":
+            if args.version is None:
+                raise EvidenceError(
+                    "UNSUPPORTED_FORMAT", "DEEPEVAL_TRACE_EXPLICIT_VERSION_REQUIRED", "/version"
+                )
+            if args.version != TRACE_VERSION:
+                raise EvidenceError(
+                    "UNSUPPORTED_FORMAT", "DEEPEVAL_TRACE_VERSION_UNSUPPORTED", "/version"
+                )
+            if args.bindings is not None:
+                raise EvidenceError(
+                    "UNSUPPORTED_FORMAT", "DEEPEVAL_TRACE_BINDINGS_UNSUPPORTED", "/bindings"
+                )
+            return audit_deepeval_trace_file(cast(Path, args.file), version=TRACE_VERSION)
         if args.bindings is not None:
             if args.version != "4.2.8":
                 raise EvidenceError(
@@ -89,10 +117,26 @@ def render_bound_human(report: dict[str, object]) -> str:
 
 
 def _render(report: dict[str, object]) -> str:
+    if report["schema"] == TRACE_SCHEMA:
+        return render_trace_human(report)
     return (
         render_bound_human(report)
         if report["schema"] == "evidence_result.v1"
         else render_human(report)
+    )
+
+
+def render_trace_human(report: dict[str, object]) -> str:
+    """Show only bounded source-claim guidance, without native names or identifiers."""
+    actions = cast(list[str], report["next_actions"])
+    counts = cast(dict[str, dict[str, object]], report["counts"])
+    cases, traces, spans = counts["cases"], counts["traces"], counts["spans"]
+    return (
+        f"Cases: {cases['total']}; traces present {traces['present']}; "
+        f"observed spans {spans['total']}; source ERRORED spans {spans['status_errored']}.\n"
+        "Case, trace and step statuses are separate source claims. "
+        "Planned steps and instrumentation coverage unknown; parent links do not establish "
+        "causality, chronology or recovery." + ("\nNext: " + "; ".join(actions) if actions else "")
     )
 
 
@@ -138,7 +182,9 @@ def main(argv: list[str]) -> int:
         produce,
         ReportOutput(
             lambda args: (
-                "evidence_result.v1"
+                TRACE_SCHEMA
+                if args.view == "trace-index"
+                else "evidence_result.v1"
                 if args.bindings is not None
                 else profile_for(args.version or SOURCE[1]).accounting_schema
             ),

@@ -34,6 +34,8 @@ from underwrite.cli import (
     review_pair,
 )
 from underwrite.cli.capabilities import CommandDescriptor, Handler, profile
+from underwrite.instrument.evidence.deepeval_trace import SCHEMA as DEEPEVAL_TRACE_SCHEMA
+from underwrite.instrument.evidence.deepeval_trace import SOURCE_VERSION as DEEPEVAL_TRACE_VERSION
 from underwrite.instrument.evidence.langfuse_accounting import RULE_PROFILE as LANGFUSE_RULE_PROFILE
 from underwrite.instrument.ingest.accounting import SOURCE as PROMPTFOO_SOURCE
 from underwrite.instrument.ingest.codecs.promptfoo import SUPPORTED_VERSIONS as PROMPTFOO_VERSIONS
@@ -320,6 +322,12 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
             for version, selected in DEEPEVAL_PROFILES.items()
         )
         + (
+            profile(
+                f"{DEEPEVAL_SOURCE[0]}|{DEEPEVAL_TRACE_VERSION}|trace-index",
+                ("file", "version", "view"),
+                (),
+                (DEEPEVAL_TRACE_SCHEMA,),
+            ),
             profile(
                 "deepeval.test-run|4.2.8|owner-asserted-metric-bindings",
                 ("file", "version", "bindings"),

@@ -377,6 +377,37 @@ even when `analysis/error.json` cannot. Verification proves stored-byte integrit
 not Langfuse provenance, matching request windows, complete export or approval.
 The published `0.1.1` artifacts predate this development-checkout route.
 
+## Inspect recorded DeepEval agent steps
+
+Use this development route only when `capabilities --json` advertises
+`deepeval.test-run|4.2.8|trace-index`. Published `underwrite==0.1.1` predates it.
+Supply the native TestRun JSON written by DeepEval's local `results_folder` and
+record the producer version separately:
+
+```sh
+underwrite audit-deepeval test_run.json --version 4.2.8 --view trace-index --json
+```
+
+The `deepeval_trace_index.v1` result separates case success, trace status and
+individual recorded span statuses. A successful case can contain an errored tool
+step. Inspect that step's original context before deciding whether it represents
+expected recovery or a defect. Source pointers locate evidence in the exact file;
+its raw hash establishes byte identity. Names, UUIDs, prompts, tool arguments,
+results and error text are omitted from this content-minimized view.
+
+Parent references resolve only inside the embedded trace. Unresolved references
+and cycles remain explicit; they do not establish missing executions, chronology,
+retries or causes. Absent/null trace groups remain distinct from observed empty
+groups. Planned steps and instrumentation coverage remain unknown. The index
+does not evaluate metrics or count `toolsCalled` descriptions as extra steps, and
+cannot align runs by name, UUID or ordinal. Obtain explicit correspondence before
+a cross-run comparison. The source's declarations remain unverified.
+
+This view requires explicit `--version 4.2.8` and cannot be combined with
+`--bindings`. Default ordinary accounting retains its existing scope. See the
+[native synthetic examples](fixtures/golden/external/deepeval-4.2.8/traces/SOURCE.md) for producer
+capture provenance and a successful case containing an errored step.
+
 ## Account for DeepEval scores and evaluator errors
 
 For a completed DeepEval 4.1.1 TestRun JSON, use one command without a manifest:

@@ -65,6 +65,7 @@ source-include = [
     "contracts/deepeval_record.v1.schema.json",
     "contracts/deepeval_accounting.v2.schema.json",
     "contracts/deepeval_record.v2.schema.json",
+    "contracts/deepeval_trace_index.v1.schema.json",
     "contracts/langfuse_accounting.v1.schema.json",
     "contracts/langfuse_row_index.v1.schema.json",
     "contracts/langfuse_cli_accounting.v1.schema.json",

@@ -52,3 +52,9 @@ or nonempty conversational/trace accounting.
 `observations.json` records each source selector, raw hash, normalized observation
 digest, and recipe hash. Test mutations derived from these files are separate
 inputs; they are not claimed to be unchanged producer exports.
+
+The additional [native trace captures](traces/SOURCE.md) are registered in this
+version’s `observations.json`. They retain selected agent/tool spans from model-free
+callbacks. Generic ingestion preserves them; the explicit development trace-index
+view analyzes selected step structure. Ordinary metric accounting still refuses
+populated traces. These captures are not a matched before/after experiment.

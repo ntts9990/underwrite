@@ -42,11 +42,35 @@
       "ref": "sha256:72b826c8b95f2a33ca87b5dd401f07b6bb5dbbb458857e393b579926098d7308",
       "raw_hash": "sha256:72b826c8b95f2a33ca87b5dd401f07b6bb5dbbb458857e393b579926098d7308",
       "observation_digest": "sha256:ff20dbc10401b4229f043c895730c8b5458c6ffafe518a2df3763e09af4d2667"
+    },
+    "traces/success.json": {
+      "source": {
+        "format": "deepeval.test-run",
+        "format_version": "4.2.8"
+      },
+      "ref": "sha256:317a13bd5b33fa43e2fbe3e2d4a0e0c882bfffa9cd01e662355cee0d511ee8bd",
+      "raw_hash": "sha256:317a13bd5b33fa43e2fbe3e2d4a0e0c882bfffa9cd01e662355cee0d511ee8bd",
+      "observation_digest": "sha256:5d1304259a39bca8862d81a9fa893f74cf98f639c2077347b9a9a0d1a3bc9cee"
+    },
+    "traces/recovery.json": {
+      "source": {
+        "format": "deepeval.test-run",
+        "format_version": "4.2.8"
+      },
+      "ref": "sha256:fc97a1a35b10e528267c02c1a32af18de8a84fad89cee518f7de2b368d7807cd",
+      "raw_hash": "sha256:fc97a1a35b10e528267c02c1a32af18de8a84fad89cee518f7de2b368d7807cd",
+      "observation_digest": "sha256:bd1d0729fc7c365e55c8f7f7679e9daf4b619181570e58fbf6a1e37608310a15"
     }
   },
   "recipe": {
     "sample_eval.py": {
       "sha256": "6bdc55473e92c057d1307234d06fdeff6e94f8f61cb5762b43adf5388ba8b7ac"
+    },
+    "traces/capture_success.py": {
+      "sha256": "297d64d2e4b4f8ee222620904c9cee06d6d79cc76a34c2d8a2d7c7cd68101759"
+    },
+    "traces/capture_recovery.py": {
+      "sha256": "4917b42fe0f00a1953ed4c56438909b2254863e2ea53a0fdf88d66d65b0e66e8"
     }
   }
 }
