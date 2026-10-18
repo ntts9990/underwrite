@@ -27,6 +27,7 @@ from underwrite.cli import (
     pair_binary,
     prepare_event_policy,
     project_baseline,
+    record_deepeval,
     record_langfuse,
     records,
     release,
@@ -223,6 +224,12 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 ("file", "version", "bindings", "root", "id"),
                 ("deepeval_metric_bindings.v1",),
                 ("deepeval_bound_record.v1",),
+            ),
+            profile(
+                f"audit-deepeval|{DEEPEVAL_TRACE_VERSION}|trace-index",
+                ("file", "version", "view", "root", "id"),
+                (),
+                (record_deepeval.TRACE_RECORD_SCHEMA,),
             ),
             profile(
                 "audit-langfuse",

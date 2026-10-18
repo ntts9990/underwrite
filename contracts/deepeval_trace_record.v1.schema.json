@@ -1,0 +1,1749 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:deepeval_trace_record.v1",
+  "title": "deepeval_trace_record.v1",
+  "description": "Selected DeepEval trace index and private capture outcomes. A saved record verifies stored bytes, not producer execution, trace completeness or approval. Null published_record means no identity was returned, not proven absence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "command",
+    "source",
+    "analysis",
+    "storage",
+    "exit_code",
+    "source_format_version"
+  ],
+  "properties": {
+    "schema": {
+      "const": "deepeval_trace_record.v1"
+    },
+    "command": {
+      "const": "records audit-deepeval"
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "analysis": {
+      "$ref": "#/$defs/analysis"
+    },
+    "storage": {
+      "$ref": "#/$defs/storage"
+    },
+    "exit_code": {
+      "enum": [
+        0,
+        2,
+        3
+      ]
+    },
+    "source_format_version": {
+      "const": "4.2.8"
+    }
+  },
+  "$defs": {
+    "deepeval_trace_index": {
+      "title": "deepeval_trace_index.v1",
+      "description": "Selected case and span structure; no metric or causal judgment.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "source",
+        "raw_hash",
+        "rule_profile",
+        "scope",
+        "cases",
+        "counts",
+        "limitations",
+        "next_actions"
+      ],
+      "properties": {
+        "schema": {
+          "const": "deepeval_trace_index.v1"
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "format",
+            "format_version",
+            "claims_verified"
+          ],
+          "properties": {
+            "format": {
+              "const": "deepeval.test-run"
+            },
+            "format_version": {
+              "const": "4.2.8"
+            },
+            "claims_verified": {
+              "const": false
+            }
+          }
+        },
+        "raw_hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}(?![\\s\\S])"
+        },
+        "rule_profile": {
+          "const": "deepeval.trace-index.v1"
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "unit",
+            "case_roster",
+            "selected_fields_only",
+            "planned_steps",
+            "instrumentation_completeness",
+            "source_claims_verified"
+          ],
+          "properties": {
+            "unit": {
+              "const": "observed_span"
+            },
+            "case_roster": {
+              "const": "supplied_test_cases"
+            },
+            "selected_fields_only": {
+              "const": true
+            },
+            "planned_steps": {
+              "const": "unknown"
+            },
+            "instrumentation_completeness": {
+              "const": "unknown"
+            },
+            "source_claims_verified": {
+              "const": false
+            }
+          }
+        },
+        "cases": {
+          "type": "array",
+          "maxItems": 512,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "case_index",
+              "pointer",
+              "source_success",
+              "trace_availability",
+              "trace_status",
+              "groups",
+              "spans"
+            ],
+            "properties": {
+              "case_index": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 511
+              },
+              "pointer": {
+                "type": "string",
+                "pattern": "^/testCases/(0|[1-9][0-9]*)(?![\\s\\S])"
+              },
+              "source_success": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "trace_availability": {
+                "enum": [
+                  "absent",
+                  "null",
+                  "present"
+                ]
+              },
+              "trace_status": {
+                "enum": [
+                  "SUCCESS",
+                  "ERRORED",
+                  null
+                ]
+              },
+              "groups": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "baseSpans",
+                  "agentSpans",
+                  "llmSpans",
+                  "retrieverSpans",
+                  "toolSpans"
+                ],
+                "properties": {
+                  "baseSpans": {
+                    "enum": [
+                      "absent",
+                      "null",
+                      "empty",
+                      "present"
+                    ]
+                  },
+                  "agentSpans": {
+                    "enum": [
+                      "absent",
+                      "null",
+                      "empty",
+                      "present"
+                    ]
+                  },
+                  "llmSpans": {
+                    "enum": [
+                      "absent",
+                      "null",
+                      "empty",
+                      "present"
+                    ]
+                  },
+                  "retrieverSpans": {
+                    "enum": [
+                      "absent",
+                      "null",
+                      "empty",
+                      "present"
+                    ]
+                  },
+                  "toolSpans": {
+                    "enum": [
+                      "absent",
+                      "null",
+                      "empty",
+                      "present"
+                    ]
+                  }
+                }
+              },
+              "spans": {
+                "type": "array",
+                "maxItems": 1024,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "span_index",
+                    "pointer",
+                    "group",
+                    "group_index",
+                    "declared_type",
+                    "source_status",
+                    "parent_state",
+                    "parent_pointer",
+                    "cycle_member",
+                    "group_type_mismatch"
+                  ],
+                  "properties": {
+                    "span_index": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1023
+                    },
+                    "pointer": {
+                      "type": "string",
+                      "pattern": "^/testCases/(0|[1-9][0-9]*)/trace/(baseSpans|agentSpans|llmSpans|retrieverSpans|toolSpans)/(0|[1-9][0-9]*)(?![\\s\\S])"
+                    },
+                    "group": {
+                      "enum": [
+                        "baseSpans",
+                        "agentSpans",
+                        "llmSpans",
+                        "retrieverSpans",
+                        "toolSpans"
+                      ]
+                    },
+                    "group_index": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1023
+                    },
+                    "declared_type": {
+                      "enum": [
+                        "base",
+                        "agent",
+                        "llm",
+                        "retriever",
+                        "tool"
+                      ]
+                    },
+                    "source_status": {
+                      "enum": [
+                        "SUCCESS",
+                        "ERRORED"
+                      ]
+                    },
+                    "parent_state": {
+                      "enum": [
+                        "not_reported",
+                        "resolved",
+                        "unresolved"
+                      ]
+                    },
+                    "parent_pointer": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "string",
+                          "pattern": "^/testCases/(0|[1-9][0-9]*)/trace/(baseSpans|agentSpans|llmSpans|retrieverSpans|toolSpans)/(0|[1-9][0-9]*)(?![\\s\\S])"
+                        }
+                      ]
+                    },
+                    "cycle_member": {
+                      "type": "boolean"
+                    },
+                    "group_type_mismatch": {
+                      "type": "boolean"
+                    }
+                  },
+                  "allOf": [
+                    {
+                      "if": {
+                        "properties": {
+                          "parent_state": {
+                            "const": "resolved"
+                          }
+                        },
+                        "required": [
+                          "parent_state"
+                        ]
+                      },
+                      "then": {
+                        "properties": {
+                          "parent_pointer": {
+                            "type": "string",
+                            "pattern": "^/testCases/(0|[1-9][0-9]*)/trace/(baseSpans|agentSpans|llmSpans|retrieverSpans|toolSpans)/(0|[1-9][0-9]*)(?![\\s\\S])"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "parent_state": {
+                            "const": "not_reported"
+                          }
+                        },
+                        "required": [
+                          "parent_state"
+                        ]
+                      },
+                      "then": {
+                        "properties": {
+                          "parent_pointer": {
+                            "type": "null"
+                          },
+                          "cycle_member": {
+                            "const": false
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "parent_state": {
+                            "const": "unresolved"
+                          }
+                        },
+                        "required": [
+                          "parent_state"
+                        ]
+                      },
+                      "then": {
+                        "properties": {
+                          "parent_pointer": {
+                            "type": "null"
+                          },
+                          "cycle_member": {
+                            "const": false
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "trace_availability": {
+                      "const": "absent"
+                    }
+                  },
+                  "required": [
+                    "trace_availability"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "trace_status": {
+                      "type": "null"
+                    },
+                    "groups": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "baseSpans",
+                        "agentSpans",
+                        "llmSpans",
+                        "retrieverSpans",
+                        "toolSpans"
+                      ],
+                      "properties": {
+                        "baseSpans": {
+                          "const": "absent"
+                        },
+                        "agentSpans": {
+                          "const": "absent"
+                        },
+                        "llmSpans": {
+                          "const": "absent"
+                        },
+                        "retrieverSpans": {
+                          "const": "absent"
+                        },
+                        "toolSpans": {
+                          "const": "absent"
+                        }
+                      }
+                    },
+                    "spans": {
+                      "maxItems": 0
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "trace_availability": {
+                      "const": "null"
+                    }
+                  },
+                  "required": [
+                    "trace_availability"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "trace_status": {
+                      "type": "null"
+                    },
+                    "groups": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "baseSpans",
+                        "agentSpans",
+                        "llmSpans",
+                        "retrieverSpans",
+                        "toolSpans"
+                      ],
+                      "properties": {
+                        "baseSpans": {
+                          "const": "absent"
+                        },
+                        "agentSpans": {
+                          "const": "absent"
+                        },
+                        "llmSpans": {
+                          "const": "absent"
+                        },
+                        "retrieverSpans": {
+                          "const": "absent"
+                        },
+                        "toolSpans": {
+                          "const": "absent"
+                        }
+                      }
+                    },
+                    "spans": {
+                      "maxItems": 0
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "cases",
+            "traces",
+            "spans"
+          ],
+          "properties": {
+            "cases": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "total",
+                "source_true",
+                "source_false",
+                "source_unknown"
+              ],
+              "properties": {
+                "total": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 512
+                },
+                "source_true": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 512
+                },
+                "source_false": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 512
+                },
+                "source_unknown": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 512
+                }
+              }
+            },
+            "traces": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "absent",
+                "null",
+                "present",
+                "status_success",
+                "status_errored",
+                "status_unknown"
+              ],
+              "properties": {
+                "absent": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 512
+                },
+                "null": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 512
+                },
+                "present": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 512
+                },
+                "status_success": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 512
+                },
+                "status_errored": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 512
+                },
+                "status_unknown": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 512
+                }
+              }
+            },
+            "spans": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "total",
+                "by_group",
+                "by_declared_type",
+                "status_success",
+                "status_errored",
+                "parent_resolved",
+                "parent_unresolved",
+                "parent_not_reported",
+                "cycle_members",
+                "group_type_mismatch"
+              ],
+              "properties": {
+                "total": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1024
+                },
+                "by_group": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "baseSpans",
+                    "agentSpans",
+                    "llmSpans",
+                    "retrieverSpans",
+                    "toolSpans"
+                  ],
+                  "properties": {
+                    "baseSpans": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1024
+                    },
+                    "agentSpans": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1024
+                    },
+                    "llmSpans": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1024
+                    },
+                    "retrieverSpans": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1024
+                    },
+                    "toolSpans": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1024
+                    }
+                  }
+                },
+                "by_declared_type": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "base",
+                    "agent",
+                    "llm",
+                    "retriever",
+                    "tool"
+                  ],
+                  "properties": {
+                    "base": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1024
+                    },
+                    "agent": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1024
+                    },
+                    "llm": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1024
+                    },
+                    "retriever": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1024
+                    },
+                    "tool": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1024
+                    }
+                  }
+                },
+                "status_success": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1024
+                },
+                "status_errored": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1024
+                },
+                "parent_resolved": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1024
+                },
+                "parent_unresolved": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1024
+                },
+                "parent_not_reported": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1024
+                },
+                "cycle_members": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1024
+                },
+                "group_type_mismatch": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1024
+                }
+              }
+            }
+          }
+        },
+        "limitations": {
+          "const": [
+            "SOURCE_CLAIMS_UNVERIFIED",
+            "SELECTED_FIELDS_ONLY",
+            "PLANNED_STEPS_UNKNOWN",
+            "INSTRUMENTATION_COMPLETENESS_UNKNOWN",
+            "METRICS_AND_TIMING_NOT_ANALYZED",
+            "PARENT_LINKS_NOT_CAUSAL_DEPENDENCIES",
+            "NO_RETRY_OR_CHRONOLOGY_INFERENCE",
+            "SOURCE_HASH_AND_POINTERS_LINKABLE",
+            "NO_STATISTICAL_OR_APPROVAL_AUTHORITY"
+          ]
+        },
+        "next_actions": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "enum": [
+              "INSPECT_ERRORED_STEP_CONTEXT",
+              "RESOLVE_UNBOUND_PARENT_REFERENCES",
+              "INSPECT_CYCLIC_PARENT_LINKS",
+              "CHECK_INSTRUMENTATION_COVERAGE_IF_NEEDED"
+            ]
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "evidence_error": {
+      "title": "evidence_error.v1",
+      "description": "Invocation or input failure of an evidence pilot command. No successful report was emitted. This is not a measurement verdict.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "code",
+        "reason",
+        "location",
+        "next_action",
+        "retryable",
+        "exit_code"
+      ],
+      "properties": {
+        "schema": {
+          "const": "evidence_error.v1"
+        },
+        "code": {
+          "enum": [
+            "USAGE_ERROR",
+            "INVALID_INPUT",
+            "SOURCE_READ_FAILED",
+            "INPUT_LIMIT_EXCEEDED",
+            "OUTPUT_LIMIT_EXCEEDED",
+            "UNSUPPORTED_PROFILE",
+            "UNSUPPORTED_FORMAT",
+            "EXPECTED_HASH_MISMATCH",
+            "INVALID_MANIFEST",
+            "INVALID_ARTIFACT_PATH",
+            "SCHEMA_CONFIGURATION_ERROR",
+            "COMPUTATION_LIMIT_EXCEEDED",
+            "INTERNAL_ERROR",
+            "UNSUPPORTED_PLATFORM",
+            "INPUT_BINDING_MISMATCH"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Z][A-Z0-9_]*(?![\\s\\S])"
+        },
+        "location": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "next_action": {
+          "enum": [
+            "CORRECT_ARGUMENTS",
+            "CORRECT_INPUT",
+            "PROVIDE_REGULAR_LOCAL_FILE",
+            "REDUCE_INPUT_SIZE",
+            "USE_SUPPORTED_PROFILE",
+            "CHECK_EXPECTED_HASH",
+            "CORRECT_MANIFEST",
+            "CORRECT_ARTIFACT",
+            "REINSTALL_PACKAGE",
+            "REDUCE_COMPUTATION",
+            "REPORT_INTERNAL_ERROR",
+            "USE_SUPPORTED_PLATFORM",
+            "CORRECT_INPUT_BINDING"
+          ]
+        },
+        "retryable": {
+          "const": false
+        },
+        "exit_code": {
+          "const": 2
+        }
+      }
+    },
+    "record_error": {
+      "title": "record_error.v1",
+      "description": "Finite records command failure without caller-supplied diagnostics.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "code",
+        "reason",
+        "location",
+        "next_action",
+        "retryable",
+        "exit_code"
+      ],
+      "properties": {
+        "schema": {
+          "const": "record_error.v1"
+        },
+        "code": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^(?:|/(?:root|store|record_id|spec(?:/(?:files|links)(?:/[0-9]+(?:/[a-z_]+)?)?)?|source_base|record|catalog|verification|output))(?![\\s\\S])"
+        },
+        "next_action": {
+          "type": "string"
+        },
+        "retryable": {
+          "const": false
+        },
+        "exit_code": {
+          "const": 2
+        }
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/record_error__INVALID_SPEC"
+        },
+        {
+          "$ref": "#/$defs/record_error__INVALID_RECORD"
+        },
+        {
+          "$ref": "#/$defs/record_error__INVALID_STORE_LAYOUT"
+        },
+        {
+          "$ref": "#/$defs/record_error__INSECURE_STORE"
+        },
+        {
+          "$ref": "#/$defs/record_error__STORE_NOT_FOUND"
+        },
+        {
+          "$ref": "#/$defs/record_error__RECORD_NOT_FOUND"
+        },
+        {
+          "$ref": "#/$defs/record_error__RECORD_EXISTS"
+        },
+        {
+          "$ref": "#/$defs/record_error__RECORD_CAPTURE_INCOMPLETE"
+        },
+        {
+          "$ref": "#/$defs/record_error__RECORD_NOT_PUBLISHED"
+        },
+        {
+          "$ref": "#/$defs/record_error__SOURCE_READ_FAILED"
+        },
+        {
+          "$ref": "#/$defs/record_error__INPUT_LIMIT_EXCEEDED"
+        },
+        {
+          "$ref": "#/$defs/record_error__RECORD_LIMIT_EXCEEDED"
+        },
+        {
+          "$ref": "#/$defs/record_error__STORE_IO_ERROR"
+        },
+        {
+          "$ref": "#/$defs/record_error__UNSUPPORTED_PLATFORM"
+        },
+        {
+          "$ref": "#/$defs/record_error__USAGE_ERROR"
+        },
+        {
+          "$ref": "#/$defs/record_error__SCHEMA_CONFIGURATION_ERROR"
+        },
+        {
+          "$ref": "#/$defs/record_error__OUTPUT_LIMIT_EXCEEDED"
+        },
+        {
+          "$ref": "#/$defs/record_error__INTERNAL_ERROR"
+        },
+        {
+          "$ref": "#/$defs/record_error__RECORD_FILE_NOT_FOUND"
+        },
+        {
+          "$ref": "#/$defs/record_error__RECORD_FILE_INTEGRITY_MISMATCH"
+        },
+        {
+          "$ref": "#/$defs/record_error__UNSUPPORTED_RECORD_CONTENT"
+        }
+      ]
+    },
+    "record_error__INVALID_SPEC": {
+      "properties": {
+        "code": {
+          "const": "INVALID_SPEC"
+        },
+        "reason": {
+          "const": "INVALID_RECORD_SPEC"
+        },
+        "next_action": {
+          "const": "CORRECT_RECORD_SPEC"
+        }
+      }
+    },
+    "record_error__INVALID_RECORD": {
+      "properties": {
+        "code": {
+          "const": "INVALID_RECORD"
+        },
+        "reason": {
+          "const": "INVALID_RECORD_MANIFEST"
+        },
+        "next_action": {
+          "const": "SELECT_VALID_RECORD"
+        }
+      }
+    },
+    "record_error__INVALID_STORE_LAYOUT": {
+      "properties": {
+        "code": {
+          "const": "INVALID_STORE_LAYOUT"
+        },
+        "reason": {
+          "const": "INVALID_STORE_LAYOUT"
+        },
+        "next_action": {
+          "const": "SELECT_VALID_STORE"
+        }
+      }
+    },
+    "record_error__INSECURE_STORE": {
+      "properties": {
+        "code": {
+          "const": "INSECURE_STORE"
+        },
+        "reason": {
+          "const": "INSECURE_STORE_PERMISSIONS"
+        },
+        "next_action": {
+          "const": "SECURE_STORE"
+        }
+      }
+    },
+    "record_error__STORE_NOT_FOUND": {
+      "properties": {
+        "code": {
+          "const": "STORE_NOT_FOUND"
+        },
+        "reason": {
+          "const": "STORE_NOT_FOUND"
+        },
+        "next_action": {
+          "const": "CREATE_OR_SELECT_STORE"
+        }
+      }
+    },
+    "record_error__RECORD_NOT_FOUND": {
+      "properties": {
+        "code": {
+          "const": "RECORD_NOT_FOUND"
+        },
+        "reason": {
+          "const": "RECORD_NOT_FOUND"
+        },
+        "next_action": {
+          "const": "SELECT_EXISTING_RECORD"
+        }
+      }
+    },
+    "record_error__RECORD_EXISTS": {
+      "properties": {
+        "code": {
+          "const": "RECORD_EXISTS"
+        },
+        "reason": {
+          "const": "RECORD_ALREADY_EXISTS"
+        },
+        "next_action": {
+          "const": "USE_NEW_RECORD_ID"
+        }
+      }
+    },
+    "record_error__RECORD_CAPTURE_INCOMPLETE": {
+      "properties": {
+        "code": {
+          "const": "RECORD_CAPTURE_INCOMPLETE"
+        },
+        "reason": {
+          "const": "RECORD_CAPTURE_INCOMPLETE"
+        },
+        "next_action": {
+          "const": "USE_NEW_RECORD_ID"
+        }
+      }
+    },
+    "record_error__RECORD_NOT_PUBLISHED": {
+      "properties": {
+        "code": {
+          "const": "RECORD_NOT_PUBLISHED"
+        },
+        "reason": {
+          "const": "RECORD_NOT_PUBLISHED"
+        },
+        "next_action": {
+          "const": "SELECT_PUBLISHED_RECORD"
+        }
+      }
+    },
+    "record_error__SOURCE_READ_FAILED": {
+      "properties": {
+        "code": {
+          "const": "SOURCE_READ_FAILED"
+        },
+        "reason": {
+          "const": "SOURCE_READ_FAILED"
+        },
+        "next_action": {
+          "const": "CHECK_SOURCE_FILE"
+        }
+      }
+    },
+    "record_error__INPUT_LIMIT_EXCEEDED": {
+      "properties": {
+        "code": {
+          "const": "INPUT_LIMIT_EXCEEDED"
+        },
+        "reason": {
+          "const": "INPUT_LIMIT_EXCEEDED"
+        },
+        "next_action": {
+          "const": "REDUCE_INPUT_SIZE"
+        }
+      }
+    },
+    "record_error__RECORD_LIMIT_EXCEEDED": {
+      "properties": {
+        "code": {
+          "const": "RECORD_LIMIT_EXCEEDED"
+        },
+        "reason": {
+          "const": "RECORD_LIMIT_EXCEEDED"
+        },
+        "next_action": {
+          "const": "REDUCE_RECORD_COUNT"
+        }
+      }
+    },
+    "record_error__STORE_IO_ERROR": {
+      "properties": {
+        "code": {
+          "const": "STORE_IO_ERROR"
+        },
+        "reason": {
+          "const": "STORE_IO_ERROR"
+        },
+        "next_action": {
+          "const": "CHECK_STORE_IO"
+        }
+      }
+    },
+    "record_error__UNSUPPORTED_PLATFORM": {
+      "properties": {
+        "code": {
+          "const": "UNSUPPORTED_PLATFORM"
+        },
+        "reason": {
+          "const": "UNSUPPORTED_PLATFORM"
+        },
+        "next_action": {
+          "const": "USE_SUPPORTED_PLATFORM"
+        }
+      }
+    },
+    "record_error__USAGE_ERROR": {
+      "properties": {
+        "code": {
+          "const": "USAGE_ERROR"
+        },
+        "reason": {
+          "const": "INVALID_ARGUMENTS_SEE_HELP"
+        },
+        "next_action": {
+          "const": "CORRECT_ARGUMENTS"
+        }
+      }
+    },
+    "record_error__SCHEMA_CONFIGURATION_ERROR": {
+      "properties": {
+        "code": {
+          "const": "SCHEMA_CONFIGURATION_ERROR"
+        },
+        "reason": {
+          "const": "INVALID_PACKAGED_CONTRACT"
+        },
+        "next_action": {
+          "const": "REINSTALL_PACKAGE"
+        }
+      }
+    },
+    "record_error__OUTPUT_LIMIT_EXCEEDED": {
+      "properties": {
+        "code": {
+          "const": "OUTPUT_LIMIT_EXCEEDED"
+        },
+        "reason": {
+          "const": "OUTPUT_LIMIT_EXCEEDED"
+        },
+        "next_action": {
+          "const": "REDUCE_OUTPUT_SIZE"
+        }
+      }
+    },
+    "record_error__INTERNAL_ERROR": {
+      "properties": {
+        "code": {
+          "const": "INTERNAL_ERROR"
+        },
+        "reason": {
+          "const": "INTERNAL_ERROR"
+        },
+        "next_action": {
+          "const": "REPORT_INTERNAL_ERROR"
+        }
+      }
+    },
+    "record_error__RECORD_FILE_NOT_FOUND": {
+      "properties": {
+        "code": {
+          "const": "RECORD_FILE_NOT_FOUND"
+        },
+        "reason": {
+          "const": "RECORD_FILE_NOT_LISTED"
+        },
+        "next_action": {
+          "const": "SELECT_LISTED_RECORD_FILE"
+        }
+      }
+    },
+    "record_error__RECORD_FILE_INTEGRITY_MISMATCH": {
+      "properties": {
+        "code": {
+          "const": "RECORD_FILE_INTEGRITY_MISMATCH"
+        },
+        "reason": {
+          "const": "RECORD_FILE_INTEGRITY_MISMATCH"
+        },
+        "next_action": {
+          "const": "SELECT_VALID_RECORD"
+        }
+      }
+    },
+    "record_error__UNSUPPORTED_RECORD_CONTENT": {
+      "properties": {
+        "code": {
+          "const": "UNSUPPORTED_RECORD_CONTENT"
+        },
+        "reason": {
+          "const": "RECORD_CONTENT_NOT_REPRESENTABLE_AS_JSON"
+        },
+        "next_action": {
+          "const": "SELECT_SUPPORTED_RECORD_FILE"
+        }
+      }
+    },
+    "record_verification": {
+      "title": "record_verification.v1",
+      "description": "Stored-byte and direct-link integrity findings; valid false is result data, not invocation failure.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "record_id",
+        "manifest_digest",
+        "valid",
+        "files_checked",
+        "links_checked",
+        "findings",
+        "verification_scope"
+      ],
+      "properties": {
+        "schema": {
+          "const": "record_verification.v1"
+        },
+        "record_id": {
+          "$ref": "#/$defs/record_verification__record_id"
+        },
+        "manifest_digest": {
+          "$ref": "#/$defs/record_verification__digest"
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "files_checked": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        },
+        "links_checked": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16
+        },
+        "findings": {
+          "description": "At most one deterministic P2 runtime-selected finding per file or direct link; runtime precedence owns coordinate uniqueness.",
+          "type": "array",
+          "maxItems": 80,
+          "items": {
+            "$ref": "#/$defs/record_verification__finding"
+          },
+          "uniqueItems": true
+        },
+        "verification_scope": {
+          "const": "stored_bytes_and_direct_links"
+        }
+      },
+      "if": {
+        "properties": {
+          "valid": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "findings": {
+            "maxItems": 0
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "findings": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    "record_verification__record_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 96,
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,95}(?![\\s\\S])"
+    },
+    "record_verification__digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}(?![\\s\\S])"
+    },
+    "record_verification__logical_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*(?![\\s\\S])"
+    },
+    "record_verification__finding": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/record_verification__file_finding"
+        },
+        {
+          "$ref": "#/$defs/record_verification__link_finding"
+        }
+      ]
+    },
+    "record_verification__file_finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "name",
+        "record_id"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "FILE_MISSING",
+            "FILE_NOT_REGULAR",
+            "FILE_NOT_PRIVATE",
+            "FILE_READ_FAILED",
+            "FILE_SIZE_MISMATCH",
+            "FILE_DIGEST_MISMATCH"
+          ]
+        },
+        "name": {
+          "$ref": "#/$defs/record_verification__logical_name"
+        },
+        "record_id": {
+          "type": "null"
+        }
+      }
+    },
+    "record_verification__link_finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "name",
+        "record_id"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "LINK_RECORD_NOT_FOUND",
+            "LINK_RECORD_NOT_PUBLISHED",
+            "LINK_MANIFEST_INVALID",
+            "LINK_DIGEST_MISMATCH"
+          ]
+        },
+        "name": {
+          "type": "null"
+        },
+        "record_id": {
+          "$ref": "#/$defs/record_verification__record_id"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "captured",
+            "unavailable"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "captured"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state",
+              "raw_hash",
+              "bytes"
+            ],
+            "properties": {
+              "state": {
+                "const": "captured"
+              },
+              "raw_hash": {
+                "$ref": "#/$defs/record_verification__digest"
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4194304
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "unavailable"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "const": "unavailable"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "analysis": {
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "result",
+            "error"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "result"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state",
+              "report"
+            ],
+            "properties": {
+              "state": {
+                "const": "result"
+              },
+              "report": {
+                "$ref": "#/$defs/deepeval_trace_index"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "error"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state",
+              "phase",
+              "error"
+            ],
+            "properties": {
+              "state": {
+                "const": "error"
+              },
+              "phase": {
+                "enum": [
+                  "acquisition",
+                  "analysis"
+                ]
+              },
+              "error": {
+                "$ref": "#/$defs/evidence_error"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "storage": {
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "saved",
+            "error"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "saved"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state",
+              "record_id",
+              "manifest_digest",
+              "verification"
+            ],
+            "properties": {
+              "state": {
+                "const": "saved"
+              },
+              "record_id": {
+                "$ref": "#/$defs/record_verification__record_id"
+              },
+              "manifest_digest": {
+                "$ref": "#/$defs/record_verification__digest"
+              },
+              "verification": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/record_verification"
+                  },
+                  {
+                    "properties": {
+                      "valid": {
+                        "const": true
+                      },
+                      "findings": {
+                        "maxItems": 0
+                      },
+                      "links_checked": {
+                        "const": 0
+                      },
+                      "files_checked": {
+                        "enum": [
+                          2,
+                          3
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "error"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state",
+              "error",
+              "published_record"
+            ],
+            "properties": {
+              "state": {
+                "const": "error"
+              },
+              "error": {
+                "$ref": "#/$defs/record_error"
+              },
+              "published_record": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "record_id",
+                      "manifest_digest"
+                    ],
+                    "properties": {
+                      "record_id": {
+                        "$ref": "#/$defs/record_verification__record_id"
+                      },
+                      "manifest_digest": {
+                        "$ref": "#/$defs/record_verification__digest"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "storage": {
+            "properties": {
+              "state": {
+                "const": "saved"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "if": {
+          "properties": {
+            "source": {
+              "properties": {
+                "state": {
+                  "const": "captured"
+                }
+              }
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "storage": {
+              "properties": {
+                "verification": {
+                  "properties": {
+                    "files_checked": {
+                      "const": 3
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "else": {
+          "properties": {
+            "storage": {
+              "properties": {
+                "verification": {
+                  "properties": {
+                    "files_checked": {
+                      "const": 2
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "storage": {
+            "properties": {
+              "state": {
+                "const": "error"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit_code": {
+            "const": 3
+          }
+        }
+      },
+      "else": {
+        "if": {
+          "properties": {
+            "analysis": {
+              "properties": {
+                "state": {
+                  "const": "error"
+                }
+              }
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "exit_code": {
+              "const": 2
+            }
+          }
+        },
+        "else": {
+          "properties": {
+            "exit_code": {
+              "const": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "source": {
+            "properties": {
+              "state": {
+                "const": "unavailable"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "analysis": {
+            "properties": {
+              "state": {
+                "const": "error"
+              },
+              "phase": {
+                "const": "acquisition"
+              }
+            },
+            "required": [
+              "phase"
+            ]
+          }
+        }
+      },
+      "else": {
+        "if": {
+          "properties": {
+            "analysis": {
+              "properties": {
+                "state": {
+                  "const": "error"
+                }
+              }
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "analysis": {
+              "properties": {
+                "phase": {
+                  "const": "analysis"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

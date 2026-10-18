@@ -408,6 +408,33 @@ This view requires explicit `--version 4.2.8` and cannot be combined with
 [native synthetic examples](fixtures/golden/external/deepeval-4.2.8/traces/SOURCE.md) for producer
 capture provenance and a successful case containing an errored step.
 
+When retention is requested and capabilities lists `audit-deepeval|4.2.8|trace-index`
+under `records`, analyze and save the same captured bytes in one call:
+
+```sh
+underwrite records audit-deepeval test_run.json --version 4.2.8 --view trace-index \
+  --root /private/review-store --id trace-review-001 --json
+underwrite records verify --root /private/review-store --id trace-review-001 --json
+underwrite records read-json --root /private/review-store --id trace-review-001 \
+  --name analysis/trace-index.json --json
+```
+
+The `deepeval_trace_record.v1` response separates analysis and storage: exit 0 means
+a result was saved, 2 a diagnostic was saved, and 3 storage failed. A saved
+diagnostic consumes the ID. Usage or schema-configuration errors stop before
+storage. After storage failure, a null `published_record` means no identity was
+returned; inspect the ID before retrying. Complete malformed input can be retained
+with `analysis/error.json`; failed acquisition saves no partial source.
+
+**Retention saves the entire private TestRun**, including source text and IDs, plus
+the minimized index and path-bearing invocation. The index does not redact the
+retained source. After moving the original file, `records verify` and `read-json`
+still work from the store. To read original `source/deepeval.bin` bytes through
+`underwrite.service.records.read_record_file`, explicitly allow the 4 MiB source
+budget when needed; selected reads default to 1 MiB. Stored-byte verification does
+not establish producer execution, source truth or complete instrumentation.
+Published 0.1.1 predates this composed trace route too.
+
 ## Account for DeepEval scores and evaluator errors
 
 For a completed DeepEval 4.1.1 TestRun JSON, use one command without a manifest:

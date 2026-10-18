@@ -47,6 +47,44 @@ saved and the ID remains available. Complete captured malformed input may save
 storage failure does not prove absence; inspect the requested ID before retrying.
 Stored-byte integrity does not authenticate the producer or authorize a change.
 
+For a native DeepEval 4.2.8 step review, only when capabilities lists
+`audit-deepeval|4.2.8|trace-index` under `records`, use
+`records audit-deepeval FILE --version 4.2.8 --view trace-index --root ROOT --id NEW_ID --json`.
+This development route returns `deepeval_trace_record.v1` and retains the exact
+source buffer used for the actual index. Published 0.1.1 predates it. It cannot
+be combined with `--bindings`; use a fresh ID in an explicit private store.
+Inspect analysis and storage separately: 0 result saved, 2 diagnostic saved,
+3 storage failed. Complete malformed input may save a diagnostic and consume the
+ID; unavailable input produces no partial source. A null returned publication
+identity after storage failure does not prove absence. Inspect before retrying.
+
+**The whole source and private path-bearing invocation are retained.** The minimized
+index does not redact them. After the original path is moved, run `records verify`
+and retrieve `analysis/trace-index.json` (or `analysis/error.json`) with `records read-json`.
+For raw `source/deepeval.bin`, `underwrite.service.records.read_record_file` needs an
+explicit 4 MiB budget when the 1 MiB default is insufficient. Keep raw contents out
+of the caller-facing review. Verification establishes stored bytes, not producer
+execution, complete instrumentation, causal relations or approval.
+
+For a hash-only recovery with the installed Python interpreter:
+
+```python
+from pathlib import Path
+from underwrite.service.records import read_record_file
+
+saved = read_record_file(
+    Path("/private/review-store"), "review-001", "source/deepeval.bin",
+    max_bytes=4 * 1024 * 1024,
+)
+print(saved.sha256)
+print(saved.manifest_digest)
+```
+
+`saved.data` contains the verified original bytes; do not print them into the
+review. Compare `saved.sha256` with the saved index's `raw_hash` and keep the
+manifest identity with the result. This selected read does not replace the
+whole-record `records verify` check.
+
 For a supported DeepEval TestRun, prefer the capabilities-listed
 `records audit-deepeval FILE --root ROOT --id NEW_ID --json` when the caller requests
 whole-file retention in an explicit private store. The default is producer 4.1.1
