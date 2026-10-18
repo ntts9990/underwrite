@@ -1476,7 +1476,7 @@ def _deepeval_auto_pilot(cli: Path, work: Path) -> None:
     )
 
 
-def _langfuse_record_pilot(
+def _langfuse_record_pilot(  # noqa: PLR0913 — keep profile and view smoke inputs explicit
     cli: Path,
     work: Path,
     observed: Path,
@@ -1484,9 +1484,12 @@ def _langfuse_record_pilot(
     expected: dict[str, object],
     *,
     capture_profile: tuple[str | None, str] = ("blob-4.35.0", "langfuse_record.v1"),
+    view: str = "accounting",
 ) -> None:
     profile, record_schema = capture_profile
     slug = "langfuse-auto" if profile is None else f"langfuse-{profile}"
+    if view != "accounting":
+        slug += "-" + view
     input_directory = work / f"{slug}-record-inputs"
     input_directory.mkdir()
     inputs = (input_directory / "observations.json", input_directory / "scores.json")
@@ -1503,13 +1506,14 @@ def _langfuse_record_pilot(
         "--root",
         str(store),
     ]
+    arguments.extend(("--view", view))
     if profile is not None:
         arguments.extend(("--profile", profile))
     report = _cli_json(cli, [*arguments, "--id", "captured"], work / f"{slug}-record.json", work)
     analysis = cast(dict[str, object], report["analysis"])
     storage = cast(dict[str, object], report["storage"])
     _require(report["schema"] == record_schema, "Langfuse record selected the wrong contract")
-    _require(analysis["report"] == expected, "Langfuse capture changed accounting")
+    _require(analysis["report"] == expected, "Langfuse capture changed analysis")
     _require(storage["state"] == "saved", "Langfuse capture failed to save")
     expected_hashes: dict[str, str] = {}
     for source, role in zip(inputs, ("observations", "scores"), strict=True):
@@ -1537,7 +1541,7 @@ def _langfuse_record_pilot(
             "--id",
             "captured",
             "--name",
-            "analysis/accounting.json",
+            f"analysis/{view}.json",
         ],
         work / f"{slug}-recovered.json",
         work,
@@ -1807,6 +1811,15 @@ def _langfuse_auto_pilot(cli: Path, work: Path) -> None:
             scores,
             report,
             capture_profile=(None, "langfuse_record.v2"),
+        )
+        _langfuse_record_pilot(
+            cli,
+            selected,
+            observed,
+            scores,
+            rows,
+            capture_profile=(None, "langfuse_row_record.v1"),
+            view="row-index",
         )
     _native_refusal(
         cli,

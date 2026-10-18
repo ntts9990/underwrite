@@ -301,8 +301,10 @@ def test_unexpected_failure_has_finite_private_diagnostic(
         monkeypatch.setattr(command, "read_langfuse_file", read)
     else:
 
-        def audit(observations: bytes, scores: bytes) -> dict[str, object]:
-            del observations, scores
+        def audit(
+            observations: bytes, scores: bytes, *, profile: str | None, view: command.View
+        ) -> dict[str, object]:
+            del observations, scores, profile, view
             raise RuntimeError("secret producer text")
 
         monkeypatch.setattr(command, "audit_langfuse_bytes", audit)
@@ -320,8 +322,10 @@ def test_source_identity_mismatch_refused_before_store(
     paths, store = inputs(tmp_path), tmp_path / "store"
     original = command.audit_langfuse_bytes
 
-    def audit(observations: bytes, scores: bytes, *, profile: str) -> dict[str, object]:
-        report = original(observations, scores, profile=profile)
+    def audit(
+        observations: bytes, scores: bytes, *, profile: str | None, view: command.View
+    ) -> dict[str, object]:
+        report = original(observations, scores, profile=profile, view=view)
         identities = cast(dict[str, dict[str, object]], report["sources"])
         identities["scores"]["raw_hash"] = "sha256:" + "0" * 64
         return report
