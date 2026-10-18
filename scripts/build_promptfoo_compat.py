@@ -10,8 +10,16 @@ from typing import Any, cast
 
 from _record_schema import build_record_schema
 from _schema_compose import object_schema
+from underwrite_core.canonical import SAFE_INT_MAX
 
 from underwrite.cli.record_promptfoo import AUTO_RECORD_SCHEMA, COMMAND
+from underwrite.instrument.evidence.accounting import (
+    CATEGORIES,
+    REASON_ASSERT,
+    REASON_ERROR,
+    REASON_NONE,
+    ROW_LIMIT,
+)
 from underwrite.instrument.evidence.promptfoo_compat import (
     ACCOUNTING_SCHEMA,
     LIMITATIONS,
@@ -27,10 +35,82 @@ from underwrite.instrument.evidence.promptfoo_compat import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-ACCOUNTING_V1 = ROOT / "contracts/promptfoo_accounting.v1.schema.json"
-ROW_V1 = ROOT / "contracts/promptfoo_row_index.v1.schema.json"
-DEFINITIONS = ("hash", "counts", "deltas", "nonnegative", "signed", "finding")
 COUNT_FIELDS = ("producer_stats", "row_tallies", "deltas", "declared_relation", "findings")
+
+
+def _count_definitions() -> dict[str, Any]:
+    categories = "|".join(CATEGORIES)
+    row_path = r"/results/results/(?:0|[1-9][0-9]{0,3})/(?:failureReason|gradingResult/pass)"
+    finding = object_schema(
+        {
+            "code": {"enum": ["CATEGORY_COUNT_MISMATCH", "SOURCE_FLAGS_DISAGREE"]},
+            "row_index": {"type": ["integer", "null"], "minimum": 0, "maximum": ROW_LIMIT - 1},
+            "location": {
+                "type": "string",
+                "pattern": (
+                    rf"^/results/(?:stats/(?:{categories})|results/"
+                    r"(?:0|[1-9][0-9]{0,3})/(?:failureReason|gradingResult/pass))$"
+                ),
+            },
+        }
+    )
+    finding["allOf"] = [
+        {
+            "if": {"properties": {"code": {"const": "CATEGORY_COUNT_MISMATCH"}}},
+            "then": {
+                "properties": {
+                    "row_index": {"type": "null"},
+                    "location": {"pattern": rf"^/results/stats/(?:{categories})$"},
+                }
+            },
+            "else": {
+                "properties": {
+                    "row_index": {"type": "integer"},
+                    "location": {"pattern": "^" + row_path + "$"},
+                }
+            },
+        }
+    ]
+    return {
+        "hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        **{
+            name: object_schema(
+                {key: {"$ref": f"#/$defs/{number}"} for key in (*CATEGORIES, "total")}
+            )
+            for name, number in (("counts", "nonnegative"), ("deltas", "signed"))
+        },
+        "nonnegative": {"type": "integer", "minimum": 0, "maximum": SAFE_INT_MAX},
+        "signed": {"type": "integer", "minimum": -SAFE_INT_MAX, "maximum": SAFE_INT_MAX},
+        "finding": finding,
+    }
+
+
+def _rows() -> dict[str, Any]:
+    row = object_schema(
+        {
+            "row_index": {"type": "integer", "minimum": 0, "maximum": ROW_LIMIT - 1},
+            "category": {"enum": list(CATEGORIES)},
+            "source_success": {"type": "boolean"},
+            "source_failure_reason": {"enum": [REASON_NONE, REASON_ASSERT, REASON_ERROR]},
+            "grading_pass": {"type": ["boolean", "null"]},
+        }
+    )
+    row["description"] = (
+        "Category is underwrite's source-flag accounting class, not a verified task outcome. "
+        "Null grading_pass covers both absent and explicit-null gradingResult."
+    )
+    row["allOf"] = [
+        {
+            "if": {"properties": {"source_success": {"const": True}}},
+            "then": {"properties": {"category": {"const": "successes"}}},
+            "else": {
+                "if": {"properties": {"source_failure_reason": {"const": REASON_ERROR}}},
+                "then": {"properties": {"category": {"const": "errors"}}},
+                "else": {"properties": {"category": {"const": "failures"}}},
+            },
+        }
+    ]
+    return {"type": "array", "maxItems": ROW_LIMIT, "items": row}
 
 
 def _source() -> dict[str, Any]:
@@ -68,22 +148,19 @@ def _scope(*, row_index: bool) -> dict[str, Any]:
 
 
 def _base(
-    name: str, *, description: str, properties: dict[str, Any], owner: dict[str, Any]
+    name: str, *, description: str, properties: dict[str, Any], definitions: dict[str, Any]
 ) -> dict[str, Any]:
-    definitions = cast(dict[str, Any], owner["$defs"])
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "urn:underwrite:contract:" + name,
         "title": name,
         "description": description,
         **object_schema(properties),
-        "$defs": {key: deepcopy(definitions[key]) for key in DEFINITIONS},
+        "$defs": definitions,
     }
 
 
 def build_accounting_schema() -> dict[str, Any]:
-    owner = cast(dict[str, Any], json.loads(ACCOUNTING_V1.read_bytes()))
-    fields = cast(dict[str, Any], owner["properties"])
     return _base(
         ACCOUNTING_SCHEMA,
         description=(
@@ -93,21 +170,27 @@ def build_accounting_schema() -> dict[str, Any]:
         properties={
             "schema": {"const": ACCOUNTING_SCHEMA},
             "source": _source(),
-            "raw_hash": deepcopy(fields["raw_hash"]),
+            "raw_hash": {"$ref": "#/$defs/hash"},
             "reader_profile": {"const": READER_PROFILE},
             "scope": _scope(row_index=False),
-            **{key: deepcopy(fields[key]) for key in COUNT_FIELDS},
+            "producer_stats": {"$ref": "#/$defs/counts"},
+            "row_tallies": {"$ref": "#/$defs/counts"},
+            "deltas": {"$ref": "#/$defs/deltas"},
+            "declared_relation": {"enum": ["consistent", "inconsistent"]},
+            "findings": {
+                "type": "array",
+                "maxItems": ROW_LIMIT + len(CATEGORIES),
+                "items": {"$ref": "#/$defs/finding"},
+            },
             "limitations": {"const": list(LIMITATIONS)},
         },
-        owner=owner,
+        definitions=_count_definitions(),
     )
 
 
 def build_row_index_schema() -> dict[str, Any]:
     accounting = build_accounting_schema()
-    old_row = cast(dict[str, Any], json.loads(ROW_V1.read_bytes()))
     fields = cast(dict[str, Any], accounting["properties"])
-    old_fields = cast(dict[str, Any], old_row["properties"])
     return _base(
         ROW_INDEX_SCHEMA,
         description="Selected, content-minimized Promptfoo SummaryV3 source-flag rows.",
@@ -118,11 +201,11 @@ def build_row_index_schema() -> dict[str, Any]:
             "reader_profile": deepcopy(fields["reader_profile"]),
             "scope": _scope(row_index=True),
             **{key: deepcopy(fields[key]) for key in COUNT_FIELDS},
-            "rows": deepcopy(old_fields["rows"]),
-            "verification": deepcopy(old_fields["verification"]),
+            "rows": _rows(),
+            "verification": {"const": []},
             "limitations": {"const": list(ROW_LIMITATIONS)},
         },
-        owner=accounting,
+        definitions=cast(dict[str, Any], accounting["$defs"]),
     )
 
 
