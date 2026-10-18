@@ -1,20 +1,25 @@
-# Migration from 0.1.1
+# Migration from 0.1.1 to 0.2.0
 
-This guide describes the development changes planned for **0.2.0**. That version
-has not been released. A development installation may still report `0.1.1`;
-that does not make its features identical to the published PyPI package.
-The commands below run from a development checkout after `uv sync --all-groups`.
-Once an installed release includes these features, use `underwrite` in place of
-`uv run --frozen --no-sync underwrite`. See [the CLI guide](AGENT_USAGE.md).
+This guide targets **underwrite 0.2.0**. Upgrade the app; the unchanged core remains
+0.1.1 and the app keeps its compatible `underwrite-core>=0.1.0,<0.2` requirement.
+No record migration or producer re-execution is needed to read existing records.
+
+```sh
+uv tool install 'underwrite==0.2.0'
+underwrite capabilities --json
+```
+
+The examples use the installed CLI. For a source checkout, run `uv sync --all-groups`
+and use `uv run --frozen --no-sync underwrite` instead. See [the CLI guide](AGENT_USAGE.md).
 
 ## Ordinary inputs no longer require a producer version
 
 For supported local artifact families, omit `--version` or `--profile`:
 
 ```sh
-uv run --frozen --no-sync underwrite audit-promptfoo results.json --json
-uv run --frozen --no-sync underwrite audit-deepeval test-run.json --json
-uv run --frozen --no-sync underwrite audit-langfuse --observations observations.json --scores scores.json --json
+underwrite audit-promptfoo results.json --json
+underwrite audit-deepeval test-run.json --json
+underwrite audit-langfuse --observations observations.json --scores scores.json --json
 ```
 
 Underwrite selects a reader from the supplied structure. It does not contact the
@@ -34,7 +39,7 @@ trace view, metrics and expectation outcomes remain outside the analyzed scope.
 Default output contracts have changed. Branch on the returned `schema` and read
 its corresponding contract; do not replace a schema label on old JSON.
 
-| Command | Published 0.1.1 default | Development default |
+| Command | Published 0.1.1 default | 0.2.0 default |
 | --- | --- | --- |
 | `audit-promptfoo` | `promptfoo_accounting.v1` | `promptfoo_accounting.v2` |
 | `audit-promptfoo --view row-index` | `promptfoo_row_index.v1` | `promptfoo_row_index.v2` |
@@ -49,9 +54,9 @@ To reproduce an existing integration, explicitly select its actual historical
 reader:
 
 ```sh
-uv run --frozen --no-sync underwrite audit-promptfoo results.json --version 0.123.0 --json
-uv run --frozen --no-sync underwrite audit-deepeval test-run.json --version 4.1.1 --json
-uv run --frozen --no-sync underwrite audit-langfuse --observations observations.json --scores scores.json \
+underwrite audit-promptfoo results.json --version 0.123.0 --json
+underwrite audit-deepeval test-run.json --version 4.1.1 --json
+underwrite audit-langfuse --observations observations.json --scores scores.json \
   --profile blob-4.35.0 --json
 ```
 
@@ -90,13 +95,13 @@ storage, and Goppi trajectory analysis are new since published 0.1.1. They do no
 upgrade existing stored results. Step statuses and local relationships do not
 establish retry effects or causality.
 
-For a supported completed Goppi paired trajectory handoff, the development route
+For a supported completed Goppi paired trajectory handoff, the 0.2.0 route
 retains the seven captured source files and the analysis or supported diagnostic:
 
 ```sh
-uv run --frozen --no-sync underwrite records audit-trajectory --exchange EXCHANGE \
+underwrite records audit-trajectory --exchange EXCHANGE \
   --root PRIVATE_STORE --id trajectory-001 --goppi-executable GOPPI_EXECUTABLE --json
-uv run --frozen --no-sync underwrite records read-trajectory \
+underwrite records read-trajectory \
   --root PRIVATE_STORE --id trajectory-001 --json
 ```
 
@@ -121,9 +126,9 @@ original analysis schema and bytes. Read or verify them without rerunning an
 analysis:
 
 ```sh
-uv run --frozen --no-sync underwrite records verify --root STORE --id RECORD_ID --json
-uv run --frozen --no-sync underwrite records show --root STORE --id RECORD_ID --json
-uv run --frozen --no-sync underwrite records read-json --root STORE --id RECORD_ID \
+underwrite records verify --root STORE --id RECORD_ID --json
+underwrite records show --root STORE --id RECORD_ID --json
+underwrite records read-json --root STORE --id RECORD_ID \
   --name analysis/accounting.json --json
 ```
 

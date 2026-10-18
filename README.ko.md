@@ -30,11 +30,12 @@ underwrite는 평가를 다시 실행하거나, 생성 도구의 판정을 독�
 검사하는 데 Docker, 대시보드, 제공자 인증 정보는 필요하지 않습니다.
 
 > [!NOTE]
-> **사용 경로를 선택하세요:** 배포된 기능은 [PyPI 0.1.1](#배포판--pypi-011),
-> 새 자동 입력 처리와 실행 단계 비교는 [현재 main 체크아웃](#개발본--현재-main-체크아웃)을
-> 사용합니다. 둘 다 현재 `0.1.1`로 표시되므로 `capabilities --json`으로
-> 실행 파일이 실제로 지원하는 기능을 확인하세요. 이전 `0.0.1`의 핀 매니페스트
-> 주의 사항은 [설치](#설치)에 있습니다.
+> **이 안내는 `underwrite==0.2.0`을 대상으로 합니다.** [CLI를 설치하면](#설치한-패키지--020)
+> 자동 입력 처리, 목적별 근거 보기와 실행 단계 검토·보관을 사용할 수 있습니다.
+> [소스 체크아웃](#개발본--현재-main-체크아웃)은 저장소 예제나 개발에 필요합니다.
+> `capabilities --json`으로 설치된 경로를 확인하세요. 0.1.1에서 업그레이드한다면
+> [마이그레이션 안내](https://github.com/ntts9990/underwrite/blob/main/MIGRATION.md)를 읽어보세요.
+> 이전 `0.0.1`의 핀 매니페스트 주의 사항은 [설치](#설치)에 있습니다.
 
 ## 빠른 시작
 
@@ -43,19 +44,18 @@ underwrite는 평가를 다시 실행하거나, 생성 도구의 판정을 독�
 파일 기반 CLI 작업은 Linux와 macOS의 CPython 3.12에서 테스트했습니다.
 일반 아티팩트 읽기를 포함해 Unix/POSIX 파일 API가 필요합니다.
 
-### 배포판 · PyPI 0.1.1
+### 설치한 패키지 · 0.2.0
 
 **1. 설치하고 파일을 검사합니다.** 앱만 설치해도 호환되는 `underwrite-core`가
 함께 설치됩니다. 공개 합성 예제를 다운로드하세요. 체크아웃이나 API 키는 필요하지 않습니다.
 
 ```sh
-uv tool install 'underwrite==0.1.1'
+uv tool install 'underwrite==0.2.0'
 underwrite capabilities --json
 example_dir=$(mktemp -d)
 curl -fsSLo "$example_dir/promptfoo.json" \
   https://raw.githubusercontent.com/ntts9990/underwrite/cb913d39bce628b93dcd3b06fcc4ce36f9dc66af/fixtures/examples/evidence/synthetic-promptfoo-count-mismatch.json
-underwrite audit-promptfoo "$example_dir/promptfoo.json" \
-  --version 0.123.0 --json
+underwrite audit-promptfoo "$example_dir/promptfoo.json" --json
 ```
 
 같은 `uv tool install` 명령으로 uv가 설치한 이전 `underwrite` 도구도
@@ -68,7 +68,7 @@ underwrite audit-promptfoo "$example_dir/promptfoo.json" \
 
 ```json
 {
-  "schema": "promptfoo_accounting.v1",
+  "schema": "promptfoo_accounting.v2",
   "declared_relation": "inconsistent",
   "producer_stats": {"errors": 1, "failures": 1, "successes": 1, "total": 3},
   "row_tallies": {"errors": 1, "failures": 0, "successes": 1, "total": 2},
@@ -80,6 +80,8 @@ underwrite audit-promptfoo "$example_dir/promptfoo.json" \
     "PLANNED_DENOMINATOR_UNKNOWN",
     "CAUSE_UNKNOWN",
     "SOURCE_CLAIMS_UNVERIFIED",
+    "UNCONSUMED_FIELDS_AND_POPULATIONS_NOT_ANALYZED",
+    "SOURCE_HASH_AND_VERSION_LINKABLE",
     "NO_APPROVAL_AUTHORITY"
   ]
 }
@@ -93,14 +95,14 @@ underwrite audit-promptfoo "$example_dir/promptfoo.json" \
 [로컬 기록으로 저장하세요](#다시-찾아볼-수-있는-결과-보관).
 
 직접 만든 완료된 Promptfoo 내보내기 파일에는 로컬 경로와
-[배포판이 지원하는 프로필](#지원-형식)을 사용하세요. 다운로드한 파일은 구성한
+[지원되는 입력 형식](#지원-형식)을 사용하세요. 다운로드한 파일은 구성한
 합성 예제이며, 생성 도구의 원본 내보내기 파일은 아닙니다.
 
 ### 개발본 · 현재 main 체크아웃
 
-새 작업 흐름은 체크아웃에서 사용하세요. 배포판 설치와 구분되도록 해당 디렉터리
-안에서 `uv run`으로 실행합니다. 이미 체크아웃이 있다면 저장소 루트에서 아래
-`uv sync`부터 실행하세요.
+소스를 개발하거나 저장소 예제를 실행할 때 체크아웃을 사용하세요. 설치한 도구와
+구분되도록 해당 디렉터리 안에서 `uv run`으로 실행합니다. 이미 체크아웃이 있다면
+저장소 루트에서 아래 `uv sync`부터 실행하세요.
 
 ```sh
 git clone https://github.com/ntts9990/underwrite.git
@@ -117,7 +119,7 @@ uv run --frozen --no-sync underwrite audit-promptfoo \
 알 수 없는 상태로 유지합니다. 이 예제에는 버전 옵션, 생성 도구 설치, Goppi,
 제공자 호출이 필요하지 않습니다.
 체크아웃 명령에는 항상 `uv run --frozen --no-sync underwrite` 접두사를 사용하세요.
-다른 경로는 [개발본 추가 기능](#개발본--현재-main의-추가-기능)에 있습니다.
+다른 경로는 [0.2.0의 작업 흐름](#020에-포함된-작업-흐름)에 있습니다.
 
 <details>
 <summary><strong>네이티브 측정 → 수락 분류 흐름 실행하기</strong></summary>
@@ -181,9 +183,9 @@ uv run --frozen --no-sync underwrite accept \
 
 Python에서는 선택한 환경의
 `underwrite.instrument.ingest.accounting.audit_promptfoo_file(Path(...))`를
-사용할 수 있습니다. 배포판에서는 입력이 지원 프로필과 일치하는지 확인하고,
-문서의 기본값과 다를 때 프로필을 명시하세요. 현재 자동 입력 경로에서는
-생성 도구의 버전을 추측할 필요가 없습니다.
+사용할 수 있습니다. 자동 입력은 입력 구조에서 지원되는 reader를 선택하므로
+생성 도구 버전을 추측할 필요가 없습니다. 이전 계약을 재현할 때는 마이그레이션
+안내에 따라 명시적인 이전 선택자를 사용하세요.
 
 터미널을 사용할 수 있는 에이전트에게 다음과 같이 요청할 수 있습니다.
 
@@ -208,21 +210,21 @@ Claude Code에서 재사용할 수 있는 지침을 제공합니다.
 뜻하지 않습니다. 선택한 실행 파일의 capabilities와 연결된 안내에서 정확한
 입력 요구사항을 확인하세요.
 
-### 배포판 지원 프로필 · PyPI 0.1.1
+### 지원 프로필 · 0.2.0
 
 | 입력 | 지원 프로필 | 시작 경로 |
 | --- | --- | --- |
-| **Goppi** | 완료된 baseline exchange manifest v2; P7 paired handoff | [`audit-baseline`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#audit-a-completed-goppi-baseline-as-common-evidence) · [`project-baseline`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#project-a-completed-goppi-baseline-into-event-observations) · [`review-handoff`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#review-a-completed-paired-handoff-in-one-call) |
-| **Langfuse** | `4.35.0` 서버 blob 배열 | [`audit-langfuse`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-langfuse-score-kinds-and-associations) |
-| **DeepEval** | 일반 TestRun, `4.1.1`(기본값) 또는 명시적 `4.2.8` | [`audit-deepeval`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors) |
-| **Promptfoo** | Eval output, `0.123.0`(기본값) 또는 명시적 `0.124.1` | [`audit-promptfoo`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#audit-promptfoo-counts) |
-| **외부 공통 결과** | `evidence_result.v1` | [`inspect-result`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#inspect-an-external-common-result) |
+| **Goppi** | 완료된 baseline exchange manifest v2; P7 handoff; 채택된 paired trajectory | [`audit-baseline`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#audit-a-completed-goppi-baseline-as-common-evidence) · [`project-baseline`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#project-a-completed-goppi-baseline-into-event-observations) · [`review-handoff`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#review-a-completed-paired-handoff-in-one-call) · [`audit-trajectory`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#compare-a-goppi-paired-trajectory) |
+| **Langfuse** | 호환 blob 배열 또는 공식 CLI 목록 캡처; 파일 쌍 자동 선택 | [`audit-langfuse`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-langfuse-score-kinds-and-associations) |
+| **DeepEval** | 호환 TestRun 자동 집계; 선택형 trace 보기와 의미 바인딩 | [`audit-deepeval`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#account-for-deepeval-scores-and-evaluator-errors) |
+| **Promptfoo** | SummaryV3 eval output 자동 입력; 이전 선택자 유지 | [`audit-promptfoo`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#audit-promptfoo-counts) |
+| **외부 공통 결과** | `evidence_result.v1` 또는 `evidence_result.v2` | [`inspect-result`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#inspect-an-external-common-result) |
 | **네이티브 근거** | `underwrite.evidence-bundle` / `v1` | `ingest` → `measure` → `accept` |
 | **Inspect AI** | `inspect.eval-log` / `0.3.263` | `ingest` |
 | **OpenInference** | `openinference.traces` / `0.1.38` | `ingest` |
 | **OTLP JSON** | `otlp-json.traces` / `0.160.0` | `ingest` |
 
-### 개발본 · 현재 main의 추가 기능
+### 0.2.0에 포함된 작업 흐름
 
 - **자동 입력:** 호환되는 Promptfoo SummaryV3, DeepEval TestRun, Langfuse blob
   배열 또는 [공식 CLI 목록 캡처](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#read-official-langfuse-cli-captures-offline)를
@@ -261,15 +263,16 @@ fixture 출처와 검사 범위는
 
 ```sh
 underwrite records audit-promptfoo /path/to/promptfoo-output.json \
-  --version 0.123.0 --root ./review-store --id review-001 --json
+  --root ./review-store --id review-001 --json
 
 underwrite records read-json \
   --root ./review-store --id review-001 \
   --name analysis/accounting.json --json
 ```
 
-체크아웃에서는 두 명령 앞에 `uv run --frozen --no-sync`를 붙이고, 자동 입력에는
-`--version`을 생략하세요. 캡처할 때마다 새 ID를 사용하며 기존 기록은 덮어쓰지 않습니다.
+자동 입력에는 생성 도구 버전 옵션이 필요하지 않습니다. 체크아웃에서는 두 명령
+앞에 `uv run --frozen --no-sync`를 붙이세요. 캡처할 때마다 새 ID를 사용하며
+기존 기록은 덮어쓰지 않습니다.
 `records verify`는 저장된 데이터의 무결성을 검사합니다. `records measure`는
 네이티브 측정을 캡처하고, `records replay-measure`는 검증된 저장 입력을 현재 엔진으로
 다시 계산합니다. 원래 생성 도구를 실행하지 않습니다. 완료된 Goppi baseline v2 디렉터리는
@@ -301,7 +304,7 @@ underwrite는 서로 다른 종류의 근거를 구분합니다.
 `underwrite --help`와 `underwrite capabilities --json`으로 확인하세요.
 
 ```sh
-uv tool install 'underwrite==0.1.1'
+uv tool install 'underwrite==0.2.0'
 underwrite --help
 underwrite capabilities --json
 ```
@@ -314,12 +317,12 @@ underwrite capabilities --json
 
 ```sh
 uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python 'underwrite==0.1.1'
+uv pip install --python .venv/bin/python 'underwrite==0.2.0'
 .venv/bin/python - <<'PY'
 from pathlib import Path
 from underwrite.instrument.ingest.accounting import audit_promptfoo_file
 
-result = audit_promptfoo_file(Path("/path/to/promptfoo-output.json"), version="0.123.0")
+result = audit_promptfoo_file(Path("/path/to/promptfoo-output.json"))
 print(result["declared_relation"])
 PY
 ```
@@ -385,10 +388,12 @@ OIDC 배포를 사용하기 전에 GitHub 환경 `pypi`를 만들고 `main`으�
 저장소는 `underwrite`, 워크플로는 `publish.yml`, 환경은 `pypi`입니다.
 설정 후 GitHub Actions에서 `main`의 **Publish PyPI**를 수동 실행합니다.
 
-워크플로는 두 패키지를 검증한 뒤 코어, 애플리케이션 순서로 배포합니다. 별도 배포
-작업에만 OIDC 권한이 부여되며, 저장된 PyPI API 토큰은 필요하지 않습니다. 일부만
-업로드됐다면 동일한 아티팩트로 재시도합니다. 이미 등록된 파일은 정확히 일치해야 하며,
-아티팩트가 바뀌면 새 버전이 필요합니다.
+워크플로는 두 패키지를 검증하고, 기본값은 앱만 배포하는 `publish_core: false`입니다.
+앱이 이미 공개된 호환 코어와 함께 설치·동작하는지 먼저 검사합니다. 명시적으로 승인된
+코어 릴리스에만 `publish_core: true`를 선택하며, 코어 업로드가 성공해야 앱을 배포합니다.
+이번 앱 릴리스에서 변경 없는 코어는 `0.1.1`을 유지합니다. 배포 작업에만 OIDC 권한이
+부여되며 저장된 PyPI 토큰은 필요하지 않습니다. 일부 업로드를 재시도할 때는 동일한
+아티팩트를 사용하세요. 기존 버전에 바이트가 달라진 재빌드 파일을 올리지 않습니다.
 
 공식 [uv 배포 가이드](https://docs.astral.sh/uv/guides/package/)와
 [PyPI Trusted Publisher 가이드](https://docs.pypi.org/trusted-publishers/using-a-publisher/)를 참고하세요.

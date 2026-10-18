@@ -3,7 +3,7 @@
 `records` stores explicitly selected files in a private, immutable local bundle.
 It does not discover inputs, execute an evaluation, or certify provenance.
 These commands were introduced in published `underwrite` 0.1.0 and remain in the
-0.1.1 source tree. Use `underwrite records --help` and
+0.2.0 release. Use `underwrite records --help` and
 `underwrite capabilities --json` to confirm installed profiles; older packages
 can differ. A GitHub checkout is needed only for repository fixtures.
 
@@ -85,7 +85,7 @@ The command never changes the original record or its `rerun_verification` claim.
 For a supported DeepEval TestRun, use
 `records audit-deepeval FILE --root ROOT --id NEW_ID --json` to analyze and retain
 the same complete bytes with their result or diagnostic and invocation metadata.
-In development builds advertising automatic intake, omitted `--version` returns
+In 0.2.0 builds advertising automatic intake, omitted `--version` returns
 `deepeval_record.v3` with `deepeval_accounting.v3`. It selects an Underwrite reader
 from consumed fields but leaves the actual producer version unknown. Visible
 non-null case or metric `expectationsData` is a finite ordinary-analysis refusal;
@@ -107,7 +107,7 @@ Missing metric verdicts and source flaky
 declarations retain distinct meanings. Logical file names and retrieval
 commands stay the same; never relabel an existing stored report.
 
-For a selected trace review, a development checkout advertising automatic
+For a selected trace review, a 0.2.0 installation advertising automatic
 trace intake supports `records audit-deepeval FILE --view trace-index --root ROOT
 --id NEW_ID --json`. The `deepeval_trace_record.v2` envelope retains the one
 captured source buffer and its actual `deepeval_trace_index.v2` result as
@@ -128,7 +128,7 @@ is insufficient. This verifies stored bytes, not execution, complete trace cover
 or the truth of source statuses. Published 0.1.1 predates this route; see the
 [step-review workflow](AGENT_USAGE.md#inspect-recorded-deepeval-agent-steps).
 
-In a development build advertising neutral DeepEval binding, use
+In a 0.2.0 installation advertising neutral DeepEval binding, use
 `records audit-deepeval FILE --bindings PACK.v2.json --root ROOT --id NEW_ID --json`
 with an owner-authored `deepeval_metric_bindings.v2` pack and no version flag.
 The `deepeval_bound_record.v2` result embeds `evidence_result.v2`: its source
@@ -157,7 +157,7 @@ The auto route refuses a v1 pack, and the explicit route refuses v2; there is
 no implicit pack migration. Explicit no-bindings routes and logical names remain
 unchanged.
 
-In a development build advertising automatic Langfuse intake, use
+In a 0.2.0 installation advertising automatic Langfuse intake, use
 `records audit-langfuse --observations FILE --scores FILE --root ROOT --id NEW_ID --json`.
 It accepts a supported pair of blob arrays or official-CLI list envelopes/bodies
 without a profile flag and returns `langfuse_record.v2`. The selected reader
@@ -191,7 +191,7 @@ I/O. `read-json` has its unchanged 1 MiB selected-input cap; larger retained
 source members need the bounded Python `read_record_file(..., max_bytes=...)`
 path, while a selected-file read does not replace whole-record verification.
 Published `0.1.1` still defaults to the blob `langfuse_record.v1` contract;
-development builds intentionally migrate omitted `--profile` to v2.
+0.2.0 intentionally migrates omitted `--profile` to v2.
 
 For an exact supported goppi paired handoff, `review-handoff` can analyze and save
 in one call with `--record-root ROOT --record-id ID`; see
@@ -208,7 +208,7 @@ the CLI retains the complete analysis. Sources are never silently omitted.
 
 ## Retain a Goppi paired trajectory
 
-Development builds advertising these commands can keep a complete paired+trajectory
+Underwrite 0.2.0 builds advertising these commands can keep a complete paired+trajectory
 export and its analysis in one immutable private record. Published 0.1.1 predates
 this route. The initial audit requires an already installed compatible Goppi
 offline verifier; reopening does not.
@@ -334,7 +334,7 @@ record specification:
 underwrite records audit-promptfoo FILE --root PRIVATE_STORE --id NEW_ID --json
 ```
 
-In development builds advertising the v2 default, omitted `--version` uses
+In 0.2.0 builds advertising the v2 default, omitted `--version` uses
 SummaryV3 selected-field accounting and returns `promptfoo_record.v2`. A producer
 version is only a declaration, or unknown if absent; it is not the selected reader
 profile or a condition requiring users to match package releases. New unconsumed
@@ -342,8 +342,7 @@ fields are retained in source bytes without being interpreted. Unknown summary
 generations and malformed consumed fields produce finite diagnostics.
 
 Published 0.1.1 predates auto input. Explicit `--version 0.123.0` and
-`--version 0.124.1` retain the strict `promptfoo_record.v1` behavior in development
-builds too. For a saved explicit-profile diagnostic, recover the selection from record metadata using
+`--version 0.124.1` retain the strict `promptfoo_record.v1` behavior in 0.2.0 too. For a saved explicit-profile diagnostic, recover the selection from record metadata using
 `records show` or from `arguments.format_version` in the new-profile invocation
 using `records read-json --name invocation.json`. The saved error alone does not
 identify that selection. Auto records identify automatic selection separately;
