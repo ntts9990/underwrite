@@ -99,6 +99,24 @@ acquisition fails. Missing metric verdicts and source flaky declarations retain
 their distinct meanings. The logical file names and retrieval commands stay the
 same; never relabel a saved v1 report as v2.
 
+For a native 4.2.8 trace review, a development checkout advertising the trace
+record profile supports `records audit-deepeval FILE --version 4.2.8 --view trace-index
+--root ROOT --id NEW_ID --json`. The `deepeval_trace_record.v1` envelope retains
+the one captured source buffer and its actual `deepeval_trace_index.v1` result as
+`analysis/trace-index.json`, or the existing diagnostic file on failure. Its
+invocation and manifest identify the trace view. It cannot be combined with
+`--bindings`; wrong selections and schema faults stop before storage.
+
+The index omits source contents, but **the stored TestRun and invocation remain
+private and unredacted**. Exits 0/2/3 and consumed diagnostic IDs keep their existing
+meanings; `published_record: null` after a storage failure does not prove absence.
+Use `records verify` and `records read-json --name analysis/trace-index.json` after
+the original path is gone. For original `source/deepeval.bin` via `read_record_file`,
+allow the explicit 4 MiB source budget when the default 1 MiB selected-read limit
+is insufficient. This verifies stored bytes, not execution, complete trace coverage
+or the truth of source statuses. Published 0.1.1 predates this route; see the
+[step-review workflow](AGENT_USAGE.md#inspect-recorded-deepeval-agent-steps).
+
 For an owner-asserted metric binding pack, add `--version 4.2.8 --bindings PACK`
 to `records audit-deepeval FILE --root ROOT --id NEW_ID --json`. This opt-in
 `deepeval_bound_record.v1` route captures the pack and TestRun independently once,

@@ -886,7 +886,13 @@ def _handoff_pilot(cli: Path, work: Path) -> None:
 
 
 def _deepeval_record_pilot(
-    cli: Path, work: Path, source: Path, expected: dict[str, object], *, version: str = "4.1.1"
+    cli: Path,
+    work: Path,
+    source: Path,
+    expected: dict[str, object],
+    *,
+    version: str = "4.1.1",
+    view: str = "accounting",
 ) -> None:
     selected = work / "deepeval-selected.json"
     raw = source.read_bytes()
@@ -895,6 +901,8 @@ def _deepeval_record_pilot(
     arguments = ["records", "audit-deepeval", str(selected), "--root", str(store)]
     if version != "4.1.1":
         arguments.extend(["--version", version])
+    if view != "accounting":
+        arguments.extend(["--view", view])
     report = _cli_json(cli, [*arguments, "--id", "captured"], work / "deepeval-record.json", work)
     analysis = cast(dict[str, object], report["analysis"])
     storage = cast(dict[str, object], report["storage"])
@@ -905,6 +913,13 @@ def _deepeval_record_pilot(
         "DeepEval source bytes changed",
     )
     selected.unlink()
+    verification = _cli_json(
+        cli,
+        ["records", "verify", "--root", str(store), "--id", "captured"],
+        work / "deepeval-verified.json",
+        work,
+    )
+    _require(verification == storage["verification"], "DeepEval retained record no longer verifies")
     recovered = _cli_json(
         cli,
         [
@@ -915,7 +930,7 @@ def _deepeval_record_pilot(
             "--id",
             "captured",
             "--name",
-            "analysis/accounting.json",
+            f"analysis/{view}.json",
         ],
         work / "deepeval-recovered.json",
         work,
@@ -924,6 +939,23 @@ def _deepeval_record_pilot(
     _require(
         recovered["manifest_digest"] == storage["manifest_digest"],
         "DeepEval recovered manifest differs",
+    )
+    raw_identity = _success(
+        [
+            str(cli.with_name("python")),
+            "-c",
+            "import sys; from pathlib import Path; "
+            "from underwrite.service.records import read_record_file; "
+            "from underwrite.instrument.ingest.application import DEFAULT_MAX_BYTES; "
+            "print(read_record_file(Path(sys.argv[1]), 'captured', 'source/deepeval.bin', "
+            "max_bytes=DEFAULT_MAX_BYTES).sha256)",
+            str(store),
+        ],
+        work,
+    )
+    _require(
+        raw_identity.stdout.strip() == expected["raw_hash"],
+        "bounded stored-source read lost original identity after input removal",
     )
     failed = _command([str(cli), *arguments, "--id", "unavailable", "--json"], work)
     _require(
@@ -1195,6 +1227,9 @@ def _deepeval_trace_pilot(cli: Path, work: Path) -> None:
         )
         _require(json.loads(check.stdout) == report, "installed trace API and CLI disagree")
     _deepeval_trace_refusals(cli, source, work)
+    retained = work / "deepeval-trace-retention"
+    retained.mkdir()
+    _deepeval_record_pilot(cli, retained, source, report, version="4.2.8", view="trace-index")
 
 
 def _langfuse_record_pilot(
