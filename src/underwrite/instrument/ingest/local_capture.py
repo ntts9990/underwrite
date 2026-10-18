@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 import stat
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
@@ -33,6 +34,8 @@ _REASON_CODES: Final = {
     "CAPTURE_JSON_DEPTH_LIMIT_INVALID": "INPUT_LIMIT_EXCEEDED",
     "CAPTURE_INVALID_JSON": "INVALID_INPUT",
     "CAPTURE_JSON_OBJECT_REQUIRED": "INVALID_INPUT",
+    "CAPTURE_TOPOLOGY_INVALID": "SOURCE_READ_FAILED",
+    "CAPTURE_TOPOLOGY_CHANGED": "SOURCE_READ_FAILED",
 }
 
 
@@ -160,6 +163,7 @@ class RootReader:
 
     def __init__(self, root_fd: int, policy: CapturePolicy) -> None:
         self._root_fd: int | None = root_fd
+        self._root_path: Path | None = None
         self._policy = policy
         self._by_path: dict[str, CapturedBytes] = {}
         self._path_by_logical: dict[str, str] = {}
@@ -169,7 +173,9 @@ class RootReader:
     def open(cls, root: Path, policy: CapturePolicy) -> RootReader:
         """Open an actual non-symlink directory as the capture boundary."""
         directory_flags, _ = _flags()
-        return cls(_open_root(root, directory_flags), policy)
+        reader = cls(_open_root(root, directory_flags), policy)
+        reader._root_path = _absolute_without_resolution(root)
+        return reader
 
     def __enter__(self) -> RootReader:
         if self._root_fd is None:
@@ -202,6 +208,45 @@ class RootReader:
             os.close(descriptor)
         except OSError:
             raise _error("SOURCE_READ_FAILED", "CAPTURE_CLOSE_FAILED") from None
+
+    def capture_exact_tree(self, members: Mapping[str, int]) -> dict[str, CapturedBytes]:
+        """Capture a bounded declared tree, refusing links and topology changes.
+
+        Membership traversal is descriptor-relative and stops on the first extra
+        entry. Metadata includes inode and change times, not only entry names.
+        This detects ordinary concurrent changes, not a hostile same-user writer
+        capable of restoring every observation between checks.
+        """
+        if self._by_path:
+            raise _error("SOURCE_READ_FAILED", "CAPTURE_TOPOLOGY_INVALID")
+        before = self._tree_identity(members)
+        captured = {
+            name: self.capture_relative(
+                name, logical_name=name, max_bytes=limit, location="/exchange/" + name
+            )
+            for name, limit in members.items()
+        }
+        if self._tree_identity(members) != before:
+            raise _error("SOURCE_READ_FAILED", "CAPTURE_TOPOLOGY_CHANGED")
+        return captured
+
+    def _tree_identity(self, members: Mapping[str, int]) -> dict[str, tuple[int, ...]]:
+        root = self._root_fd
+        if root is None:
+            raise _error("SOURCE_READ_FAILED", "CAPTURE_READER_CLOSED")
+        if not members or len(members) > self._policy.max_files:
+            raise _error("INPUT_LIMIT_EXCEEDED", "CAPTURE_FILE_COUNT_EXCEEDED")
+        children = _tree_children(members, self._policy.max_path_components)
+        identities: dict[str, tuple[int, ...]] = {}
+        try:
+            if self._root_path is not None and _stat_identity(
+                os.stat(self._root_path, follow_symlinks=False)
+            ) != _stat_identity(os.fstat(root)):
+                raise _error("SOURCE_READ_FAILED", "CAPTURE_TOPOLOGY_CHANGED")
+            _visit_tree(root, "", children, identities)
+        except OSError:
+            raise _error("SOURCE_READ_FAILED", "CAPTURE_TOPOLOGY_INVALID") from None
+        return identities
 
     def capture_relative(
         self,
@@ -292,3 +337,70 @@ def decode_captured_object(
     if type(value) is not dict:
         raise _error("INVALID_INPUT", "CAPTURE_JSON_OBJECT_REQUIRED", location)
     return cast(dict[str, object], value)
+
+
+def _tree_children(members: Mapping[str, int], maximum: int) -> dict[str, set[str]]:
+    children: dict[str, set[str]] = {"": set()}
+    for name in members:
+        parts = _relative_parts(name, maximum, "")
+        for index, part in enumerate(parts):
+            parent = "/".join(parts[:index])
+            children.setdefault(parent, set()).add(part)
+    return children
+
+
+def _stat_identity(info: os.stat_result) -> tuple[int, ...]:
+    return (
+        info.st_dev,
+        info.st_ino,
+        info.st_mode,
+        info.st_nlink,
+        info.st_size,
+        info.st_mtime_ns,
+        info.st_ctime_ns,
+    )
+
+
+def _visit_tree(
+    fd: int,
+    parent: str,
+    children: Mapping[str, set[str]],
+    identities: dict[str, tuple[int, ...]],
+) -> None:
+    identities[parent] = _stat_identity(os.fstat(fd))
+    expected = children[parent]
+    seen: set[str] = set()
+    with os.scandir(fd) as entries:
+        for entry in entries:
+            if entry.name not in expected or entry.name in seen:
+                raise _error("SOURCE_READ_FAILED", "CAPTURE_TOPOLOGY_INVALID")
+            seen.add(entry.name)
+            name = f"{parent}/{entry.name}" if parent else entry.name
+            info = os.stat(entry.name, dir_fd=fd, follow_symlinks=False)
+            if name in children:
+                _visit_child(fd, entry.name, name, info, children, identities)
+            else:
+                if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                    raise _error("SOURCE_READ_FAILED", "CAPTURE_TOPOLOGY_INVALID")
+                identities[name] = _stat_identity(info)
+    if seen != expected:
+        raise _error("SOURCE_READ_FAILED", "CAPTURE_TOPOLOGY_INVALID")
+
+
+def _visit_child(
+    fd: int,
+    entry: str,
+    name: str,
+    info: os.stat_result,
+    children: Mapping[str, set[str]],
+    identities: dict[str, tuple[int, ...]],
+) -> None:
+    if not stat.S_ISDIR(info.st_mode):
+        raise _error("SOURCE_READ_FAILED", "CAPTURE_TOPOLOGY_INVALID")
+    child = os.open(entry, _flags()[0], dir_fd=fd)
+    try:
+        if _stat_identity(os.fstat(child)) != _stat_identity(info):
+            raise _error("SOURCE_READ_FAILED", "CAPTURE_TOPOLOGY_CHANGED")
+        _visit_tree(child, name, children, identities)
+    finally:
+        os.close(child)

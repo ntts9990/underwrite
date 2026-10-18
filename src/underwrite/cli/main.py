@@ -15,6 +15,7 @@ from underwrite.cli import (
     audit_langfuse,
     audit_promptfoo,
     audit_run,
+    audit_trajectory,
     boundary,
     capabilities,
     commands,
@@ -152,6 +153,20 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
             ),
         ),
         _standalone(audit_baseline.main),
+    ),
+    CommandDescriptor(
+        "audit-trajectory",
+        "Compare a Goppi paired trajectory using its installed offline verifier.",
+        audit_trajectory.configure,
+        (
+            profile(
+                "goppi-paired-trajectory-v1",
+                ("exchange",),
+                (),
+                (audit_trajectory.RESULT_SCHEMA,),
+            ),
+        ),
+        _standalone(audit_trajectory.main),
     ),
     CommandDescriptor(
         "inspect-result",

@@ -1,0 +1,36 @@
+{
+  "schema": "underwrite.goppi_trajectory_fixture_pins.v1",
+  "source_commit": "484cccbe0e939db968be39801404a118d81251bc",
+  "source_directory": "tests/fixtures/paired-trajectory/native-pi-v1",
+  "members": {
+    "paired/execution.json": {
+      "bytes": 4595,
+      "sha256": "sha256:c84382fd7e9c9900f3074f50fee91a239969d4e1384c63a9bf3214f828979e54"
+    },
+    "paired/manifest.json": {
+      "bytes": 798,
+      "sha256": "sha256:d437983b3ced8fa3d63dfe35183ef8e6005506b65aa7f58b1081d064476e8074"
+    },
+    "paired/rows.jsonl": {
+      "bytes": 187384,
+      "sha256": "sha256:13c3e066e7ea45849f18118d0f81f0a49998d43adfbbfec7ac4b3541702ae554"
+    },
+    "paired/schema.json": {
+      "bytes": 12306,
+      "sha256": "sha256:0e76595668255eecea653090b66d9948626fa55a01c2f947c1b5463440fe1c81"
+    },
+    "trajectory/manifest.json": {
+      "bytes": 622,
+      "sha256": "sha256:350e037a4b56b0266e4712f1f73589c91cd228bb40bcbd77a984c1dded8a07c5"
+    },
+    "trajectory/schema.json": {
+      "bytes": 11253,
+      "sha256": "sha256:56501dee20f0b2afc28066c6d8a2b8af04dbe31d62b46bd26107377be66cd8dd"
+    },
+    "trajectory/trajectory.json": {
+      "bytes": 234824,
+      "sha256": "sha256:99d6d54ba2bbeb2309129d621cd87be52597ed5d08c5818f6394dc318f4aedbe"
+    }
+  },
+  "source_member_suffix": ".raw"
+}

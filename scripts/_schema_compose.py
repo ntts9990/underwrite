@@ -24,16 +24,16 @@ def nullable(schema: dict[str, Any]) -> dict[str, Any]:
     return {"oneOf": [{"type": "null"}, schema]}
 
 
-def tagged(variants: list[dict[str, Any]]) -> dict[str, Any]:
+def tagged(variants: list[dict[str, Any]], *, field: str = "state") -> dict[str, Any]:
     """Dispatch closed branches before traversing their bounded nested payloads."""
-    states = [variant["properties"]["state"]["const"] for variant in variants]
+    values = [variant["properties"][field]["const"] for variant in variants]
     return {
         "type": "object",
-        "required": ["state"],
-        "properties": {"state": {"enum": states}},
+        "required": [field],
+        "properties": {field: {"enum": values}},
         "allOf": [
-            {"if": {"properties": {"state": {"const": state}}}, "then": variant}
-            for state, variant in zip(states, variants, strict=True)
+            {"if": {"properties": {field: {"const": value}}}, "then": variant}
+            for value, variant in zip(values, variants, strict=True)
         ],
     }
 
