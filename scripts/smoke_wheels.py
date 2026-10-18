@@ -1117,12 +1117,22 @@ def _deepeval_v2_pilot(cli: Path, work: Path) -> None:
 
 
 def _langfuse_record_pilot(
-    cli: Path, work: Path, observed: Path, scores: Path, expected: dict[str, object]
+    cli: Path,
+    work: Path,
+    observed: Path,
+    scores: Path,
+    expected: dict[str, object],
+    *,
+    capture_profile: tuple[str, str] | None = None,
 ) -> None:
-    inputs = (work / "observations.json", work / "scores.json")
+    profile, record_schema = capture_profile or (None, "langfuse_record.v1")
+    slug = "langfuse" if profile is None else "langfuse-cli"
+    input_directory = work / f"{slug}-record-inputs"
+    input_directory.mkdir()
+    inputs = (input_directory / "observations.json", input_directory / "scores.json")
     for source, copied in zip((observed, scores), inputs, strict=True):
         copied.write_bytes(source.read_bytes())
-    store = work / "langfuse-records"
+    store = work / f"{slug}-records"
     arguments = [
         "records",
         "audit-langfuse",
@@ -1133,18 +1143,30 @@ def _langfuse_record_pilot(
         "--root",
         str(store),
     ]
-    report = _cli_json(cli, [*arguments, "--id", "captured"], work / "langfuse-record.json", work)
+    if profile is not None:
+        arguments.extend(("--profile", profile))
+    report = _cli_json(cli, [*arguments, "--id", "captured"], work / f"{slug}-record.json", work)
     analysis = cast(dict[str, object], report["analysis"])
     storage = cast(dict[str, object], report["storage"])
+    _require(report["schema"] == record_schema, "Langfuse record selected the wrong contract")
     _require(analysis["report"] == expected, "Langfuse capture changed accounting")
     _require(storage["state"] == "saved", "Langfuse capture failed to save")
+    expected_hashes: dict[str, str] = {}
     for source, role in zip(inputs, ("observations", "scores"), strict=True):
+        expected_hashes[role] = "sha256:" + hashlib.sha256(source.read_bytes()).hexdigest()
         _require(
             (store / f"records/captured/files/source/{role}.bin").read_bytes()
             == source.read_bytes(),
             "Langfuse retained source differs",
         )
         source.unlink()
+    verified = _cli_json(
+        cli,
+        ["records", "verify", "--root", str(store), "--id", "captured"],
+        work / f"{slug}-record-verified.json",
+        work,
+    )
+    _require(verified["valid"] is True, "Langfuse retained record did not verify")
     recovered = _cli_json(
         cli,
         [
@@ -1157,13 +1179,26 @@ def _langfuse_record_pilot(
             "--name",
             "analysis/accounting.json",
         ],
-        work / "langfuse-recovered.json",
+        work / f"{slug}-recovered.json",
         work,
     )
     _require(recovered["content"] == expected, "Langfuse stored analysis could not be reused")
     _require(
         recovered["manifest_digest"] == storage["manifest_digest"],
         "Langfuse recovered manifest differs",
+    )
+    source_code = (
+        "import json,sys; from pathlib import Path; "
+        "from underwrite.service.records import read_record_file; "
+        "from underwrite.instrument.ingest.application import DEFAULT_MAX_BYTES; "
+        "print(json.dumps({role:read_record_file(Path(sys.argv[1]),'captured',"
+        "f'source/{role}.bin',max_bytes=DEFAULT_MAX_BYTES).sha256 "
+        "for role in ('observations','scores')}))"
+    )
+    source_read = _success([str(cli.parent / "python"), "-c", source_code, str(store)], work)
+    _require(
+        json.loads(source_read.stdout) == expected_hashes,
+        "Langfuse verified source recovery changed original bytes",
     )
     failed = _command([str(cli), *arguments, "--id", "unavailable", "--json"], work)
     _require(
@@ -1300,6 +1335,14 @@ def _langfuse_cli_pilot(cli: Path, work: Path) -> None:
     )
     api = _success([str(cli.parent / "python"), "-c", api_code, *map(str, selected.values())], work)
     _require(json.loads(api.stdout) == report, "installed CLI/API capture outcomes differ")
+    _langfuse_record_pilot(
+        cli,
+        work,
+        selected["observations"],
+        selected["scores"],
+        report,
+        capture_profile=("cli-1.2.4", "langfuse_cli_record.v1"),
+    )
     partial = _cli_json(
         cli,
         [

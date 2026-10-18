@@ -28,10 +28,18 @@ from underwrite.cli.record_capture import (
 )
 from underwrite.cli.records import OUTPUT_MAX_BYTES, record_error_payload
 from underwrite.instrument.ingest.langfuse_accounting import (
+    BLOB_PROFILE,
+    CLI_PROFILE,
     SOURCES,
     LangfuseFileError,
     audit_langfuse_bytes,
+    output_schema,
     read_langfuse_file,
+)
+from underwrite.instrument.ingest.langfuse_cli import (
+    SOURCE_FORMATS,
+    SOURCE_VERSION,
+    audit_langfuse_cli_bytes,
 )
 from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
 from underwrite.service._record_format import FormatError, record_id
@@ -43,11 +51,28 @@ from underwrite.service.records import (
 )
 
 SCHEMA = "langfuse_record.v1"
+CLI_RECORD_SCHEMA = "langfuse_cli_record.v1"
 COMMAND = "records audit-langfuse"
+
+
+def record_schema(profile: str) -> str:
+    """Select the record-layer contract without guessing the producer file shape."""
+    if profile == BLOB_PROFILE:
+        return SCHEMA
+    if profile == CLI_PROFILE:
+        return CLI_RECORD_SCHEMA
+    raise EvidenceError("UNSUPPORTED_FORMAT", "LANGFUSE_RECORD_PROFILE_UNSUPPORTED", "/profile")
+
+
+def _source_selectors(profile: str) -> dict[str, tuple[str, str]]:
+    if profile == BLOB_PROFILE:
+        return dict(SOURCES)
+    return {role: (selector, SOURCE_VERSION) for role, selector in SOURCE_FORMATS.items()}
 
 
 @dataclass(frozen=True)
 class _Contracts:
+    profile: str
     aggregate: Validator
     storage: Validator
     accounting: Validator
@@ -56,15 +81,17 @@ class _Contracts:
     verification: Validator
 
 
-def _contracts() -> _Contracts:
-    aggregate = packaged_validator("langfuse_record.v1")
+def _contracts(profile: str = BLOB_PROFILE) -> _Contracts:
+    aggregate = packaged_validator(record_schema(profile))
     schema = cast(dict[str, Any], aggregate.schema)
     storage = Draft202012Validator({"$defs": schema["$defs"], "$ref": "#/$defs/storage"})
-    packaged_validator("observation.v1")
+    if profile == BLOB_PROFILE:
+        packaged_validator("observation.v1")
     return _Contracts(
+        profile,
         cast(Validator, aggregate),
         cast(Validator, storage),
-        cast(Validator, packaged_validator("langfuse_accounting.v1")),
+        cast(Validator, packaged_validator(output_schema(profile, "accounting"))),
         cast(Validator, packaged_validator("evidence_error.v1")),
         cast(Validator, packaged_validator("record_error.v1")),
         cast(Validator, packaged_validator("record_verification.v1")),
@@ -89,13 +116,25 @@ def configure(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--scores", type=Path, required=True, help="Entire scores export to retain."
     )
+    parser.add_argument(
+        "--profile",
+        choices=(BLOB_PROFILE, CLI_PROFILE),
+        default=BLOB_PROFILE,
+        help="Select blob 4.35.0 (default) or pinned CLI 1.2.4/API 4.35.0 capture files.",
+    )
     parser.add_argument("--root", type=Path, required=True, help="Explicit private record root.")
     parser.add_argument("--id", type=_identifier, required=True, help="New immutable record ID.")
-    parser.add_argument("--json", action="store_true", help="Emit langfuse_record.v1 JSON.")
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help=f"Emit {SCHEMA} (blob) or {CLI_RECORD_SCHEMA} (CLI) JSON by selected profile.",
+    )
     parser.description = (
-        "Audit two local Langfuse 4.35.0 exports in process and retain the exact complete input, "
+        "Audit two selected local Langfuse files in process and retain the exact complete input, "
         "result or diagnostic, and effective invocation. Malformed complete input is retained "
         "in full; a diagnostic record consumes the ID. No producer or subprocess is run. "
+        "The CLI profile retains whole native captures, including possible private "
+        "headers and text. "
         "Exit 0 means result saved, 2 analysis failed but diagnostic saved, and 3 storage failed."
     )
 
@@ -123,12 +162,15 @@ def _acquire(
     return captured, sources, errors
 
 
-def _analyze(paths: dict[str, Path]) -> tuple[dict[str, bytes], dict[str, object], dict[str, Any]]:
+def _analyze(
+    paths: dict[str, Path], profile: str = BLOB_PROFILE
+) -> tuple[dict[str, bytes], dict[str, object], dict[str, Any]]:
     captured, sources, errors = _acquire(paths)
     if errors:
         return captured, sources, {"state": "error", "phase": "acquisition", "error": errors[0]}
     try:
-        report = audit_langfuse_bytes(captured["observations"], captured["scores"])
+        audit = audit_langfuse_bytes if profile == BLOB_PROFILE else audit_langfuse_cli_bytes
+        report = audit(captured["observations"], captured["scores"])
         identities = cast(dict[str, dict[str, object]], report["sources"])
         if any(identities[role]["raw_hash"] != digest_bytes(raw) for role, raw in captured.items()):
             raise EvidenceError("INTERNAL_ERROR", "RAW_IDENTITY_MISMATCH")
@@ -160,6 +202,7 @@ def _files(
     envelope: dict[str, Any],
     contracts: _Contracts,
 ) -> tuple[CapturedRecordFile, ...]:
+    profile = contracts.profile
     analysis = envelope["analysis"]
     result = analysis["state"] == "result"
     document = analysis["report"] if result else analysis["error"]
@@ -182,6 +225,12 @@ def _files(
         "analysis_exit_code_scope": "component_contract_not_os_process",
         "aggregate_outcome_location": "command_output",
     }
+    if profile == CLI_PROFILE:
+        invocation["profile"] = profile
+        invocation["source_selectors"] = {
+            role: {"format": source, "format_version": version}
+            for role, (source, version) in _source_selectors(profile).items()
+        }
     files = [
         CapturedRecordFile(
             "analysis/accounting.json" if result else "analysis/error.json",
@@ -217,17 +266,24 @@ def render_human(report: dict[str, object]) -> str:
 
 
 def run_record_langfuse(
-    observations: Path, scores: Path, root: Path, identifier: str, *, as_json: bool = True
+    observations: Path,
+    scores: Path,
+    root: Path,
+    identifier: str,
+    *,
+    as_json: bool = True,
+    profile: str = BLOB_PROFILE,
 ) -> dict[str, object]:
     try:
         record_id(identifier)
     except FormatError:
         raise EvidenceError("USAGE_ERROR", "INVALID_ARGUMENTS_SEE_HELP") from None
-    contracts = _contracts()
+    selected_schema = record_schema(profile)
+    contracts = _contracts(profile)
     paths = {"observations": observations, "scores": scores}
-    captured, sources, analysis = _analyze(paths)
+    captured, sources, analysis = _analyze(paths, profile)
     envelope: dict[str, Any] = {
-        "schema": SCHEMA,
+        "schema": selected_schema,
         "command": COMMAND,
         "sources": sources,
         "analysis": analysis,
@@ -263,18 +319,24 @@ def run_record_langfuse(
         as_json=as_json,
         max_bytes=OUTPUT_MAX_BYTES,
     )
+    selectors = _source_selectors(profile)
+    metadata = {
+        **{
+            f"{role}_{key}": value[index]
+            for role, value in selectors.items()
+            for index, key in enumerate(("format", "format_version"))
+        },
+        "analysis_state": analysis["state"],
+    }
+    if profile == CLI_PROFILE:
+        metadata["profile"] = profile
     spec = CapturedRecordSpec(
         record_id=identifier,
-        kind="langfuse.accounting",
-        label="Langfuse accounting capture",
-        metadata={
-            **{
-                f"{role}_{key}": value[index]
-                for role, value in SOURCES.items()
-                for index, key in enumerate(("format", "format_version"))
-            },
-            "analysis_state": analysis["state"],
-        },
+        kind="langfuse.accounting" if profile == BLOB_PROFILE else "langfuse.cli-accounting",
+        label="Langfuse accounting capture"
+        if profile == BLOB_PROFILE
+        else "Langfuse CLI accounting capture",
+        metadata=metadata,
         links=(),
         selection_excluded=None,
         rerun_verification={"status": "not_performed", "reference": None},
@@ -299,6 +361,7 @@ def produce(args: argparse.Namespace) -> dict[str, object]:
         cast(Path, args.root),
         cast(str, args.id),
         as_json=cast(bool, args.json),
+        profile=cast(str, args.profile),
     )
 
 
@@ -309,7 +372,7 @@ def main(argv: list[str]) -> int:
         configure,
         produce,
         ReportOutput(
-            SCHEMA,
+            lambda args: record_schema(args.profile),
             max_bytes=OUTPUT_MAX_BYTES,
             human=render_human,
             exit_status=lambda report: cast(int, report["exit_code"]),

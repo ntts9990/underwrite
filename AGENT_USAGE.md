@@ -348,9 +348,34 @@ The report preserves each file's pagination/truncation state. A remaining cursor
 or `truncated` collection is partial; even a reported exhausted collection does
 not establish matching query windows, full producer data, planned executions or
 an atomic snapshot. A source file hash is byte identity, not authentication.
-The existing `records audit-langfuse` route above is for the blob profile only;
-do not use it to retain CLI captures unless capabilities advertises a dedicated
-CLI record profile.
+When capabilities lists `records audit-langfuse|cli-1.2.4` and retention is
+requested, capture the same two selected files and their full accounting in one
+private record; no handwritten record spec or second source read is needed:
+
+```sh
+uv run --frozen --no-sync underwrite records audit-langfuse \
+  --observations observations.json --scores scores.json --profile cli-1.2.4 \
+  --root /private/review-store --id langfuse.cli-001 --json
+uv run --frozen --no-sync underwrite records verify \
+  --root /private/review-store --id langfuse.cli-001 --json
+uv run --frozen --no-sync underwrite records read-json \
+  --root /private/review-store --id langfuse.cli-001 \
+  --name analysis/accounting.json --json
+```
+
+`langfuse_cli_record.v1` keeps analysis and storage separate: exit 0 means the
+result was saved, 2 a diagnostic was saved, and 3 storage failed. Inspect the
+actual response schema, analysis and storage states; a pre-storage usage or
+configuration refusal can instead put `evidence_error.v1` on stderr at exit 2.
+The saved `analysis/accounting.json` is full accounting, **not** the minimized
+row index. You can verify and retrieve it after the original temporary inputs
+are removed. The record retains the **entire** native files, including possible
+HTTP headers, score text, IDs and observation I/O. A saved error may consume the
+new ID; after uncertain storage failure, inspect that ID before retrying. The
+private `invocation.json` and manifest metadata identify the selected profile
+even when `analysis/error.json` cannot. Verification proves stored-byte integrity,
+not Langfuse provenance, matching request windows, complete export or approval.
+The published `0.1.1` artifacts predate this development-checkout route.
 
 ## Account for DeepEval scores and evaluator errors
 
