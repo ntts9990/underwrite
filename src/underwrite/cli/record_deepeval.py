@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from jsonschema import Draft202012Validator
 from underwrite_core.canonical import CanonicalizationError, canonical_bytes, digest_bytes
 
 from underwrite.cli import record_deepeval_bound
@@ -26,6 +25,7 @@ from underwrite.cli.record_capture import (
     STORAGE_FAILURE_EXIT,
     admit_record_response,
     render_record_response,
+    storage_validator,
     store_captured_record,
 )
 from underwrite.cli.records import OUTPUT_MAX_BYTES, record_error_payload
@@ -148,14 +148,13 @@ class _Contracts:
 
 def _contracts(selection: _Selection) -> _Contracts:
     aggregate = packaged_validator(selection.record_schema)
-    schema = cast(dict[str, Any], aggregate.schema)
-    storage = Draft202012Validator({"$defs": schema["$defs"], "$ref": "#/$defs/storage"})
+    storage = storage_validator(aggregate)
     if selection.view == "accounting" and selection.profile is not None:
         packaged_validator("observation.v1")
     return _Contracts(
         selection,
         cast(Validator, aggregate),
-        cast(Validator, storage),
+        storage,
         cast(Validator, packaged_validator(selection.analysis_schema)),
         cast(Validator, packaged_validator("evidence_error.v1")),
         cast(Validator, packaged_validator("record_error.v1")),

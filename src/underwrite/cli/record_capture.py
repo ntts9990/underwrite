@@ -7,6 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, cast
 
+from jsonschema import Draft202012Validator
 from underwrite_core.canonical import canonical_bytes
 
 from underwrite.cli.evidence import EvidenceError, output_line_size
@@ -20,6 +21,14 @@ from underwrite.service.records import (
 )
 
 STORAGE_FAILURE_EXIT = 3
+
+
+def storage_validator(aggregate: Draft202012Validator) -> Validator:
+    """Validate storage with the trusted aggregate's complete local definitions."""
+    schema = cast(dict[str, Any], aggregate.schema)
+    return cast(
+        Validator, Draft202012Validator({"$defs": schema["$defs"], "$ref": "#/$defs/storage"})
+    )
 
 
 def saved_record(identifier: str, digest: str, count: int) -> dict[str, object]:

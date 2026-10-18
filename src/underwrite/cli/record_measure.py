@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from jsonschema import Draft202012Validator
 from underwrite_core.canonical import CanonicalizationError, canonical_bytes, digest_bytes
 
 from underwrite.cli import measurement_flow
@@ -25,6 +24,7 @@ from underwrite.cli.record_capture import (
     STORAGE_FAILURE_EXIT,
     admit_record_response,
     render_record_response,
+    storage_validator,
     store_captured_record,
 )
 from underwrite.cli.records import OUTPUT_MAX_BYTES, record_error_payload
@@ -53,13 +53,12 @@ class _Contracts:
 
 def _contracts() -> _Contracts:
     aggregate = packaged_validator("measurement_record.v1")
-    schema = cast(dict[str, Any], aggregate.schema)
-    storage = Draft202012Validator({"$defs": schema["$defs"], "$ref": "#/$defs/storage"})
+    storage = storage_validator(aggregate)
     packaged_validator("observation.v1")
     read_validator, _ = measurement_flow.measurement_validators()
     return _Contracts(
         cast(Validator, aggregate),
-        cast(Validator, storage),
+        storage,
         read_validator,
         cast(Validator, packaged_validator("measurement_error.v1")),
         cast(Validator, packaged_validator("record_error.v1")),

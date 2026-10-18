@@ -172,7 +172,7 @@ pythonpath = ["tests", "src"]
 
 [tool.deptry]
 known_first_party = [
-    "underwrite", "underwrite_core", "_schema_compose", "_record_schema",
+    "underwrite", "underwrite_core", "_schema_compose", "_record_schema", "_wheel_smoke",
     "build_deepeval_accounting", "build_deepeval_record", "build_langfuse_record",
     "build_common_result_inspection_actions", "build_deepeval_bound_record",
     "build_deepeval_metric_bindings",
