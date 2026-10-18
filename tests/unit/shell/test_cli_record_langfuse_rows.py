@@ -16,8 +16,6 @@ from underwrite.cli import record_capture
 from underwrite.cli import record_langfuse as command
 from underwrite.cli.main import main
 from underwrite.instrument.ingest.langfuse_accounting import (
-    BLOB_PROFILE,
-    CLI_PROFILE,
     audit_langfuse_row_index_files,
     output_schema,
 )
@@ -74,24 +72,14 @@ def _argv(paths: tuple[Path, Path], store: Path, *options: str) -> list[str]:
     ]
 
 
-@pytest.mark.parametrize(
-    ("family", "profile"),
-    [
-        ("blob", None),
-        ("cli", None),
-        ("cli-body", None),
-        ("blob", BLOB_PROFILE),
-        ("cli", CLI_PROFILE),
-    ],
-)
+@pytest.mark.parametrize("family", ["blob", "cli", "cli-body"])
 def test_row_cli_retains_exact_bytes_and_reopens_after_original_deletion(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], family: str, profile: str | None
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], family: str
 ) -> None:
     paths, store = _inputs(tmp_path, family), tmp_path / "private-store"
-    expected = audit_langfuse_row_index_files(*paths, profile=profile)
+    expected = audit_langfuse_row_index_files(*paths)
     raw = [path.read_bytes() for path in paths]
-    options = ("--profile", profile) if profile else ()
-    assert main(_argv(paths, store, *options)) == 0
+    assert main(_argv(paths, store)) == 0
     streams = capsys.readouterr()
     assert streams.err == ""
     result: dict[str, Any] = json.loads(streams.out)
@@ -210,15 +198,14 @@ def test_unavailable_role_is_not_claimed_captured(tmp_path: Path) -> None:
     assert verify_record(store, "sample")["valid"] is True
 
 
-@pytest.mark.parametrize("profile", [None, BLOB_PROFILE, CLI_PROFILE])
 @pytest.mark.parametrize("missing", ["aggregate", "accounting", "row"])
 def test_missing_contracts_fail_before_read_or_store(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, profile: str | None, missing: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: str
 ) -> None:
     missing_name = {
         "aggregate": command.ROW_RECORD_SCHEMA,
-        "accounting": output_schema(profile, "accounting"),
-        "row": output_schema(profile, "row-index"),
+        "accounting": output_schema("accounting"),
+        "row": output_schema("row-index"),
     }[missing]
     actual = command.packaged_validator
 
@@ -234,7 +221,7 @@ def test_missing_contracts_fail_before_read_or_store(
     monkeypatch.setattr(command, "read_langfuse_file", forbidden)
     monkeypatch.setattr(command, "store_captured_record", forbidden)
     with pytest.raises(SchemaConfigurationError):
-        _run((tmp_path / "obs", tmp_path / "scores"), tmp_path / "store", profile=profile)
+        _run((tmp_path / "obs", tmp_path / "scores"), tmp_path / "store")
     assert not (tmp_path / "store").exists()
 
 
@@ -287,7 +274,7 @@ def test_row_record_contract_rejects_accounting_and_false_saved_claims(tmp_path:
         validator.validate(invalid)  # pyright: ignore[reportUnknownMemberType]
 
 
-def test_human_row_output_names_view_and_capabilities_expose_all_profiles(
+def test_human_row_output_names_view_and_capabilities_expose_current_profile(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     paths, store = _inputs(tmp_path), tmp_path / "store"
@@ -297,12 +284,13 @@ def test_human_row_output_names_view_and_capabilities_expose_all_profiles(
     catalog = json.loads(capsys.readouterr().out)
     records = next(item for item in catalog["commands"] if item["command"] == "records")
     profiles = {item["name"]: item for item in records["profiles"]}
-    for name in (
-        "audit-langfuse|row-index",
-        f"audit-langfuse|{BLOB_PROFILE}|row-index",
-        f"audit-langfuse|{CLI_PROFILE}|row-index",
-    ):
-        assert profiles[name]["output_schemas"] == [command.ROW_RECORD_SCHEMA]
+    row_profiles = {
+        name: item
+        for name, item in profiles.items()
+        if name.startswith("audit-langfuse") and name.endswith("|row-index")
+    }
+    assert set(row_profiles) == {"audit-langfuse|row-index"}
+    assert row_profiles["audit-langfuse|row-index"]["output_schemas"] == [command.ROW_RECORD_SCHEMA]
 
 
 def test_duplicate_id_preserves_first_row_record_and_reports_new_analysis(tmp_path: Path) -> None:
@@ -338,7 +326,7 @@ def test_row_record_closed_selector_rejects_unselected_or_impersonated_reports(
         result["analysis"]["report"] = {"schema": selected_schema}
     elif mutation == "wrong_row":
         # A compatible report cannot impersonate the strict historical CLI contract.
-        report["schema"] = output_schema(CLI_PROFILE, "row-index")
+        report["schema"] = "langfuse_cli_row_index.v1"
     else:
         full = cast(
             dict[str, Any], command.run_record_langfuse(*paths, tmp_path / "full", "sample")

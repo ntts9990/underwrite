@@ -15,8 +15,6 @@ from underwrite.instrument.evidence.langfuse_compat import (
     ROW_INDEX_SCHEMA as AUTO_ROW_INDEX_SCHEMA,
 )
 from underwrite.instrument.ingest.langfuse_accounting import (
-    BLOB_PROFILE,
-    CLI_PROFILE,
     LangfuseFileError,
     audit_langfuse_files,
     audit_langfuse_row_index_files,
@@ -47,15 +45,6 @@ def configure(parser: argparse.ArgumentParser) -> None:
         help="Selected Langfuse scores blob export or CLI JSON capture.",
     )
     parser.add_argument(
-        "--profile",
-        choices=(BLOB_PROFILE, CLI_PROFILE),
-        default=None,
-        help=(
-            "Optional strict historical blob or CLI profile; omitted selects "
-            "a reader from both files."
-        ),
-    )
-    parser.add_argument(
         "--view",
         choices=("accounting", "row-index"),
         default="accounting",
@@ -64,9 +53,8 @@ def configure(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--json", action="store_true", help="Emit the selected view as JSON.")
     parser.description = (
         "Account for score kinds and local associations in two supplied Langfuse files. "
-        "Without --profile, choose one supported array or CLI-list reader family from both "
+        "Choose one supported array or CLI-list reader family from both "
         "files. Their shapes do not establish server or CLI release identity. "
-        "Explicit --profile retains historical strict results. "
         "CLI collection status does not establish matching windows or complete source data. "
         "Unresolved references remain descriptive results. "
         "No producer execution, export-completeness claim, task success, or approval. "
@@ -82,7 +70,6 @@ def produce(args: argparse.Namespace) -> dict[str, object]:
         return audit(
             cast(Path, args.observations),
             cast(Path, args.scores),
-            profile=cast(str | None, args.profile),
         )
     except LangfuseFileError as exc:
         raise EvidenceError(exc.code, exc.reason, exc.location) from None
@@ -109,14 +96,9 @@ def render_human(report: dict[str, object]) -> str:
 
 
 def render_selected_human(report: dict[str, object]) -> str:
-    if report["schema"] == "langfuse_accounting.v1" or (
-        report["schema"] == AUTO_ACCOUNTING_SCHEMA and report.get("reader_profile") == BLOB_READER
-    ):
+    if report["schema"] == AUTO_ACCOUNTING_SCHEMA and report.get("reader_profile") == BLOB_READER:
         return render_human(report)
-    if report["schema"] in {
-        output_schema(CLI_PROFILE, "accounting"),
-        output_schema(CLI_PROFILE, "row-index"),
-    } or (
+    if (
         report["schema"] in {AUTO_ACCOUNTING_SCHEMA, AUTO_ROW_INDEX_SCHEMA}
         and report.get("reader_profile") == CLI_READER
     ):
@@ -165,7 +147,7 @@ def main(argv: list[str]) -> int:
         configure,
         produce,
         ReportOutput(
-            lambda args: output_schema(args.profile, args.view),
+            lambda args: output_schema(args.view),
             human=render_selected_human,
         ),
     )

@@ -205,22 +205,21 @@ def test_missing_cli_subject_stays_unknown_and_alternate_target_refuses(
     assert error["code"] == "UNSUPPORTED_PROFILE" and "PRIVATE_SENTINEL" not in stderr
 
 
-def test_array_conflicting_target_refuses_auto_and_explicit_blob(
+def test_array_conflicting_target_refuses_current_reader(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     source = json.loads(PAIRS["blob"][1].read_bytes())
     source[3]["session_id"] = "PRIVATE_SENTINEL"
     scores = tmp_path / "scores.json"
     scores.write_text(json.dumps(source), encoding="utf-8")
-    for options in ((), ("--profile", "blob-4.35.0")):
-        code, error, stdout, stderr = _invoke(capsys, PAIRS["blob"][0], scores, *options)
-        assert code == ERROR_EXIT and stdout == ""
-        assert error["code"] == "UNSUPPORTED_PROFILE"
-        assert "PRIVATE_SENTINEL" not in stderr
+    code, error, stdout, stderr = _invoke(capsys, PAIRS["blob"][0], scores)
+    assert code == ERROR_EXIT and stdout == ""
+    assert error["code"] == "UNSUPPORTED_PROFILE"
+    assert "PRIVATE_SENTINEL" not in stderr
 
 
 @pytest.mark.parametrize("target", ["session_id", "dataset_run_id"])
-def test_empty_other_target_is_absent_in_auto_and_explicit_blob(
+def test_empty_other_target_is_absent_in_current_reader(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], target: str
 ) -> None:
     source = json.loads(PAIRS["blob"][1].read_bytes())
@@ -228,17 +227,18 @@ def test_empty_other_target_is_absent_in_auto_and_explicit_blob(
     scores = tmp_path / "scores.json"
     scores.write_text(json.dumps(source), encoding="utf-8")
     auto_exit, auto, _, auto_error = _invoke(capsys, PAIRS["blob"][0], scores)
-    old_exit, old, _, old_error = _invoke(
-        capsys, PAIRS["blob"][0], scores, "--profile", "blob-4.35.0"
-    )
-    assert auto_exit == old_exit == 0 and auto_error == old_error == ""
+    assert auto_exit == 0 and auto_error == ""
     assert auto["schema"] == "langfuse_accounting.v2"
-    assert old["schema"] == "langfuse_accounting.v1"
-    assert auto["scores"][0]["association"] == old["scores"][0]["association"]
-    assert (
-        auto["scores"][0]["target_observation_index"]
-        == old["scores"][0]["target_observation_index"]
-    )
+    assert auto["scores"][0]["association"] == "observation_local"
+    observations = json.loads(PAIRS["blob"][0].read_bytes())
+    expected = [
+        index
+        for index, row in enumerate(observations)
+        if (row["project_id"], row["trace_id"], row["id"])
+        == (source[0]["project_id"], source[0]["trace_id"], source[0]["observation_id"])
+    ]
+    assert len(expected) == 1
+    assert auto["scores"][0]["target_observation_index"] == expected[0]
 
 
 def test_auto_file_api_reads_each_source_once_and_matches_bytes_api(
@@ -259,39 +259,25 @@ def test_auto_file_api_reads_each_source_once_and_matches_bytes_api(
     assert reads == ["observations", "scores"]
 
 
-@pytest.mark.parametrize("family", ["blob", "cli"])
-def test_direct_auto_profile_spelling_matches_omission(tmp_path: Path, family: str) -> None:
-    observations, scores = PAIRS[family]
-    raw_observations, raw_scores = observations.read_bytes(), scores.read_bytes()
-    assert adapter.audit_langfuse_bytes(
-        raw_observations, raw_scores, profile="auto"
-    ) == adapter.audit_langfuse_bytes(raw_observations, raw_scores)
-    assert adapter.audit_langfuse_files(
-        observations, scores, profile="auto"
-    ) == adapter.audit_langfuse_files(observations, scores)
-    assert adapter.audit_langfuse_row_index_files(
-        observations, scores, profile="auto"
-    ) == adapter.audit_langfuse_row_index_files(observations, scores)
-    explicit = cast(
-        dict[str, Any],
-        record_command.run_record_langfuse(
-            observations, scores, tmp_path / "explicit-auto", "sample", profile="auto"
-        ),
-    )
-    omitted = cast(
-        dict[str, Any],
-        record_command.run_record_langfuse(observations, scores, tmp_path / "omitted", "sample"),
-    )
-    assert explicit["schema"] == omitted["schema"] == record_command.AUTO_RECORD_SCHEMA
-    assert explicit["analysis"] == omitted["analysis"]
-    assert explicit["sources"] == omitted["sources"]
-    for root in (tmp_path / "explicit-auto", tmp_path / "omitted"):
-        manifest = cast(dict[str, Any], read_record(root, "sample").manifest)
-        assert manifest["metadata"]["selection_mode"] == "auto"
-        assert (
-            manifest["metadata"]["reader_profile"]
-            == explicit["analysis"]["report"]["reader_profile"]
-        )
+@pytest.mark.parametrize("profile", ["auto", "blob-4.35.0", "cli-1.2.4", "private"])
+def test_removed_profile_keyword_refuses_before_reads_or_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, profile: str
+) -> None:
+    def forbidden(*args: object, **kwargs: object) -> Any:
+        pytest.fail("removed selector caused source or storage effects")
+
+    monkeypatch.setattr(auto_adapter, "read_langfuse_file", forbidden)
+    monkeypatch.setattr(record_command, "read_langfuse_file", forbidden)
+    missing, store = tmp_path / "missing", tmp_path / "store"
+    for operation, arguments in (
+        (adapter.audit_langfuse_files, (missing, missing)),
+        (adapter.audit_langfuse_row_index_files, (missing, missing)),
+        (adapter.audit_langfuse_bytes, (b"[]", b"[]")),
+        (record_command.run_record_langfuse, (missing, missing, store, "sample")),
+    ):
+        with pytest.raises(TypeError, match="profile"):
+            cast(Any, operation)(*arguments, profile=profile)
+    assert not store.exists()
 
 
 def test_auto_depth_refusal_uses_shared_decoder_diagnostic(
@@ -574,3 +560,52 @@ def test_auto_record_postpublication_error_returns_no_certain_absence(
     assert record["analysis"]["state"] == "result"
     assert record["storage"]["published_record"] is None
     assert (store / "records/sample/manifest.json").exists()
+
+
+@pytest.mark.parametrize("profile", ["auto", "blob-4.35.0", "cli-1.2.4"])
+def test_retired_profile_cannot_select_an_output_generation(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    profile: str,
+) -> None:
+    def forbidden(*args: object, **kwargs: object) -> Any:
+        pytest.fail("retired profile caused source acquisition")
+
+    monkeypatch.setattr(auto_adapter, "read_langfuse_file", forbidden)
+    monkeypatch.setattr(record_command, "read_langfuse_file", forbidden)
+    code, error, stdout, _ = _invoke(capsys, *PAIRS["blob"], "--profile", profile)
+    assert code == ERROR_EXIT and stdout == ""
+    assert error["code"] == "USAGE_ERROR"
+    root = tmp_path / "store"
+    assert (
+        main(
+            [
+                "records",
+                "audit-langfuse",
+                "--observations",
+                str(PAIRS["blob"][0]),
+                "--scores",
+                str(PAIRS["blob"][1]),
+                "--root",
+                str(root),
+                "--id",
+                "sample",
+                "--profile",
+                profile,
+                "--json",
+            ]
+        )
+        == ERROR_EXIT
+    )
+    streams = capsys.readouterr()
+    assert streams.out == "" and json.loads(streams.err)["code"] == "USAGE_ERROR"
+    assert not root.exists()
+
+
+def test_retired_cli_envelope_module_is_not_an_alternate_writer() -> None:
+    import importlib
+
+    with pytest.raises(ModuleNotFoundError) as caught:
+        importlib.import_module("underwrite.instrument.ingest.langfuse_cli")
+    assert caught.value.name == "underwrite.instrument.ingest.langfuse_cli"

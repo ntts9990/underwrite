@@ -8,7 +8,6 @@ from typing import Any, cast
 from underwrite.instrument.evidence.langfuse_accounting import (
     ASSOCIATION_RULES,
     KIND_RULES,
-    RULE_PROFILE,
 )
 
 SCOPE = MappingProxyType(
@@ -29,15 +28,6 @@ LIMITATIONS = (
     "PLANNED_EVALUATIONS_UNKNOWN",
     "NO_TASK_VERDICT_OR_APPROVAL_AUTHORITY",
 )
-
-
-def _source_identity(source: dict[str, object]) -> dict[str, object]:
-    return {
-        "format": source["format"],
-        "format_version": source["format_version"],
-        "raw_hash": source["raw_hash"],
-        "claims_verified": False,
-    }
 
 
 def index_langfuse_body(accounting: dict[str, object]) -> dict[str, object]:
@@ -69,16 +59,4 @@ def index_langfuse_body(accounting: dict[str, object]) -> dict[str, object]:
         "verification": [],
         "limitations": list(LIMITATIONS),
         "next_actions": cast(list[str], accounting["next_actions"]).copy(),
-    }
-
-
-def index_langfuse_accounting(accounting: dict[str, object]) -> dict[str, object]:
-    """Preserve the pinned blob row contract over shared counted row facts."""
-    sources = cast(dict[str, dict[str, object]], accounting["sources"])
-    return {
-        "schema": "langfuse_row_index.v1",
-        "source_rule_profile": RULE_PROFILE,
-        "sources": {role: _source_identity(sources[role]) for role in ("observations", "scores")},
-        "scope": dict(SCOPE),
-        **index_langfuse_body(accounting),
     }

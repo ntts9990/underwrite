@@ -2,21 +2,19 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from underwrite_core.canonical import canonical_bytes, content_digest, digest_bytes
+from underwrite_core.canonical import canonical_bytes, digest_bytes
 
 from underwrite.cli import audit_langfuse, capabilities, main
 from underwrite.cli.evidence import ReportOutput, run_cli
 from underwrite.instrument.ingest import langfuse_accounting as adapter
+from underwrite.instrument.ingest import langfuse_compat as auto_adapter
 from underwrite.instrument.ingest import transport
-from underwrite.instrument.ingest.application import packaged_ingestor
-from underwrite.instrument.ingest.project import Source
 
 ROOT = Path(__file__).resolve().parents[3]
 GOLDEN = ROOT / "fixtures/golden/external/langfuse"
@@ -42,8 +40,6 @@ def argv(paths: dict[str, Path]) -> list[str]:
         str(paths["observations"]),
         "--scores",
         str(paths["scores"]),
-        "--profile",
-        adapter.BLOB_PROFILE,
     ]
 
 
@@ -83,12 +79,9 @@ def test_supplied_scores_keep_kinds_associations_and_two_raw_identities(
         identity = report["sources"][role]
         assert identity["raw_hash"] == digest_bytes(before[role])
         assert identity["claims_verified"] is False
-        observed = (
-            packaged_ingestor(max_bytes=len(before[role]), max_depth=64)
-            .file(path, Source(*adapter.SOURCES[role], None))
-            .observation
-        )
-        assert identity["observation_digest"] == content_digest(observed)
+        assert identity["producer_version"] is None
+        assert identity["producer_version_state"] == "unknown"
+        assert "observation_digest" not in identity
         assert path.read_bytes() == before[role]
     by_name = {row["name"]: row for row in report["scores"]}
     assert by_name["relevance"]["value"] == 0 and by_name["relevance"]["string_value"] == "high"
@@ -109,9 +102,7 @@ def test_each_source_is_read_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
         return original(path, maximum)
 
     monkeypatch.setattr(adapter, "read_local_file", read)
-    adapter.audit_langfuse_files(
-        paths["observations"], paths["scores"], profile=adapter.BLOB_PROFILE
-    )
+    adapter.audit_langfuse_files(paths["observations"], paths["scores"])
     assert reads == [paths["observations"], paths["scores"]]
 
 
@@ -207,7 +198,11 @@ def test_existing_input_limits_are_not_relaxed(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, axis: str
 ) -> None:
     paths, _ = inputs(tmp_path)
-    monkeypatch.setattr(adapter, "DEFAULT_MAX_BYTES" if axis == "bytes" else "DEFAULT_MAX_DEPTH", 1)
+    monkeypatch.setattr(
+        adapter if axis == "bytes" else auto_adapter,
+        "DEFAULT_MAX_BYTES" if axis == "bytes" else "DEFAULT_MAX_DEPTH",
+        1,
+    )
     code, error, stdout, _ = invoke(paths, capsys)
     assert code == ERROR_EXIT and stdout == "" and error["code"] == "INPUT_LIMIT_EXCEEDED"
 
@@ -221,7 +216,7 @@ def test_result_limit_is_a_typed_refusal_without_partial_stdout(
         [*argv(paths), "--json"],
         audit_langfuse.configure,
         audit_langfuse.produce,
-        ReportOutput("langfuse_accounting.v1", max_bytes=1),
+        ReportOutput("langfuse_accounting.v2", max_bytes=1),
     )
     streams = capsys.readouterr()
     assert code == ERROR_EXIT and streams.out == ""
@@ -258,7 +253,8 @@ def test_score_storage_value_is_not_coerced_from_another_json_type(
     code, error, stdout, _ = invoke(paths, capsys)
     assert code == ERROR_EXIT and stdout == ""
     assert error["code"] == "INVALID_INPUT"
-    assert error["reason"] == "MALFORMED_LANGFUSE_PAYLOAD"
+    assert error["reason"] == "LANGFUSE_NUMBER_INVALID"
+    assert error["location"] == "/scores/0/value"
 
 
 def test_empty_observation_export_does_not_reclassify_trace_scores(
@@ -280,25 +276,25 @@ def test_empty_observation_export_does_not_reclassify_trace_scores(
     }
 
 
-def test_broken_packaged_observation_schema_remains_a_configuration_error(
+def test_broken_packaged_current_schema_remains_a_configuration_error(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from underwrite.instrument.ingest.schema import SchemaConfigurationError
 
     paths, _ = inputs(tmp_path)
 
-    def fail(*, max_bytes: int, max_depth: int) -> Any:
-        del max_bytes, max_depth
+    def fail(name: str) -> Any:
+        del name
         raise SchemaConfigurationError("INVALID_OBSERVATION_SCHEMA")
 
-    monkeypatch.setattr(adapter, "packaged_ingestor", fail)
+    monkeypatch.setattr(auto_adapter, "packaged_validator", fail)
     code, error, stdout, stderr = invoke(paths, capsys)
     assert code == ERROR_EXIT and stdout == ""
     assert error["code"] == "SCHEMA_CONFIGURATION_ERROR"
     assert error["location"] == "" and str(tmp_path) not in stderr
 
 
-def test_explicit_blob_json_bytes_remain_unchanged(capsys: pytest.CaptureFixture[str]) -> None:
+def test_current_blob_json_matches_canonical_api(capsys: pytest.CaptureFixture[str]) -> None:
     paths = {
         "observations": GOLDEN / "observations_v2-2026-09-14T06-40-00.json",
         "scores": GOLDEN / "scores-2026-09-14T06-40-00.json",
@@ -306,8 +302,8 @@ def test_explicit_blob_json_bytes_remain_unchanged(capsys: pytest.CaptureFixture
     assert audit_langfuse.main([*argv(paths), "--json"]) == 0
     streams = capsys.readouterr()
     assert streams.err == ""
-    assert hashlib.sha256(streams.out.encode()).hexdigest() == (
-        "472f74aee6f2c5aa4b3f104a5aba741254ca99eaa5d93fdcc64ad29373879bc7"
+    assert json.loads(streams.out) == adapter.audit_langfuse_files(
+        paths["observations"], paths["scores"]
     )
 
 
@@ -315,9 +311,9 @@ def test_row_index_capability_profile() -> None:
     registered = capabilities.report(main.COMMAND_DESCRIPTORS)
     commands = cast(list[dict[str, Any]], registered["commands"])
     command = next(row for row in commands if row["command"] == "audit-langfuse")
-    profile = next(row for row in command["profiles"] if row["name"] == "langfuse.row-index.v1")
-    assert profile["required_inputs"] == ["observations", "scores", "profile", "view"]
-    assert profile["output_schemas"] == ["langfuse_row_index.v1"]
+    profile = next(row for row in command["profiles"] if row["name"] == "auto|row-index")
+    assert profile["required_inputs"] == ["observations", "scores", "view"]
+    assert profile["output_schemas"] == ["langfuse_row_index.v2"]
 
 
 def test_row_index_canary_and_entrypoint(
@@ -352,10 +348,8 @@ def test_row_index_canary_and_entrypoint(
     streams = capsys.readouterr()
     assert streams.err == "" and canary not in streams.out
     result = json.loads(streams.out)
-    assert result == adapter.audit_langfuse_row_index_files(
-        paths["observations"], paths["scores"], profile=adapter.BLOB_PROFILE
-    )
-    assert result["schema"] == "langfuse_row_index.v1"
+    assert result == adapter.audit_langfuse_row_index_files(paths["observations"], paths["scores"])
+    assert result["schema"] == "langfuse_row_index.v2"
     assert {role: result["sources"][role]["raw_hash"] for role in paths} == {
         role: digest_bytes(path.read_bytes()) for role, path in paths.items()
     }
@@ -394,9 +388,7 @@ def test_row_index_reads_each_selected_file_once(
         return read(path, maximum)
 
     monkeypatch.setattr(adapter, "read_local_file", traced)
-    adapter.audit_langfuse_row_index_files(
-        paths["observations"], paths["scores"], profile=adapter.BLOB_PROFILE
-    )
+    adapter.audit_langfuse_row_index_files(paths["observations"], paths["scores"])
     assert selected == [paths["observations"], paths["scores"]]
 
 
@@ -408,11 +400,9 @@ def test_row_index_api_projection_fault_is_finite(
     def fail(_accounting: dict[str, object]) -> dict[str, object]:
         raise RuntimeError("PRIVATE_AGENT_CANARY")
 
-    monkeypatch.setattr(adapter, "index_langfuse_accounting", fail)
+    monkeypatch.setattr(auto_adapter, "index_langfuse_compatible", fail)
     with pytest.raises(adapter.LangfuseFileError) as caught:
-        adapter.audit_langfuse_row_index_files(
-            paths["observations"], paths["scores"], profile=adapter.BLOB_PROFILE
-        )
+        adapter.audit_langfuse_row_index_files(paths["observations"], paths["scores"])
     assert caught.value.code == "INTERNAL_ERROR"
     assert caught.value.reason == "LANGFUSE_ROW_INDEX_INVALID"
     assert "PRIVATE_AGENT_CANARY" not in str(caught.value)

@@ -82,6 +82,8 @@ def _audit(
         counted = account_langfuse_compatible(observation_document, score_document)
     except LangfuseAccountingError as exc:
         raise LangfuseFileError(exc.code, exc.reason, exc.location) from None
+    except Exception:
+        raise LangfuseFileError("INTERNAL_ERROR", "LANGFUSE_AUTO_RESULT_INVALID") from None
     sources = cast(dict[str, dict[str, object]], counted["sources"])
     report = {
         "schema": ACCOUNTING_SCHEMA,
@@ -98,6 +100,8 @@ def _audit(
         selected = {"schema": ROW_INDEX_SCHEMA, **index_langfuse_compatible(report)}
     except LangfuseAccountingError as exc:
         raise LangfuseFileError(exc.code, exc.reason, exc.location) from None
+    except Exception:
+        raise LangfuseFileError("INTERNAL_ERROR", "LANGFUSE_ROW_INDEX_INVALID") from None
     assert index_validator is not None
     _checked(index_validator, selected)
     return selected

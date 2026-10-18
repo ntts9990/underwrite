@@ -13,7 +13,7 @@ from underwrite.instrument.evidence.langfuse_cli import (
     ASSOCIATIONS,
     VALUE_TYPES,
     account_langfuse_cli,
-    index_langfuse_cli_accounting,
+    index_langfuse_cli_body,
 )
 
 
@@ -51,22 +51,6 @@ def run(observations: object | None = None, scores: object | None = None) -> dic
     )
 
 
-def full(result: dict[str, Any]) -> dict[str, object]:
-    return {
-        "schema": "langfuse_cli_accounting.v1",
-        "sources": {
-            role: {
-                "format": f"langfuse.cli.{role}",
-                "format_version": "1.2.4-api-4.35.0",
-                "raw_hash": "sha256:" + "a" * 64,
-                "claims_verified": False,
-            }
-            for role in ("observations", "scores")
-        },
-        **result,
-    }
-
-
 def test_typed_values_subject_kinds_and_index_withhold_private_content() -> None:
     scores = [
         score(id="n", dataType="NUMERIC", value=0),
@@ -95,7 +79,7 @@ def test_typed_values_subject_kinds_and_index_withhold_private_content() -> None
     }
     assert result["retrieval"]["observations"]["pagination"]["cursor_state"] == "present"
     assert "FETCH_REMAINING_LANGFUSE_PAGES" in result["next_actions"]
-    index = index_langfuse_cli_accounting(full(result))
+    index = index_langfuse_cli_body(result)
     assert index["counts"] == result["counts"]
     assert cast(list[dict[str, Any]], index["score_rows"])[1]["data_type"] == "BOOLEAN"
     serialized = json.dumps(index)

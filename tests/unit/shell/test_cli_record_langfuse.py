@@ -40,7 +40,6 @@ def run(paths: dict[str, Path], store: Path, *, as_json: bool = True) -> dict[st
         store,
         "sample",
         as_json=as_json,
-        profile=adapter.BLOB_PROFILE,
     )
 
 
@@ -54,9 +53,7 @@ def test_same_buffer_capture_survives_original_mutation_and_independent_read(
 ) -> None:
     paths, store = inputs(tmp_path), tmp_path / "store"
     originals = {role: path.read_bytes() for role, path in paths.items()}
-    expected = adapter.audit_langfuse_files(
-        paths["observations"], paths["scores"], profile=adapter.BLOB_PROFILE
-    )
+    expected = adapter.audit_langfuse_files(paths["observations"], paths["scores"])
     real_read = command.read_langfuse_file
     reads: list[str] = []
 
@@ -169,7 +166,6 @@ def test_preflight_before_reads(
             tmp_path / "scores",
             tmp_path / "store",
             "../bad" if fault == "identifier" else "sample",
-            profile=adapter.BLOB_PROFILE,
         )
     assert not (tmp_path / "store").exists()
 
@@ -181,9 +177,7 @@ def test_saved_analysis_byte_limit_includes_newline(
     delta: int,
 ) -> None:
     paths, store = inputs(tmp_path), tmp_path / "store"
-    expected = adapter.audit_langfuse_files(
-        paths["observations"], paths["scores"], profile=adapter.BLOB_PROFILE
-    )
+    expected = adapter.audit_langfuse_files(paths["observations"], paths["scores"])
     maximum = len(canonical_bytes(expected)) + 1
     monkeypatch.setattr(command, "RECORD_READ_MAX_BYTES", maximum + delta)
     if delta:
@@ -268,8 +262,6 @@ def test_cli_json_and_human(tmp_path: Path, capsys: pytest.CaptureFixture[str]) 
             str(paths["observations"]),
             "--scores",
             str(paths["scores"]),
-            "--profile",
-            adapter.BLOB_PROFILE,
             "--root",
             str(tmp_path / str(as_json)),
             "--id",
@@ -301,10 +293,8 @@ def test_unexpected_failure_has_finite_private_diagnostic(
         monkeypatch.setattr(command, "read_langfuse_file", read)
     else:
 
-        def audit(
-            observations: bytes, scores: bytes, *, profile: str | None, view: command.View
-        ) -> dict[str, object]:
-            del observations, scores, profile, view
+        def audit(observations: bytes, scores: bytes, *, view: command.View) -> dict[str, object]:
+            del observations, scores, view
             raise RuntimeError("secret producer text")
 
         monkeypatch.setattr(command, "audit_langfuse_bytes", audit)
@@ -322,10 +312,8 @@ def test_source_identity_mismatch_refused_before_store(
     paths, store = inputs(tmp_path), tmp_path / "store"
     original = command.audit_langfuse_bytes
 
-    def audit(
-        observations: bytes, scores: bytes, *, profile: str | None, view: command.View
-    ) -> dict[str, object]:
-        report = original(observations, scores, profile=profile, view=view)
+    def audit(observations: bytes, scores: bytes, *, view: command.View) -> dict[str, object]:
+        report = original(observations, scores, view=view)
         identities = cast(dict[str, dict[str, object]], report["sources"])
         identities["scores"]["raw_hash"] = "sha256:" + "0" * 64
         return report

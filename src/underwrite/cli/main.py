@@ -46,8 +46,11 @@ from underwrite.instrument.evidence.deepeval_compat import (
 )
 from underwrite.instrument.evidence.deepeval_trace import SCHEMA as DEEPEVAL_TRACE_SCHEMA
 from underwrite.instrument.evidence.deepeval_trace import SOURCE_VERSION as DEEPEVAL_TRACE_VERSION
-from underwrite.instrument.evidence.langfuse_accounting import RULE_PROFILE as LANGFUSE_RULE_PROFILE
+from underwrite.instrument.evidence.langfuse_compat import (
+    ACCOUNTING_SCHEMA as LANGFUSE_ACCOUNTING_SCHEMA,
+)
 from underwrite.instrument.evidence.langfuse_compat import AUTO_PROFILE as LANGFUSE_AUTO_PROFILE
+from underwrite.instrument.evidence.langfuse_compat import ROW_INDEX_SCHEMA as LANGFUSE_ROW_SCHEMA
 from underwrite.instrument.evidence.promptfoo_compat import (
     ACCOUNTING_SCHEMA as PROMPTFOO_AUTO_ACCOUNTING_SCHEMA,
 )
@@ -57,13 +60,6 @@ from underwrite.instrument.evidence.promptfoo_compat import (
 from underwrite.instrument.ingest.codecs.promptfoo import SUPPORTED_VERSIONS as PROMPTFOO_VERSIONS
 from underwrite.instrument.ingest.deepeval_accounting import PROFILES as DEEPEVAL_PROFILES
 from underwrite.instrument.ingest.deepeval_accounting import SOURCE as DEEPEVAL_SOURCE
-from underwrite.instrument.ingest.langfuse_accounting import (
-    BLOB_PROFILE,
-    CLI_PROFILE,
-)
-from underwrite.instrument.ingest.langfuse_accounting import (
-    output_schema as langfuse_output_schema,
-)
 
 Standalone = Callable[[list[str]], int]
 
@@ -266,29 +262,13 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 "audit-langfuse",
                 ("observations", "scores", "root", "id"),
                 (),
-                (record_langfuse.record_schema(LANGFUSE_AUTO_PROFILE),),
+                (record_langfuse.AUTO_RECORD_SCHEMA,),
             ),
             profile(
-                f"audit-langfuse|{BLOB_PROFILE}",
-                ("observations", "scores", "profile", "root", "id"),
+                "audit-langfuse|row-index",
+                ("observations", "scores", "view", "root", "id"),
                 (),
-                (record_langfuse.record_schema(BLOB_PROFILE),),
-            ),
-            profile(
-                f"audit-langfuse|{CLI_PROFILE}",
-                ("observations", "scores", "profile", "root", "id"),
-                (),
-                (record_langfuse.record_schema(CLI_PROFILE),),
-            ),
-            *(
-                profile(
-                    "audit-langfuse|" + (selected + "|" if selected else "") + "row-index",
-                    ("observations", "scores", "view", "root", "id")
-                    + (("profile",) if selected else ()),
-                    (),
-                    (record_langfuse.record_schema(selected, "row-index"),),
-                )
-                for selected in (None, BLOB_PROFILE, CLI_PROFILE)
+                (record_langfuse.ROW_RECORD_SCHEMA,),
             ),
             profile(
                 "measure",
@@ -346,37 +326,13 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 LANGFUSE_AUTO_PROFILE,
                 ("observations", "scores"),
                 (),
-                (langfuse_output_schema(LANGFUSE_AUTO_PROFILE, "accounting"),),
+                (LANGFUSE_ACCOUNTING_SCHEMA,),
             ),
             profile(
                 f"{LANGFUSE_AUTO_PROFILE}|row-index",
                 ("observations", "scores", "view"),
                 (),
-                (langfuse_output_schema(LANGFUSE_AUTO_PROFILE, "row-index"),),
-            ),
-            profile(
-                LANGFUSE_RULE_PROFILE,
-                ("observations", "scores", "profile"),
-                (),
-                (langfuse_output_schema(BLOB_PROFILE, "accounting"),),
-            ),
-            profile(
-                "langfuse.row-index.v1",
-                ("observations", "scores", "profile", "view"),
-                (),
-                (langfuse_output_schema(BLOB_PROFILE, "row-index"),),
-            ),
-            profile(
-                CLI_PROFILE,
-                ("observations", "scores", "profile"),
-                (),
-                (langfuse_output_schema(CLI_PROFILE, "accounting"),),
-            ),
-            profile(
-                f"{CLI_PROFILE}|row-index",
-                ("observations", "scores", "profile", "view"),
-                (),
-                (langfuse_output_schema(CLI_PROFILE, "row-index"),),
+                (LANGFUSE_ROW_SCHEMA,),
             ),
         ),
         _standalone(audit_langfuse.main),

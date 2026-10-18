@@ -25,8 +25,8 @@ availability is not evidence that an arbitrary export satisfies a profile.
 
 For released changes and current checkout differences, see [migration](MIGRATION.md).
 Published 0.2.0 retains historical selectors alongside automatic input. The
-unreleased checkout removes Promptfoo audit/capture selectors and uses only v2
-results. Existing stored bytes retain their original meanings.
+unreleased checkout removes Promptfoo and Langfuse audit/capture selectors
+and uses their current v2 result families. Existing stored bytes retain their original meanings.
 
 Choose the input path first. An `underwrite.evidence-bundle` v1 observation can
 enter the native `ingest` → `measure` → `accept` workflow with an explicit policy
@@ -273,8 +273,8 @@ files are independently selected, not an atomic producer snapshot. Python caller
 can use `audit_langfuse_row_index_files(observations, scores)` from
 `underwrite.instrument.ingest.langfuse_accounting`. Match both role raw hashes
 before relating a separate private record to a row-index result; a hash proves
-byte identity, not provenance. Explicit legacy profiles retain their v1 row
-contracts and outputs.
+byte identity, not provenance. Only the published 0.2.0 release retains the old
+explicit profiles; the current checkout rejects them and produces current rows.
 
 The automatic `langfuse_accounting.v2` reports the selected reader family and
 `producer_version:null`/`unknown` separately. It preserves the applicable
@@ -324,10 +324,11 @@ underwrite records read-json --root /private/review-store --id langfuse.review-0
 
 This retains the entire selected files, including source content omitted from the
 accounting report. Analysis and storage use the same captured bytes; the two exports
-are not an atomic producer snapshot. The default 0.2.0 `langfuse_record.v2`
-embeds automatic full accounting; explicit legacy profiles retain their v1 record
-contracts and stored invocation/manifest bytes. Both versions separate acquisition,
-analysis, and storage. Exit 0 means a result was saved, exit 2 means a diagnostic was
+are not an atomic producer snapshot. Current `langfuse_record.v2` embeds
+automatic full accounting and separates acquisition, analysis, and storage.
+The unreleased checkout removes `--profile` and Python `profile=`; published
+0.2.0 still has those historical selectors. See [migration](MIGRATION.md).
+Exit 0 means a result was saved, exit 2 means a diagnostic was
 saved, and exit 3 means storage failed; inspect analysis even on exit 3. Configuration
 and output-capacity refusals occur before storage and use `evidence_error.v1` stderr.
 
@@ -353,8 +354,9 @@ underwrite records read-json --root /private/review-store --id langfuse.rows-001
 
 This saves the selected index with the exact two input buffers used to produce it,
 then verifies the saved record. No handwritten record specification is needed.
-The `langfuse_row_record.v1` response embeds the selected row-index contract;
-automatic input uses v2, while explicit legacy profiles keep their v1 row outputs.
+The current checkout returns `langfuse_row_record.v2`, embedding only current
+`langfuse_row_index.v2`. Published 0.2.0 returns the older row-record v1 envelope;
+check the actual advertised output schema. Old saved records are not rewritten.
 The index withholds score content; the private record still retains both whole
 source files and invocation paths. Read analysis and storage outcomes separately,
 using the same exit and diagnostic rules above. The saved result remains readable
@@ -420,10 +422,10 @@ new ID; after uncertain storage failure, inspect that ID before retrying. The
 private `invocation.json` and manifest identify automatic selection. They name an
 applied reader only after successful analysis; diagnostics do not invent one.
 Verification proves stored-byte integrity, not Langfuse provenance, matching
-request windows, complete export or approval. Explicit `--profile cli-1.2.4`
-retains `langfuse_cli_accounting.v1`, `langfuse_cli_row_index.v1` and the default
-`langfuse_cli_record.v1`; row recording uses `langfuse_row_record.v1`.
-`--profile blob-4.35.0` likewise retains its blob v1 analysis contracts.
+request windows, complete export or approval. Current checkout intake has no
+`--profile` selector; both supported shapes produce the same current contract
+family with distinct reader policies. The old explicit blob/CLI output selectors
+remain a published-0.2.0 behavior only, not a fallback after current refusal.
 The published `0.1.1` artifacts predate this route, introduced in 0.2.0.
 
 ## Inspect recorded DeepEval agent steps

@@ -177,12 +177,14 @@ Generated analysis is admitted within the selected-read limit before storage.
 Large original files can be retained without being readable through that JSON route.
 See [the Langfuse workflow](AGENT_USAGE.md#account-for-langfuse-score-kinds-and-associations).
 
-For historical reproduction, explicit `--profile blob-4.35.0` retains the old
-`langfuse_record.v1`; `--profile cli-1.2.4` retains `langfuse_cli_record.v1`.
-Their valid supported results, invocation and manifest bytes remain stable.
+The unreleased checkout removes Langfuse `--profile` and Python `profile=`;
+published 0.2.0 still retains those historical selectors. Old saved records keep
+their original result, invocation and manifest bytes and remain readable.
 The automatic v2 route embeds full `langfuse_accounting.v2` or a finite diagnostic;
-it does not store a row-index view or authenticate the producer, request windows,
-or completeness. Its private invocation and manifest record `selection_mode:auto`
+use `--view row-index` for current `langfuse_row_record.v2` containing only
+current row-index v2. It stores `analysis/row-index.json` while retaining both
+whole source files. Published 0.2.0 uses the old row-record v1 envelope. Neither
+view authenticates the producer, request windows, or completeness. Its private invocation and manifest record `selection_mode:auto`
 even for a saved analysis error, but name an applied reader only on success. Recover
 `analysis/accounting.json` or `analysis/error.json` by exact logical name after
 the originals are removed; run `records verify` for whole-record integrity.
