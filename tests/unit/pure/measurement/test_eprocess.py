@@ -7,13 +7,11 @@ import json
 import math
 import sys
 from collections.abc import Callable
-from dataclasses import FrozenInstanceError, replace
+from dataclasses import FrozenInstanceError, fields, replace
 from fractions import Fraction
-from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from _repo_paths import repo_root
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -28,6 +26,7 @@ from underwrite.measurement.eprocess import (
     WEALTH_ABSORBED,
     EProcessError,
     EProcessPolicy,
+    EProcessProjection,
     EProcessRun,
     Observation,
     binary_observations,
@@ -43,9 +42,6 @@ from underwrite.measurement.eprocess import (
     wealths,
 )
 
-ROOT = repo_root(Path(__file__))
-
-SCHEMA = ROOT / "contracts/read.v1.schema.json"
 NULL_ID = "binary:p=0.5"
 POLICY = EProcessPolicy(
     CONTRACT_P0, CONTRACT_PRIOR_A, CONTRACT_PRIOR_B, CONTRACT_PASS_E, None, None, NULL_ID
@@ -217,11 +213,6 @@ def _assert_refused(code: str, detail: str, call: Callable[[], object]) -> None:
     with pytest.raises(EProcessError) as caught:
         call()
     assert (caught.value.code, str(caught.value)) == (code, f"{code}: {detail}")
-
-
-def _schema_block() -> dict[str, Any]:
-    schema = cast("dict[str, Any]", json.loads(SCHEMA.read_text(encoding="utf-8")))
-    return cast("dict[str, Any]", cast("dict[str, Any]", schema["$defs"])["eprocess"])
 
 
 def test_the_exact_fixture_replays_with_the_same_e_value_stop_and_counts() -> None:
@@ -605,23 +596,16 @@ def test_records_are_frozen() -> None:
         projection_of(run).stop_reason = "threshold"  # type: ignore[misc]
 
 
-# --- projection: read.v1 consistency parsing (not authentication) ---
+# --- standalone projection consistency parsing (not authentication) ---
 
 
-def test_the_projection_has_exactly_the_read_v1_keys_and_spellings() -> None:
-    block = _schema_block()
+def test_the_projection_carries_its_checked_dto_fields_and_meaning() -> None:
     payload = project(projection_of(_stream([1] * 10)))
-    assert list(payload) == list(block["required"])
-    assert set(block["properties"]) == set(payload)
-    assert set(STOP_REASONS) == set(block["properties"]["stop_reason"]["enum"])
+    assert list(payload) == [field.name for field in fields(EProcessProjection)]
     assert payload["method"] == METHOD
     assert payload["availability"] == "measured"
     assert payload["reason_codes"] == []
     assert payload["max_observations"] is None and payload["max_cost"] is None
-    reason_enum = cast("dict[str, Any]", json.loads(SCHEMA.read_text(encoding="utf-8")))["$defs"][
-        "reason_codes"
-    ]["items"]["enum"]
-    assert WEALTH_ABSORBED in reason_enum
 
 
 def test_project_and_parse_round_trip_for_every_stop_reason() -> None:
@@ -728,23 +712,31 @@ def test_a_forged_projection_is_refused(changes: dict[str, Any], code: str, deta
     _assert_refused(code, detail, lambda: parse_projection(_forge(BELOW, **changes)))
 
 
-def test_each_count_accepts_its_read_v1_minimum_and_refuses_one_below() -> None:
-    block = _schema_block()["properties"]
+@pytest.mark.parametrize(
+    "field,floor",
+    [
+        ("stopped_sequence", 0),
+        ("observations_used", 1),
+        ("observations_total", 1),
+        ("trials_used", 1),
+    ],
+)
+def test_each_count_accepts_its_numeric_minimum_and_refuses_one_below(
+    field: str, floor: int
+) -> None:
     single = project(projection_of(_stream([0])))  # one observation, complete
     assert (single["observations_used"], single["observations_total"]) == (1, 1)
-    for field in ("stopped_sequence", "observations_used", "observations_total", "trials_used"):
-        floor = int(block[field]["minimum"])
-        at_floor = _forge(single, **{field: floor})
-        assert parse_projection(at_floor) == replace(projection_of(_stream([0])), **{field: floor})
-        _assert_refused(
-            "COUNT_OUT_OF_RANGE",
-            f"{field}={floor - 1}",
-            lambda field=field, floor=floor: parse_projection(_forge(single, **{field: floor - 1})),
-        )
+    at_floor = _forge(single, **{field: floor})
+    assert parse_projection(at_floor) == replace(projection_of(_stream([0])), **{field: floor})
+    _assert_refused(
+        "COUNT_OUT_OF_RANGE",
+        f"{field}={floor - 1}",
+        lambda field=field, floor=floor: parse_projection(_forge(single, **{field: floor - 1})),
+    )
 
 
-def test_a_pass_e_at_the_read_v1_minimum_parses() -> None:
-    floor = float(_schema_block()["properties"]["pass_e"]["minimum"])
+def test_a_pass_e_at_one_parses() -> None:
+    floor = 1.0
     run = _stream([1], pass_e=floor)
     projection = projection_of(run)
     assert (projection.pass_e, projection.stop_reason) == (floor, "threshold")

@@ -9,11 +9,9 @@ import random
 from collections.abc import Callable
 from dataclasses import FrozenInstanceError, asdict, replace
 from fractions import Fraction
-from pathlib import Path
 from typing import Literal, cast
 
 import pytest
-from _repo_paths import repo_root
 from underwrite_core.canonical import canonical_bytes
 
 from underwrite.instrument.evidence._resampling import ResamplingPolicy
@@ -38,10 +36,8 @@ MINIMUM_ITEMS = 2
 
 @pytest.fixture
 def seed() -> int:
-    path = repo_root(Path(__file__).resolve()) / "contracts/statistical_seed.v1.schema.json"
-    value: object = json.loads(path.read_text())["const"]
-    assert type(value) is int
-    return value
+    """Explicit local experiment seed, not a package-wide default."""
+    return 42
 
 
 def _items(rows: list[tuple[Label | None, ...]]) -> list[RatingItem]:

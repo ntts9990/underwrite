@@ -134,13 +134,9 @@ def test_contract_is_a_self_contained_packaged_schema(name: str) -> None:
 
 
 def test_claims_contract_restates_its_owners() -> None:
-    claims, read = schema("declared_claims.v2"), schema("read.v1")
-    subject = read["$defs"]["subject"]["properties"]["subject_id"]
+    claims = schema("declared_claims.v2")
     identifier = claims["$defs"]["id"]
-    assert (identifier["pattern"], identifier["minLength"]) == (
-        subject["pattern"],
-        subject["minLength"],
-    )
+    assert identifier["minLength"] == 1
     assert identifier["pattern"] == cl.ID_PATTERN
     assert claims["$defs"]["basis_claims"]["maxItems"] == cl.MAX_CLAIMS_PER_BASIS
     case_ids = claims["properties"]["selection"]["properties"]["case_ids"]

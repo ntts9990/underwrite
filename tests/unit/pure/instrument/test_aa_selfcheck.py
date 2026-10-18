@@ -9,11 +9,9 @@ import math
 import random
 from collections.abc import Sequence
 from dataclasses import FrozenInstanceError, asdict, replace
-from pathlib import Path
 from typing import cast
 
 import pytest
-from _repo_paths import repo_root
 from underwrite_core.canonical import canonical_bytes
 
 from underwrite.instrument.evidence import aa, selfcheck
@@ -25,10 +23,8 @@ from underwrite.instrument.evidence.selfcheck import (
     compare_selfcheck,
 )
 
-ROOT = repo_root(Path(__file__))
-SEED = cast(
-    int, json.loads((ROOT / "contracts/statistical_seed.v1.schema.json").read_text())["const"]
-)
+# Explicit seed for this experiment; production callers supply their own policy.
+SEED = 42
 POLICY = AAPolicy(SEED, 8, 10000, 0.05, 2, 1, 10_000_000)
 DIGEST = "sha256:" + "a" * 64
 

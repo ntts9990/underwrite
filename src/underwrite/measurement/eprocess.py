@@ -15,7 +15,8 @@ from dataclasses import dataclass
 from typing import Any, Literal, TypeGuard, cast
 
 METHOD = "beta_mixture_eprocess"
-# measurement_policy.v2 consts; tests/gates/test_s5_statistical_contract.py pins the copies.
+# Standalone reference-policy values, not current directional event-policy requirements.
+# Callers explicitly supply every EProcessPolicy parameter.
 CONTRACT_P0 = 0.5
 CONTRACT_PASS_E = 20.0
 CONTRACT_PRIOR_A = 1
@@ -102,7 +103,7 @@ class EProcessRun:
 
 @dataclass(frozen=True)
 class EProcessProjection:
-    """Exactly the read.v1 `$defs.eprocess` fields; the only form that leaves this module."""
+    """Serializable standalone e-process projection with explicit policy and stopping facts."""
 
     method: str
     availability: str
@@ -275,8 +276,8 @@ def close_run(
     """Close a stream: `counts` is (successes, trials, used, total, stopped_sequence, cost_used).
 
     Every stop goes through here. A stream that consumed no trial -- empty, or stopped by a
-    budget before its first observation -- is an error: read.v1 has no shape for
-    a stream that measured nothing. Absorption zeroes all three wealths.
+    budget before its first observation -- is an error: a closed-run projection
+    requires at least one consumed trial. Absorption zeroes all three wealths.
     """
     successes, trials, used, total, sequence, cost_used = counts
     if trials == 0:
@@ -330,7 +331,7 @@ def run_stream(observations: Sequence[Observation], policy: EProcessPolicy) -> E
 
 
 def projection_of(run: EProcessRun) -> EProcessProjection:
-    """The read.v1 view of a closed run; absorption is the only not-measured stop."""
+    """Project a closed run; absorption is the only not-measured stop."""
     absorbed = run.stop_reason == "absorbed"
     return EProcessProjection(
         method=METHOD,
@@ -353,7 +354,7 @@ def projection_of(run: EProcessRun) -> EProcessProjection:
 
 
 def project(projection: EProcessProjection) -> dict[str, Any]:
-    """Render a checked projection as the read.v1 `$defs.eprocess` object, keys in order."""
+    """Render a checked standalone projection with stable field order."""
     check_projection(projection)
     payload = {name: getattr(projection, name) for name in _PROJECTION_FIELDS}
     payload["reason_codes"] = list(projection.reason_codes)
@@ -407,7 +408,7 @@ def restore(
 
 
 def check_projection(projection: EProcessProjection) -> EProcessProjection:
-    """Every invariant the read.v1 block and impose, re-checked on the record."""
+    """Recheck the projection's numeric, budget and wealth invariants."""
     _check_projection_labels(projection)
     _check_projection_numbers(projection)
     _check_projection_budgets(projection)

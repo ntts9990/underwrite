@@ -1,4 +1,4 @@
-"""Standalone behavior and boundary checks."""
+"""Independent exact arithmetic oracles and current explicit-policy/RNG guards."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ import ast
 import itertools
 import json
 import math
-import re
 from fractions import Fraction
 from pathlib import Path
 from typing import Any, cast
@@ -14,23 +13,14 @@ from typing import Any, cast
 import pytest
 from _random_policy import seed_violations
 from _repo_paths import repo_root
-from jsonschema import Draft202012Validator, ValidationError, validate
-
-from underwrite.measurement import eprocess, read_input
 
 ROOT = repo_root(Path(__file__).resolve())
-POLICY = ROOT / "contracts/measurement_policy.v1.schema.json"
-POLICY_V2 = ROOT / "contracts/measurement_policy.v2.schema.json"
-SEED_OWNER = ROOT / "contracts/statistical_seed.v1.schema.json"
+POLICY = ROOT / "contracts/measurement_policy.v3.schema.json"
 MEASUREMENT = ROOT / "src/underwrite/measurement"
 POLICY_LOADER = ROOT / "src/underwrite/cli/measure.py"
 
 
-THRESHOLDS = ("required_instruments", "quorum", "min_cell_n", "min_bin_n")
-_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
-_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _ENUMERATION_MAX_N = 12
-_PARITY_RELATIVE_TOLERANCE = 1e-9
 
 
 def _json(path: Path) -> dict[str, Any]:
@@ -80,7 +70,7 @@ def _outcome_counts(n: int) -> list[tuple[int, int]]:
     return [(sum(bits), n - sum(bits)) for bits in itertools.product((0, 1), repeat=n)]
 
 
-def test_the_equal_mixture_is_the_uniform_mixture_at_the_contract_p0() -> None:
+def test_the_equal_mixture_is_the_uniform_mixture_at_the_midpoint() -> None:
     half = Fraction(1, 2)
     for n in range(1, _ENUMERATION_MAX_N + 1):
         for s in range(n + 1):
@@ -122,48 +112,6 @@ def test_a_one_sided_process_never_reports_the_direction_the_two_sided_form_does
     assert _two_sided(0, failures, half) == _two_sided(failures, 0, half)
 
 
-# --- D3: one seed owner, read rather than copied ---
-
-
-# --- Pure-layer copies of schema consts: the pure layer cannot read contracts/, so its
-# numeric e-process consts and the seed are pinned to their authored owners here ---
-
-
-def _pure_copies() -> dict[str, object]:
-    return {
-        "p0": eprocess.CONTRACT_P0,
-        "prior_a": eprocess.CONTRACT_PRIOR_A,
-        "prior_b": eprocess.CONTRACT_PRIOR_B,
-        "pass_e": eprocess.CONTRACT_PASS_E,
-        "seed": read_input.CANONICAL_SEED,
-    }
-
-
-def _owner_consts() -> dict[str, object]:
-    ep = cast("dict[str, dict[str, Any]]", _json(POLICY_V2)["properties"]["eprocess"]["properties"])
-    consts: dict[str, object] = {k: ep[k]["const"] for k in ("p0", "prior_a", "prior_b", "pass_e")}
-    return {**consts, "seed": _json(SEED_OWNER)["const"]}
-
-
-def _drift(copies: dict[str, object], owners: dict[str, object]) -> list[str]:
-    assert set(copies) == set(owners)
-    return sorted(k for k in owners if copies[k] != owners[k])
-
-
-def test_pure_layer_contract_copies_equal_their_schema_owners() -> None:
-    assert _drift(_pure_copies(), _owner_consts()) == []
-
-
-@pytest.mark.parametrize("side", ["copy", "owner"])
-@pytest.mark.parametrize("key,value", [("pass_e", 21.0), ("seed", 43)])
-def test_contract_copy_gate_fails_on_either_side_drifting(
-    side: str, key: str, value: object
-) -> None:
-    copies, owners = _pure_copies(), _owner_consts()
-    (copies if side == "copy" else owners)[key] = value
-    assert _drift(copies, owners) == [key]
-
-
 def _count_real_modules(directory: Path) -> int:
     if not directory.is_dir():
         return 0
@@ -176,54 +124,6 @@ def test_measurement_modules_have_explicit_local_rngs_or_report_their_absence() 
     paths = sorted(p for p in MEASUREMENT.rglob("*.py") if p.name != "__init__.py")
     errors = {p.name: lines for p in paths if (lines := seed_violations(p.read_text()))}
     assert errors == {}
-
-
-# --- D4: required policy inputs, no defaults anywhere ---
-
-
-def _keys(node: object) -> set[str]:
-    found: set[str] = set()
-    if isinstance(node, dict):
-        for key, value in cast("dict[str, Any]", node).items():
-            found.add(key)
-            found |= _keys(value)
-    elif isinstance(node, list):
-        for item in cast("list[Any]", node):
-            found |= _keys(item)
-    return found
-
-
-def _resolved_policy() -> dict[str, Any]:
-    """The policy schema with its seed `$ref` replaced by the owner's own constraints."""
-    policy = _json(POLICY)
-    owner = {k: v for k, v in _json(SEED_OWNER).items() if not k.startswith("$")}
-    properties = dict(cast("dict[str, Any]", policy["properties"]))
-    properties["seed"] = owner
-    return {**policy, "properties": properties}
-
-
-def _complete_policy() -> dict[str, Any]:
-    return {
-        "schema": "measurement_policy.v1",
-        "required_instruments": ["judge", "retrieval"],
-        "quorum": 2,
-        "min_cell_n": 20,
-        "min_bin_n": 25,
-        "seed": _json(SEED_OWNER)["const"],
-    }
-
-
-def test_the_policy_schema_requires_every_threshold_and_declares_no_default() -> None:
-    policy = _json(POLICY)
-    Draft202012Validator.check_schema(policy)
-    assert set(THRESHOLDS) <= set(cast("list[str]", policy["required"]))
-    assert policy["additionalProperties"] is False
-    assert "default" not in _keys(policy)
-    assert "default" not in _keys(_json(POLICY_V2))
-    properties = cast("dict[str, dict[str, Any]]", policy["properties"])
-    for name in ("quorum", "min_cell_n", "min_bin_n"):
-        assert properties[name]["type"] == "integer"
-        assert properties[name]["minimum"] == 1
 
 
 def _property_names(node: object) -> set[str]:
@@ -241,7 +141,7 @@ def _property_names(node: object) -> set[str]:
 
 
 def _policy_default_lines(source: str, keys: set[str]) -> list[int]:
-    """Lines that give a policy key a fallback: `m.get("seed", 42)`, `setdefault`, `pop`."""
+    """Lines that give a policy key a fallback: `m.get("p0", 0.5)`, `setdefault`, `pop`."""
     return sorted(
         node.lineno
         for node in ast.walk(ast.parse(source))
@@ -256,12 +156,12 @@ def _policy_default_lines(source: str, keys: set[str]) -> list[int]:
 
 
 def test_measurement_code_never_defaults_a_policy_key() -> None:
-    """D3/D4: a consumer-side fallback is a second canon even where validation makes it dead.
+    """A consumer-side fallback is a second policy owner even where validation makes it dead.
 
     The CLI loader is in scope because it holds the policy before validation, where a
     fallback would be live and no engine-level behavioural test would see it.
     """
-    keys = _property_names(_json(POLICY_V2))
+    keys = _property_names(_json(POLICY))
     modules = sorted(MEASUREMENT.rglob("*.py"))
     assert modules
     offenders = {
@@ -275,43 +175,15 @@ def test_measurement_code_never_defaults_a_policy_key() -> None:
 @pytest.mark.parametrize(
     "source,caught",
     [
-        ('seed = policy.get("seed", 42)', True),
-        ('panel.setdefault("pass_at", 0.75)', True),
-        ('p.pop("quorum", None)', True),
-        ('p.get("seed", default=42)', True),
+        ('p0 = policy.get("p0", 0.5)', True),
+        ('p.setdefault("expected_case_ids", [])', True),
+        ('p.pop("assumptions", {})', True),
+        ('p.get("max_observations", default=None)', True),
         ('losses.get(name, "missing")', False),
-        ('p.get("schema") != "measurement_policy.v2"', False),
+        ('p.get("schema") != "measurement_policy.v3"', False),
         ('row.get("payload", {})', False),
     ],
 )
 def test_policy_default_guard_distinguishes_fallbacks(source: str, caught: bool) -> None:
-    keys = _property_names(_json(POLICY_V2))
+    keys = _property_names(_json(POLICY))
     assert bool(_policy_default_lines(source, keys)) is caught
-
-
-@pytest.mark.parametrize("missing", THRESHOLDS)
-def test_a_policy_missing_a_threshold_is_a_configuration_failure(missing: str) -> None:
-    schema = _resolved_policy()
-    validate(_complete_policy(), schema)
-    incomplete = {k: v for k, v in _complete_policy().items() if k != missing}
-    with pytest.raises(ValidationError):
-        validate(incomplete, schema)
-
-
-@pytest.mark.parametrize(
-    "override",
-    [
-        {"quorum": 0},
-        {"min_cell_n": "20"},
-        {"min_bin_n": 2.5},
-        {"required_instruments": ["judge", "judge"]},
-        {"seed": 7},
-        {"undeclared_threshold": 1},
-    ],
-)
-def test_a_policy_with_a_hidden_or_malformed_input_is_rejected(override: dict[str, Any]) -> None:
-    with pytest.raises(ValidationError):
-        validate({**_complete_policy(), **override}, _resolved_policy())
-
-
-# --- Statistical boundary decisions ---

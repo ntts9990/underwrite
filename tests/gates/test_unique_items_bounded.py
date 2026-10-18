@@ -208,19 +208,15 @@ def test_a_reference_into_another_packaged_contract_is_followed() -> None:
 
 
 # --- the if/then/else rewrites accept exactly what their oneOf did -----------------------
-# Each branch set is disjoint: eprocess is an object, never null; measured_read's verdict
+# Each branch set is disjoint: read objects are never null; measured_read's verdict
 # enum excludes not_measured_read's const, and both require verdict. On disjoint branches
 # "exactly one" is "any one", which the if/then/else routes to by the discriminating key.
 # The comparison below varies exactly those keys (type, verdict) and the arrays beneath.
 
-GOLDEN = ROOT / "fixtures/examples/acceptance"
+GOLDEN = ROOT / "fixtures/examples/event-acceptance"
 WHOLE: tuple[object, ...] = (None, True, 0, 1.5, "x", [], {}, [None])
 REWRITES: dict[str, tuple[tuple[str, ...], list[object]]] = {
-    "read.v1": (
-        ("properties", "eprocess"),
-        [{"$ref": "#/$defs/eprocess"}, {"type": "null"}],
-    ),
-    "acceptance_decision.v1": (
+    "acceptance_decision.v2": (
         ("$defs", "claim", "properties", "read"),
         [
             {"type": "null"},
@@ -235,11 +231,9 @@ class _Validity(Protocol):
     def is_valid(self, instance: object) -> bool: ...
 
 
-def _validity(schema: Schema, path: tuple[str, ...], node: object, seed: Schema) -> _Validity:
-    """``schema`` with ``node`` at ``path`` and the seed localized as measure does."""
+def _validity(schema: Schema, path: tuple[str, ...], node: object) -> _Validity:
+    """Validate the current standalone schema with one branch expression replaced."""
     copied: Any = json.loads(json.dumps(schema))
-    if "seed" in copied["properties"]:
-        copied["properties"]["seed"] = {k: v for k, v in seed.items() if k != "$id"}
     parent = copied
     for part in path[:-1]:
         parent = parent[part]
@@ -249,20 +243,16 @@ def _validity(schema: Schema, path: tuple[str, ...], node: object, seed: Schema)
 
 def _shapes(base: Mapping[str, Any], key: str, values: tuple[object, ...]) -> list[object]:
     """Whole-value swaps, then base with ``key`` set to each value or dropped, reasons varied."""
-    shapes: list[object] = [*WHOLE, {**base, "extra": 1}]
+    shapes: list[object] = [dict(base), *WHOLE, {**base, "extra": 1}]
     for value in (*values, None, 1, "x"):
-        for reasons in ([], ["below_quorum"], ["x"], [1, "a"]):
+        for reasons in ([], base["reason_codes"], ["x"], [1, "a"]):
             shapes.append({**base, key: value, "reason_codes": reasons})
     shapes.append({k: v for k, v in base.items() if k != key})
     return shapes
 
 
-def _instances(name: str) -> list[object]:
-    if name == "read.v1":
-        read = json.loads((GOLDEN / "read.json").read_bytes())
-        values = ("complete", "threshold", "absorbed")
-        return [{**read, "eprocess": s} for s in _shapes(read["eprocess"], "stop_reason", values)]
-    decision = json.loads((GOLDEN / "expected/accept-not-measured.json").read_bytes())
+def _instances() -> list[object]:
+    decision = json.loads((GOLDEN / "decision-indeterminate.json").read_bytes())
     found: list[object] = []
     verdicts = ("pass", "warn", "fail", "not_measured")
     for index, claim in enumerate(decision["claims"]):
@@ -276,13 +266,13 @@ def _instances(name: str) -> list[object]:
 @pytest.mark.parametrize("name", sorted(REWRITES))
 def test_the_if_then_else_accepts_exactly_what_one_of_did(name: str) -> None:
     schemas = packaged()
-    seed, file = schemas["statistical_seed.v1.schema.json"], f"{name}.schema.json"
+    file = f"{name}.schema.json"
     path, one_of = REWRITES[name]
     rewritten = cast(Schema, _at(schemas, file, "#/" + "/".join(path)))
     assert {"if", "then", "else"} & set(rewritten) and "oneOf" not in rewritten
-    now = _validity(schemas[file], path, rewritten, seed)
-    before = _validity(schemas[file], path, {"oneOf": one_of}, seed)
-    outcomes = [(now.is_valid(i), before.is_valid(i)) for i in _instances(name)]
+    now = _validity(schemas[file], path, rewritten)
+    before = _validity(schemas[file], path, {"oneOf": one_of})
+    outcomes = [(now.is_valid(i), before.is_valid(i)) for i in _instances()]
     assert all(a == b for a, b in outcomes)
     assert {a for a, _ in outcomes} == {True, False}  # both sides of the boundary are exercised
 

@@ -1793,6 +1793,28 @@ def _langfuse_auto_pilot(cli: Path, work: Path) -> None:
 
 
 def _native_measurement_pilot(cli: Path, fixtures: Path, work: Path) -> None:
+    retired = (
+        "read.v1", "measurement_policy.v1", "measurement_policy.v2",
+        "declared_claims.v1", "acceptance_decision.v1", "statistical_seed.v1",
+    )
+    assets = wheel.success(
+        [
+            str(cli.with_name("python")), "-I", "-c",
+            "import json,sys; from importlib.resources import files; "
+            "from importlib.util import find_spec; "
+            "root=files('underwrite').joinpath('_contracts'); "
+            "print(json.dumps({'schemas': [name for name in json.loads(sys.argv[1]) "
+            "if root.joinpath(name+'.schema.json').is_file()], "
+            "'modules': [name for name in ('read','availability','jury','stratify') "
+            "if find_spec('underwrite.measurement.'+name) is not None]}))",
+            json.dumps(retired),
+        ],
+        work,
+    )
+    wheel.require(
+        json.loads(assets.stdout) == {"schemas": [], "modules": []},
+        "installed package retained the obsolete native measurement engine",
+    )
     source = fixtures / "event-measurement"
     reads: list[Path] = []
     for variant, verdict in (("", "pass"), ("failure-", "fail")):

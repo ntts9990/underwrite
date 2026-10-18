@@ -1,20 +1,17 @@
-"""Two bounded local inputs, one pure read, and fixed packaged schema localization."""
+"""Two bounded local inputs and one current event measurement flow."""
 
 from __future__ import annotations
 
 import argparse
-import copy
 import sys
-from importlib.resources import files
 from pathlib import Path
-from typing import Any, NoReturn, cast
+from typing import Any, NoReturn
 
-from jsonschema import Draft202012Validator
-from jsonschema.exceptions import SchemaError
 from underwrite_core.canonical import canonical_bytes
 
 from underwrite.cli.evidence import display
-from underwrite.cli.local_json import Validator, read_document
+from underwrite.cli.local_json import Validator as Validator
+from underwrite.cli.local_json import read_document
 from underwrite.cli.local_json import validate as validate
 from underwrite.cli.measurement_flow import (
     OBSERVATION_MAX_BYTES,
@@ -30,16 +27,9 @@ from underwrite.cli.measurement_flow import (
 )
 from underwrite.cli.measurement_flow import InputReader as InputReader
 from underwrite.cli.measurement_flow import measurement_validators as measurement_validators
-from underwrite.instrument.ingest.schema import (
-    SchemaConfigurationError,
-    _check_local_references,  # pyright: ignore[reportPrivateUsage] -- approved unchanged guard
-)
-from underwrite.instrument.ingest.transport import decode_json
+from underwrite.instrument.ingest.schema import SchemaConfigurationError as SchemaConfigurationError
 from underwrite.measurement.event_read import EventReadError as EventReadError
 from underwrite.measurement.read_input import ReadInputError as ReadInputError
-
-_SEED = "urn:underwrite:contract:statistical_seed.v1"
-_SUBJECT = "urn:underwrite:contract:read.v1#/$defs/subject"
 
 
 class _Parser(argparse.ArgumentParser):
@@ -70,93 +60,6 @@ def configure(parser: argparse.ArgumentParser) -> None:
         f"policy: {POLICY_MAX_BYTES} bytes / depth {POLICY_MAX_DEPTH}; "
         f"output: {OUTPUT_MAX_BYTES} bytes including newline."
     )
-
-
-def _preflight(schema: dict[str, Any], name: str) -> None:
-    permitted: dict[tuple[str, tuple[str, ...]], str] = {
-        ("read.v1", ("properties", "seed")): _SEED,
-        ("measurement_policy.v2", ("properties", "seed")): _SEED,
-        ("measurement_policy.v2", ("properties", "subject")): _SUBJECT,
-    }
-    pending: list[tuple[Any, tuple[str, ...]]] = [(schema, ())]
-    while pending:
-        node, path = pending.pop()
-        if isinstance(node, dict):
-            if (
-                (path and "$id" in node)
-                or "$dynamicRef" in node
-                or (name == "statistical_seed.v1" and "$ref" in node)
-            ):
-                raise SchemaConfigurationError("FORBIDDEN_SCHEMA_REFERENCE")
-            if "$ref" in node:
-                ref: object = cast("dict[str, Any]", node)["$ref"]
-                expected = permitted.get((name, path))
-                if expected is not None and node != {"$ref": expected}:
-                    raise SchemaConfigurationError("WRONG_MEASUREMENT_REFERENCE")
-                if expected is None and (not isinstance(ref, str) or not ref.startswith("#")):
-                    raise SchemaConfigurationError("FORBIDDEN_SCHEMA_REFERENCE")
-            pending.extend(
-                (value, (*path, key)) for key, value in cast("dict[str, Any]", node).items()
-            )
-        elif isinstance(node, list):
-            pending.extend(
-                (value, (*path, str(index))) for index, value in enumerate(cast("list[Any]", node))
-            )
-    for (owner, path), ref in permitted.items():
-        if owner == name and schema.get(path[0], {}).get(path[1]) != {"$ref": ref}:
-            raise SchemaConfigurationError("MISSING_MEASUREMENT_REFERENCE")
-
-
-def _subject_fragment(read: dict[str, Any]) -> dict[str, Any]:
-    subject = read["$defs"]["subject"]
-    if not isinstance(subject, dict):
-        raise SchemaConfigurationError("INVALID_SUBJECT_OWNER")
-    pending: list[Any] = [subject]
-    while pending:
-        node = pending.pop()
-        if isinstance(node, dict):
-            if any(
-                key in node for key in ("$ref", "$id", "$dynamicRef", "$dynamicAnchor", "$anchor")
-            ):
-                raise SchemaConfigurationError("DEPENDENT_SUBJECT_OWNER")
-            pending.extend(cast("dict[str, Any]", node).values())
-        elif isinstance(node, list):
-            pending.extend(cast("list[Any]", node))
-    return cast("dict[str, Any]", subject)
-
-
-def legacy_measurement_validators() -> tuple[Validator, Validator]:
-    """Localize only fixed trusted seed/subject positions; never fetch a URI."""
-    try:
-        assets: dict[str, dict[str, Any]] = {}
-        for name in ("read.v1", "measurement_policy.v2", "statistical_seed.v1"):
-            resource = files("underwrite").joinpath("_contracts", f"{name}.schema.json")
-            value = decode_json(resource.read_bytes(), 64)
-            if not isinstance(value, dict):
-                raise SchemaConfigurationError("WRONG_MEASUREMENT_CONTRACT")
-            schema = cast("dict[str, Any]", value)
-            if schema.get("$id") != f"urn:underwrite:contract:{name}":
-                raise SchemaConfigurationError("WRONG_MEASUREMENT_CONTRACT")
-            _preflight(schema, name)
-            assets[name] = schema
-        read, policy = assets["read.v1"], assets["measurement_policy.v2"]
-        subject = _subject_fragment(read)
-        seed = copy.deepcopy(assets["statistical_seed.v1"])
-        if seed.get("type") != "integer" or type(seed.get("const")) is not int:
-            raise SchemaConfigurationError("INVALID_SEED_OWNER")
-        del seed["$id"]
-        compiled: list[Validator] = []
-        for original in (read, policy):
-            schema = copy.deepcopy(original)
-            schema["properties"]["seed"] = copy.deepcopy(seed)
-            if original is policy:
-                schema["properties"]["subject"] = copy.deepcopy(subject)
-            _check_local_references(schema)
-            Draft202012Validator.check_schema(schema)
-            compiled.append(Draft202012Validator(schema))
-        return compiled[0], compiled[1]
-    except (OSError, ValueError, KeyError, TypeError, AttributeError, SchemaError) as exc:
-        raise SchemaConfigurationError("INVALID_MEASUREMENT_SCHEMA") from exc
 
 
 def _read(args: argparse.Namespace) -> dict[str, Any]:

@@ -3,18 +3,13 @@
 from __future__ import annotations
 
 import itertools
-import json
-from pathlib import Path
 from typing import Any
 
 import pytest
-from _repo_paths import repo_root
 
 from underwrite.acceptance import classify as cf
 from underwrite.acceptance.classify import ClassifyInputError, classify_evidence
-from underwrite.measurement.availability import assess, cap, make_panel_read, make_policy
 
-ROOT = repo_root(Path(__file__))
 REQUIREMENTS: list[tuple[str, cf.Effect]] = [
     ("disqualifying-claim", "disqualifying"),
     ("validity-claim", "validity"),
@@ -132,46 +127,31 @@ def test_reasons_follow_native_precedence_whatever_the_claim_order() -> None:
         assert result.reason_codes == expected
 
 
-def _schema_reads() -> set[tuple[str, str]]:
-    """(verdict, availability.state) pairs read.v1's measured and not-measured shapes admit."""
-    schema = json.loads((ROOT / "contracts/read.v1.schema.json").read_text(encoding="utf-8"))
-    defs = schema["$defs"]
-    assert schema["oneOf"] == [
-        {"$ref": "#/$defs/measured_read"},
-        {"$ref": "#/$defs/not_measured_read"},
-    ]
-    states = defs["availability"]["properties"]["state"]["enum"]
-    measured = defs["measured_read"]
-    assert measured["if"]["properties"]["availability"]["properties"]["state"] == {
-        "const": "partial"
+@pytest.mark.parametrize(
+    "verdict,availability", tuple(itertools.product(cf.VERDICTS, cf.AVAILABILITY))
+)
+def test_classifier_admits_only_consistent_verdict_availability_pairs(
+    verdict: cf.Verdict, availability: cf.Availability
+) -> None:
+    allowed = {
+        ("pass", "full"),
+        ("warn", "full"),
+        ("fail", "full"),
+        ("warn", "partial"),
+        ("fail", "partial"),
+        ("not_measured", "full"),
+        ("not_measured", "partial"),
+        ("not_measured", "below_quorum"),
     }
-    partial_verdicts = measured["then"]["properties"]["verdict"]["enum"]
-    pairs = {
-        (verdict, state)
-        for verdict in defs["measured_verdict"]["enum"]
-        for state in measured["properties"]["availability"]["properties"]["state"]["enum"]
-        if state != "partial" or verdict in partial_verdicts
-    }
-    unmeasured = defs["not_measured_read"]
-    assert "availability" not in unmeasured["properties"]
-    return pairs | {(unmeasured["properties"]["verdict"]["const"], state) for state in states}
-
-
-def test_consistent_reads_are_exactly_what_read_v1_admits() -> None:
-    assert _schema_reads() == cf.CONSISTENT_READS
-
-
-def test_consistent_reads_cover_what_the_availability_cap_emits() -> None:
-    policy = make_policy(["a", "b", "c"], 2)
-    panels = {"full": ["a", "b", "c"], "partial": ["a", "b"], "below_quorum": ["a"]}
-    emitted: set[tuple[str, str]] = set()
-    for state, reported in panels.items():
-        availability = assess(policy, reported, {})
-        assert availability.state == state
-        for verdict in ("pass", "warn", "fail"):
-            capped = cap(make_panel_read(verdict, 0.5, False), availability)
-            emitted.add((capped.verdict, state))
-    assert emitted <= cf.CONSISTENT_READS
+    reads: dict[str, tuple[cf.Verdict, cf.Availability]] = {"claim": (verdict, availability)}
+    if (verdict, availability) not in allowed:
+        with pytest.raises(ClassifyInputError) as caught:
+            classify_evidence("held_out", [("claim", "validity")], reads, hard_failure=False)
+        assert caught.value.code == "READ_AVAILABILITY_INCONSISTENT"
+        return
+    result = classify_evidence("held_out", [("claim", "validity")], reads, hard_failure=False)
+    assert result.classification == ("confirmed" if verdict == "pass" else "indeterminate")
+    assert (verdict, availability) in cf.CONSISTENT_READS
 
 
 @pytest.mark.parametrize("state", ["full", "partial"])
