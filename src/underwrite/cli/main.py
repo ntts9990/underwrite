@@ -54,7 +54,6 @@ from underwrite.instrument.evidence.promptfoo_compat import (
 from underwrite.instrument.evidence.promptfoo_compat import (
     ROW_INDEX_SCHEMA as PROMPTFOO_AUTO_ROW_INDEX_SCHEMA,
 )
-from underwrite.instrument.ingest.accounting import SOURCE as PROMPTFOO_SOURCE
 from underwrite.instrument.ingest.codecs.promptfoo import SUPPORTED_VERSIONS as PROMPTFOO_VERSIONS
 from underwrite.instrument.ingest.deepeval_accounting import PROFILES as DEEPEVAL_PROFILES
 from underwrite.instrument.ingest.deepeval_accounting import SOURCE as DEEPEVAL_SOURCE
@@ -223,15 +222,6 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 ("file", "root", "id"),
                 (),
                 (record_promptfoo.AUTO_RECORD_SCHEMA,),
-            ),
-            *(
-                profile(
-                    f"audit-promptfoo|{version}",
-                    ("file", "version", "root", "id"),
-                    (),
-                    ("promptfoo_record.v1",),
-                )
-                for version in PROMPTFOO_VERSIONS
             ),
             profile(
                 "audit-deepeval",
@@ -457,24 +447,6 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 (),
                 (PROMPTFOO_AUTO_ROW_INDEX_SCHEMA,),
             ),
-        )
-        + tuple(
-            profile(
-                "|".join((PROMPTFOO_SOURCE[0], version)),
-                ("file", "version"),
-                (),
-                ("promptfoo_accounting.v1",),
-            )
-            for version in PROMPTFOO_VERSIONS
-        )
-        + tuple(
-            profile(
-                "|".join((PROMPTFOO_SOURCE[0], version, "row-index")),
-                ("file", "version", "view"),
-                (),
-                ("promptfoo_row_index.v1",),
-            )
-            for version in PROMPTFOO_VERSIONS
         ),
         _standalone(audit_promptfoo.main),
     ),
@@ -487,7 +459,7 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 f"promptfoo-{version}",
                 ("case",),
                 ("artifact_case.v1",),
-                ("promptfoo_accounting.v1",),
+                (PROMPTFOO_AUTO_ACCOUNTING_SCHEMA,),
             )
             for version in PROMPTFOO_VERSIONS
         ),
@@ -501,7 +473,7 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
             profile(
                 "promptfoo-accounting",
                 ("baseline", "candidate", "manifest"),
-                ("promptfoo_accounting.v1", "declared_comparison_case.v1"),
+                (PROMPTFOO_AUTO_ACCOUNTING_SCHEMA, "declared_comparison_case.v1"),
                 ("declared_comparison.v1",),
             ),
         ),

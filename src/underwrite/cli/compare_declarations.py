@@ -8,6 +8,7 @@ from typing import Any, cast
 
 from underwrite.cli.evidence import EvidenceError, read_validated, run_cli
 from underwrite.instrument.evidence.declarations import DeclarationError, compare_declarations
+from underwrite.instrument.evidence.promptfoo_compat import ACCOUNTING_SCHEMA
 
 AUDIT_MAX_BYTES = 1024 * 1024
 AUDIT_MAX_DEPTH = 32
@@ -23,10 +24,10 @@ LIMITATIONS = [
 
 def configure(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
-        "--baseline", required=True, type=Path, help="Local promptfoo_accounting.v1 JSON."
+        "--baseline", required=True, type=Path, help=f"Local {ACCOUNTING_SCHEMA} JSON."
     )
     parser.add_argument(
-        "--candidate", required=True, type=Path, help="Local promptfoo_accounting.v1 JSON."
+        "--candidate", required=True, type=Path, help=f"Local {ACCOUNTING_SCHEMA} JSON."
     )
     parser.add_argument(
         "--manifest", required=True, type=Path, help="Local declared_comparison_case.v1 JSON."
@@ -47,14 +48,14 @@ def _side(value: object) -> dict[str, Any]:
 def produce(args: argparse.Namespace) -> dict[str, object]:
     baseline, baseline_digest = read_validated(
         cast(Path, args.baseline),
-        "promptfoo_accounting.v1",
+        ACCOUNTING_SCHEMA,
         "/baseline",
         AUDIT_MAX_BYTES,
         AUDIT_MAX_DEPTH,
     )
     candidate, candidate_digest = read_validated(
         cast(Path, args.candidate),
-        "promptfoo_accounting.v1",
+        ACCOUNTING_SCHEMA,
         "/candidate",
         AUDIT_MAX_BYTES,
         AUDIT_MAX_DEPTH,

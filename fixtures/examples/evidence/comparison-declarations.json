@@ -1,7 +1,7 @@
 {
   "schema": "declared_comparison_case.v1",
   "baseline": {
-    "audit_digest": "sha256:6b7e6956302009b283d8fd8080e1e04ea22279f7478d073ab70250843bb7fbdf",
+    "audit_digest": "sha256:d01c7657515748b160c2315d6e6e0a297396d7327c8ad4802b3d8b503123810f",
     "run_ref": "synthetic-baseline",
     "conditions": {
       "suite": "synthetic-suite",
@@ -31,7 +31,7 @@
     }
   },
   "candidate": {
-    "audit_digest": "sha256:6d431e020c09b10345ecd036b0763cdf8e1776f533621aa5171bf16af832f271",
+    "audit_digest": "sha256:a0538612d294e482cf91d80601c1346c7a348d44d5f3175bd266c80cc55a5938",
     "run_ref": "synthetic-candidate",
     "conditions": {
       "suite": "synthetic-suite",

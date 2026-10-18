@@ -160,7 +160,7 @@ use `records audit-promptfoo FILE --root ROOT --id NEW_ID --json`. The default
 in 0.2.0 builds advertising `promptfoo_record.v2` is automatic SummaryV3
 accounting: omit `--version`. The source's producer version is a declaration or
 unknown, separate from the reader policy; do not guess it from file shape.
-Explicit `--version 0.123.0` or `--version 0.124.1` keeps the strict v1 record/report family.
+The unreleased checkout removes Promptfoo audit/capture `--version` and Python `version=`. Published 0.2.0 still retains those selectors; follow actual capabilities. Read old records as immutable data instead of relabeling or re-emitting v1.
 Published 0.1.1 predates auto input; follow the installed capability contract.
 Saved diagnostics identify the requested selection in
 record metadata and the new-profile invocation, not in `analysis/error.json`

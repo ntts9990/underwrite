@@ -7,19 +7,12 @@ from typing import cast
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
-from underwrite_core.canonical import content_digest, digest_bytes
+from underwrite_core.canonical import digest_bytes
 
-from underwrite.instrument.evidence.accounting import (
-    ROW_INDEX_LIMITATIONS,
-    ROW_INDEX_SCOPE,
-    AccountingError,
-    RowIndex,
-    audit_promptfoo,
-    audit_promptfoo_with_rows,
-)
 from underwrite.instrument.evidence.promptfoo_compat import (
     ACCOUNTING_SCHEMA,
     ROW_INDEX_SCHEMA,
+    SOURCE_FORMAT,
     PromptfooCompatibilityError,
     account_promptfoo_compatible,
 )
@@ -29,14 +22,12 @@ from underwrite.instrument.ingest.application import (
     DIAGNOSTICS,
     direct_file_read_error,
     instrument_diagnostic,
-    packaged_ingestor,
 )
 from underwrite.instrument.ingest.codecs.promptfoo import SUPPORTED_VERSIONS
 from underwrite.instrument.ingest.inspection import (
     InspectionError,
     inspect_artifact_with_projection,
 )
-from underwrite.instrument.ingest.project import Projection, Source
 from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
 from underwrite.instrument.ingest.transport import (
     DecodeError,
@@ -44,14 +35,6 @@ from underwrite.instrument.ingest.transport import (
     decode_json,
     read_local_file,
 )
-
-SOURCE = ("promptfoo.eval-output", "0.123.0")
-LIMITATIONS = [
-    "PLANNED_DENOMINATOR_UNKNOWN",
-    "CAUSE_UNKNOWN",
-    "SOURCE_CLAIMS_UNVERIFIED",
-    "NO_APPROVAL_AUTHORITY",
-]
 
 
 class AccountingCaseError(ValueError):
@@ -125,10 +108,12 @@ def _trusted_artifact_diagnostic(report: dict[str, object]) -> tuple[str, str] |
 
 
 def audit_case(path: Path) -> dict[str, object]:
-    """Audit an admitted Promptfoo manifest from its hash-checked projection and identity."""
+    """Audit the original captured projection after manifest path and hash admission."""
+    validator = _compatible_validator(False)
     try:
         report, projection = inspect_artifact_with_projection(
-            path, allowed_sources=frozenset((SOURCE[0], version) for version in SUPPORTED_VERSIONS)
+            path,
+            allowed_sources=frozenset((SOURCE_FORMAT, version) for version in SUPPORTED_VERSIONS),
         )
     except InspectionError as exc:
         raise _inspection_error(exc) from exc
@@ -142,84 +127,18 @@ def audit_case(path: Path) -> dict[str, object]:
             reason, location = trusted
             raise AccountingCaseError("INVALID_INPUT", reason, location)
         raise AccountingCaseError("INVALID_INPUT", "INVALID_ARTIFACT", "/artifact")
-    observation = report["observation"]
-    if not isinstance(observation, dict):
-        raise AccountingCaseError("INTERNAL_ERROR", "INTERNAL_ERROR")
-    observation_digest = cast(dict[str, object], observation).get("digest")
-    source = cast(dict[str, str], report["source"])
-    return _account_projection(
-        projection,
-        report["raw_hash"],
-        observation_digest,
-        "/artifact",
-        version=source["format_version"],
+    return _account_current_payload(
+        projection.payload, report["raw_hash"], row_index=False, validator=validator
     )
-
-
-def _account_projection(
-    projection: Projection,
-    raw_hash: object,
-    observation_digest: object,
-    location: str,
-    *,
-    version: str = SOURCE[1],
-    row_index: bool = False,
-) -> dict[str, object]:
-    summary = projection.payload.get("results")
-    if not isinstance(summary, dict):
-        raise AccountingCaseError("INTERNAL_ERROR", "INTERNAL_ERROR")
-    source = cast(dict[str, object], summary)
-    classified: list[RowIndex] = []
-    try:
-        if row_index:
-            counted, classified = audit_promptfoo_with_rows(
-                source.get("stats"), source.get("results")
-            )
-        else:
-            counted = audit_promptfoo(source.get("stats"), source.get("results"))
-    except AccountingError as exc:
-        if str(exc) == "ROW_LIMIT_EXCEEDED":
-            raise AccountingCaseError(
-                "COMPUTATION_LIMIT_EXCEEDED", "ROW_LIMIT_EXCEEDED", location
-            ) from exc
-        raise AccountingCaseError("INVALID_INPUT", str(exc), location) from exc
-    if not row_index and not isinstance(observation_digest, str):
-        raise AccountingCaseError("INTERNAL_ERROR", "INTERNAL_ERROR")
-    if row_index:
-        return {
-            "schema": "promptfoo_row_index.v1",
-            "source": {"format": SOURCE[0], "format_version": version},
-            "raw_hash": raw_hash,
-            "scope": dict(ROW_INDEX_SCOPE),
-            **counted,
-            "rows": classified,
-            "verification": [],
-            "limitations": list(ROW_INDEX_LIMITATIONS),
-        }
-    return {
-        "schema": "promptfoo_accounting.v1",
-        "source": {"format": SOURCE[0], "format_version": version},
-        "raw_hash": raw_hash,
-        "observation_digest": observation_digest,
-        **counted,
-        "limitations": list(LIMITATIONS),
-    }
 
 
 def read_promptfoo_file(path: Path) -> bytes:
     """Capture one complete bounded raw file with existing accounting diagnostics."""
     try:
-        raw = read_local_file(path, DEFAULT_MAX_BYTES)
+        return read_local_file(path, DEFAULT_MAX_BYTES)
     except TransportError as exc:
         code, reason = direct_file_read_error(exc)
         raise AccountingCaseError(code, reason, "/file") from None
-    return raw
-
-
-def validate_version(version: str) -> None:
-    """Reject unregistered producer selection before acquisition or storage."""
-    if type(version) is not str or version not in SUPPORTED_VERSIONS:
-        raise AccountingCaseError("UNSUPPORTED_FORMAT", "UNSUPPORTED_PROMPTFOO_VERSION")
 
 
 def _compatible_validator(row_index: bool) -> Draft202012Validator:
@@ -245,13 +164,24 @@ def _compatible_bytes(
             cast(str, diagnostic["reason"]),
             "/file",
         ) from None
+    return _account_current_payload(
+        payload, digest_bytes(raw), row_index=row_index, validator=validator
+    )
+
+
+def _account_current_payload(
+    payload: object, raw_hash: object, *, row_index: bool, validator: Draft202012Validator
+) -> dict[str, object]:
+    """Compose one current report from already captured original facts and byte identity."""
     try:
         counted = account_promptfoo_compatible(payload, row_index=row_index)
     except PromptfooCompatibilityError as exc:
         raise AccountingCaseError(exc.code, exc.reason, exc.location) from None
+    except Exception:
+        raise AccountingCaseError("INTERNAL_ERROR", "INTERNAL_ERROR") from None
     report = {
         "schema": ROW_INDEX_SCHEMA if row_index else ACCOUNTING_SCHEMA,
-        "raw_hash": digest_bytes(raw),
+        "raw_hash": raw_hash,
         **counted,
     }
     try:
@@ -265,66 +195,18 @@ def _compatible_bytes(
     return report
 
 
-def _audit_promptfoo_bytes(raw: bytes, *, version: str, row_index: bool) -> dict[str, object]:
-    validate_version(version)
-    try:
-        observed, projection = packaged_ingestor(
-            max_bytes=DEFAULT_MAX_BYTES, max_depth=DEFAULT_MAX_DEPTH
-        ).buffered_projection(raw, "promptfoo-file", Source(SOURCE[0], version, None))
-    except tuple(DIAGNOSTICS) as exc:
-        diagnostic = instrument_diagnostic(exc, "ingest")
-        code = cast(str, diagnostic["code"])
-        if code not in {
-            "SOURCE_READ_FAILED",
-            "INPUT_LIMIT_EXCEEDED",
-            "UNSUPPORTED_FORMAT",
-            "SCHEMA_CONFIGURATION_ERROR",
-        }:
-            code = "INVALID_INPUT"
-        location = "" if code == "SCHEMA_CONFIGURATION_ERROR" else "/file"
-        raise AccountingCaseError(code, cast(str, diagnostic["reason"]), location) from None
-    observation = observed.observation
-    return _account_projection(
-        projection,
-        cast(dict[str, object], observation["raw"])["hash"],
-        content_digest(observation),
-        "/file",
-        version=version,
-        row_index=row_index,
-    )
+def audit_promptfoo_bytes(raw: bytes) -> dict[str, object]:
+    """Audit one bounded buffer with the current selected-field contract."""
+    return _compatible_bytes(raw, row_index=False, validator=_compatible_validator(False))
 
 
-def audit_promptfoo_bytes(raw: bytes, *, version: str | None = None) -> dict[str, object]:
-    """Audit the supplied buffer, retaining the original projection and byte bounds."""
-    if version is None:
-        return _compatible_bytes(raw, row_index=False, validator=_compatible_validator(False))
-    return _audit_promptfoo_bytes(raw, version=version, row_index=False)
+def audit_promptfoo_file(path: Path) -> dict[str, object]:
+    """Audit an export once; expected-hash checks remain in audit_case."""
+    validator = _compatible_validator(False)
+    return _compatible_bytes(read_promptfoo_file(path), row_index=False, validator=validator)
 
 
-def audit_promptfoo_file(path: Path, *, version: str | None = None) -> dict[str, object]:
-    """Audit a pinned raw export once; expected-hash checks remain in audit_case."""
-    if version is None:
-        validator = _compatible_validator(False)
-        return _compatible_bytes(read_promptfoo_file(path), row_index=False, validator=validator)
-    validate_version(version)
-    return audit_promptfoo_bytes(read_promptfoo_file(path), version=version)
-
-
-def audit_promptfoo_row_index_file(path: Path, *, version: str | None = None) -> dict[str, object]:
-    """Return a checked content-minimized row view after one bounded file read."""
-    if version is None:
-        validator = _compatible_validator(True)
-        return _compatible_bytes(read_promptfoo_file(path), row_index=True, validator=validator)
-    validate_version(version)
-    try:
-        report = _audit_promptfoo_bytes(read_promptfoo_file(path), version=version, row_index=True)
-        packaged_validator("promptfoo_row_index.v1").validate(report)  # pyright: ignore[reportUnknownMemberType]
-    except AccountingCaseError:
-        raise
-    except SchemaConfigurationError:
-        raise AccountingCaseError(
-            "SCHEMA_CONFIGURATION_ERROR", "INVALID_PACKAGED_CONTRACT"
-        ) from None
-    except Exception:
-        raise AccountingCaseError("INTERNAL_ERROR", "PROMPTFOO_ROW_INDEX_INVALID") from None
-    return report
+def audit_promptfoo_row_index_file(path: Path) -> dict[str, object]:
+    """Return a checked content-minimized current row view after one bounded read."""
+    validator = _compatible_validator(True)
+    return _compatible_bytes(read_promptfoo_file(path), row_index=True, validator=validator)

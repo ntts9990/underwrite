@@ -13,7 +13,7 @@ from _repo_paths import repo_root
 from jsonschema import Draft202012Validator
 from underwrite_core.canonical import canonical_bytes, content_digest
 
-from underwrite.cli import compare_declarations
+from underwrite.cli import audit_promptfoo, compare_declarations
 from underwrite.cli.evidence import run_cli
 from underwrite.instrument.ingest.accounting import audit_case
 
@@ -240,3 +240,55 @@ def test_input_size_limits_are_typed(
     code, error, stdout, _ = _run(baseline, candidate, manifest_path, capsys)
     assert code == ERROR_EXIT and stdout == ""
     assert error["code"] == "INPUT_LIMIT_EXCEEDED"
+
+
+def test_default_audit_output_feeds_comparison_without_a_version_selector(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    baseline, candidate, manifest_path, manifest = _inputs(tmp_path)
+    source = CASE.with_name("synthetic-promptfoo-complete.json")
+    assert audit_promptfoo.main([str(source), "--json"]) == 0
+    streams = capsys.readouterr()
+    assert streams.err == ""
+    audit = json.loads(streams.out)
+    assert audit["schema"] == "promptfoo_accounting.v2"
+    for side, path in (("baseline", baseline), ("candidate", candidate)):
+        path.write_text(streams.out)
+        manifest[side]["audit_digest"] = content_digest(audit)
+    manifest_path.write_bytes(canonical_bytes(manifest) + b"\n")
+    code, report, _, stderr = _run(baseline, candidate, manifest_path, capsys)
+    assert code == 0 and stderr == ""
+    assert report["input_digests"] == {
+        side: content_digest(audit) for side in ("baseline", "candidate")
+    }
+    assert report["actual_conditions_verified"] is False
+
+
+@pytest.mark.parametrize("old_sides", [("baseline",), ("candidate",), ("baseline", "candidate")])
+def test_comparison_refuses_old_generation_even_with_matching_declared_digests(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], old_sides: tuple[str, ...]
+) -> None:
+    baseline, candidate, manifest_path, manifest = _inputs(tmp_path)
+    original = (ROOT / "fixtures/conformance/promptfoo/accounting.v1.json").read_bytes()
+    old_report = json.loads(original)
+    for side, path in (("baseline", baseline), ("candidate", candidate)):
+        if side in old_sides:
+            path.write_bytes(original)
+            manifest[side]["audit_digest"] = content_digest(old_report)
+    manifest_path.write_bytes(canonical_bytes(manifest) + b"\n")
+    code, error, stdout, _ = _run(baseline, candidate, manifest_path, capsys)
+    assert code == ERROR_EXIT and stdout == ""
+    assert error["code"] == "INVALID_INPUT"
+    assert error["reason"] == "SCHEMA_VALIDATION_FAILED"
+    assert error["location"] == ("/baseline" if "baseline" in old_sides else "/candidate")
+
+
+def test_teaching_reports_and_manifest_digests_follow_current_source_outputs() -> None:
+    directory = CASE.parent
+    manifest = json.loads((directory / "comparison-declarations.json").read_bytes())
+    for side, stem in (("baseline", "complete"), ("candidate", "candidate")):
+        expected = audit_case(directory / f"synthetic-promptfoo-{stem}.case.json")
+        assert (directory / f"{side}-accounting.json").read_bytes() == canonical_bytes(
+            expected
+        ) + b"\n"
+        assert manifest[side]["audit_digest"] == content_digest(expected)

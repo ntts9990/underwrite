@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 from typing import Any, cast
@@ -20,28 +19,26 @@ ERROR_EXIT = 2
 
 
 def _invoke(
-    path: Path, capsys: pytest.CaptureFixture[str], *, version: str = "0.124.1"
+    path: Path, capsys: pytest.CaptureFixture[str]
 ) -> tuple[int, str, str]:
     code = main.main(
-        ["audit-promptfoo", str(path), "--version", version, "--view", "row-index", "--json"]
+        ["audit-promptfoo", str(path), "--view", "row-index", "--json"]
     )
     streams = capsys.readouterr()
     return code, streams.out, streams.err
 
 
-def test_pinned_rows_and_default_json_are_stable(capsys: pytest.CaptureFixture[str]) -> None:
-    assert main.main(["audit-promptfoo", str(VERSIONED), "--version", "0.124.1", "--json"]) == 0
+def test_current_rows_and_default_json_match_api(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main.main(["audit-promptfoo", str(VERSIONED), "--json"]) == 0
     default = capsys.readouterr()
     assert default.err == ""
-    assert hashlib.sha256(default.out.encode()).hexdigest() == (
-        "8d5b50bbdc0f4eb448e4e6360eefc34f36e6808cdeb09e85ce0fdd8ba4e4cc06"
-    )
+    assert json.loads(default.out) == adapter.audit_promptfoo_file(VERSIONED)
 
     code, stdout, stderr = _invoke(VERSIONED, capsys)
     assert code == 0 and stderr == ""
     result = json.loads(stdout)
-    assert result == adapter.audit_promptfoo_row_index_file(VERSIONED, version="0.124.1")
-    assert result["schema"] == "promptfoo_row_index.v1"
+    assert result == adapter.audit_promptfoo_row_index_file(VERSIONED)
+    assert result["schema"] == "promptfoo_row_index.v2"
     assert result["raw_hash"] == digest_bytes(VERSIONED.read_bytes())
     assert [
         (
@@ -73,9 +70,10 @@ def test_both_selected_versions_have_importable_entrypoint(
     capsys: pytest.CaptureFixture[str], version: str, folder: str
 ) -> None:
     path = GOLDEN / folder / "results.json"
-    code, stdout, stderr = _invoke(path, capsys, version=version)
+    code, stdout, stderr = _invoke(path, capsys)
     assert code == 0 and stderr == ""
-    assert json.loads(stdout) == adapter.audit_promptfoo_row_index_file(path, version=version)
+    assert json.loads(stdout) == adapter.audit_promptfoo_row_index_file(path)
+    assert json.loads(stdout)["source"]["producer_version"] == version
 
 
 def test_hostile_source_content_and_path_do_not_escape(
@@ -112,7 +110,7 @@ def test_hostile_source_content_and_path_do_not_escape(
     assert result["rows"][0]["source_success"] is True
     assert all("score" not in row and "cost" not in row for row in result["rows"])
 
-    assert audit_promptfoo.main([str(path), "--version", "0.124.1", "--view", "row-index"]) == 0
+    assert audit_promptfoo.main([str(path), "--view", "row-index"]) == 0
     human = capsys.readouterr()
     assert human.err == "" and canary not in human.out
 
@@ -134,7 +132,7 @@ def test_selected_view_reads_file_once(tmp_path: Path, monkeypatch: pytest.Monke
         return original(selected, maximum)
 
     monkeypatch.setattr(adapter, "read_local_file", traced)
-    adapter.audit_promptfoo_row_index_file(path, version="0.124.1")
+    adapter.audit_promptfoo_row_index_file(path)
     assert reads == [path]
 
 
@@ -163,13 +161,13 @@ def test_row_index_view_rejects_version_before_read(
 def test_row_index_api_projection_fault_has_finite_diagnostic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fail(raw: bytes, *, version: str, row_index: bool) -> dict[str, object]:
-        del raw, version, row_index
+    def fail(payload: object, *, row_index: bool) -> dict[str, object]:
+        del payload, row_index
         raise RuntimeError("PRIVATE_PROMPTFOO_CANARY")
 
-    monkeypatch.setattr(adapter, "_audit_promptfoo_bytes", fail)
+    monkeypatch.setattr(adapter, "account_promptfoo_compatible", fail)
     with pytest.raises(adapter.AccountingCaseError) as caught:
-        adapter.audit_promptfoo_row_index_file(VERSIONED, version="0.124.1")
+        adapter.audit_promptfoo_row_index_file(VERSIONED)
     assert caught.value.code == "INTERNAL_ERROR"
-    assert caught.value.reason == "PROMPTFOO_ROW_INDEX_INVALID"
+    assert caught.value.reason == "INTERNAL_ERROR"
     assert "PRIVATE_PROMPTFOO_CANARY" not in str(caught.value)

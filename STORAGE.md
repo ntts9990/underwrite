@@ -334,21 +334,20 @@ record specification:
 underwrite records audit-promptfoo FILE --root PRIVATE_STORE --id NEW_ID --json
 ```
 
-In 0.2.0 builds advertising the v2 default, omitted `--version` uses
-SummaryV3 selected-field accounting and returns `promptfoo_record.v2`. A producer
-version is only a declaration, or unknown if absent; it is not the selected reader
-profile or a condition requiring users to match package releases. New unconsumed
-fields are retained in source bytes without being interpreted. Unknown summary
-generations and malformed consumed fields produce finite diagnostics.
+Current checkout capture uses SummaryV3 selected-field accounting and returns
+`promptfoo_record.v2`. Producer version is a source declaration or unknown, not
+a selected reader or a requirement to match package releases. Unconsumed fields
+are retained without interpretation. Unsupported summaries and malformed consumed
+fields produce finite diagnostics.
 
-Published 0.1.1 predates auto input. Explicit `--version 0.123.0` and
-`--version 0.124.1` retain the strict `promptfoo_record.v1` behavior in 0.2.0 too. For a saved explicit-profile diagnostic, recover the selection from record metadata using
-`records show` or from `arguments.format_version` in the new-profile invocation
-using `records read-json --name invocation.json`. The saved error alone does not
-identify that selection. Auto records identify automatic selection separately;
-failed input selection does not claim a reader was successfully applied.
-If storage fails, such recovery is not promised; retain
-the explicit invocation and returned analysis/storage outcomes.
+The unreleased checkout removes Promptfoo `--version` and Python `version=`.
+Published 0.2.0 still supports the old selectors; see [migration](MIGRATION.md).
+Existing v1 records remain readable without their old schema resources. For an
+old explicit-profile diagnostic, its original metadata/invocation may identify
+the selected source profile; the saved error alone does not. Current records
+identify automatic selection separately, and a failed selection does not claim
+an applied reader. Do not rewrite old metadata or overwrite a record ID. Storage
+failure does not promise later recovery; retain the returned independent outcomes.
 
 This explicitly stores the **entire selected file**, the accounting result or
 diagnostic, and structured invocation metadata. It analyzes and saves the same
@@ -357,7 +356,7 @@ stores only the diagnostic and invocation. Even a diagnostic record consumes the
 new ID. Invocation path fields are canonical display metadata, not byte-exact
 argv or a claim that a subprocess ran.
 
-Both Promptfoo record contracts return independent `analysis` and `storage` objects: exit 0
+The current Promptfoo record contract returns independent `analysis` and `storage` objects: exit 0
 means a result was produced and saved, exit 2 means analysis failed but its
 diagnostic was saved, and exit 3 means storage failed (inspect analysis separately).
 A count mismatch is a produced result, not approval or an invocation error.

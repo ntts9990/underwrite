@@ -113,7 +113,7 @@ def _promptfoo_numeric_pilot(
     )
     _cli_json(
         cli,
-        ["audit-promptfoo", str(source), "--version", "0.123.0"],
+        ["audit-promptfoo", str(source)],
         work / "promptfoo-integral-direct.json",
         work,
     )
@@ -123,7 +123,7 @@ def _promptfoo_numeric_pilot(
         "raw and manifest canonical output differs",
     )
     for key in baseline:
-        if key in {"raw_hash", "observation_digest"}:
+        if key == "raw_hash":
             wheel.require(
                 audited[key] != baseline[key], "different raw sources lost their identity"
             )
@@ -142,13 +142,10 @@ def _promptfoo_record_pilot(
     original: Path,
     work: Path,
     expected: dict[str, object],
-    *,
-    version: str | None = "0.123.0",
 ) -> None:
     raw = original.read_bytes()
     source = work / "selected-promptfoo.json"
     source.write_bytes(raw)
-    selection = [] if version is None else ["--version", version]
     store = work / "promptfoo-records"
     report = _cli_json(
         cli,
@@ -160,7 +157,6 @@ def _promptfoo_record_pilot(
             str(store),
             "--id",
             "captured",
-            *selection,
         ],
         work / "promptfoo-record.json",
         work,
@@ -211,7 +207,6 @@ def _promptfoo_record_pilot(
             str(store),
             "--id",
             "diagnostic",
-            *selection,
             "--json",
         ],
         work,
@@ -265,20 +260,12 @@ def _promptfoo_record_pilot(
     )
     content = cast(dict[str, object], invocation["content"])
     arguments = cast(dict[str, object], content["arguments"])
-    if version is None:
-        wheel.require(
-            arguments["selection_mode"] == "auto"
-            and "reader_profile" not in arguments
-            and "producer_version" not in arguments,
-            "failed automatic input selection fabricated an applied reader or source version",
-        )
-    elif version == "0.123.0":
-        wheel.require("format_version" not in arguments, "legacy default invocation bytes changed")
-    else:
-        wheel.require(
-            arguments["format_version"] == version,
-            "saved Promptfoo diagnostic lost its selected version",
-        )
+    wheel.require(
+        arguments["selection_mode"] == "auto"
+        and "reader_profile" not in arguments
+        and "producer_version" not in arguments,
+        "failed automatic input selection fabricated an applied reader or source version",
+    )
 
 
 def _promptfoo_manifest_pilot(cli: Path, directory: Path, raw: bytes) -> None:
@@ -302,12 +289,17 @@ def _promptfoo_manifest_pilot(cli: Path, directory: Path, raw: bytes) -> None:
     counted = _cli_json(
         cli, ["audit-counts", str(case)], directory / "manifest-audit.json", directory
     )
+    identity = cast(dict[str, object], counted["source"])
     wheel.require(
-        counted["raw_hash"] == expected_hash
-        and counted["observation_digest"]
-        == cast(dict[str, object], inspected["observation"])["digest"]
+        counted["schema"] == "promptfoo_accounting.v2"
+        and counted["raw_hash"] == inspected["raw_hash"] == expected_hash
+        and inspected["expected_hash_check"] == "matched"
+        and identity["producer_version"] == json.loads(raw)["metadata"]["promptfooVersion"]
+        and identity["producer_version_state"] == "declared"
+        and identity["claims_verified"] is False
+        and "observation_digest" not in counted
         and counted["row_tallies"] == {"successes": 3, "failures": 1, "errors": 3, "total": 7},
-        "manifest audit lost hash binding, explicit source identity or counts",
+        "manifest audit lost raw hash binding, declared source identity or counts",
     )
     artifact["expected_hash"] = "sha256:" + "0" * 64
     case.write_text(json.dumps(manifest), encoding="utf-8")
@@ -351,6 +343,23 @@ def _promptfoo_auto_mutations(cli: Path, source: Path, work: Path) -> None:
 
 
 def _promptfoo_auto_pilot(cli: Path, work: Path) -> None:
+    retired = ("promptfoo_accounting", "promptfoo_row_index", "promptfoo_record")
+    assets = wheel.success(
+        [
+            str(cli.with_name("python")),
+            "-c",
+            "import json,sys; from importlib.resources import files; "
+            "names=json.loads(sys.argv[1]); "
+            "print(json.dumps({name: files('underwrite').joinpath('_contracts', "
+            "name+'.v1.schema.json').is_file() for name in names}))",
+            json.dumps(retired),
+        ],
+        work,
+    )
+    wheel.require(
+        json.loads(assets.stdout) == {name: False for name in retired},
+        "installed package retained superseded Promptfoo output schemas",
+    )
     for folder in ("promptfoo", "promptfoo-0.124.1"):
         directory = work / f"{folder}-auto"
         directory.mkdir()
@@ -361,11 +370,15 @@ def _promptfoo_auto_pilot(cli: Path, work: Path) -> None:
         report = _cli_json(
             cli, ["audit-promptfoo", str(source)], directory / "auto.json", directory
         )
-        legacy = _cli_json(
-            cli,
-            ["audit-promptfoo", str(source), "--version", declared_version],
-            directory / "explicit.json",
+        removed = wheel.command(
+            [str(cli), "audit-promptfoo", str(source), "--version", declared_version, "--json"],
             directory,
+        )
+        wheel.require(
+            removed.returncode == EVIDENCE_ERROR_EXIT
+            and removed.stdout == ""
+            and json.loads(removed.stderr)["code"] == "USAGE_ERROR",
+            "removed Promptfoo output selector was not refused",
         )
         wheel.require(
             report["schema"] == "promptfoo_accounting.v2"
@@ -380,19 +393,6 @@ def _promptfoo_auto_pilot(cli: Path, work: Path) -> None:
             and identity["claims_verified"] is False,
             "auto accounting lost declared-version limits",
         )
-        wheel.require(
-            all(
-                report[key] == legacy[key]
-                for key in (
-                    "producer_stats",
-                    "row_tallies",
-                    "deltas",
-                    "declared_relation",
-                    "findings",
-                )
-            ),
-            "auto accounting introduced a different count classifier",
-        )
         api = wheel.success(
             [
                 str(cli.with_name("python")),
@@ -405,7 +405,7 @@ def _promptfoo_auto_pilot(cli: Path, work: Path) -> None:
             directory,
         )
         wheel.require(json.loads(api.stdout) == report, "installed auto API and CLI disagree")
-        _promptfoo_record_pilot(cli, source, directory, report, version=None)
+        _promptfoo_record_pilot(cli, source, directory, report)
         verified = _cli_json(
             cli,
             [
@@ -446,7 +446,7 @@ def _promptfoo_current_pilot(cli: Path, work: Path) -> None:
     wheel.require(projected["payload"] == json.loads(raw), "new profile changed source")
     report = _cli_json(
         cli,
-        ["audit-promptfoo", str(source), "--version", "0.124.1"],
+        ["audit-promptfoo", str(source)],
         directory / "accounting.json",
         directory,
     )
@@ -458,7 +458,7 @@ def _promptfoo_current_pilot(cli: Path, work: Path) -> None:
     )
     row_view = _cli_json(
         cli,
-        ["audit-promptfoo", str(source), "--version", "0.124.1", "--view", "row-index"],
+        ["audit-promptfoo", str(source), "--view", "row-index"],
         directory / "row-index.json",
         directory,
     )
@@ -473,7 +473,7 @@ def _promptfoo_current_pilot(cli: Path, work: Path) -> None:
     )
     rows = cast(list[dict[str, object]], source_rows)
     wheel.require(
-        row_view.get("schema") == "promptfoo_row_index.v1"
+        row_view.get("schema") == "promptfoo_row_index.v2"
         and row_view.get("raw_hash") == "sha256:" + hashlib.sha256(raw).hexdigest()
         and [row.get("row_index") for row in rows] == list(range(expected["total"]))
         and [row.get("category") for row in rows]
@@ -486,7 +486,7 @@ def _promptfoo_current_pilot(cli: Path, work: Path) -> None:
         and row_view.get("verification") == [],
         "installed Promptfoo row index changed selection, identity or content boundary",
     )
-    _promptfoo_record_pilot(cli, source, directory, report, version="0.124.1")
+    _promptfoo_record_pilot(cli, source, directory, report)
     _promptfoo_manifest_pilot(cli, directory, raw)
     refused = wheel.command(
         [
@@ -753,17 +753,18 @@ def _record_pilots(cli: Path, fixtures: Path, work: Path) -> None:
         ),
         (
             "audit-promptfoo",
-            "promptfoo.eval-output|0.124.1",
+            "promptfoo.eval-output|auto",
             "promptfoo-0.124.1/results.json",
             "0.124.1",
-            "promptfoo_accounting.v1",
+            "promptfoo_accounting.v2",
         ),
     ):
         descriptor = next(item for item in commands if item["command"] == command)
         profiles = cast(list[dict[str, object]], descriptor["profiles"])
         selected = next(item for item in profiles if item["name"] == name)
         wheel.require(
-            selected["required_inputs"] == ["file", "version"]
+            selected["required_inputs"]
+            == (["file"] if command == "audit-promptfoo" else ["file", "version"])
             and selected["output_schemas"] == [schema],
             f"installed {name} capability selector changed",
         )
@@ -774,7 +775,9 @@ def _record_pilots(cli: Path, fixtures: Path, work: Path) -> None:
         observed = _cli_json(cli, args, work / f"{command}-advertised.json", work)
         source = cast(dict[str, object], observed["source"])
         wheel.require(
-            observed["schema"] == schema and source["format_version"] == version,
+            observed["schema"] == schema
+            and source["producer_version" if command == "audit-promptfoo" else "format_version"]
+            == version,
             f"installed {name} capability selected the wrong source profile",
         )
     audit = _cli_json(

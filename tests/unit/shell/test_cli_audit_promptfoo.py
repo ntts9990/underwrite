@@ -14,6 +14,8 @@ from underwrite_core.canonical import canonical_bytes, digest_bytes
 from underwrite.cli import audit_counts, audit_promptfoo
 from underwrite.cli.evidence import run_cli
 from underwrite.instrument.evidence import accounting as pure
+from underwrite.instrument.evidence import promptfoo_compat
+from underwrite.instrument.evidence.promptfoo_compat import ACCOUNTING_SCHEMA, SOURCE_FORMAT
 from underwrite.instrument.ingest import accounting as adapter
 from underwrite.instrument.ingest.transport import TransportError
 
@@ -24,12 +26,12 @@ ERROR_EXIT = 2
 
 def files(tmp_path: Path, raw: bytes | None = None) -> tuple[Path, Path]:
     manifest = case(tmp_path, GOLDEN.read_bytes() if raw is None else raw)
-    update(manifest, "source", {"format": adapter.SOURCE[0], "format_version": adapter.SOURCE[1]})
+    update(manifest, "source", {"format": SOURCE_FORMAT, "format_version": "0.123.0"})
     return tmp_path / "artifact.json", manifest
 
 
 def invoke(path: Path, capsys: pytest.CaptureFixture[str]) -> tuple[int, dict[str, Any], str, str]:
-    code = audit_promptfoo.main([str(path), "--version", adapter.SOURCE[1], "--json"])
+    code = audit_promptfoo.main([str(path), "--json"])
     text = capsys.readouterr()
     return code, json.loads(text.out if code == 0 else text.err), text.out, text.err
 
@@ -49,17 +51,15 @@ def test_raw_and_default_manifest_outputs_are_byte_identical(
     assert {path.name: path.read_bytes() for path in tmp_path.iterdir()} == before
 
 
-def test_explicit_manifest_metadata_changes_digest_not_accounting(
+def test_manifest_locators_do_not_change_current_source_accounting(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     artifact, manifest = files(tmp_path)
     _, raw, _, _ = invoke(artifact, capsys)
     update(manifest, "source", {"ref": "source-record", "locator": "local-export"})
     recorded = adapter.audit_case(manifest)
-    assert recorded["observation_digest"] != raw["observation_digest"]
-    assert {key: value for key, value in recorded.items() if key != "observation_digest"} == {
-        key: value for key, value in raw.items() if key != "observation_digest"
-    }
+    assert recorded == raw
+    assert "observation_digest" not in recorded
 
 
 def test_expected_hash_checks_remain_an_explicit_manifest_guarantee(
@@ -67,9 +67,7 @@ def test_expected_hash_checks_remain_an_explicit_manifest_guarantee(
 ) -> None:
     artifact, manifest = files(tmp_path)
     update(manifest, "artifact", {"expected_hash": digest_bytes(artifact.read_bytes())})
-    assert adapter.audit_case(manifest) == adapter.audit_promptfoo_file(
-        artifact, version=adapter.SOURCE[1]
-    )
+    assert adapter.audit_case(manifest) == adapter.audit_promptfoo_file(artifact)
     update(manifest, "artifact", {"expected_hash": "sha256:" + "0" * 64})
     assert audit_counts.main([str(manifest), "--json"]) == ERROR_EXIT
     result = capsys.readouterr()
@@ -93,7 +91,7 @@ def test_raw_input_is_read_once_without_a_generated_manifest(
         return original(path, limit)
 
     monkeypatch.setattr(adapter, "read_local_file", read)
-    adapter.audit_promptfoo_file(artifact, version=adapter.SOURCE[1])
+    adapter.audit_promptfoo_file(artifact)
     assert calls == [artifact]
     assert list(tmp_path.iterdir()) == [artifact]
 
@@ -102,12 +100,12 @@ def test_integral_float_counts_use_original_projection_and_preserve_identity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     artifact, _ = files(tmp_path)
-    original_report = adapter.audit_promptfoo_file(artifact, version=adapter.SOURCE[1])
+    original_report = adapter.audit_promptfoo_file(artifact)
     data = json.loads(artifact.read_bytes())
     for key in ("successes", "failures", "errors"):
         data["results"]["stats"][key] = float(data["results"]["stats"][key])
     artifact.write_text(json.dumps(data), encoding="utf-8")
-    original = adapter.audit_promptfoo
+    original = promptfoo_compat.audit_promptfoo
     types: list[type[object]] = []
 
     def count(stats: object, rows: object) -> pure.AccountingResult:
@@ -115,11 +113,11 @@ def test_integral_float_counts_use_original_projection_and_preserve_identity(
         types.append(type(cast(dict[str, object], stats)["successes"]))
         return original(cast(dict[str, object], stats), rows)
 
-    monkeypatch.setattr(adapter, "audit_promptfoo", count)
-    actual = adapter.audit_promptfoo_file(artifact, version=adapter.SOURCE[1])
+    monkeypatch.setattr(promptfoo_compat, "audit_promptfoo", count)
+    actual = adapter.audit_promptfoo_file(artifact)
     assert types == [float]
     for key, expected in original_report.items():
-        if key in {"raw_hash", "observation_digest"}:
+        if key == "raw_hash":
             assert actual[key] != expected
         else:
             assert actual[key] == expected
@@ -171,10 +169,10 @@ def test_existing_resource_policies_keep_typed_refusals(
     if axis == "output":
         code = run_cli(
             "audit-promptfoo",
-            [str(artifact), "--version", adapter.SOURCE[1], "--json"],
+            [str(artifact), "--json"],
             audit_promptfoo.configure,
             audit_promptfoo.produce,
-            "promptfoo_accounting.v1",
+            ACCOUNTING_SCHEMA,
             output_max_bytes=1,
         )
         streams = capsys.readouterr()
@@ -192,7 +190,7 @@ def test_existing_resource_policies_keep_typed_refusals(
     assert error["code"] == (
         "COMPUTATION_LIMIT_EXCEEDED" if axis == "rows" else "INPUT_LIMIT_EXCEEDED"
     )
-    assert error["location"] == "/file"
+    assert error["location"] == ("/results/results" if axis == "rows" else "/file")
 
 
 @pytest.mark.parametrize("value", [-1, 0.5, True, None, "1"])
@@ -220,6 +218,20 @@ def test_no_file_argument_uses_existing_usage_error(capsys: pytest.CaptureFixtur
     assert streams.out == "" and json.loads(streams.err)["code"] == "USAGE_ERROR"
 
 
+def test_removed_version_selector_is_a_finite_usage_error_before_acquisition(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def forbidden(_: Path) -> bytes:
+        pytest.fail("removed selector caused input acquisition")
+
+    monkeypatch.setattr(adapter, "read_promptfoo_file", forbidden)
+    assert audit_promptfoo.main(["private-file", "--version", "0.123.0", "--json"]) == ERROR_EXIT
+    streams = capsys.readouterr()
+    assert streams.out == ""
+    assert json.loads(streams.err)["code"] == "USAGE_ERROR"
+    assert "private-file" not in streams.err
+
+
 @pytest.mark.parametrize("fault", ["unsafe_integer", "total_overflow"])
 def test_numeric_range_and_total_overflow_keep_existing_owned_reasons(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], fault: str
@@ -237,7 +249,7 @@ def test_numeric_range_and_total_overflow_keep_existing_owned_reasons(
     assert code == ERROR_EXIT and stdout == ""
     assert error["code"] == "INVALID_INPUT"
     assert error["reason"] == (
-        "INT_OUT_OF_SAFE_RANGE" if fault == "unsafe_integer" else "COUNT_TOTAL_OVERFLOW"
+        "INVALID_COUNT" if fault == "unsafe_integer" else "COUNT_TOTAL_OVERFLOW"
     )
 
 
@@ -248,11 +260,10 @@ def test_raw_schema_failure_is_not_an_input_content_failure(
 
     artifact, _ = files(tmp_path)
 
-    def fail(*, max_bytes: int, max_depth: int) -> Any:
-        del max_bytes, max_depth
-        raise SchemaConfigurationError("INVALID_OBSERVATION_SCHEMA")
+    def fail(name: str) -> Any:
+        raise SchemaConfigurationError("INVALID_INSPECTION_SCHEMA")
 
-    monkeypatch.setattr(adapter, "packaged_ingestor", fail)
+    monkeypatch.setattr(adapter, "packaged_validator", fail)
     code, error, stdout, stderr = invoke(artifact, capsys)
     assert code == ERROR_EXIT and stdout == ""
     assert error["code"] == "SCHEMA_CONFIGURATION_ERROR"

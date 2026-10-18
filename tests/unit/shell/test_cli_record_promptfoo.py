@@ -33,8 +33,6 @@ def invoke(
             str(store),
             "--id",
             identifier,
-            "--version",
-            adapter.SOURCE[1],
             "--json",
         ]
     )
@@ -61,9 +59,7 @@ def test_saved_result_matches_existing_audit_and_records_actual_composition(
     code, report, stdout, stderr = invoke(path, store, capsys)
     assert code == report["exit_code"] == 0 and stderr == ""
     assert stdout.encode() == canonical_bytes(report) + b"\n"
-    assert report["analysis"]["report"] == adapter.audit_promptfoo_file(
-        path, version=adapter.SOURCE[1]
-    )
+    assert report["analysis"]["report"] == adapter.audit_promptfoo_file(path)
     assert report["source"] == {
         "state": "captured",
         "raw_hash": digest_bytes(raw),
@@ -87,6 +83,10 @@ def test_saved_result_matches_existing_audit_and_records_actual_composition(
         "source_path_display": str(path),
         "root_display": str(store),
         "record_id": "sample",
+        "selection_mode": "auto",
+        "reader_profile": report["analysis"]["report"]["reader_profile"],
+        "producer_version_state": "declared",
+        "producer_version": "0.123.0",
     }
     assert not {"argv", "cwd", "stdout", "exit_code", "manifest_digest"} & invocation.keys()
     assert path.read_bytes() == raw
@@ -155,7 +155,7 @@ def test_source_mutation_after_capture_does_not_change_saved_or_analyzed_bytes(
         return raw
 
     monkeypatch.setattr(command, "read_promptfoo_file", mutate)
-    report = command.run_record_promptfoo(path, store, "sample", version=adapter.SOURCE[1])
+    report = command.run_record_promptfoo(path, store, "sample")
     assert report["exit_code"] == 0 and reads == [path]
     analysis = cast(dict[str, Any], report["analysis"])
     assert analysis["report"]["raw_hash"] == digest_bytes(original_bytes)
@@ -255,8 +255,6 @@ def test_output_admission_failure_calls_no_save(
         str(store),
         "--id",
         "sample",
-        "--version",
-        adapter.SOURCE[1],
         *(["--json"] if as_json else []),
     ]
     assert command.main(args) == ANALYSIS_ERROR_EXIT
@@ -293,9 +291,7 @@ def test_invalid_id_is_rejected_before_acquisition(
 
     monkeypatch.setattr(command, "read_promptfoo_file", forbidden)
     with pytest.raises(command.EvidenceError) as caught:
-        command.run_record_promptfoo(
-            tmp_path / "missing", tmp_path / "store", "../invalid", version=adapter.SOURCE[1]
-        )
+        command.run_record_promptfoo(tmp_path / "missing", tmp_path / "store", "../invalid")
     assert caught.value.payload["code"] == "USAGE_ERROR"
 
 
@@ -310,9 +306,7 @@ def test_undecodable_display_path_is_storage_failure_not_lost_analysis(
 
     monkeypatch.setattr(command, "read_promptfoo_file", read)
     store = tmp_path / "store"
-    report = command.run_record_promptfoo(
-        Path("private-\ud800"), store, "sample", version=adapter.SOURCE[1]
-    )
+    report = command.run_record_promptfoo(Path("private-\ud800"), store, "sample")
     assert report["exit_code"] == STORAGE_ERROR_EXIT
     assert cast(dict[str, object], report["analysis"])["state"] == "result"
     assert cast(dict[str, Any], report["storage"])["error"]["code"] == "INVALID_SPEC"
@@ -324,12 +318,10 @@ def test_bytes_entry_point_keeps_own_input_cap_and_matches_path(
 ) -> None:
     path = source(tmp_path)
     raw = path.read_bytes()
-    assert adapter.audit_promptfoo_bytes(raw, version=adapter.SOURCE[1]) == (
-        adapter.audit_promptfoo_file(path, version=adapter.SOURCE[1])
-    )
+    assert adapter.audit_promptfoo_bytes(raw) == (adapter.audit_promptfoo_file(path))
     monkeypatch.setattr(adapter, "DEFAULT_MAX_BYTES", len(raw) - 1)
     with pytest.raises(adapter.AccountingCaseError) as caught:
-        adapter.audit_promptfoo_bytes(raw, version=adapter.SOURCE[1])
+        adapter.audit_promptfoo_bytes(raw)
     assert caught.value.code == "INPUT_LIMIT_EXCEEDED"
 
 
@@ -337,7 +329,7 @@ def test_unpublished_reservation_is_not_reused_or_deleted(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     path, store = source(tmp_path), tmp_path / "store"
-    command.run_record_promptfoo(path, store, "first", version=adapter.SOURCE[1])
+    command.run_record_promptfoo(path, store, "first")
     pending = store / "records/sample"
     pending.mkdir(mode=0o700)
     code, report, _, _ = invoke(path, store, capsys)
@@ -360,9 +352,7 @@ def test_exact_response_bound_covers_all_storage_branches_and_newline(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, as_json: bool
 ) -> None:
     path = source(tmp_path)
-    report = command.run_record_promptfoo(
-        path, tmp_path / "reference", "sample", version=adapter.SOURCE[1]
-    )
+    report = command.run_record_promptfoo(path, tmp_path / "reference", "sample")
     saved = cast(dict[str, Any], report["storage"])
     identity = {"record_id": "sample", "manifest_digest": saved["manifest_digest"]}
     variants = [report]
@@ -385,15 +375,11 @@ def test_exact_response_bound_covers_all_storage_branches_and_newline(
     ]
     maximum = max(sizes)
     monkeypatch.setattr(command, "OUTPUT_MAX_BYTES", maximum)
-    actual = command.run_record_promptfoo(
-        path, tmp_path / "accepted", "sample", as_json=as_json, version=adapter.SOURCE[1]
-    )
+    actual = command.run_record_promptfoo(path, tmp_path / "accepted", "sample", as_json=as_json)
     assert actual["exit_code"] == 0
     monkeypatch.setattr(command, "OUTPUT_MAX_BYTES", maximum - 1)
     with pytest.raises(command.EvidenceError) as caught:
-        command.run_record_promptfoo(
-            path, tmp_path / "refused", "sample", as_json=as_json, version=adapter.SOURCE[1]
-        )
+        command.run_record_promptfoo(path, tmp_path / "refused", "sample", as_json=as_json)
     assert caught.value.payload["code"] == "OUTPUT_LIMIT_EXCEEDED"
     assert not (tmp_path / "refused").exists()
 
@@ -409,7 +395,7 @@ def test_large_analysis_full_scans_do_not_scale_with_error_candidate_count(
     from underwrite.instrument.evidence.accounting import ROW_LIMIT, audit_promptfoo
 
     path = source(tmp_path)
-    base = adapter.audit_promptfoo_file(path, version=adapter.SOURCE[1])
+    base = adapter.audit_promptfoo_file(path)
     large = {
         **base,
         **audit_promptfoo(
@@ -419,8 +405,8 @@ def test_large_analysis_full_scans_do_not_scale_with_error_candidate_count(
     }
     assert len(cast(list[object], large["findings"])) == ROW_LIMIT
 
-    def analyze(raw: bytes, *, version: str = "0.123.0") -> dict[str, object]:
-        del raw, version
+    def analyze(raw: bytes) -> dict[str, object]:
+        del raw
         return large
 
     monkeypatch.setattr(command, "audit_promptfoo_bytes", analyze)
@@ -439,7 +425,7 @@ def test_large_analysis_full_scans_do_not_scale_with_error_candidate_count(
     def is_aggregate(value: object) -> bool:
         return (
             isinstance(value, dict)
-            and cast(dict[str, object], value).get("schema") == command.SCHEMA
+            and cast(dict[str, object], value).get("schema") == command.AUTO_RECORD_SCHEMA
         )
 
     def encode(value: object) -> bytes:
@@ -487,10 +473,10 @@ def test_shared_capture_limits_unexpected_errors_without_swallowing_interrupts(
     )
     if failure is KeyboardInterrupt:
         with pytest.raises(KeyboardInterrupt) as caught:
-            command.run_record_promptfoo(path, store, "sample", version=adapter.SOURCE[1])
+            command.run_record_promptfoo(path, store, "sample")
         assert caught.value is problem
         return
-    report = command.run_record_promptfoo(path, store, "sample", version=adapter.SOURCE[1])
+    report = command.run_record_promptfoo(path, store, "sample")
     storage = cast(dict[str, Any], report["storage"])
     assert report["exit_code"] == STORAGE_ERROR_EXIT
     assert storage["error"]["code"] == "INTERNAL_ERROR"

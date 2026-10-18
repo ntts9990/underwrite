@@ -1,4 +1,37 @@
-# Migration from 0.1.1 to 0.2.0
+# Development migration and released history
+
+## Unreleased checkout: one Promptfoo result family
+
+The current development checkout keeps package metadata at 0.2.0 but removes
+Promptfoo's legacy output selection. This change is **not in the published 0.2.0
+wheel**. Inspect `underwrite capabilities --json` from the actual installation;
+package version alone cannot distinguish a checkout from its published release.
+
+`audit-promptfoo`, `audit-counts`, and the Python bytes/file/row APIs now produce
+only accounting/row v2; `records audit-promptfoo` produces only record v2.
+Remove `--version` from Promptfoo audit/capture commands and `version=` from their
+Python calls. Removed CLI flags return a usage error before acquisition/storage;
+removed Python keywords raise `TypeError`. The low-level `ingest/project` source
+codec version and manifest source selectors remain input contracts.
+
+`compare-declarations` accepts current accounting v2 only. Regenerate each report
+from its original raw source, then bind the canonical digest of that actual new
+report in the comparison manifest while preserving the owner's condition/metric
+assertions. Do not change schema labels on old reports or reuse old result hashes.
+Direct and manifest accounting over the same source bytes agree; the manifest
+route additionally enforces contained paths and an optional expected raw hash.
+
+Old Promptfoo result schemas and their generators are removed from the current
+package. Saved records remain immutable and readable with `records read-json`
+and verifiable with `records verify`, without the retired schemas or a producer.
+A new analysis is a new result/record; it never updates an existing stored report.
+See [the complete consolidation milestone](CONTRACT_MIGRATION.md) for the remaining
+families; their planned changes are not claimed implemented here.
+
+## Released history: migration from 0.1.1 to 0.2.0
+
+The remainder describes the **published 0.2.0 release**, including historical
+selectors that the development checkout above has removed for Promptfoo.
 
 This guide targets **underwrite 0.2.0**. Upgrade the app; the unchanged core remains
 0.1.1 and the app keeps its compatible `underwrite-core>=0.1.0,<0.2` requirement.

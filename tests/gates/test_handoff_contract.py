@@ -14,39 +14,34 @@ from jsonschema import Draft202012Validator
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_promptfoo_source_versions_match_codec_and_composed_contract() -> None:
+def test_promptfoo_current_source_identity_matches_composed_contract() -> None:
     from jsonschema.exceptions import ValidationError
 
     from underwrite.cli.local_json import Validator
     from underwrite.instrument.ingest.accounting import audit_promptfoo_file
-    from underwrite.instrument.ingest.codecs.promptfoo import SUPPORTED_VERSIONS
 
-    schema = json.loads((ROOT / "contracts/promptfoo_accounting.v1.schema.json").read_bytes())
-    record = json.loads((ROOT / "contracts/promptfoo_record.v1.schema.json").read_bytes())
-    selector = schema["properties"]["source"]["properties"]["format_version"]
-    assert selector == {"enum": list(SUPPORTED_VERSIONS)}
+    schema = json.loads((ROOT / "contracts/promptfoo_accounting.v2.schema.json").read_bytes())
+    record = json.loads((ROOT / "contracts/promptfoo_record.v2.schema.json").read_bytes())
+    selector = schema["properties"]["source"]
     embedded = record["$defs"]["promptfoo_accounting"]
-    assert embedded["properties"]["source"]["properties"]["format_version"] == selector
+    assert embedded["properties"]["source"] == selector
     validator = cast(Validator, Draft202012Validator(schema))
     for version, directory in (("0.123.0", "promptfoo"), ("0.124.1", "promptfoo-0.124.1")):
         report = audit_promptfoo_file(
-            ROOT / "fixtures/golden/external" / directory / "results.json", version=version
+            ROOT / "fixtures/golden/external" / directory / "results.json"
         )
         validator.validate(report)
+        source = cast(dict[str, object], report["source"])
+        assert source["producer_version"] == version
         with pytest.raises(ValidationError):
-            validator.validate(
-                {
-                    **report,
-                    "source": {"format": "promptfoo.eval-output", "format_version": "0.124.2"},
-                }
-            )
+            validator.validate({**report, "source": {**source, "claims_verified": True}})
 
 
 @pytest.mark.parametrize(
     "name",
     [
         "paired_handoff_review",
-        "promptfoo_record",
+        "promptfoo_compat",
         "langfuse_record",
         "deepeval_record",
         "deepeval_record_v2",
@@ -67,7 +62,7 @@ def test_generated_handoff_contract_matches_owners(name: str) -> None:
     "name,version",
     [
         ("paired_handoff_review", "v1"),
-        ("promptfoo_record", "v1"),
+        ("promptfoo_record", "v2"),
         ("langfuse_record", "v1"),
         ("deepeval_record", "v1"),
         ("deepeval_record", "v2"),
@@ -96,7 +91,7 @@ def test_composite_contract_has_only_resolvable_local_references(name: str, vers
 
 
 @pytest.mark.parametrize(
-    "producer,version", [("promptfoo", "v1"), ("deepeval", "v1"), ("deepeval", "v2")]
+    "producer,version", [("promptfoo", "v2"), ("deepeval", "v1"), ("deepeval", "v2")]
 )
 @pytest.mark.parametrize("analysis_error", [False, True])
 @pytest.mark.parametrize("storage_error", [False, True])
@@ -172,10 +167,10 @@ def test_single_source_record_exit_and_capture_states_are_bound(
         "storage": storage,
         "exit_code": exit_code,
     }
-    if version == "v2":
+    if producer == "deepeval" and version == "v2":
         envelope["source_format_version"] = "4.2.8"
     validator.validate(envelope)
-    if version == "v2":
+    if producer == "deepeval" and version == "v2":
         with pytest.raises(ValidationError):
             validator.validate({**envelope, "source_format_version": "4.1.1"})
         without_version = {
