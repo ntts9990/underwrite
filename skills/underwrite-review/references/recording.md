@@ -59,8 +59,8 @@ stores only the actual diagnostic and invocation, and consumes the ID. Recover
 The TestRun is not redacted, and a stored evaluator error remains an error without
 a score. Use the manual path if the caller needs selective omission.
 
-For supported Langfuse exports, if capabilities lists the records audit-langfuse
-profile and the caller selected a private store and new ID, prefer
+For supported Langfuse **blob exports**, if capabilities lists the records
+audit-langfuse profile and the caller selected a private store and new ID, prefer
 `records audit-langfuse --observations FILE --scores FILE --root ROOT --id NEW_ID --json`.
 It retains the entire selected files using the same buffers as analysis. It attempts
 both inputs independently, keeps acquisition errors per input, and stores no partial
@@ -69,6 +69,21 @@ error consumes the ID. Recover the result or primary error with `records read-js
 using `analysis/accounting.json` or `analysis/error.json`; `invocation.json` keeps
 all acquisition diagnostics. Raw source content is not redacted, and the two files
 are not an atomic producer snapshot. Use the manual path for selective omission.
+
+For selected native CLI Observations v2 and Scores v3 files, only when
+capabilities advertises `audit-langfuse|cli-1.2.4` under `records` and the caller
+requests retention, use `records audit-langfuse --observations FILE --scores FILE
+--profile cli-1.2.4 --root ROOT --id NEW_ID --json`. This composed path retains
+both complete buffers used for full accounting; it does not save a row-index view.
+Inspect `langfuse_cli_record.v1` analysis and storage independently on exits
+0/2/3; pre-storage usage/configuration exit 2 may instead be typed stderr with
+no saved record. Read `analysis/accounting.json` or `analysis/error.json` by exact
+logical name and verify the whole record, even after original files are gone.
+The private invocation and manifest metadata identify the CLI profile on a
+saved diagnostic. Whole source files can include private headers, score text,
+identifiers and I/O; a saved diagnostic may consume the ID and uncertain storage
+requires checking it before retry. Stored-byte integrity is not producer
+authentication, a matching-window claim, or approval.
 
 For a supported Promptfoo export, when the caller explicitly selects a private
 store and new ID and capabilities includes the records audit-promptfoo profile,

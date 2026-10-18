@@ -27,6 +27,7 @@ from underwrite.cli import (
     pair_binary,
     prepare_event_policy,
     project_baseline,
+    record_langfuse,
     records,
     release,
     render,
@@ -225,7 +226,13 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 "audit-langfuse",
                 ("observations", "scores", "root", "id"),
                 (),
-                ("langfuse_record.v1",),
+                (record_langfuse.record_schema(BLOB_PROFILE),),
+            ),
+            profile(
+                f"audit-langfuse|{CLI_PROFILE}",
+                ("observations", "scores", "profile", "root", "id"),
+                (),
+                (record_langfuse.record_schema(CLI_PROFILE),),
             ),
             profile(
                 "measure",

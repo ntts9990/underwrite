@@ -112,7 +112,7 @@ stored-byte integrity does not authenticate the owner declaration. Exits 0/2/3
 retain the result, diagnostic, and storage-failure meanings above. The no-bindings
 route and its existing logical names remain unchanged.
 
-For two supported Langfuse exports, use
+For the default two-file Langfuse **blob export**, use
 `records audit-langfuse --observations FILE --scores FILE --root ROOT --id NEW_ID --json`.
 It analyzes and retains the same complete input buffers, the result or diagnostic,
 and invocation metadata. Both paths are attempted independently; incomplete reads
@@ -127,6 +127,22 @@ with `records read-json`; `invocation.json` preserves input acquisition details.
 Generated analysis is admitted within the selected-read limit before storage.
 Large original files can be retained without being readable through that JSON route.
 See [the Langfuse workflow](AGENT_USAGE.md#account-for-langfuse-score-kinds-and-associations).
+
+When capabilities lists the separate `audit-langfuse|cli-1.2.4` record profile,
+use the same composed command with `--profile cli-1.2.4` for two selected native
+CLI Observations v2 and Scores v3 files. It stores the exact captured buffers
+once and emits `langfuse_cli_record.v1`, embedding full
+`langfuse_cli_accounting.v1` or a finite diagnostic. It does not store a
+row-index view or authenticate the official CLI, server, request windows, or
+completeness. The private invocation and manifest metadata retain the selected
+profile/source selectors even for a saved analysis error. Recover
+`analysis/accounting.json` or `analysis/error.json` by exact logical name after
+the originals are removed; run `records verify` for whole-record integrity.
+Saved source files may contain HTTP headers, scores, identifiers and observation
+I/O. `read-json` has its unchanged 1 MiB selected-input cap; larger retained
+source members need the bounded Python `read_record_file(..., max_bytes=...)`
+path, while a selected-file read does not replace whole-record verification.
+The default blob `langfuse_record.v1` contract and invocation remain unchanged.
 
 For an exact supported goppi paired handoff, `review-handoff` can analyze and save
 in one call with `--record-root ROOT --record-id ID`; see
