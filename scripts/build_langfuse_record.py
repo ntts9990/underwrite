@@ -11,13 +11,24 @@ from typing import Any
 
 from _schema_compose import embed_contracts, nullable, object_schema, reference, tagged
 
-from underwrite.cli.record_langfuse import AUTO_RECORD_SCHEMA, CLI_RECORD_SCHEMA, SCHEMA
+from underwrite.cli.record_langfuse import (
+    AUTO_RECORD_SCHEMA,
+    CLI_RECORD_SCHEMA,
+    ROW_RECORD_SCHEMA,
+    SCHEMA,
+)
 from underwrite.instrument.ingest.application import DEFAULT_MAX_BYTES
+from underwrite.instrument.ingest.langfuse_accounting import (
+    BLOB_PROFILE,
+    CLI_PROFILE,
+    output_schema,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / f"contracts/{SCHEMA}.schema.json"
 CLI_TARGET = ROOT / f"contracts/{CLI_RECORD_SCHEMA}.schema.json"
 AUTO_TARGET = ROOT / f"contracts/{AUTO_RECORD_SCHEMA}.schema.json"
+ROW_TARGET = ROOT / f"contracts/{ROW_RECORD_SCHEMA}.schema.json"
 OWNERS = ("langfuse_accounting", "evidence_error", "record_error", "record_verification")
 
 
@@ -43,7 +54,11 @@ def _source_states(observations: bool, scores: bool) -> dict[str, Any]:
 
 
 def _build_schema(
-    record_name: str, accounting_owner: str, *, accounting_version: str = "v1"
+    record_name: str,
+    accounting_owner: str,
+    *,
+    accounting_version: str = "v1",
+    report_schema: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     definitions, _ = embed_contracts(
         ROOT,
@@ -72,7 +87,14 @@ def _build_schema(
     )
     definitions["analysis"] = tagged(
         [
-            object_schema({"state": {"const": "result"}, "report": reference(accounting_owner)}),
+            object_schema(
+                {
+                    "state": {"const": "result"},
+                    "report": reference(accounting_owner)
+                    if report_schema is None
+                    else report_schema,
+                }
+            ),
             object_schema(
                 {
                     "state": {"const": "error"},
@@ -217,6 +239,49 @@ def build_auto_schema() -> dict[str, Any]:
     return _build_schema(AUTO_RECORD_SCHEMA, "langfuse_accounting", accounting_version="v2")
 
 
+def build_row_schema() -> dict[str, Any]:
+    """Compose only the three supported row views, leaving accounting contracts closed."""
+    row_reports = {
+        output_schema(profile, "row-index"): namespace
+        for profile, namespace in (
+            (None, "langfuse_row_index"),
+            (BLOB_PROFILE, "langfuse_blob_row_index"),
+            (CLI_PROFILE, "langfuse_cli_row_index"),
+        )
+    }
+    schema = _build_schema(
+        ROW_RECORD_SCHEMA,
+        "langfuse_row_index",
+        accounting_version="v2",
+        report_schema={
+            "type": "object",
+            "required": ["schema"],
+            "properties": {"schema": {"enum": list(row_reports)}},
+            "allOf": [
+                {
+                    "if": {"properties": {"schema": {"const": name}}},
+                    "then": reference(namespace),
+                }
+                for name, namespace in row_reports.items()
+            ],
+        },
+    )
+    # The strict blob v1 and compatible v2 reports share an authored basename.
+    strict_definitions, _ = embed_contracts(
+        ROOT,
+        ("langfuse_row_index", "langfuse_cli_row_index"),
+        namespaces={"langfuse_row_index": "langfuse_blob_row_index"},
+    )
+    schema["$defs"].update(strict_definitions)
+    schema["description"] = (
+        "Content-minimized Langfuse row analysis and whole-file private capture outcomes. "
+        "The complete selected originals are retained, including possible headers and text. "
+        "Stored-byte verification is not producer authentication or approval. "
+        "Null published_record means no returned identity, not proven absence."
+    )
+    return schema
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
@@ -225,6 +290,7 @@ def main() -> int:
         (TARGET, build_schema()),
         (CLI_TARGET, build_cli_schema()),
         (AUTO_TARGET, build_auto_schema()),
+        (ROW_TARGET, build_row_schema()),
     )
     for target, schema in targets:
         raw = (json.dumps(schema, ensure_ascii=False, indent=2) + "\n").encode()

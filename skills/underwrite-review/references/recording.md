@@ -135,6 +135,14 @@ are not an atomic producer snapshot. A saved auto diagnostic records requested
 selection without inventing an applied reader. Use the manual path for selective
 omission.
 
+For a requested Langfuse row-index review, when capabilities advertises row-index
+recording, add `--view row-index` to that one-call command and recover
+`analysis/row-index.json` with `records read-json`. It derives the index from the
+same captured buffers that it retains and verifies, without a handwritten spec.
+Only the analysis is content-minimized: both whole private inputs and invocation
+paths remain in the record. Apply the same separate analysis/storage and diagnostic
+handling above. Do not describe the record as redacted or anonymous.
+
 For historical v1 capture, select advertised `--profile blob-4.35.0` or
 `--profile cli-1.2.4` explicitly. The latter retains `langfuse_cli_record.v1`;
 the former retains `langfuse_record.v1`. Their valid supported bytes remain stable.

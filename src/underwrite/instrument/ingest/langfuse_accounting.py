@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import MappingProxyType
-from typing import cast
+from typing import Literal, cast
 
 from underwrite_core.canonical import content_digest
 
@@ -160,6 +160,10 @@ def audit_langfuse_row_index_files(
 
         return audit_langfuse_cli_files(observations_file, scores_file, view="row-index")
     accounting = audit_langfuse_files(observations_file, scores_file, profile=profile)
+    return _row_index(accounting)
+
+
+def _row_index(accounting: dict[str, object]) -> dict[str, object]:
     try:
         packaged_validator("langfuse_accounting.v1").validate(accounting)  # pyright: ignore[reportUnknownMemberType]
         result = index_langfuse_accounting(accounting)
@@ -172,17 +176,23 @@ def audit_langfuse_row_index_files(
 
 
 def audit_langfuse_bytes(
-    observations: bytes, scores: bytes, *, profile: str | None = None
+    observations: bytes,
+    scores: bytes,
+    *,
+    profile: str | None = None,
+    view: Literal["accounting", "row-index"] = "accounting",
 ) -> dict[str, object]:
-    """Account for the exact two supplied buffers without reopening their sources."""
+    """Analyze the exact two supplied buffers without reopening their sources."""
+    if view not in ("accounting", "row-index"):
+        raise LangfuseFileError("UNSUPPORTED_FORMAT", "LANGFUSE_VIEW_UNSUPPORTED", "/view")
     if profile is None or profile == AUTO_PROFILE:
         from underwrite.instrument.ingest.langfuse_compat import audit_langfuse_compatible_bytes
 
-        return audit_langfuse_compatible_bytes(observations, scores)
+        return audit_langfuse_compatible_bytes(observations, scores, view=view)
     if profile == CLI_PROFILE:
         from underwrite.instrument.ingest.langfuse_cli import audit_langfuse_cli_bytes
 
-        return audit_langfuse_cli_bytes(observations, scores)
+        return audit_langfuse_cli_bytes(observations, scores, view=view)
     if profile != BLOB_PROFILE:
         raise LangfuseFileError("UNSUPPORTED_FORMAT", "LANGFUSE_PROFILE_UNSUPPORTED", "/profile")
     try:
@@ -191,7 +201,8 @@ def audit_langfuse_bytes(
         raise _instrument_error(exc, "") from None
     observation_identity, observation_payload = _capture(ingestor, observations, "observations")
     score_identity, score_payload = _capture(ingestor, scores, "scores")
-    return _account(observation_identity, observation_payload, score_identity, score_payload)
+    accounting = _account(observation_identity, observation_payload, score_identity, score_payload)
+    return _row_index(accounting) if view == "row-index" else accounting
 
 
 def _account(

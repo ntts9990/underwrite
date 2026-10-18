@@ -336,6 +336,26 @@ provenance or export completeness. Null `published_record` means no identity was
 returned, not proof that the ID is free. Use a new ID after inspecting failure.
 Analysis-only `audit-langfuse` remains available without creating a store.
 
+For a content-minimized row index and private retention in one call, development
+builds advertising row-index recording accept:
+
+```sh
+underwrite records audit-langfuse --observations observations_v2.json --scores scores.json \
+  --view row-index --root /private/review-store --id langfuse.rows-001 --json
+underwrite records read-json --root /private/review-store --id langfuse.rows-001 \
+  --name analysis/row-index.json
+```
+
+This saves the selected index with the exact two input buffers used to produce it,
+then verifies the saved record. No handwritten record specification is needed.
+The `langfuse_row_record.v1` response embeds the selected row-index contract;
+automatic input uses v2, while explicit legacy profiles keep their v1 row outputs.
+The index withholds score content; the private record still retains both whole
+source files and invocation paths. Read analysis and storage outcomes separately,
+using the same exit and diagnostic rules above. The saved result remains readable
+after the original files are removed; hashes establish byte identity, not producer
+authentication. Published `0.1.1` predates this recording view, so check capabilities.
+
 ### Read official Langfuse CLI captures offline
 
 This route is available in a development checkout when capabilities advertises
@@ -385,8 +405,10 @@ The automatic `langfuse_record.v2` keeps analysis and storage separate: exit 0
 means the result was saved, 2 a diagnostic was saved, and 3 storage failed. Inspect the
 actual response schema, analysis and storage states; a pre-storage usage or
 configuration refusal can instead put `evidence_error.v1` on stderr at exit 2.
-The saved `analysis/accounting.json` is full accounting, **not** the minimized
-row index. You can verify and retrieve it after the original temporary inputs
+The example saves full accounting at `analysis/accounting.json`. To retain the
+minimized index instead, add the advertised `--view row-index` and read
+`analysis/row-index.json`, as described above. You can verify and retrieve either
+result after the original temporary inputs
 are removed. The record retains the **entire** native files, including possible
 HTTP headers, score text, IDs and observation I/O. A saved error may consume the
 new ID; after uncertain storage failure, inspect that ID before retrying. The
@@ -394,8 +416,9 @@ private `invocation.json` and manifest identify automatic selection. They name a
 applied reader only after successful analysis; diagnostics do not invent one.
 Verification proves stored-byte integrity, not Langfuse provenance, matching
 request windows, complete export or approval. Explicit `--profile cli-1.2.4`
-retains `langfuse_cli_accounting.v1`, `langfuse_cli_row_index.v1` and
-`langfuse_cli_record.v1`; `--profile blob-4.35.0` retains the blob v1 contracts.
+retains `langfuse_cli_accounting.v1`, `langfuse_cli_row_index.v1` and the default
+`langfuse_cli_record.v1`; row recording uses `langfuse_row_record.v1`.
+`--profile blob-4.35.0` likewise retains its blob v1 analysis contracts.
 The published `0.1.1` artifacts predate this development-checkout route.
 
 ## Inspect recorded DeepEval agent steps

@@ -275,6 +275,16 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 (),
                 (record_langfuse.record_schema(CLI_PROFILE),),
             ),
+            *(
+                profile(
+                    "audit-langfuse|" + (selected + "|" if selected else "") + "row-index",
+                    ("observations", "scores", "view", "root", "id")
+                    + (("profile",) if selected else ()),
+                    (),
+                    (record_langfuse.record_schema(selected, "row-index"),),
+                )
+                for selected in (None, BLOB_PROFILE, CLI_PROFILE)
+            ),
             profile(
                 "measure",
                 ("observation", "policy", "root", "id"),
