@@ -15,7 +15,7 @@ import zipfile
 from collections import Counter
 from email.parser import BytesParser
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 ROOT = Path(__file__).resolve().parents[1]
 COMMAND_TIMEOUT = 120
@@ -1116,6 +1116,87 @@ def _deepeval_v2_pilot(cli: Path, work: Path) -> None:
             _deepeval_record_pilot(cli, directory, source, report, version="4.2.8")
 
 
+def _deepeval_trace_refusals(cli: Path, source: Path, work: Path) -> None:
+    for options in ([], ["--version", "4.1.1"], ["--version", "4.2.8", "--bindings", "missing"]):
+        refused = _command(
+            [str(cli), "audit-deepeval", "missing", "--view", "trace-index", *options, "--json"],
+            work,
+        )
+        _require(
+            refused.returncode == EVIDENCE_ERROR_EXIT
+            and refused.stdout == ""
+            and json.loads(refused.stderr)["code"] == "UNSUPPORTED_FORMAT",
+            "trace selection must refuse unsupported combinations before file acquisition",
+        )
+    ordinary = _command(
+        [str(cli), "audit-deepeval", str(source), "--version", "4.2.8", "--json"], work
+    )
+    _require(
+        ordinary.returncode == EVIDENCE_ERROR_EXIT
+        and ordinary.stdout == ""
+        and json.loads(ordinary.stderr)["reason"] == "DEEPEVAL_SCOPE_UNSUPPORTED",
+        "trace view changed ordinary DeepEval scope",
+    )
+
+
+def _deepeval_trace_pilot(cli: Path, work: Path) -> None:
+    for scenario in ("success", "recovery"):
+        source = work / f"deepeval-trace-{scenario}.json"
+        raw = (
+            ROOT / f"fixtures/golden/external/deepeval-4.2.8/traces/{scenario}.json"
+        ).read_bytes()
+        source.write_bytes(raw)
+        report = _cli_json(
+            cli,
+            ["audit-deepeval", str(source), "--version", "4.2.8", "--view", "trace-index"],
+            work / f"deepeval-trace-{scenario}-index.json",
+            work,
+        )
+        _require(
+            report["schema"] == "deepeval_trace_index.v1"
+            and report["raw_hash"] == "sha256:" + hashlib.sha256(raw).hexdigest(),
+            "trace index lost original byte identity or schema",
+        )
+        case = cast(list[dict[str, Any]], report["cases"])[0]
+        _require(
+            case["source_success"] is True
+            and case["trace_status"] == "SUCCESS"
+            and any(row["source_status"] == "ERRORED" for row in case["spans"])
+            == (scenario == "recovery"),
+            "trace index collapsed case success and step errors",
+        )
+        _require(
+            all(
+                row["parent_state"] == "resolved"
+                for row in case["spans"]
+                if row["group"] == "toolSpans"
+            ),
+            "native tool parents did not resolve within their trace",
+        )
+        native_trace = json.loads(raw)["testCases"][0]["trace"]
+        encoded = json.dumps(report)
+        _require(
+            all(native_trace[key] not in encoded for key in ("uuid", "name", "input")),
+            "content-minimized trace index leaked private source fields",
+        )
+        python = cli.with_name("python")
+        check = _success(
+            [
+                str(python),
+                "-c",
+                "import json,sys; from pathlib import Path; "
+                "from underwrite.instrument.ingest.deepeval_trace "
+                "import audit_deepeval_trace_bytes; "
+                "print(json.dumps(audit_deepeval_trace_bytes(Path(sys.argv[1]).read_bytes(), "
+                "version='4.2.8')))",
+                str(source),
+            ],
+            work,
+        )
+        _require(json.loads(check.stdout) == report, "installed trace API and CLI disagree")
+    _deepeval_trace_refusals(cli, source, work)
+
+
 def _langfuse_record_pilot(
     cli: Path,
     work: Path,
@@ -2059,6 +2140,7 @@ def _smoke(dist: Path) -> None:
         _handoff_pilot(cli, work)
         _deepeval_pilot(cli, work)
         _deepeval_v2_pilot(cli, work)
+        _deepeval_trace_pilot(cli, work)
         _langfuse_pilot(cli, work)
         _langfuse_cli_pilot(cli, work)
 

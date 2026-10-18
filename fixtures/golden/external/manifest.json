@@ -26,6 +26,18 @@
     },
     {
       "format": "deepeval.test-run",
+      "path": "fixtures/golden/external/deepeval-4.2.8/traces/recovery.json",
+      "raw_sha256": "fc97a1a35b10e528267c02c1a32af18de8a84fad89cee518f7de2b368d7807cd",
+      "version": "4.2.8"
+    },
+    {
+      "format": "deepeval.test-run",
+      "path": "fixtures/golden/external/deepeval-4.2.8/traces/success.json",
+      "raw_sha256": "317a13bd5b33fa43e2fbe3e2d4a0e0c882bfffa9cd01e662355cee0d511ee8bd",
+      "version": "4.2.8"
+    },
+    {
+      "format": "deepeval.test-run",
       "path": "fixtures/golden/external/deepeval/test_run_20260914_132634.json",
       "raw_sha256": "acf917784efd482e4af90dde180bf1e88dda0017afa8a73747b5ebeec939ae9c",
       "version": "4.1.1"
