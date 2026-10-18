@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -99,6 +100,31 @@ def test_generated_packaged_contracts_are_current_and_old_bytes_stable() -> None
             hashlib.sha256((ROOT / "contracts" / f"{name}.schema.json").read_bytes()).hexdigest()
             == expected
         )
+
+
+def test_current_generation_needs_no_historical_or_existing_target_files(tmp_path: Path) -> None:
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    for name in ("build_promptfoo_compat.py", "_record_schema.py", "_schema_compose.py"):
+        shutil.copyfile(ROOT / "scripts" / name, scripts / name)
+    contracts = tmp_path / "contracts"
+    contracts.mkdir()
+    for name in ("evidence_error", "record_error", "record_verification"):
+        filename = f"{name}.v1.schema.json"
+        shutil.copyfile(ROOT / "contracts" / filename, contracts / filename)
+    expected = {
+        f"{name}.schema.json": (ROOT / "contracts" / f"{name}.schema.json").read_bytes()
+        for name in (ACCOUNTING_SCHEMA, ROW_INDEX_SCHEMA, AUTO_RECORD_SCHEMA)
+    }
+    command = [sys.executable, str(scripts / "build_promptfoo_compat.py")]
+    generated = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True, check=False)
+    assert generated.returncode == 0, generated.stdout + generated.stderr
+    for name, raw in expected.items():
+        assert (contracts / name).read_bytes() == raw
+    checked = subprocess.run(
+        [*command, "--check"], cwd=tmp_path, capture_output=True, text=True, check=False
+    )
+    assert checked.returncode == 0, checked.stdout + checked.stderr
 
 
 @pytest.mark.parametrize("old", [True, False])
