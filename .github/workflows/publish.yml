@@ -2,6 +2,11 @@ name: Publish PyPI
 
 on:
   workflow_dispatch:
+    inputs:
+      publish_core:
+        description: Include an explicitly approved core release
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -76,6 +81,9 @@ jobs:
           PY
       - name: Smoke the exact distributions to publish outside the checkout
         run: uv run --frozen --no-sync python scripts/smoke_wheels.py --dist dist
+      - name: Verify application against the published core before app-only release
+        if: ${{ !inputs.publish_core }}
+        run: uv run --frozen --no-sync python scripts/smoke_wheels.py --dist dist --registry-core
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pypi-distributions
@@ -99,6 +107,7 @@ jobs:
           path: dist
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - name: Publish core first
+        if: ${{ inputs.publish_core }}
         run: uv publish --no-config --trusted-publishing always --check-url https://pypi.org/simple/ dist/underwrite_core-*.whl dist/underwrite_core-*.tar.gz
-      - name: Publish application after core succeeds
+      - name: Publish application after selected prerequisites succeed
         run: uv publish --no-config --trusted-publishing always --check-url https://pypi.org/simple/ dist/underwrite-*.whl dist/underwrite-*.tar.gz

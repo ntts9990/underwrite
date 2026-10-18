@@ -206,6 +206,69 @@ A larger supported handoff may be analyzed without fitting a single record; in
 that case requested storage fails before serialization or store mutation, while
 the CLI retains the complete analysis. Sources are never silently omitted.
 
+## Retain a Goppi paired trajectory
+
+Development builds advertising these commands can keep a complete paired+trajectory
+export and its analysis in one immutable private record. Published 0.1.1 predates
+this route. The initial audit requires an already installed compatible Goppi
+offline verifier; reopening does not.
+
+```sh
+underwrite records audit-trajectory --exchange /absolute/path/to/export \
+  --root PRIVATE_STORE --id trajectory.review-001 --json
+underwrite records read-trajectory --root PRIVATE_STORE --id trajectory.review-001 --json
+```
+
+The complete outer export must contain `paired/` and `trajectory/`, at a physical
+path without symlink components. An optional `--goppi-executable PATH` selects an
+existing trusted executable for recording. No evaluation or model is run.
+
+The `goppi.trajectory-review` record contains the seven exact analyzed inputs
+under `source/`, `analysis/trajectory.json` or `analysis/error.json`,
+`invocation.json`, and `verification/history.json`. Source files are retained in
+full and can contain identifying metadata. Use a private store and backup policy.
+No source paths are reopened between analysis and storage. Duplicate IDs are
+refused rather than overwritten.
+
+The `trajectory_record.v1` response keeps source capture, analysis, native history,
+and storage separate. Exit 0 means a result was saved and verified; exit 2 means
+a supported diagnostic was saved, or an earlier typed refusal occurred without
+publication; exit 3 means storage or stored-byte verification failed. Safely
+classified source diagnostics before the native check have history `not_performed`;
+semantic diagnostics after a successful check have history `verified`. All verifier
+failures, including nonzero exits, produce no record. Failed/incomplete captures,
+configuration faults, and output-admission failures also publish no diagnostic
+record. A storage failure with `published_record: null` does not prove absence:
+inspect the requested ID with `records show` and `records verify` before retrying.
+
+`records read-trajectory` verifies the complete record and binds the result,
+source identities, and original verification history to the same manifest. Its
+`current_storage_verification` is a new stored-byte check, while
+`native_verification_performed_now` is always false. Neither the original export
+nor Goppi is needed. Content integrity is not source authentication, independent
+verification of a producer's private projection, or a causal explanation.
+
+The dedicated reader accepts the existing 8 MiB trajectory report limit plus a
+bounded envelope. Generic `records read-json` remains limited to 1 MiB per selected
+file and cannot recover JSONL as one JSON document. To restore any retained source
+as verified raw bytes, use its existing member limit:
+
+```python
+from pathlib import Path
+from underwrite.instrument.ingest.goppi_trajectory import trajectory_member_limits
+from underwrite.service.records import read_record_file
+
+name = "paired/rows.jsonl"
+source = read_record_file(
+    Path("PRIVATE_STORE"), "trajectory.review-001", "source/" + name,
+    max_bytes=trajectory_member_limits()[name],
+)
+raw_bytes = source.data
+```
+
+Choose a logical member listed by `records show`; byte recovery does not execute
+its contents. Keep recovered source data private.
+
 ## Retain a completed goppi baseline
 
 For the exact five-file baseline exchange v2 profile, retain the already

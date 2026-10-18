@@ -1,0 +1,168 @@
+# Migration from 0.1.1
+
+This guide describes the development changes planned for **0.2.0**. That version
+has not been released. A development installation may still report `0.1.1`;
+that does not make its features identical to the published PyPI package.
+The commands below run from a development checkout after `uv sync --all-groups`.
+Once an installed release includes these features, use `underwrite` in place of
+`uv run --frozen --no-sync underwrite`. See [the CLI guide](AGENT_USAGE.md).
+
+## Ordinary inputs no longer require a producer version
+
+For supported local artifact families, omit `--version` or `--profile`:
+
+```sh
+uv run --frozen --no-sync underwrite audit-promptfoo results.json --json
+uv run --frozen --no-sync underwrite audit-deepeval test-run.json --json
+uv run --frozen --no-sync underwrite audit-langfuse --observations observations.json --scores scores.json --json
+```
+
+Underwrite selects a reader from the supplied structure. It does not contact the
+producer, install tools, or infer the producer's release from that structure.
+`reader_profile` identifies Underwrite's interpretation rules. A supplied
+`producer_version` is an unverified declaration; absent evidence remains
+`producer_version: null` with `producer_version_state: "unknown"`.
+
+Automatic input accepts the supported selected fields, not arbitrary future
+formats. Unsupported format generations, mixed Langfuse families, conflicting
+critical fields, and unsupported DeepEval expectation populations receive finite
+errors. An older reader is not tried to hide the failure. In DeepEval's explicit
+trace view, metrics and expectation outcomes remain outside the analyzed scope.
+
+## Update JSON consumers or select the historical contract
+
+Default output contracts have changed. Branch on the returned `schema` and read
+its corresponding contract; do not replace a schema label on old JSON.
+
+| Command | Published 0.1.1 default | Development default |
+| --- | --- | --- |
+| `audit-promptfoo` | `promptfoo_accounting.v1` | `promptfoo_accounting.v2` |
+| `audit-promptfoo --view row-index` | `promptfoo_row_index.v1` | `promptfoo_row_index.v2` |
+| `records audit-promptfoo` | `promptfoo_record.v1` | `promptfoo_record.v2` |
+| `audit-langfuse` | `langfuse_accounting.v1` | `langfuse_accounting.v2` |
+| `audit-langfuse --view row-index` | `langfuse_row_index.v1` | `langfuse_row_index.v2` |
+| `records audit-langfuse` | `langfuse_record.v1` | `langfuse_record.v2` |
+| `audit-deepeval` | `deepeval_accounting.v1` | `deepeval_accounting.v3` |
+| `records audit-deepeval` | `deepeval_record.v1` | `deepeval_record.v3` |
+
+To reproduce an existing integration, explicitly select its actual historical
+reader:
+
+```sh
+uv run --frozen --no-sync underwrite audit-promptfoo results.json --version 0.123.0 --json
+uv run --frozen --no-sync underwrite audit-deepeval test-run.json --version 4.1.1 --json
+uv run --frozen --no-sync underwrite audit-langfuse --observations observations.json --scores scores.json \
+  --profile blob-4.35.0 --json
+```
+
+Promptfoo also retains `--version 0.124.1` with its v1 accounting/row contracts.
+DeepEval retains `--version 4.2.8` with `deepeval_accounting.v2` and
+`deepeval_record.v2`. These selections also apply to their corresponding
+`records audit-*` paths. Select a historical reader only when appropriate to the
+input, not as a workaround for automatic refusal.
+
+Automatic reports distinguish the selected population and reader from producer
+identity. Promptfoo v2 accounting no longer emits the legacy
+`observation_digest`; retain its raw byte hash instead. Langfuse v2 has separate
+blob/CLI branches and collection scope. Review the versioned schema before
+assuming a field from the old report is still present.
+
+`compare-declarations` still requires `promptfoo_accounting.v1` for both inputs
+and a digest-bound `declared_comparison_case.v1` manifest. Use an appropriate
+explicit historical selector to produce those reports, then bind the actual new
+report digests. Do not relabel default v2 reports or reuse a manifest bound to
+different bytes. `audit-counts` retains its explicit manifest and v1 output.
+Low-level `ingest --format ... --version ...` also remains an explicit codec API.
+
+## Metric meaning packs and new views
+
+Without `--version`, DeepEval `--bindings` now takes a
+`deepeval_metric_bindings.v2` pack and produces `evidence_result.v2`; its record
+command produces `deepeval_bound_record.v2`. For an existing v1 pack, keep
+`--version 4.2.8` to retain `evidence_result.v1` and `deepeval_bound_record.v1`.
+Create a new v2 pack according to its contract to use the automatic path; changing
+the old pack's schema string is insufficient. Definitions remain owner assertions,
+and the pack hash identifies bytes rather than independent semantic authority.
+`inspect-result` accepts existing v1 and new v2 results by exact schema.
+
+DeepEval `--view trace-index`, Langfuse official CLI captures and row-index record
+storage, and Goppi trajectory analysis are new since published 0.1.1. They do not
+upgrade existing stored results. Step statuses and local relationships do not
+establish retry effects or causality.
+
+For a supported completed Goppi paired trajectory handoff, the development route
+retains the seven captured source files and the analysis or supported diagnostic:
+
+```sh
+uv run --frozen --no-sync underwrite records audit-trajectory --exchange EXCHANGE \
+  --root PRIVATE_STORE --id trajectory-001 --goppi-executable GOPPI_EXECUTABLE --json
+uv run --frozen --no-sync underwrite records read-trajectory \
+  --root PRIVATE_STORE --id trajectory-001 --json
+```
+
+`trajectory_record.v1` separates analysis, verification history, and storage.
+`trajectory_record_read.v1` returns the original analysis/history together with
+current whole-record integrity checks. Reopening does not need Goppi and reports
+`native_verification_performed_now: false`. Use this dedicated reader for trajectory
+reports up to their supported 8 MiB bound; generic `records read-json` keeps its
+1 MiB selected-file limit. See [storage](STORAGE.md) for retention and error handling.
+
+A working adopted Goppi offline verifier is needed to create a successfully
+verified trajectory result. The accepted source implementation and npm package
+are distinct: on 2026-10-18, accepted Goppi main declared package version `0.1.0`,
+while npm `@ntts9990/goppi` latest was `0.0.1`. Installing that npm release does not
+establish availability of this verifier. Reopening a saved record never installs
+or runs it.
+
+## Keep existing records unchanged
+
+The stored manifest remains `result_record.v1`. Existing records retain their
+original analysis schema and bytes. Read or verify them without rerunning an
+analysis:
+
+```sh
+uv run --frozen --no-sync underwrite records verify --root STORE --id RECORD_ID --json
+uv run --frozen --no-sync underwrite records show --root STORE --id RECORD_ID --json
+uv run --frozen --no-sync underwrite records read-json --root STORE --id RECORD_ID \
+  --name analysis/accounting.json --json
+```
+
+Use `show` to find the actual logical filename for that record. `read-json` returns
+a `record_document.v1` envelope containing the stored JSON; it does not translate
+that JSON to a newer schema. Python callers can recover exact bytes with
+`underwrite.service.records.read_record_file`.
+
+`records verify` checks the whole record and declared direct links.
+`read-json` checks only the selected file against its captured manifest; run
+`verify` when whole-record integrity is required. It does not
+rerun Goppi, execute a provider, authenticate provenance, or establish the truth of
+source verdicts. `records replay-measure` is a separate explicit recomputation,
+not ordinary readback. To obtain a new analysis contract, rerun the appropriate
+Underwrite analysis on retained source bytes and save it under a **new** record ID;
+existing IDs are not overwritten. The necessary inputs, policies, and optional
+producer verifier must be available for that new analysis.
+
+Record roots contain complete selected source bytes even when the displayed
+analysis is content-minimized. Keep them private. Successful analysis, successful
+storage, and a successful source task are separate outcomes; inspect the returned
+analysis and storage states.
+
+## Supported input scope at this checkpoint
+
+The following fixture evidence was checked on 2026-10-18. It bounds the support
+claim; it is not a promise to accept every output of each product or future format.
+A newer declared producer release is not rejected just for being newer when its
+selected fields still satisfy the supported input contract.
+
+| Producer | Evidence reused | Boundary |
+| --- | --- | --- |
+| Promptfoo | [0.124.1 selected fields](fixtures/golden/external/promptfoo-0.124.1/SOURCE.md), historical 0.123.0 | The newer fixture is a documented sanitized derivative of actual local output. SummaryV3 structure governs automatic selection; version metadata remains an unverified declaration. |
+| DeepEval | [4.3.1 native captures](fixtures/examples/deepeval-auto-4.3.1/SOURCE.md), historical 4.1.1/4.2.8 | Automatic selection does not infer a release. Visible unsupported expectation populations are refused by accounting; trace view excludes their outcomes. `datasetVersion` is not a producer version. |
+| Langfuse | [Official CLI 1.2.4 captures](fixtures/examples/langfuse-cli/SOURCE.md), historical blob API snapshot 4.35.0 | The CLI fixture used a controlled loopback. CLI release, API snapshot, and server release are different identities; this does not certify live interoperability with every server, including server v4.63.0. |
+| Goppi | [Adopted paired trajectory fixture](fixtures/conformance/goppi-trajectory/SOURCE.md) | Exact fixture bytes and the offline verifier support a bounded handoff contract. Source verdicts remain claims; stage differences do not establish retry effects or causality. |
+
+An input that lacks declared producer identity can still be supported. A missing
+file, unsupported format generation, incompatible semantic declaration, and an
+unknown producer version are different states. Keep those distinctions in the
+calling agent's output and follow the returned `next_action` or `next_actions`
+when present.

@@ -155,6 +155,26 @@ refactoring rationale (including when no change is justified), independent revie
 for material boundaries, and remaining gaps in the PR. Test counts alone do not
 establish maintainability, human time savings, or superiority over another tool.
 
+## Releasing the application and core
+
+Keep versions unchanged until the maintainer explicitly requests a version
+increase. Publish only after explicit release authorization. Prepare and verify
+the changes through the protected PR flow before dispatching `Publish PyPI` on
+`main`.
+
+The workflow defaults to an application-only release (`publish_core: false`).
+It keeps full checks of both local packages and additionally installs the exact
+candidate application with a core resolved from PyPI. A missing or incompatible
+published core blocks that path. Select `publish_core: true` only for an explicitly
+approved core release; its successful upload precedes the application upload.
+Do not increment core merely to match the app, ignore a failed core upload, or
+re-upload changed bytes under an existing version. Identical source code can
+produce different archive hashes when rebuilt.
+
+After publication, verify registry file identities and a fresh installation of
+the actual released version. A development wheel carrying the previous version
+does not establish a successful version upgrade.
+
 By intentionally submitting a contribution for inclusion, you agree that it is
 provided under Apache-2.0, unless explicitly stated otherwise, as described in
 section 5 of [LICENSE](LICENSE). The adapted community and trademark policy

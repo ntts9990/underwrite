@@ -15,6 +15,7 @@ from underwrite.instrument.evidence.goppi_trajectory import (
     RESULT_SCHEMA,
     TrajectoryError,
 )
+from underwrite.instrument.ingest.application import NEXT_ACTIONS
 from underwrite.instrument.ingest.goppi_trajectory import (
     TrajectoryInputError,
     audit_goppi_trajectory,
@@ -49,14 +50,24 @@ def configure(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--json", action="store_true", help="Emit the trajectory review JSON.")
 
 
+def trajectory_cli_error(
+    error: CaptureError | TrajectoryInputError | TrajectoryError | VerifierError,
+) -> EvidenceError:
+    """Map trajectory failures to the option or artifact the caller can correct."""
+    if error.reason == "GOPPI_VERIFIER_UNAVAILABLE":
+        return EvidenceError(
+            error.code, error.reason, "/goppi_executable", NEXT_ACTIONS["USAGE_ERROR"]
+        )
+    location = "/verifier" if isinstance(error, VerifierError) else error.location or "/exchange"
+    return EvidenceError(error.code, error.reason, location)
+
+
 def produce(args: argparse.Namespace) -> dict[str, object]:
     try:
         verifier = GoppiCliVerifier(cast(Path | None, args.goppi_executable))
         return audit_goppi_trajectory(cast(Path, args.exchange), verifier=verifier)
-    except (CaptureError, TrajectoryInputError, TrajectoryError) as exc:
-        raise EvidenceError(exc.code, exc.reason, exc.location or "/exchange") from None
-    except VerifierError as exc:
-        raise EvidenceError(exc.code, exc.reason, "/verifier") from None
+    except (CaptureError, TrajectoryInputError, TrajectoryError, VerifierError) as exc:
+        raise trajectory_cli_error(exc) from None
 
 
 def main(argv: list[str]) -> int:

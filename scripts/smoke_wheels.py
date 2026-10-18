@@ -1,4 +1,4 @@
-"""Exercise the documented CLI flow using only locally built, installed wheels."""
+"""Exercise installed wheels; optionally resolve the core only from public PyPI."""
 
 from __future__ import annotations
 
@@ -11,6 +11,8 @@ import subprocess
 import sys
 import tempfile
 import tomllib
+import urllib.parse
+import urllib.request
 import zipfile
 from collections import Counter
 from email.parser import BytesParser
@@ -22,6 +24,8 @@ COMMAND_TIMEOUT = 120
 EVIDENCE_ERROR_EXIT = 2
 STORAGE_ERROR_EXIT = 3
 BASELINE_RECORD_FILE_COUNT = 7
+REGISTRY_INDEX = "https://pypi.org/simple/"
+REGISTRY_MAX_BYTES = 16 * 1024 * 1024
 
 
 class SmokeFailure(Exception):
@@ -44,9 +48,15 @@ def _wheels(dist: Path) -> tuple[Path, Path]:
 
 
 def _command(
-    args: list[str], cwd: Path, *, project_environment: Path | None = None
+    args: list[str],
+    cwd: Path,
+    *,
+    project_environment: Path | None = None,
+    registry_only: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
+    if registry_only:
+        env = {key: value for key, value in env.items() if not key.startswith(("UV_", "PIP_"))}
     for name in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV"):
         env.pop(name, None)
     if project_environment is not None:
@@ -66,9 +76,15 @@ def _command(
 
 
 def _success(
-    args: list[str], cwd: Path, *, project_environment: Path | None = None
+    args: list[str],
+    cwd: Path,
+    *,
+    project_environment: Path | None = None,
+    registry_only: bool = False,
 ) -> subprocess.CompletedProcess[str]:
-    result = _command(args, cwd, project_environment=project_environment)
+    result = _command(
+        args, cwd, project_environment=project_environment, registry_only=registry_only
+    )
     _require(
         result.returncode == 0,
         f"command failed ({result.returncode}): {args[0]}: {result.stderr[:500]}",
@@ -142,6 +158,143 @@ def _install_wheels(work: Path, venv: Path, wheels: tuple[Path, Path]) -> None:
     )
     _require(absent.returncode != 0, "core was installed before app dependency resolution")
     _install_app_from_local_dist(work, venv, wheels)
+
+
+class _NoRegistryRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(
+        self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str
+    ) -> None:
+        raise SmokeFailure("registry redirects are not accepted")
+
+
+def _registry_bytes(url: str) -> bytes:
+    """Bound release-only registry reads; URLs are restricted to official PyPI hosts."""
+    parsed = urllib.parse.urlsplit(url)
+    _require(
+        parsed.scheme == "https" and parsed.netloc in {"pypi.org", "files.pythonhosted.org"},
+        "unexpected registry artifact URL",
+    )
+    opener = urllib.request.build_opener(_NoRegistryRedirects())
+    with opener.open(url, timeout=30) as response:
+        raw = response.read(REGISTRY_MAX_BYTES + 1)
+    _require(len(raw) <= REGISTRY_MAX_BYTES, "registry artifact exceeded smoke byte limit")
+    return raw
+
+
+def _published_core(work: Path, version: str) -> tuple[Path, dict[str, object]]:
+    try:
+        return _published_core_artifact(work, version)
+    except (KeyError, TypeError, ValueError, zipfile.BadZipFile) as exc:
+        raise SmokeFailure("invalid published core metadata or archive") from exc
+
+
+def _published_core_artifact(work: Path, version: str) -> tuple[Path, dict[str, object]]:
+    url = "https://pypi.org/pypi/underwrite-core/" + urllib.parse.quote(version, safe="") + "/json"
+    metadata = json.loads(_registry_bytes(url))
+    _require(
+        metadata["info"]["name"] == "underwrite-core" and metadata["info"]["version"] == version,
+        "published core release metadata mismatch",
+    )
+    choices = [
+        item
+        for item in metadata["urls"]
+        if item["packagetype"] == "bdist_wheel"
+        and item["filename"] == f"underwrite_core-{version}-py3-none-any.whl"
+    ]
+    _require(len(choices) == 1, "expected one published portable core wheel")
+    selected = choices[0]
+    raw = _registry_bytes(selected["url"])
+    digest = hashlib.sha256(raw).hexdigest()
+    _require(digest == selected["digests"]["sha256"], "published core wheel hash mismatch")
+    _require(Path(selected["filename"]).name == selected["filename"], "invalid core wheel filename")
+    wheel = work / selected["filename"]
+    wheel.write_bytes(raw)
+    with zipfile.ZipFile(wheel) as archive:
+        name = f"underwrite_core-{version}.dist-info/METADATA"
+        project = BytesParser().parsebytes(archive.read(name))
+        _require(
+            project["Name"] == "underwrite-core" and project["Version"] == version,
+            "published core wheel metadata mismatch",
+        )
+    return wheel, {"version": version, "url": selected["url"], "sha256": digest}
+
+
+def _install_registry_core(
+    work: Path, venv: Path, app_wheel: Path
+) -> tuple[Path, dict[str, object]]:
+    """Use app dependency resolution in a fresh venv; no workspace or local core input."""
+    _success(
+        ["uv", "--no-config", "--no-cache", "venv", "--python", sys.executable, str(venv)],
+        work,
+        registry_only=True,
+    )
+    python = venv / "bin/python"
+    _success(
+        [
+            "uv",
+            "--no-config",
+            "--no-cache",
+            "pip",
+            "install",
+            "--no-sources",
+            "--default-index",
+            REGISTRY_INDEX,
+            "--python",
+            str(python),
+            str(app_wheel),
+        ],
+        work,
+        registry_only=True,
+    )
+    _success(
+        ["uv", "--no-config", "pip", "check", "--python", str(python)], work, registry_only=True
+    )
+    resolved = _success(
+        [
+            str(python),
+            "-I",
+            "-c",
+            "from importlib.metadata import version; print(version('underwrite-core'))",
+        ],
+        work,
+        registry_only=True,
+    )
+    core, evidence = _published_core(work, resolved.stdout.strip())
+    _check_wheel_origins(venv, (core, app_wheel))
+    return core, evidence
+
+
+def _registry_core_smoke(dist: Path) -> None:
+    candidates = sorted(dist.glob("underwrite-*.whl"))
+    _require(len(candidates) == 1, "expected one application wheel for registry-core smoke")
+    app = candidates[0]
+    with tempfile.TemporaryDirectory(prefix="underwrite-registry-core-smoke-") as directory:
+        work = Path(directory).resolve()
+        _require(not work.is_relative_to(ROOT), "temporary directory must be outside checkout")
+        venv = work / "venv"
+        _, registry = _install_registry_core(work, venv, app)
+        cli = venv / "bin/underwrite"
+        fixtures = ROOT / "fixtures/examples"
+        _native_measurement_pilot(cli, fixtures, work)
+        _baseline_event_pilot(cli, fixtures, work)
+        _measurement_record_pilot(cli, work)
+        _measurement_replay_pilot(cli, work)
+        _trajectory_pilot(cli, work)
+        print(
+            json.dumps(
+                {
+                    "mode": "registry-core",
+                    "app_wheel": app.name,
+                    "app_sha256": hashlib.sha256(app.read_bytes()).hexdigest(),
+                    "published_core": registry,
+                    "index": REGISTRY_INDEX,
+                    "installed_package_bytes_match_archives": True,
+                    "tasks": "measurement_record_replay_and_trajectory",
+                    "state": "passed",
+                },
+                sort_keys=True,
+            )
+        )
 
 
 def _stale_core_upgrade(work: Path, wheels: tuple[Path, Path]) -> None:
@@ -2549,6 +2702,54 @@ def _trajectory_pilot(cli: Path, work: Path) -> None:
         "SOURCE_READ_FAILED",
         "GOPPI_VERIFIER_UNAVAILABLE",
     )
+    _trajectory_record_pilot(cli, work, exchange, verifier, report)
+
+
+def _trajectory_record_pilot(
+    cli: Path, work: Path, exchange: Path, verifier: Path, expected: dict[str, object]
+) -> None:
+    """Exercise installed retention with the explicit process stub, then remove it."""
+    store = work / "trajectory-records"
+    identifier = "trajectory.smoke-001"
+    captured = _cli_json(
+        cli,
+        ["records", "audit-trajectory", "--exchange", str(exchange),
+         "--goppi-executable", str(verifier), "--root", str(store), "--id", identifier],
+        work / "trajectory-record.json", work,
+    )
+    analysis = cast(dict[str, object], captured["analysis"])
+    storage = cast(dict[str, object], captured["storage"])
+    _require(captured["schema"] == "trajectory_record.v1", "trajectory record contract")
+    _require(analysis["report"] == expected, "trajectory retention changed analysis")
+    _require(storage["state"] == "saved", "trajectory retention failed")
+    hashes = {
+        path.relative_to(exchange).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in exchange.rglob("*") if path.is_file()
+    }
+    shutil.rmtree(exchange)
+    verifier.unlink()
+    reopened = _cli_json(
+        cli,
+        ["records", "read-trajectory", "--root", str(store), "--id", identifier],
+        work / "trajectory-record-read.json", work,
+    )
+    _require(reopened["analysis"] == analysis, "trajectory reopen changed historical analysis")
+    _require(
+        reopened["native_verification_performed_now"] is False,
+        "trajectory reopen invented native verification",
+    )
+    verification = cast(dict[str, object], reopened["current_storage_verification"])
+    _require(verification["valid"] is True, "trajectory retained bytes did not verify")
+    code = (
+        "import hashlib,json,sys; from pathlib import Path; "
+        "from underwrite.service.records import read_record_file; "
+        "from underwrite.instrument.ingest.goppi_trajectory import trajectory_member_limits; "
+        "print(json.dumps({name:hashlib.sha256(read_record_file(Path(sys.argv[1]),"
+        "sys.argv[2],'source/'+name,max_bytes=limit).data).hexdigest() "
+        "for name,limit in trajectory_member_limits().items()}))"
+    )
+    restored = _success([str(cli.parent / "python"), "-c", code, str(store), identifier], work)
+    _require(json.loads(restored.stdout) == hashes, "trajectory raw source recovery changed bytes")
 
 
 def _smoke(dist: Path) -> None:
@@ -2623,14 +2824,31 @@ def _smoke(dist: Path) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dist", required=True, type=Path, help="Directory with both built wheels")
+    parser.add_argument(
+        "--dist",
+        required=True,
+        type=Path,
+        help="Built app/core wheels; registry-core mode requires only the app wheel",
+    )
+    parser.add_argument(
+        "--registry-core",
+        action="store_true",
+        help="Install only the candidate app and resolve core from public PyPI",
+    )
     args = parser.parse_args(argv)
     try:
-        _smoke(args.dist.resolve())
+        if args.registry_core:
+            _registry_core_smoke(args.dist.resolve())
+        else:
+            _smoke(args.dist.resolve())
     except (SmokeFailure, OSError, json.JSONDecodeError) as exc:
         print(f"wheel smoke failed: {exc}", file=sys.stderr)
         return 1
-    print("installed wheel native/evidence flows and malformed-input smoke passed")
+    print(
+        "installed wheel native/evidence flows and malformed-input smoke passed"
+        if not args.registry_core
+        else "installed application with published core smoke passed"
+    )
     return 0
 
 

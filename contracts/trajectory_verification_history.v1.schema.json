@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:trajectory_verification_history.v1",
+  "type": "object",
+  "required": [
+    "state"
+  ],
+  "properties": {
+    "state": {
+      "enum": [
+        "not_performed",
+        "verified"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "not_performed"
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema",
+          "source_members",
+          "source_authentication_independently_verified",
+          "producer_projection_independently_verified",
+          "state",
+          "integrity_scope",
+          "authenticity"
+        ],
+        "properties": {
+          "schema": {
+            "const": "trajectory_verification_history.v1"
+          },
+          "source_members": {
+            "$ref": "#/$defs/source_members"
+          },
+          "source_authentication_independently_verified": {
+            "const": false
+          },
+          "producer_projection_independently_verified": {
+            "const": false
+          },
+          "state": {
+            "const": "not_performed"
+          },
+          "integrity_scope": {
+            "const": null
+          },
+          "authenticity": {
+            "const": null
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "verified"
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema",
+          "source_members",
+          "source_authentication_independently_verified",
+          "producer_projection_independently_verified",
+          "state",
+          "integrity_scope",
+          "authenticity"
+        ],
+        "properties": {
+          "schema": {
+            "const": "trajectory_verification_history.v1"
+          },
+          "source_members": {
+            "$ref": "#/$defs/source_members"
+          },
+          "source_authentication_independently_verified": {
+            "const": false
+          },
+          "producer_projection_independently_verified": {
+            "const": false
+          },
+          "state": {
+            "const": "verified"
+          },
+          "integrity_scope": {
+            "const": "self_consistent_content_closure"
+          },
+          "authenticity": {
+            "const": "content_digest_only"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "source_members": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "raw_hash",
+          "bytes"
+        ],
+        "properties": {
+          "name": {
+            "enum": [
+              "paired/execution.json",
+              "paired/manifest.json",
+              "paired/rows.jsonl",
+              "paired/schema.json",
+              "trajectory/manifest.json",
+              "trajectory/schema.json",
+              "trajectory/trajectory.json"
+            ]
+          },
+          "raw_hash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 67108864
+          }
+        }
+      }
+    }
+  }
+}

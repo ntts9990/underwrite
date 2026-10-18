@@ -171,6 +171,31 @@ diagnostic-only record. Inspect both analysis and storage on exits 0/2/3. A null
 published_record does not establish that no ID was reserved. Use the manual path
 when the caller needs selective file omission instead.
 
+### Goppi trajectory retention
+
+When capabilities advertises `records audit-trajectory`, use it for a requested
+private record of the complete paired+trajectory export:
+
+```sh
+underwrite records audit-trajectory --exchange DIR --root ROOT --id ID --json
+underwrite records read-trajectory --root ROOT --id ID --json
+```
+
+Recording uses an already installed trusted Goppi only for offline verification;
+`--goppi-executable PATH` selects that installation. Preserve source, analysis,
+historical native verification and storage states separately. All seven raw files
+are retained in full. A saved diagnostic is not a successful analysis; a verifier
+failure creates no record. On storage failure, inspect the requested ID before
+retrying. Do not overwrite it or manufacture a successful history.
+
+Reopening verifies the whole stored record and returns the original result and
+history. It needs neither Goppi nor the original export and reports
+`native_verification_performed_now: false`. Use this dedicated reader for the
+trajectory report's existing 8 MiB bound; do not work around the generic
+`read-json` 1 MiB cap by truncating analysis. See [storage details](https://github.com/ntts9990/underwrite/blob/main/STORAGE.md#retain-a-goppi-paired-trajectory).
+
+### Manual invocation capture
+
 1. Select the exact supported underwrite command and its supplied files. Create
    a new private working directory (0700), outside any published source tree.
    Record the actual argv array and working directory in `command.json`; do not

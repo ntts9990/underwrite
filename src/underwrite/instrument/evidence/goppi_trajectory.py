@@ -130,6 +130,17 @@ _DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 Key = tuple[str | int, ...]
 
 
+DIAGNOSTIC_CODES = {
+    "TRAJECTORY_BINDING_MISMATCH": "INVALID_INPUT",
+    "TRAJECTORY_COVERAGE_MISMATCH": "INVALID_INPUT",
+    "TRAJECTORY_DUPLICATE_IDENTITY": "INVALID_INPUT",
+    "TRAJECTORY_LIMIT_EXCEEDED": "INPUT_LIMIT_EXCEEDED",
+    "TRAJECTORY_SHAPE_INVALID": "INVALID_INPUT",
+    "TRAJECTORY_UNSUPPORTED_VALUE": "UNSUPPORTED_FORMAT",
+    "TRAJECTORY_VALUE_INVALID": "INVALID_INPUT",
+}
+
+
 class TrajectoryError(ValueError):
     """Finite consumer diagnostics without reflecting raw producer payloads."""
 
@@ -142,11 +153,7 @@ def _require(
     condition: bool, reason: str = "TRAJECTORY_VALUE_INVALID", location: str = "trajectory"
 ) -> None:
     if not condition:
-        code = {
-            "TRAJECTORY_LIMIT_EXCEEDED": "INPUT_LIMIT_EXCEEDED",
-            "TRAJECTORY_UNSUPPORTED_VALUE": "UNSUPPORTED_FORMAT",
-        }.get(reason, "INVALID_INPUT")
-        raise TrajectoryError(code, reason, location)
+        raise TrajectoryError(DIAGNOSTIC_CODES[reason], reason, location)
 
 
 def _object(value: object) -> dict[str, Any]:
