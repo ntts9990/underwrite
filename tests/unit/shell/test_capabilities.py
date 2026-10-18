@@ -127,7 +127,7 @@ def test_advertised_audit_profile_runs_its_registered_fixture(
     capabilities_report = json.loads(capsys.readouterr().out)
     descriptor = next(row for row in capabilities_report["commands"] if row["command"] == command)
     selected = next(row for row in descriptor["profiles"] if row["name"] == name)
-    required = ["file"] if name.endswith(("4.1.1", "0.123.0")) else ["file", "version"]
+    required = ["file"] if name == "deepeval.test-run|4.1.1" else ["file", "version"]
     assert selected["required_inputs"] == required
     assert selected["output_schemas"] == [schema]
 
@@ -148,6 +148,13 @@ def test_advertised_audit_profile_runs_its_registered_fixture(
     [
         (
             "audit-promptfoo",
+            "promptfoo-0.124.1/results.json",
+            "0.124.1",
+            "promptfoo_record.v2",
+            "promptfoo_accounting.v2",
+        ),
+        (
+            "audit-promptfoo|0.123.0",
             "promptfoo/results.json",
             "0.123.0",
             "promptfoo_record.v1",
@@ -210,7 +217,15 @@ def test_advertised_record_profile_captures_and_verifies_its_selected_fixture(
     assert report["schema"] == schema
     assert report["analysis"]["state"] == "result"
     assert report["analysis"]["report"]["schema"] == analysis_schema
-    assert report["analysis"]["report"]["source"]["format_version"] == version
+    identity = report["analysis"]["report"]["source"]
+    if analysis_schema == "promptfoo_accounting.v2":
+        assert identity["producer_version"] == version
+        assert identity["producer_version_state"] == "declared"
+        original = json.loads(Path(values["file"]).read_bytes())
+        assert identity["summary_version"] == original["results"]["version"]
+        assert identity["claims_verified"] is False
+    else:
+        assert identity["format_version"] == version
     assert report["storage"]["state"] == "saved"
     assert main.main(["records", "verify", "--root", str(root), "--id", "selected", "--json"]) == 0
     verified = json.loads(capsys.readouterr().out)
@@ -218,15 +233,16 @@ def test_advertised_record_profile_captures_and_verifies_its_selected_fixture(
 
 
 @pytest.mark.parametrize(
-    ("command", "fixture"),
+    ("command", "fixture", "older_version"),
     [
-        ("audit-promptfoo", "promptfoo-0.124.1/results.json"),
-        ("audit-deepeval", "deepeval-4.2.8/ordinary.json"),
+        ("audit-promptfoo", "promptfoo-0.124.1/results.json", "0.123.0"),
+        ("audit-deepeval", "deepeval-4.2.8/ordinary.json", "4.1.1"),
     ],
 )
-def test_nondefault_record_input_without_version_remains_a_saved_diagnostic(
+def test_explicit_older_record_profile_does_not_fallback(
     command: str,
     fixture: str,
+    older_version: str,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -234,7 +250,18 @@ def test_nondefault_record_input_without_version_remains_a_saved_diagnostic(
     root = tmp_path / "private-records"
     assert (
         main.main(
-            ["records", command, str(source), "--root", str(root), "--id", "selected", "--json"]
+            [
+                "records",
+                command,
+                str(source),
+                "--version",
+                older_version,
+                "--root",
+                str(root),
+                "--id",
+                "selected",
+                "--json",
+            ]
         )
         == ERROR_EXIT
     )

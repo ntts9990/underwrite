@@ -96,14 +96,15 @@ def test_new_actual_derivative_counts_and_retained_recovery(
     assert output(capsys)["content"] == expected
 
 
-def test_default_explicit_old_bytes_and_invocation_are_identical(
+def test_explicit_old_bytes_and_invocation_are_identical(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     path = FIXTURES / "promptfoo/results.json"
-    assert main(["audit-promptfoo", str(path), "--json"]) == 0
-    baseline = capsys.readouterr().out
     assert main(["audit-promptfoo", str(path), "--version", "0.123.0", "--json"]) == 0
-    assert capsys.readouterr().out == baseline
+    baseline = capsys.readouterr().out
+    assert json.loads(baseline) == adapter.audit_promptfoo_bytes(
+        path.read_bytes(), version="0.123.0"
+    )
     store = tmp_path / "store"
     report = record_promptfoo.run_record_promptfoo(path, store, "sample", version="0.123.0")
     assert (
@@ -157,7 +158,18 @@ def test_unknown_profile_does_not_widen_advanced_manifest_route(
     update(manifest, "source", {"format": adapter.SOURCE[0], "format_version": "unsupported"})
     assert main(["audit-counts", str(manifest), "--json"]) == ERROR_EXIT
     assert output(capsys)["code"] == "UNSUPPORTED_PROFILE"
-    assert main(["audit-promptfoo", str(tmp_path / "artifact.json"), "--json"]) == ERROR_EXIT
+    assert (
+        main(
+            [
+                "audit-promptfoo",
+                str(tmp_path / "artifact.json"),
+                "--version",
+                "0.123.0",
+                "--json",
+            ]
+        )
+        == ERROR_EXIT
+    )
     assert output(capsys)["reason"] == "MALFORMED_PROMPTFOO_PAYLOAD"
 
 

@@ -126,8 +126,12 @@ authentication, a matching-window claim, or approval.
 For a supported Promptfoo export, when the caller explicitly selects a private
 store and new ID and capabilities includes the records audit-promptfoo profile,
 use `records audit-promptfoo FILE --root ROOT --id NEW_ID --json`. The default
-profile is 0.123.0; select `--version 0.124.1` explicitly for that supported export.
-Both use the v1 record/report family. Saved diagnostics identify the selection in
+in development builds advertising `promptfoo_record.v2` is automatic SummaryV3
+accounting: omit `--version`. The source's producer version is a declaration or
+unknown, separate from the reader policy; do not guess it from file shape.
+Explicit `--version 0.123.0` or `--version 0.124.1` keeps the strict v1 record/report family.
+Published 0.1.1 predates auto input; follow the installed capability contract.
+Saved diagnostics identify the requested selection in
 record metadata and the new-profile invocation, not in `analysis/error.json`
 alone. Recover those only when storage succeeded. This stores the
 entire captured source, result or diagnostic, and actual in-process invocation

@@ -29,6 +29,7 @@ from underwrite.cli import (
     project_baseline,
     record_deepeval,
     record_langfuse,
+    record_promptfoo,
     records,
     release,
     render,
@@ -38,6 +39,12 @@ from underwrite.cli.capabilities import CommandDescriptor, Handler, profile
 from underwrite.instrument.evidence.deepeval_trace import SCHEMA as DEEPEVAL_TRACE_SCHEMA
 from underwrite.instrument.evidence.deepeval_trace import SOURCE_VERSION as DEEPEVAL_TRACE_VERSION
 from underwrite.instrument.evidence.langfuse_accounting import RULE_PROFILE as LANGFUSE_RULE_PROFILE
+from underwrite.instrument.evidence.promptfoo_compat import (
+    ACCOUNTING_SCHEMA as PROMPTFOO_AUTO_ACCOUNTING_SCHEMA,
+)
+from underwrite.instrument.evidence.promptfoo_compat import (
+    ROW_INDEX_SCHEMA as PROMPTFOO_AUTO_ROW_INDEX_SCHEMA,
+)
 from underwrite.instrument.ingest.accounting import SOURCE as PROMPTFOO_SOURCE
 from underwrite.instrument.ingest.codecs.promptfoo import SUPPORTED_VERSIONS as PROMPTFOO_VERSIONS
 from underwrite.instrument.ingest.deepeval_accounting import PROFILES as DEEPEVAL_PROFILES
@@ -192,7 +199,12 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
         records.configure,
         (
             profile("save", ("root", "spec"), ("record_spec.v1",), ("record_view.v1",)),
-            profile("audit-promptfoo", ("file", "root", "id"), (), ("promptfoo_record.v1",)),
+            profile(
+                "audit-promptfoo",
+                ("file", "root", "id"),
+                (),
+                (record_promptfoo.AUTO_RECORD_SCHEMA,),
+            ),
             *(
                 profile(
                     f"audit-promptfoo|{version}",
@@ -201,7 +213,6 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                     ("promptfoo_record.v1",),
                 )
                 for version in PROMPTFOO_VERSIONS
-                if version != PROMPTFOO_SOURCE[1]
             ),
             profile(
                 "audit-deepeval",
@@ -348,10 +359,24 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
         "audit-promptfoo",
         "Audit Promptfoo counts directly from a local export.",
         audit_promptfoo.configure,
-        tuple(
+        (
+            profile(
+                "promptfoo.eval-output|auto",
+                ("file",),
+                (),
+                (PROMPTFOO_AUTO_ACCOUNTING_SCHEMA,),
+            ),
+            profile(
+                "promptfoo.eval-output|auto|row-index",
+                ("file", "view"),
+                (),
+                (PROMPTFOO_AUTO_ROW_INDEX_SCHEMA,),
+            ),
+        )
+        + tuple(
             profile(
                 "|".join((PROMPTFOO_SOURCE[0], version)),
-                ("file",) if version == PROMPTFOO_SOURCE[1] else ("file", "version"),
+                ("file", "version"),
                 (),
                 ("promptfoo_accounting.v1",),
             )

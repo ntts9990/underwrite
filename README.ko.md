@@ -34,6 +34,11 @@ underwrite는 평가를 다시 실행하거나, 생성 도구의 판정을 독�
 > 사용할 수 있습니다. 이전 `0.0.1`에는 이 작업 흐름이 없고 `pins refresh`에
 > 별도 주의 사항이 있습니다. [설치](#설치)를 참고하세요.
 
+개발본의 capabilities에 `promptfoo.eval-output|auto`가 있으면
+`underwrite audit-promptfoo FILE --json`으로 SummaryV3를 읽을 수 있습니다.
+생성 도구 버전 옵션은 필요 없습니다. 이 자동 기본값은 배포된 0.1.1 이후의 기능이며,
+[입력 안내](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#audit-promptfoo-counts)를 참고하세요.
+
 ## 빠른 시작
 
 **Python 3.12 이상**과 [uv](https://docs.astral.sh/uv/)가 필요합니다. 아래의 선택형

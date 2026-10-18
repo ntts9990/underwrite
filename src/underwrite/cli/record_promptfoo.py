@@ -25,6 +25,9 @@ from underwrite.cli.record_capture import (
     store_captured_record,
 )
 from underwrite.cli.records import OUTPUT_MAX_BYTES, record_error_payload
+from underwrite.instrument.evidence.promptfoo_compat import (
+    ACCOUNTING_SCHEMA as AUTO_ACCOUNTING_SCHEMA,
+)
 from underwrite.instrument.ingest.accounting import (
     SOURCE,
     AccountingCaseError,
@@ -42,30 +45,33 @@ from underwrite.service.records import (
 )
 
 SCHEMA = "promptfoo_record.v1"
+AUTO_RECORD_SCHEMA = "promptfoo_record.v2"
 COMMAND = "records audit-promptfoo"
 
 
 @dataclass(frozen=True)
 class _Contracts:
-    version: str
+    version: str | None
     aggregate: Validator
     storage: Validator
-    accounting: Validator
+    analysis: Validator
     evidence_error: Validator
     record_error: Validator
     verification: Validator
 
 
-def _contracts(version: str) -> _Contracts:
-    aggregate = packaged_validator("promptfoo_record.v1")
+def _contracts(version: str | None) -> _Contracts:
+    aggregate = packaged_validator(AUTO_RECORD_SCHEMA if version is None else SCHEMA)
     schema = cast(dict[str, Any], aggregate.schema)
     storage = Draft202012Validator({"$defs": schema["$defs"], "$ref": "#/$defs/storage"})
-    packaged_validator("observation.v1")
+    if version is not None:
+        packaged_validator("observation.v1")
+    analysis_schema = AUTO_ACCOUNTING_SCHEMA if version is None else "promptfoo_accounting.v1"
     return _Contracts(
         version,
         cast(Validator, aggregate),
         cast(Validator, storage),
-        cast(Validator, packaged_validator("promptfoo_accounting.v1")),
+        cast(Validator, packaged_validator(analysis_schema)),
         cast(Validator, packaged_validator("evidence_error.v1")),
         cast(Validator, packaged_validator("record_error.v1")),
         cast(Validator, packaged_validator("record_verification.v1")),
@@ -74,6 +80,21 @@ def _contracts(version: str) -> _Contracts:
 
 def _check(validator: Validator, value: object) -> None:
     validate(validator, value, EvidenceError, "INTERNAL_ERROR")
+
+
+def _applied_reader(analysis: dict[str, Any]) -> dict[str, str]:
+    """Describe a selected auto reader only after successful analysis."""
+    if analysis["state"] != "result":
+        return {}
+    report = cast(dict[str, Any], analysis["report"])
+    source = cast(dict[str, object], report["source"])
+    selected = {
+        "reader_profile": cast(str, report["reader_profile"]),
+        "producer_version_state": cast(str, source["producer_version_state"]),
+    }
+    if source["producer_version"] is not None:
+        selected["producer_version"] = cast(str, source["producer_version"])
+    return selected
 
 
 def _identifier(value: str) -> str:
@@ -88,26 +109,32 @@ def configure(parser: argparse.ArgumentParser) -> None:
         "file",
         type=Path,
         metavar="FILE",
-        help="Entire Promptfoo export for the selected version to retain.",
+        help="Entire local Promptfoo export to retain.",
     )
     parser.add_argument(
         "--version",
         choices=SUPPORTED_VERSIONS,
-        default=SOURCE[1],
-        help="Explicit source version; no detection or fallback.",
+        default=None,
+        help="Optional strict historical producer version; omitted uses selected SummaryV3 fields.",
     )
     parser.add_argument("--root", type=Path, required=True, help="Explicit private record root.")
     parser.add_argument("--id", type=_identifier, required=True, help="New immutable record ID.")
-    parser.add_argument("--json", action="store_true", help="Emit promptfoo_record.v1 JSON.")
+    parser.add_argument(
+        "--json", action="store_true", help="Emit the selected Promptfoo record JSON contract."
+    )
     parser.description = (
         "Audit one local Promptfoo export in process and retain the exact complete input, "
         "result or diagnostic, and effective invocation. Malformed complete input is retained "
-        "in full; a diagnostic record consumes the ID. No producer or subprocess is run. "
+        "in full, including private source fields; a diagnostic record consumes the ID. "
+        "Without --version, selected SummaryV3 fields are analyzed and a producer version is "
+        "only an unverified declaration when present. No producer or subprocess is run. "
         "Exit 0 means result saved, 2 analysis failed but diagnostic saved, and 3 storage failed."
     )
 
 
-def _analyze(path: Path, version: str) -> tuple[bytes | None, dict[str, object], dict[str, Any]]:
+def _analyze(
+    path: Path, version: str | None
+) -> tuple[bytes | None, dict[str, object], dict[str, Any]]:
     raw: bytes | None = None
     source: dict[str, object] = {"state": "unavailable"}
     try:
@@ -146,7 +173,7 @@ def _files(
 ) -> tuple[CapturedRecordFile, ...]:
     result = analysis["state"] == "result"
     document = analysis["report"] if result else analysis["error"]
-    _check(contracts.accounting if result else contracts.evidence_error, document)
+    _check(contracts.analysis if result else contracts.evidence_error, document)
     encoded = canonical_bytes(document) + b"\n"
     if len(encoded) > REPORT_MAX_BYTES:
         raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
@@ -155,7 +182,10 @@ def _files(
         "root_display": unicodedata.normalize("NFC", str(root)),
         "record_id": identifier,
     }
-    if contracts.version != SOURCE[1]:
+    if contracts.version is None:
+        arguments["selection_mode"] = "auto"
+        arguments.update(_applied_reader(analysis))
+    elif contracts.version != SOURCE[1]:
         arguments["format_version"] = contracts.version
     invocation = {
         "command": COMMAND,
@@ -201,20 +231,21 @@ def render_human(report: dict[str, object]) -> str:
 
 
 def run_record_promptfoo(
-    path: Path, root: Path, identifier: str, *, as_json: bool = True, version: str = SOURCE[1]
+    path: Path, root: Path, identifier: str, *, as_json: bool = True, version: str | None = None
 ) -> dict[str, object]:
     try:
         record_id(identifier)
     except FormatError:
         raise EvidenceError("USAGE_ERROR", "INVALID_ARGUMENTS_SEE_HELP") from None
-    try:
-        validate_version(version)
-    except AccountingCaseError as exc:
-        raise EvidenceError(exc.code, exc.reason, exc.location) from None
+    if version is not None:
+        try:
+            validate_version(version)
+        except AccountingCaseError as exc:
+            raise EvidenceError(exc.code, exc.reason, exc.location) from None
     contracts = _contracts(version)
     raw, source, analysis = _analyze(path, version)
     envelope: dict[str, Any] = {
-        "schema": SCHEMA,
+        "schema": AUTO_RECORD_SCHEMA if version is None else SCHEMA,
         "command": COMMAND,
         "source": source,
         "analysis": analysis,
@@ -250,15 +281,20 @@ def run_record_promptfoo(
         as_json=as_json,
         max_bytes=OUTPUT_MAX_BYTES,
     )
+    metadata = {
+        "format": SOURCE[0],
+        "analysis_state": analysis["state"],
+    }
+    if version is None:
+        metadata["selection_mode"] = "auto"
+        metadata.update(_applied_reader(analysis))
+    else:
+        metadata["format_version"] = version
     spec = CapturedRecordSpec(
         record_id=identifier,
         kind="promptfoo.accounting",
         label="Promptfoo accounting capture",
-        metadata={
-            "format": SOURCE[0],
-            "format_version": version,
-            "analysis_state": analysis["state"],
-        },
+        metadata=metadata,
         links=(),
         selection_excluded=None,
         rerun_verification={"status": "not_performed", "reference": None},
@@ -279,7 +315,7 @@ def produce(args: argparse.Namespace) -> dict[str, object]:
         cast(Path, args.root),
         cast(str, args.id),
         as_json=cast(bool, args.json),
-        version=cast(str, args.version),
+        version=cast(str | None, args.version),
     )
 
 
@@ -290,7 +326,7 @@ def main(argv: list[str]) -> int:
         configure,
         produce,
         ReportOutput(
-            SCHEMA,
+            lambda args: AUTO_RECORD_SCHEMA if args.version is None else SCHEMA,
             max_bytes=OUTPUT_MAX_BYTES,
             human=render_human,
             exit_status=lambda report: cast(int, report["exit_code"]),

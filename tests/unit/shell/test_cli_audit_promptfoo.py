@@ -29,7 +29,7 @@ def files(tmp_path: Path, raw: bytes | None = None) -> tuple[Path, Path]:
 
 
 def invoke(path: Path, capsys: pytest.CaptureFixture[str]) -> tuple[int, dict[str, Any], str, str]:
-    code = audit_promptfoo.main([str(path), "--json"])
+    code = audit_promptfoo.main([str(path), "--version", adapter.SOURCE[1], "--json"])
     text = capsys.readouterr()
     return code, json.loads(text.out if code == 0 else text.err), text.out, text.err
 
@@ -67,7 +67,9 @@ def test_expected_hash_checks_remain_an_explicit_manifest_guarantee(
 ) -> None:
     artifact, manifest = files(tmp_path)
     update(manifest, "artifact", {"expected_hash": digest_bytes(artifact.read_bytes())})
-    assert adapter.audit_case(manifest) == adapter.audit_promptfoo_file(artifact)
+    assert adapter.audit_case(manifest) == adapter.audit_promptfoo_file(
+        artifact, version=adapter.SOURCE[1]
+    )
     update(manifest, "artifact", {"expected_hash": "sha256:" + "0" * 64})
     assert audit_counts.main([str(manifest), "--json"]) == ERROR_EXIT
     result = capsys.readouterr()
@@ -91,7 +93,7 @@ def test_raw_input_is_read_once_without_a_generated_manifest(
         return original(path, limit)
 
     monkeypatch.setattr(adapter, "read_local_file", read)
-    adapter.audit_promptfoo_file(artifact)
+    adapter.audit_promptfoo_file(artifact, version=adapter.SOURCE[1])
     assert calls == [artifact]
     assert list(tmp_path.iterdir()) == [artifact]
 
@@ -100,7 +102,7 @@ def test_integral_float_counts_use_original_projection_and_preserve_identity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     artifact, _ = files(tmp_path)
-    original_report = adapter.audit_promptfoo_file(artifact)
+    original_report = adapter.audit_promptfoo_file(artifact, version=adapter.SOURCE[1])
     data = json.loads(artifact.read_bytes())
     for key in ("successes", "failures", "errors"):
         data["results"]["stats"][key] = float(data["results"]["stats"][key])
@@ -114,7 +116,7 @@ def test_integral_float_counts_use_original_projection_and_preserve_identity(
         return original(cast(dict[str, object], stats), rows)
 
     monkeypatch.setattr(adapter, "audit_promptfoo", count)
-    actual = adapter.audit_promptfoo_file(artifact)
+    actual = adapter.audit_promptfoo_file(artifact, version=adapter.SOURCE[1])
     assert types == [float]
     for key, expected in original_report.items():
         if key in {"raw_hash", "observation_digest"}:
@@ -169,7 +171,7 @@ def test_existing_resource_policies_keep_typed_refusals(
     if axis == "output":
         code = run_cli(
             "audit-promptfoo",
-            [str(artifact), "--json"],
+            [str(artifact), "--version", adapter.SOURCE[1], "--json"],
             audit_promptfoo.configure,
             audit_promptfoo.produce,
             "promptfoo_accounting.v1",
