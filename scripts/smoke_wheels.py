@@ -1285,12 +1285,17 @@ def _deepeval_trace_refusals(cli: Path, source: Path, work: Path) -> None:
         and json.loads(missing.stderr)["code"] == "SOURCE_READ_FAILED",
         "automatic trace intake did not preserve missing-source acquisition failure",
     )
-    ordinary = wheel.command([str(cli), "audit-deepeval", str(source), "--json"], work)
+    invalid = json.loads(source.read_bytes())
+    invalid["testCases"][0]["trace"] = []
+    invalid_source = work / "deepeval-non-object-trace.json"
+    invalid_source.write_text(json.dumps(invalid), encoding="utf-8")
+    ordinary = wheel.command([str(cli), "audit-deepeval", str(invalid_source), "--json"], work)
     wheel.require(
         ordinary.returncode == EVIDENCE_ERROR_EXIT
         and ordinary.stdout == ""
-        and json.loads(ordinary.stderr)["reason"] == "DEEPEVAL_SCOPE_UNSUPPORTED",
-        "trace view changed ordinary DeepEval scope",
+        and json.loads(ordinary.stderr)["reason"] == "DEEPEVAL_OBJECT_REQUIRED"
+        and json.loads(ordinary.stderr)["location"] == "/testCases/0/trace",
+        "ordinary DeepEval accounting admitted a non-object trace",
     )
 
 
@@ -1377,8 +1382,10 @@ def _deepeval_auto_pilot(cli: Path, work: Path) -> None:
         (golden / "deepeval-4.2.8/ordinary.json", "accounting"),
         (native / "ordinary.json", "accounting"),
         (golden / "deepeval-4.2.8/traces/recovery.json", "trace-index"),
+        (native / "recovery.json", "accounting"),
         (native / "recovery.json", "trace-index"),
     )
+    native_recovery_accounting: dict[str, Any] | None = None
     for index, (source, view) in enumerate(scenarios):
         selected = work / f"deepeval-auto-{index}"
         selected.mkdir()
@@ -1407,6 +1414,22 @@ def _deepeval_auto_pilot(cli: Path, work: Path) -> None:
             json.loads(api.stdout) == report, "automatic DeepEval API/CLI outcomes differ"
         )
         _deepeval_record_pilot(cli, selected, source, report, view=view)
+        if source == native / "recovery.json":
+            if view == "accounting":
+                native_recovery_accounting = cast(dict[str, Any], report)
+                wheel.require(
+                    native_recovery_accounting["scope"]["trace"] == "present_unanalyzed"
+                    and native_recovery_accounting["counts"]["metrics"]["scored"] == 1
+                    and native_recovery_accounting["cases"][0]["metrics"][0]["score"] == 1
+                    and "INSPECT_TRACE_INDEX" in native_recovery_accounting["next_actions"],
+                    "installed recovery accounting lost metric or trace scope",
+                )
+            else:
+                wheel.require(
+                    native_recovery_accounting is not None
+                    and native_recovery_accounting["raw_hash"] == report["raw_hash"],
+                    "installed accounting and trace index lost same-byte identity",
+                )
     invalid = json.loads((native / "ordinary.json").read_bytes())
     invalid["testCases"][0]["metricsData"][0]["expectationsData"] = {
         "private": "EXPECTATION_CANARY"

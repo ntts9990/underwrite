@@ -139,7 +139,11 @@ def build_branch(*, flaky: bool) -> dict[str, object]:
             "raw_hash": digest,
             "scope": _object(
                 {
-                    key: {"const": value}
+                    key: (
+                        {"enum": [value, "present_unanalyzed"]}
+                        if key == "trace"
+                        else {"const": value}
+                    )
                     for key, value in {**SCOPE, **ACCOUNTING_SCOPE_EXTRA}.items()
                 }
             ),
@@ -173,8 +177,23 @@ def build_branch(*, flaky: bool) -> dict[str, object]:
             "reader_profile": {"const": reader},
         }
     )
+    conditions: list[dict[str, object]] = [
+        {
+            "if": {
+                "properties": {"scope": {"properties": {"trace": {"const": "present_unanalyzed"}}}}
+            },
+            "then": {
+                "properties": {"next_actions": {"contains": {"const": "INSPECT_TRACE_INDEX"}}}
+            },
+            "else": {
+                "properties": {
+                    "next_actions": {"not": {"contains": {"const": "INSPECT_TRACE_INDEX"}}}
+                }
+            },
+        }
+    ]
     if not flaky:
-        schema["allOf"] = [
+        conditions.append(
             {
                 "if": {
                     "properties": {
@@ -186,7 +205,8 @@ def build_branch(*, flaky: bool) -> dict[str, object]:
                 },
                 "else": {"properties": {"limitations": _limitations(limitations)}},
             }
-        ]
+        )
+    schema["allOf"] = conditions
     return schema
 
 

@@ -8,7 +8,7 @@ from typing import Any, cast
 
 import pytest
 from _repo_paths import repo_root
-from underwrite_core.canonical import digest_bytes
+from underwrite_core.canonical import canonical_bytes, digest_bytes
 
 from underwrite.cli import record_deepeval
 from underwrite.cli.main import main
@@ -77,10 +77,44 @@ def test_auto_file_and_bytes_api_agree_on_original_source_identity(source: Path,
         assert cast(dict[str, object], report["scope"])["planned_inventory"] == "unknown"
 
 
+def test_native_recovery_default_accounting_and_trace_index_share_original_bytes(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    raw = NATIVE_TRACE.read_bytes()
+    assert main(["audit-deepeval", str(NATIVE_TRACE), "--json"]) == 0
+    accounting_stdout = capsys.readouterr()
+    assert accounting_stdout.err == ""
+    accounting = json.loads(accounting_stdout.out)
+    assert accounting_stdout.out.encode() == canonical_bytes(accounting) + b"\n"
+    assert accounting == audit_deepeval_bytes(raw)
+    assert accounting["schema"] == "deepeval_accounting.v3"
+    assert accounting["counts"]["metrics"]["scored"] == 1
+    assert accounting["cases"][0]["metrics"][0]["score"] == 1
+    assert accounting["source"]["claims_verified"] is False
+    assert cast(dict[str, object], accounting["scope"])["trace"] == "present_unanalyzed"
+    assert "INSPECT_TRACE_INDEX" in accounting["next_actions"]
+    assert main(["audit-deepeval", str(NATIVE_TRACE), "--view", "trace-index", "--json"]) == 0
+    trace_stdout = capsys.readouterr()
+    assert trace_stdout.err == ""
+    trace = json.loads(trace_stdout.out)
+    assert accounting["raw_hash"] == trace["raw_hash"] == digest_bytes(raw)
+
+
+def test_opaque_trace_is_accounted_but_trace_index_can_refuse() -> None:
+    payload = json.loads(NATIVE_TRACE.read_bytes())
+    payload["testCases"][0]["trace"] = {"opaque": "private"}
+    raw = json.dumps(payload).encode()
+    accounting = audit_deepeval_bytes(raw)
+    assert cast(dict[str, object], accounting["scope"])["trace"] == "present_unanalyzed"
+    with pytest.raises(deepeval_compat.DeepevalFileError):
+        audit_deepeval_trace_bytes(raw)
+
+
 @pytest.mark.parametrize(
     "case",
     [
         (NATIVE_ORDINARY, "accounting", "deepeval_record.v3", "analysis/accounting.json"),
+        (NATIVE_TRACE, "accounting", "deepeval_record.v3", "analysis/accounting.json"),
         (NATIVE_TRACE, "trace-index", "deepeval_trace_record.v2", "analysis/trace-index.json"),
     ],
 )

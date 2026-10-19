@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from underwrite_core.canonical import SAFE_INT_MAX
@@ -183,12 +183,47 @@ def test_unsupported_scope_is_not_silently_ignored(key: str) -> None:
     assert caught.value.code == "INVALID_INPUT"
 
 
-def test_trace_scope_and_source_success_null_refuse() -> None:
+def test_trace_scope_is_explicit_without_changing_metric_counting() -> None:
     data = source()
     data["testCases"][0]["trace"] = {"spans": []}
+    result = run(data)
+    assert result["scope"]["trace"] == "present_unanalyzed"
+    assert result["counts"] == run(source())["counts"]
+    assert result["next_actions"][-1] == "INSPECT_TRACE_INDEX"
+
+
+@pytest.mark.parametrize("rule", [RULE_PROFILE, RULE_PROFILE_V2])
+def test_mixed_trace_population_marks_whole_run_and_leaves_old_shapes_identical(rule: str) -> None:
+    data = v2_source() if rule == RULE_PROFILE_V2 else source()
+    baseline = account_deepeval(data, rule_profile=rule)
+    empty_values: tuple[object, ...] = (None, {})
+    for empty in empty_values:
+        candidate = deepcopy(data)
+        candidate["testCases"][0]["trace"] = empty
+        assert account_deepeval(candidate, rule_profile=rule) == baseline
+    traced = deepcopy(data)
+    untraced: dict[str, object] = {"name": "untraced"}
+    if rule == RULE_PROFILE_V2:
+        untraced["flaky"] = False
+    traced["testCases"].append(untraced)
+    traced["testCases"][0]["trace"] = {"opaque": "unverified"}
+    result = cast(dict[str, Any], account_deepeval(traced, rule_profile=rule))
+    assert result["scope"]["trace"] == "present_unanalyzed"
+    assert result["counts"]["metrics"]["total"] == 1
+    assert result["next_actions"][-1] == "INSPECT_TRACE_INDEX"
+
+
+@pytest.mark.parametrize("trace", [False, [], "private", 1])
+def test_non_object_trace_refuses_at_source_pointer(trace: object) -> None:
+    data = source()
+    data["testCases"][0]["trace"] = trace
     with pytest.raises(DeepevalAccountingError) as caught:
         run(data)
-    assert caught.value.code == "UNSUPPORTED_PROFILE"
+    assert (caught.value.code, caught.value.location) == ("INVALID_INPUT", "/testCases/0/trace")
+
+
+def test_source_success_null_still_refuses_with_empty_trace() -> None:
+    data = source()
     data["testCases"][0]["trace"] = {}
     data["testCases"][0]["success"] = None
     with pytest.raises(DeepevalAccountingError, match="DEEPEVAL_BOOLEAN_REQUIRED"):
@@ -484,7 +519,7 @@ def test_pure_rule_profile_selection_is_explicit_and_unknown_is_sanitized() -> N
 
 
 @pytest.mark.parametrize(
-    "fault", ["score_error", "case_null", "trace", "conversation", "population"]
+    "fault", ["score_error", "case_null", "trace_non_object", "conversation", "population"]
 )
 def test_v2_retains_shared_refusals(fault: str) -> None:
     payload = v2_source()
@@ -493,9 +528,8 @@ def test_v2_retains_shared_refusals(fault: str) -> None:
         payload["testCases"][0]["metricsData"][0]["error"] = "secret"
     elif fault == "case_null":
         payload["testCases"][0]["success"] = None
-    elif fault == "trace":
-        payload["testCases"][0]["trace"] = {"spans": []}
-        expected = "UNSUPPORTED_PROFILE"
+    elif fault == "trace_non_object":
+        payload["testCases"][0]["trace"] = []
     elif fault == "conversation":
         payload["conversationalTestCases"] = [{}]
         expected = "UNSUPPORTED_PROFILE"
