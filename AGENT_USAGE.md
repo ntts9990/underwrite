@@ -465,7 +465,8 @@ before a cross-run comparison. The source's declarations remain unverified.
 This view cannot be combined with `--bindings`. The current checkout rejects
 DeepEval `--version` and Python `version=`; published 0.2.0 still retains its
 historical selectors. See [migration](MIGRATION.md). Ordinary accounting
-still refuses populated traces. See the [4.2.8 native examples](fixtures/golden/external/deepeval-4.2.8/traces/SOURCE.md)
+in the unreleased checkout can count ordinary `metricsData` while marking a
+nonempty trace unanalyzed; published 0.2.0 may still refuse it. See the [4.2.8 native examples](fixtures/golden/external/deepeval-4.2.8/traces/SOURCE.md)
 and [4.3.1 native examples](fixtures/examples/deepeval-auto-4.3.1/SOURCE.md)
 for producer capture provenance and the limits of a successful case containing
 an errored step. Neither source establishes expectation coverage.
@@ -525,8 +526,8 @@ whole-source observation digest. The existing pure accounting rules still apply:
 `score` means `scored`, `error` means `error`, and neither means `unscored`.
 Both fields together, invalid types, and unsupported nonempty conversational
 branches are refused. Numeric spellings such as `1` and `1.0` are equivalent;
-booleans, strings, and null are not converted into scores. The trace summary is an
-object: empty known groups are accepted, while populated groups remain unsupported.
+booleans, strings, and null are not converted into scores. `traceMetricsScores` is
+an object: empty known groups are accepted, while populated groups remain unsupported.
 An absent, null or empty case `trace` keeps the older output shape. A nonempty
 object sets `scope.trace=present_unanalyzed` and adds `INSPECT_TRACE_INDEX`; it
 does not add trace metrics or validate trace structure. A non-object trace is
