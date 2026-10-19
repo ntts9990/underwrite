@@ -194,7 +194,7 @@ def steps_for(mode: Literal["docs", "full"], dist: str) -> tuple[Step, ...]:
         Step("pyright", (*uv, "pyright"), 600),
         Step("lint_imports", (*uv, "lint-imports"), 300),
         Step("deptry", (*uv, "deptry", "."), 300),
-        Step("pytest", (*uv, "python", "-m", "pytest"), 900),
+        Step("pytest", (*uv, "python", "-m", "pytest", "-n", "2", "--dist", "loadfile"), 900),
         build,
         smoke,
         Step("pure_sync", ("uv", "sync", "--frozen", "--only-group", "pure"), 600, True),

@@ -131,6 +131,9 @@ def test_plans_preserve_full_gates_and_doc_package_checks() -> None:
     assert [step.name for step in docs] == ["sync", "doc_gates", "build", "wheel_smoke"]
     assert "tests/gates/test_licensing.py" in docs[1].argv
     assert "tests/gates/test_packaged_contracts.py" in docs[1].argv
+    assert full[5].argv[-4:] == ("-n", "2", "--dist", "loadfile")
+    assert "-n" not in full[-1].argv
+    assert "-n" not in docs[1].argv
     assert full[-1].pure and full[-2].pure
     assert all(step.timeout_seconds > 0 for step in (*full, *docs))
 
