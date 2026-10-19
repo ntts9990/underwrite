@@ -102,6 +102,7 @@ underwrite-core = { workspace = true }
 [dependency-groups]
 dev = [
     "pytest",
+    "pytest-xdist==3.8.0",
     "hypothesis",
     "ruff",
     "pyright",
