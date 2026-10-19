@@ -510,6 +510,9 @@ behavior:
 underwrite audit-deepeval /path/to/test_run.json --json
 ```
 
+Trace-present default accounting described below is available in the unreleased
+current checkout. Published 0.2.0 may still refuse a nonempty case trace.
+
 The automatic `deepeval_accounting.v3` report applies a selected Underwrite
 reader rule, not a detected DeepEval release. All case/metric `flaky` fields
 absent selects the older rule when its required success/threshold fields hold;
@@ -520,10 +523,18 @@ no evidence about the file's producer version. The actual producer version
 remains null/unknown; `raw_hash` identifies original bytes, with no invented
 whole-source observation digest. The existing pure accounting rules still apply:
 `score` means `scored`, `error` means `error`, and neither means `unscored`.
-Both fields together, invalid types, and unsupported nonempty conversational or
-trace branches are refused. Numeric spellings such as `1` and `1.0` are equivalent;
+Both fields together, invalid types, and unsupported nonempty conversational
+branches are refused. Numeric spellings such as `1` and `1.0` are equivalent;
 booleans, strings, and null are not converted into scores. The trace summary is an
 object: empty known groups are accepted, while populated groups remain unsupported.
+An absent, null or empty case `trace` keeps the older output shape. A nonempty
+object sets `scope.trace=present_unanalyzed` and adds `INSPECT_TRACE_INDEX`; it
+does not add trace metrics or validate trace structure. A non-object trace is
+refused. Run `underwrite audit-deepeval /path/to/test_run.json --view trace-index
+--json` separately on the unchanged file and compare both `raw_hash` values.
+Matching hashes establish that the two analyses used the same bytes, not that
+trace-index will accept every object allowed by accounting or that source claims
+are verified. A populated `traceMetricsScores` group is still refused.
 Case and metric indices locate each source occurrence;
 duplicate names do not merge records. `rule_profile` and `applied_rule` identify
 the rules used, not a package version. A valid selected-field report does not
@@ -545,6 +556,10 @@ Metric aggregate summaries are not checked, and planned inventory stays unknown.
 See the [planned inventory next action](#planned-inventory-next-action); it does not
 add an inventory input to this command.
 The report does not infer why a case failed, a measured effect, or approval.
+`--bindings` refuses `scope.trace=present_unanalyzed`: the current
+`evidence_result.v2` projection cannot carry that trace scope or next action.
+Do not remove a trace to force a bound result. Older strict v3 validators may
+reject the new trace-present accounting result.
 
 Exit 0 means descriptive accounting completed, even when evaluator errors or
 count disagreements exist. Invalid input, unsupported scope, or resource refusal

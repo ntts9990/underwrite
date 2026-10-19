@@ -128,7 +128,10 @@
                 "const": "absent_or_empty"
               },
               "trace": {
-                "const": "absent_or_empty"
+                "enum": [
+                  "absent_or_empty",
+                  "present_unanalyzed"
+                ]
               },
               "metric_aggregates": {
                 "const": "not_checked"
@@ -561,13 +564,14 @@
           },
           "next_actions": {
             "type": "array",
-            "maxItems": 3,
+            "maxItems": 4,
             "items": {
               "type": "string",
               "enum": [
                 "INSPECT_EVALUATOR_ERRORS",
                 "SUPPLY_PLANNED_INVENTORY_FOR_MISSINGNESS",
-                "CHECK_PRODUCER_CASE_COUNTS"
+                "CHECK_PRODUCER_CASE_COUNTS",
+                "INSPECT_TRACE_INDEX"
               ]
             },
             "uniqueItems": true
@@ -577,6 +581,39 @@
           }
         },
         "allOf": [
+          {
+            "if": {
+              "properties": {
+                "scope": {
+                  "properties": {
+                    "trace": {
+                      "const": "present_unanalyzed"
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "next_actions": {
+                  "contains": {
+                    "const": "INSPECT_TRACE_INDEX"
+                  }
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "next_actions": {
+                  "not": {
+                    "contains": {
+                      "const": "INSPECT_TRACE_INDEX"
+                    }
+                  }
+                }
+              }
+            }
+          },
           {
             "if": {
               "properties": {
@@ -743,7 +780,10 @@
                 "const": "absent_or_empty"
               },
               "trace": {
-                "const": "absent_or_empty"
+                "enum": [
+                  "absent_or_empty",
+                  "present_unanalyzed"
+                ]
               },
               "metric_aggregates": {
                 "const": "not_checked"
@@ -1251,13 +1291,14 @@
           },
           "next_actions": {
             "type": "array",
-            "maxItems": 3,
+            "maxItems": 4,
             "items": {
               "type": "string",
               "enum": [
                 "INSPECT_EVALUATOR_ERRORS",
                 "SUPPLY_PLANNED_INVENTORY_FOR_MISSINGNESS",
-                "CHECK_PRODUCER_CASE_COUNTS"
+                "CHECK_PRODUCER_CASE_COUNTS",
+                "INSPECT_TRACE_INDEX"
               ]
             },
             "uniqueItems": true
@@ -1265,7 +1306,42 @@
           "reader_profile": {
             "const": "deepeval.metric-flaky.selected-fields.v1"
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "scope": {
+                  "properties": {
+                    "trace": {
+                      "const": "present_unanalyzed"
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "next_actions": {
+                  "contains": {
+                    "const": "INSPECT_TRACE_INDEX"
+                  }
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "next_actions": {
+                  "not": {
+                    "contains": {
+                      "const": "INSPECT_TRACE_INDEX"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
       }
     },
     "evidence_error": {

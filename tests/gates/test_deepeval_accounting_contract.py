@@ -134,3 +134,37 @@ def test_current_flaky_branch_preserves_absent_verdict_and_source_flaky() -> Non
         del parent[path[-1]]
         with pytest.raises(ValidationError):
             validator.validate(invalid)
+
+
+@pytest.mark.parametrize("flaky", [False, True])
+def test_trace_scope_and_next_action_are_tied_in_current_and_record_contracts(flaky: bool) -> None:
+    raw = (ROOT / "fixtures/examples/deepeval-auto-4.3.1/recovery.json").read_bytes()
+    source = json.loads(raw)
+    if not flaky:
+        case = source["testCases"][0]
+        del case["flaky"]
+        for metric in case["metricsData"]:
+            del metric["flaky"]
+    result: dict[str, Any] = {
+        "schema": ACCOUNTING_SCHEMA,
+        "raw_hash": "sha256:" + "a" * 64,
+        **account_deepeval_compatible(source),
+    }
+    for name in ("deepeval_accounting.v3", "deepeval_record.v3"):
+        schema = json.loads((ROOT / f"contracts/{name}.schema.json").read_bytes())
+        if name == "deepeval_record.v3":
+            # The record contract embeds the same accounting branch.
+            schema = schema["$defs"]["deepeval_accounting"]
+        validator = cast(Validator, Draft202012Validator(schema))
+        validator.validate(result)
+        for scope, actions in (
+            ("absent_or_empty", result["next_actions"]),
+            ("unknown", result["next_actions"]),
+            ("present_unanalyzed", ["SUPPLY_PLANNED_INVENTORY_FOR_MISSINGNESS"]),
+            ("present_unanalyzed", [*result["next_actions"], "PRIVATE_ACTION"]),
+        ):
+            invalid = deepcopy(result)
+            invalid["scope"]["trace"] = scope
+            invalid["next_actions"] = actions
+            with pytest.raises(ValidationError):
+                validator.validate(invalid)

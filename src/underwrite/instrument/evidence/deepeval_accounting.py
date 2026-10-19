@@ -34,6 +34,7 @@ NEXT_ACTIONS = (
     "INSPECT_EVALUATOR_ERRORS",
     "SUPPLY_PLANNED_INVENTORY_FOR_MISSINGNESS",
     "CHECK_PRODUCER_CASE_COUNTS",
+    "INSPECT_TRACE_INDEX",
 )
 SCOPE = MappingProxyType(
     {
@@ -141,13 +142,11 @@ def _scope(payload: dict[str, object]) -> None:
         _trace_metrics_scope(payload["traceMetricsScores"])
 
 
-def _case_trace(case: dict[str, object], location: str) -> None:
+def _case_trace(case: dict[str, object], location: str) -> bool:
     value = case.get("trace")
     if value is None:
-        return
-    trace = _object(value, location + "/trace")
-    if trace:
-        raise _error("DEEPEVAL_SCOPE_UNSUPPORTED", location + "/trace", "UNSUPPORTED_PROFILE")
+        return False
+    return bool(_object(value, location + "/trace"))
 
 
 def _metric(value: object, index: int, location: str, rule_profile: str) -> dict[str, object]:
@@ -225,6 +224,7 @@ def account_deepeval(payload: object, *, rule_profile: str = RULE_PROFILE) -> di
         case_counts["source_flaky_true"] = 0
         metric_counts["source_flaky_true"] = 0
         metric_counts["scored_source_success_absent"] = 0
+    trace_present = False
     for index, raw in enumerate(rows):
         location = f"/testCases/{index}"
         case = _object(raw, location)
@@ -233,7 +233,7 @@ def account_deepeval(payload: object, *, rule_profile: str = RULE_PROFILE) -> di
             MAX_METRICS - metric_counts["total"],
             location + "/metricsData",
         )
-        _case_trace(case, location)
+        trace_present = _case_trace(case, location) or trace_present
         flag = _flag(case["success"], location + "/success") if "success" in case else None
         case_counts[
             "source_success_absent" if flag is None else "source_true" if flag else "source_false"
@@ -273,9 +273,10 @@ def account_deepeval(payload: object, *, rule_profile: str = RULE_PROFILE) -> di
         actions.insert(0, "INSPECT_EVALUATOR_ERRORS")
     if "differs" in cast(dict[str, str], declared["comparison"]).values():
         actions.append("CHECK_PRODUCER_CASE_COUNTS")
+    actions.extend(["INSPECT_TRACE_INDEX"] if trace_present else [])
     return {
         "rule_profile": rule_profile,
-        "scope": dict(SCOPE),
+        "scope": {**SCOPE, "trace": "present_unanalyzed"} if trace_present else dict(SCOPE),
         "cases": cases,
         "counts": {"cases": case_counts, "metrics": metric_counts},
         "declared_case_counts": declared,

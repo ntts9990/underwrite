@@ -89,6 +89,22 @@ def test_auto_binding_uses_older_rule_without_claiming_an_older_release() -> Non
     check_result_invariants(result)
 
 
+def test_trace_accounting_refuses_neutral_binding_before_projection() -> None:
+    raw = (ROOT / "examples/deepeval-auto-4.3.1/recovery.json").read_bytes()
+    accounting = {
+        "schema": ACCOUNTING_SCHEMA,
+        "raw_hash": digest_bytes(raw),
+        **account_deepeval_compatible(json.loads(raw)),
+    }
+    assert cast(dict[str, Any], accounting["scope"])["trace"] == "present_unanalyzed"
+    with pytest.raises(DeepevalBindingError) as caught:
+        bind_deepeval_accounting_auto(accounting, _pack(), pack_raw_hash=digest_bytes(b"pack"))
+    assert (caught.value.code, caught.value.location) == (
+        "UNSUPPORTED_PROFILE",
+        "/source/scope/trace",
+    )
+
+
 @pytest.mark.parametrize(
     ("mutation", "reason", "location"),
     [

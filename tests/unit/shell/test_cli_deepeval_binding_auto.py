@@ -20,6 +20,7 @@ from underwrite.service.records import read_record, read_record_file
 
 ROOT = repo_root(Path(__file__).resolve())
 SOURCE = ROOT / "fixtures/examples/deepeval-auto-4.3.1/ordinary.json"
+TRACE_SOURCE = ROOT / "fixtures/examples/deepeval-auto-4.3.1/recovery.json"
 PACK = ROOT / "fixtures/examples/evidence/synthetic-deepeval-4.2.8.bindings.json"
 AUTO_PACK = ROOT / "fixtures/examples/evidence/synthetic-deepeval.bindings.v2.json"
 ERROR_EXIT = 2
@@ -54,6 +55,23 @@ def test_no_version_bound_audit_uses_v2_pack_and_unknown_producer_version(
         "authority": "owner_asserted_unverified",
     }
     assert result["population"]["observed_count"] == len(result["items"])
+
+
+def test_trace_accounting_does_not_silently_project_to_bound_result(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert (
+        main(["audit-deepeval", str(TRACE_SOURCE), "--bindings", str(AUTO_PACK), "--json"])
+        == ERROR_EXIT
+    )
+    streams = capsys.readouterr()
+    assert streams.out == ""
+    error = json.loads(streams.err)
+    assert (error["code"], error["location"], error["reason"]) == (
+        "UNSUPPORTED_PROFILE",
+        "/source/scope/trace",
+        "DEEPEVAL_BINDING_TRACE_SCOPE_UNSUPPORTED",
+    )
 
 
 def test_auto_bound_human_direct_and_record_state_coverage_and_identity_limits(

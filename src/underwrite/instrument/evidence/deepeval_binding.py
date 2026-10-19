@@ -172,6 +172,13 @@ def bind_deepeval_accounting_auto(
         "claims_verified": False,
     }:
         _refuse("DEEPEVAL_BINDING_SOURCE_UNSUPPORTED", "/source", "UNSUPPORTED_FORMAT")
+    scope = cast(dict[str, object], accounting.get("scope"))
+    if type(scope) is not dict or scope.get("trace") != "absent_or_empty":
+        _refuse(
+            "DEEPEVAL_BINDING_TRACE_SCOPE_UNSUPPORTED",
+            "/source/scope/trace",
+            "UNSUPPORTED_PROFILE",
+        )
     if pack.get("schema") != AUTO_PACK_SCHEMA:
         _refuse("DEEPEVAL_BINDING_PACK_UNSUPPORTED", "/bindings/schema", "UNSUPPORTED_FORMAT")
     if pack.get("source") != {"format": SOURCE_FORMAT}:
