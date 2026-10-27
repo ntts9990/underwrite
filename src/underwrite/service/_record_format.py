@@ -204,12 +204,16 @@ def _link(value: object) -> dict[str, object]:
 
 
 def _check_names(files: list[dict[str, object]]) -> None:
-    folded = sorted(cast(str, item["name"]).casefold() for item in files)
-    if len(folded) != len(set(folded)):
+    folded = [cast(str, item["name"]).casefold() for item in files]
+    names = set(folded)
+    if len(folded) != len(names):
         raise FormatError("DUPLICATE_LOGICAL_NAME")
-    for index, name in enumerate(folded[:-1]):
-        if folded[index + 1].startswith(name + "/"):
-            raise FormatError("LOGICAL_NAME_PREFIX_CONFLICT")
+    for name in folded:
+        parent = name
+        while "/" in parent:
+            parent = parent.rsplit("/", 1)[0]
+            if parent in names:
+                raise FormatError("LOGICAL_NAME_PREFIX_CONFLICT")
 
 
 def _file_spec(value: object, *, path_required: bool) -> dict[str, object]:

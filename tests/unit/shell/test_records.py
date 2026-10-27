@@ -162,6 +162,22 @@ def test_invalid_or_conflicting_logical_names_are_rejected_before_store_creation
     assert not (tmp_path / "store").exists()
 
 
+def test_nonadjacent_logical_name_prefix_conflict_rejected_before_store_creation(
+    tmp_path: Path,
+) -> None:
+    source = _source(tmp_path)
+    (source / "second.json").write_text("{}", encoding="utf-8")
+    (source / "third.json").write_text("{}", encoding="utf-8")
+    spec = _spec()
+    files = cast(list[dict[str, object]], spec["files"])
+    files[0]["name"] = "a"
+    files.append({**files[0], "name": "a-b", "path": "second.json"})
+    files.append({**files[0], "name": "a/b", "path": "third.json"})
+
+    _assert_error("INVALID_SPEC", lambda: records.save_record(tmp_path / "store", spec, source))
+    assert not (tmp_path / "store").exists()
+
+
 def test_source_is_opened_once_and_later_path_replacement_does_not_change_capture(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

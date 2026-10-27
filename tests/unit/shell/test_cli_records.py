@@ -106,6 +106,22 @@ def test_save_io_failures_provide_owner_specific_private_recovery(
     assert not (root / "records/synthetic.capture-001").exists()
 
 
+def test_nonadjacent_logical_name_conflict_refuses_before_store_creation(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    spec = _spec()
+    files = cast(list[dict[str, object]], spec["files"])
+    files[0]["name"] = "a"
+    files.extend(({**files[0], "name": "a-b"}, {**files[0], "name": "a/b"}))
+    root, spec_path, source = _inputs(tmp_path, spec)
+
+    error = _error(capsys, _save_args(root, spec_path), "INVALID_SPEC")
+
+    assert error["reason"] == "INVALID_RECORD_SPEC"
+    assert str(source) not in json.dumps(error)
+    assert not root.exists()
+
+
 def test_save_show_list_and_verify_emit_their_exact_contracts(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
