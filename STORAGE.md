@@ -384,10 +384,11 @@ underwrite records verify --root output/records-store --id synthetic.capture-001
 
 The manual example is synthetic. Each `records save` capture needs its own explicit
 [`record_spec.v1`](contracts/record_spec.v1.schema.json), unique record ID,
-selection, and honest reproduction status. Source paths are relative to the
-specification file. They are not persisted; a `source_locator` is recorded only
-when explicitly supplied as a nonblank string. Omit an unknown locator; do not
-write `"source_locator": null`. The portable
+selection, and honest reproduction status. Relative source paths resolve from the
+specification file's directory; absolute source paths are used as supplied.
+Source paths are execution-only and are not persisted; a `source_locator` is
+recorded only when explicitly supplied as a nonblank string. Omit an unknown
+locator; do not write `"source_locator": null`. The portable
 [complete four-file spec example](skills/underwrite-review/references/recording.md#minimal-manual-record-specification)
 shows actual input, result, command, and exit files without inventing a locator.
 Avoid secrets, credentials, raw thinking streams,

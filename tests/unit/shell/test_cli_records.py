@@ -123,6 +123,29 @@ def test_nonadjacent_logical_name_conflict_refuses_before_store_creation(
     assert not root.exists()
 
 
+@pytest.mark.parametrize("source_path", ["absolute", "parent_relative"])
+def test_manual_save_captures_explicit_external_source_without_persisting_path(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], source_path: str
+) -> None:
+    external = tmp_path / "outside.txt"
+    data = b"operator-selected bytes"
+    external.write_bytes(data)
+    spec = _spec()
+    file_spec = cast(list[dict[str, object]], spec["files"])[0]
+    file_spec["path"] = str(external) if source_path == "absolute" else "../outside.txt"
+    file_spec.pop("source_locator")
+    root, spec_path, _ = _inputs(tmp_path, spec)
+
+    code, payload, other = _invoke(capsys, _save_args(root, spec_path))
+
+    assert code == 0 and other == ""
+    selected = payload["record"]["files"][0]
+    assert selected["sha256"] == digest_bytes(data)
+    assert selected["bytes"] == len(data)
+    assert "path" not in selected
+    assert (root / "records/synthetic.capture-001/files/source/note.txt").read_bytes() == data
+
+
 def test_save_show_list_and_verify_emit_their_exact_contracts(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

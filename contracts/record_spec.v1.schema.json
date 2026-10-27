@@ -163,6 +163,7 @@
         "role": {"$ref": "#/$defs/role"},
         "path": {
           "type": "string",
+          "description": "Execution-only source path. Relative paths resolve from the caller-supplied source base (the specification file's directory for records save); absolute paths are used as supplied. The path is not persisted in the record manifest.",
           "minLength": 1,
           "maxLength": 4096,
           "pattern": "\\S",
