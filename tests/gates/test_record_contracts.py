@@ -16,6 +16,8 @@ from _repo_paths import repo_root
 from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 from underwrite_core.canonical import content_digest
 
+from underwrite.service import _record_format
+
 ROOT = repo_root(Path(__file__).resolve())
 CONTRACTS = ROOT / "contracts"
 FIXTURES = ROOT / "fixtures/examples/records"
@@ -293,6 +295,21 @@ def test_spec_and_manifest_keep_source_path_separate() -> None:
     spec["files"][0]["path"] = "source\u0000tail"
     with pytest.raises(ValidationError):
         validator("record_spec.v1").validate(spec)
+
+
+@pytest.mark.parametrize(
+    ("label", "reason"),
+    [("Cafe\u0301", "NON_NFC_STRING"), ("\ud800", "NON_UTF8_STRING")],
+)
+def test_record_spec_runtime_unicode_admission_extends_portable_schema(
+    label: str, reason: str
+) -> None:
+    spec = valid_spec()
+    spec["label"] = label
+    validator("record_spec.v1").validate(spec)
+
+    with pytest.raises(_record_format.FormatError, match=f"^{reason}$"):
+        _record_format.validate_spec(spec)
 
 
 def test_links_are_direct_dependencies_or_related_records_without_extra_semantics() -> None:

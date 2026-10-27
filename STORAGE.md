@@ -391,6 +391,10 @@ recorded only when explicitly supplied as a nonblank string. Omit an unknown
 locator; do not write `"source_locator": null`. The portable
 [complete four-file spec example](skills/underwrite-review/references/recording.md#minimal-manual-record-specification)
 shows actual input, result, command, and exit files without inventing a locator.
+All spec text must be UTF-8 encodable. Runtime validation also requires NFC for
+non-path text, even when the JSON Schema accepts it. Source path strings are not
+NFC-normalized. Normalize labels, metadata keys and values, selection exclusions,
+and source locators before saving.
 Avoid secrets, credentials, raw thinking streams,
 caches, environments, and unrelated working files. Captures copy bytes and leave
 the originals in place. A record is not automatically a complete reproduction kit.

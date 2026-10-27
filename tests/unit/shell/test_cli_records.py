@@ -146,6 +146,19 @@ def test_manual_save_captures_explicit_external_source_without_persisting_path(
     assert (root / "records/synthetic.capture-001/files/source/note.txt").read_bytes() == data
 
 
+def test_manual_save_rejects_non_nfc_label_before_store_creation(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    spec = _spec()
+    spec["label"] = "Cafe\u0301"
+    root, spec_path, _ = _inputs(tmp_path, spec)
+
+    error = _error(capsys, _save_args(root, spec_path), "INVALID_SPEC")
+
+    assert error["reason"] == "INVALID_RECORD_SPEC"
+    assert not root.exists()
+
+
 def test_save_show_list_and_verify_emit_their_exact_contracts(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

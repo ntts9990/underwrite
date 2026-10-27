@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:underwrite:contract:record_spec.v1",
   "title": "record_spec.v1",
-  "description": "Operator-authored control input selecting local files for one immutable record capture.",
+  "description": "Operator-authored control input selecting local files for one immutable record capture. Runtime requires UTF-8-encodable text and NFC-normalized non-path text. Source path strings must be UTF-8 encodable but are not NFC-normalized. Portable JSON Schema does not express Unicode normalization.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema", "record_id", "kind", "label", "selection", "rerun_verification", "provenance", "files"],
