@@ -38,6 +38,7 @@ from underwrite.cli import (
     records,
     release,
     render,
+    review_artifacts,
     review_pair,
 )
 from underwrite.cli.capabilities import CommandDescriptor, Handler, profile
@@ -178,6 +179,20 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
             for view, output in inspect_result.OUTPUT_SCHEMAS.items()
         ),
         _standalone(inspect_result.main),
+    ),
+    CommandDescriptor(
+        "review-artifacts",
+        "Align selected Goppi C55 and Promptfoo source claims under an optional owner case map.",
+        review_artifacts.configure,
+        (
+            profile(
+                "goppi-c55|promptfoo-summary-v3",
+                ("goppi_assessment", "goppi_result", "promptfoo"),
+                ("evidence_result.v1",),
+                (review_artifacts.RESULT_SCHEMA,),
+            ),
+        ),
+        _standalone(review_artifacts.main),
     ),
     CommandDescriptor(
         "project-baseline",

@@ -105,6 +105,82 @@ synthetic evaluations, archived captures, and constructed examples. They test
 these narrow boundaries, not every export or real-user value. No SDK score is
 implicitly a calibrated probability or a permission to merge.
 
+## Review selected Goppi and Promptfoo artifacts
+
+The development checkout offers `review-artifacts` for an existing Goppi C55
+operator-answer `assessment.json` and its `evidence_result.v1`, alongside a
+Promptfoo SummaryV3 eval output. Use `underwrite review-artifacts --help` on the
+selected executable before calling it; published versions may lack this route.
+Every Promptfoo row must carry owner-authored `testCase.metadata.case_id` and
+`testCase.metadata.slot_kind` (`subject` or `control`) plus Boolean `success`.
+The subject/control roles are source declarations, not independently verified
+roles or proof that the two producers ran the same task. The public
+[C55 fixture](fixtures/conformance/goppi-c55-common/SOURCE.md)
+shows the selected Goppi file shape; supply your own completed Promptfoo export
+with the required metadata.
+
+```sh
+underwrite review-artifacts \
+  --goppi-assessment /absolute/path/to/assessment.json \
+  --goppi-result /absolute/path/to/evidence-result.json \
+  --promptfoo /absolute/path/to/promptfoo-results.json --json
+```
+
+Without `--correspondence`, `relation` is
+`incomparable_on_supplied_evidence`; `next_verification_tasks` asks the
+evaluation owner for a source-bound case map. If the owner can declare one,
+write a [`cross_artifact_correspondence.v1`](contracts/cross_artifact_correspondence.v1.schema.json)
+file and pass `--correspondence /absolute/path/to/correspondence.json` to the
+same command. The declaration names its owner, `complete` or `partial` coverage,
+the `sha256:` digests of the **exact three selected file byte streams**, and
+one-to-one `pairs` of zero-based Goppi `case_index`, Promptfoo `row_index`, and
+matching `case_id`. Only Promptfoo `subject` rows can be mapped; `control` rows
+remain outside the pairs. A complete map covers every Goppi case and subject
+row; a partial map reports both unmatched sets. Changed source bytes invalidate
+the map's hash binding.
+
+The [`cross_artifact_review.v1`](contracts/cross_artifact_review.v1.schema.json)
+JSON reports source identities, applied `readers` (Goppi selected-field profile
+and Promptfoo reader profile with a declared or unknown producer version),
+separate case/row populations, coverage, `finding_counts`, and concrete
+`next_verification_tasks`. Promptfoo `category_counts` covers every supplied
+row, including controls; mapped pairs cover subject rows only. Disagreement
+between Promptfoo's declared stats and
+supplied result rows is a typed refusal. With a map, equal and different
+findings describe co-occurrence of two **source Boolean fields**.
+Goppi `missing`, `error`, or `abstained` cases and Promptfoo error rows are
+`value_comparison_ineligible`; they are never counted as agreement. The
+selected Goppi assessment/result fields are checked for consistency. Goppi C55
+terminal/control admission and portable bundle closure are not reperformed;
+`checks.goppi_terminal_controls` and `checks.goppi_portable_closure` report this
+explicitly. The source reviewer must perform the reported
+`VERIFY_GOPPI_PORTABLE_CLOSURE` task. Producer provenance is not independently
+verified. Input and metric equivalence, comparator conditions, improvement, and
+approval remain unknown.
+Follow the reported tasks to inspect ineligible cases and have the evaluation
+owner verify input/metric meaning and comparator conditions; have the source
+reviewer verify provenance. A successful exit means a descriptive report was
+produced, not that those tasks passed.
+
+Python callers can use the same read-once entry point:
+
+```python
+from pathlib import Path
+from underwrite.instrument.ingest.cross_artifact import review_artifact_files
+
+report = review_artifact_files(
+    Path("/absolute/path/to/assessment.json"),
+    Path("/absolute/path/to/evidence-result.json"),
+    Path("/absolute/path/to/promptfoo-results.json"),
+    correspondence=Path("/absolute/path/to/correspondence.json"),  # optional
+)
+```
+
+The command does not create a record; retaining output or source bytes is an
+explicit choice. Its JSON omits raw case IDs, answers, and prompts, but hashes
+and coordinates can still identify or correlate private work. Keep any retained
+JSON and records private.
+
 ## Complete native workflow
 
 The [README quickstart](README.md#quickstart) first audits a synthetic Promptfoo

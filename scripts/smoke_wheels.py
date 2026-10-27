@@ -2218,6 +2218,150 @@ def _common_result_inspection_pilot(cli: Path, fixtures: Path, work: Path) -> No
     )
 
 
+def _cross_artifact_review_pilot(cli: Path, work: Path) -> None:
+    directory = work / "cross-artifact-review"
+    directory.mkdir()
+    c55 = wheel.ROOT / "fixtures/conformance/goppi-c55-common"
+    assessment = directory / "assessment.json"
+    result = directory / "result.json"
+    promptfoo = directory / "promptfoo.json"
+    correspondence = directory / "correspondence.json"
+    shutil.copyfile(c55 / "assessment.json", assessment)
+    shutil.copyfile(c55 / "evidence-result.json", result)
+    case_ids = [case["case_id"] for case in json.loads(assessment.read_bytes())["cases"]]
+    private = "PRIVATE_WHEEL_REVIEW_CANARY"
+    rows: list[dict[str, Any]] = [
+        {
+            "success": False,
+            "failureReason": 1,
+            "testCase": {"metadata": {"case_id": case_ids[0], "slot_kind": "control"}},
+        }
+    ]
+    rows.extend(
+        {
+            "success": index == 0,
+            "failureReason": 0 if index == 0 else 1,
+            "testCase": {"metadata": {"case_id": case_id, "slot_kind": "subject"}},
+            "response": {"output": private},
+        }
+        for index, case_id in enumerate(case_ids)
+    )
+    promptfoo.write_text(
+        json.dumps(
+            {
+                "results": {
+                    "version": 3,
+                    "results": rows,
+                    "stats": {"successes": 1, "failures": len(rows) - 1, "errors": 0},
+                }
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    arguments = [
+        "review-artifacts",
+        "--goppi-assessment",
+        str(assessment),
+        "--goppi-result",
+        str(result),
+        "--promptfoo",
+        str(promptfoo),
+    ]
+    no_map = _cli_json(cli, arguments, directory / "no-map.json", directory)
+    relation = cast(dict[str, object], no_map["correspondence"])
+    wheel.require(
+        no_map["schema"] == "cross_artifact_review.v1"
+        and no_map["relation"] == "incomparable_on_supplied_evidence"
+        and relation["pairs"] == []
+        and relation["unmatched_case_indices"] == list(range(len(case_ids)))
+        and relation["unmatched_subject_row_indices"] == list(range(1, len(rows)))
+        and no_map["improvement"] == "unknown",
+        "installed review without a declaration asserted comparison",
+    )
+    sources = {
+        key: "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+        for key, path in (
+            ("goppi_assessment_sha256", assessment),
+            ("goppi_result_sha256", result),
+            ("promptfoo_export_sha256", promptfoo),
+        )
+    }
+    declaration: dict[str, Any] = {
+        "schema": "cross_artifact_correspondence.v1",
+        "scope": "owner_declared_case_mapping",
+        "declared_by": private,
+        "coverage": "complete",
+        "sources": sources,
+        "pairs": [
+            {"case_index": index, "row_index": index + 1, "case_id": case_id}
+            for index, case_id in enumerate(case_ids)
+        ],
+    }
+    correspondence.write_text(json.dumps(declaration, sort_keys=True), encoding="utf-8")
+    mapped = _cli_json(
+        cli,
+        [*arguments, "--correspondence", str(correspondence)],
+        directory / "mapped.json",
+        directory,
+    )
+    mapped_relation = cast(dict[str, object], mapped["correspondence"])
+    pairs = cast(list[dict[str, object]], mapped_relation["pairs"])
+    wheel.require(len(pairs) == len(case_ids), "installed review omitted declared cases")
+    missing = pairs[4]
+    wheel.require(
+        mapped["relation"] == "declared_case_mapping_descriptive"
+        and mapped_relation["input_correspondence"] == "declared_unverified"
+        and mapped_relation["semantic_equivalence"] == "unestablished"
+        and missing["goppi_availability"] == "missing"
+        and missing["goppi_value"] is None
+        and missing["promptfoo_source_success"] is False
+        and missing["finding"] == "value_comparison_ineligible"
+        and mapped["improvement"] == "unknown",
+        "installed review turned missing source evidence into Boolean agreement",
+    )
+    api_code = (
+        "import json,sys; from pathlib import Path; "
+        "from underwrite.instrument.ingest.cross_artifact import review_artifact_files; "
+        "args=[Path(p) for p in sys.argv[1:]]; "
+        "print(json.dumps(review_artifact_files(*args),sort_keys=True))"
+    )
+    for selected, expected in ((None, no_map), (correspondence, mapped)):
+        paths = [assessment, result, promptfoo]
+        if selected is not None:
+            paths.append(selected)
+        api = wheel.success(
+            [str(cli.parent / "python"), "-I", "-c", api_code, *(str(path) for path in paths)],
+            directory,
+        )
+        wheel.require(
+            api.stderr == "" and json.loads(api.stdout) == expected,
+            "installed review Python API and CLI disagree",
+        )
+    wheel.require(
+        private not in json.dumps(no_map) + json.dumps(mapped)
+        and all(str(path) not in json.dumps(mapped) for path in (assessment, result, promptfoo)),
+        "installed review leaked selected source content or paths",
+    )
+    declaration["sources"]["promptfoo_export_sha256"] = "sha256:" + "0" * 64
+    correspondence.write_text(json.dumps(declaration, sort_keys=True), encoding="utf-8")
+    refused = wheel.command(
+        [str(cli), *arguments, "--correspondence", str(correspondence), "--json"],
+        directory,
+    )
+    diagnostic = json.loads(refused.stderr)
+    wheel.require(
+        refused.returncode == EVIDENCE_ERROR_EXIT
+        and refused.stdout == ""
+        and diagnostic["schema"] == "evidence_error.v1"
+        and diagnostic["code"] == "INPUT_BINDING_MISMATCH"
+        and diagnostic["reason"] == "SOURCE_HASH_MISMATCH"
+        and private not in refused.stderr
+        and str(correspondence) not in refused.stderr,
+        "installed review accepted malformed source binding or leaked private input",
+    )
+
+
 def _baseline_event_pilot(cli: Path, fixtures: Path, work: Path) -> None:
     source = fixtures / "baseline-event"
     exchange = source / "exchange"
@@ -2760,6 +2904,7 @@ def _smoke(dist: Path) -> None:
         _native_measurement_pilot(cli, fixtures, work)
         _baseline_event_pilot(cli, fixtures, work)
         _common_result_inspection_pilot(cli, fixtures, work)
+        _cross_artifact_review_pilot(cli, work)
         _baseline_record_pilot(cli, fixtures, work)
         _measurement_record_pilot(cli, work)
         _measurement_replay_pilot(cli, work)

@@ -380,6 +380,7 @@ package includes the schemas needed for its CLI and Python APIs.
 | Explore | Guide |
 | --- | --- |
 | Run from an agent, choose inputs, interpret JSON | [Agent usage](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md) |
+| Review selected Goppi C55 and Promptfoo artifacts in the development checkout | [Cross-artifact review](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#review-selected-goppi-and-promptfoo-artifacts) |
 | Compare declarations, paired evidence, and goppi handoffs | [Evidence workflows](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#source-checkout-pilot-compare-declarations) |
 | Save, verify, retrieve, and recalculate | [Local records](https://github.com/ntts9990/underwrite/blob/main/STORAGE.md) |
 | Understand producer fixtures and tested boundaries | [Producer evidence](https://github.com/ntts9990/underwrite/blob/main/EVIDENCE_REVIEW.md) |
