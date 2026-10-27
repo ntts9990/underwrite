@@ -10,6 +10,7 @@ from typing import Any, Protocol, cast
 import pytest
 from _repo_paths import repo_root
 from jsonschema import Draft202012Validator
+from underwrite_core.canonical import canonical_bytes, digest_bytes
 
 from underwrite.cli import records
 from underwrite.instrument.ingest.schema import SchemaConfigurationError
@@ -369,6 +370,25 @@ def _manifest_read_args(command: str, selected_args: list[str]) -> list[str]:
     return [command, *selected_args[1 : 3 if command == "list" else 5], "--json"]
 
 
+def test_non_string_manifest_link_relation_is_invalid_record(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args, root = _read_json_args(tmp_path, b"{}")
+    path = root / "records/synthetic.capture-001/manifest.json"
+    manifest = json.loads(path.read_bytes())
+    manifest["links"] = [
+        {
+            "relation": [],
+            "record_id": "input.001",
+            "manifest_digest": "sha256:" + "0" * 64,
+        }
+    ]
+    path.write_bytes(canonical_bytes(manifest))
+
+    error = _error(capsys, _manifest_read_args("show", args), "INVALID_RECORD")
+    assert error["location"] == "/record"
+
+
 @pytest.mark.parametrize("command", ["show", "list", "verify", "read-json"])
 def test_manifest_integer_limit_is_invalid_record(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], command: str
@@ -424,8 +444,6 @@ def test_manifest_validator_bug_remains_internal_error(
 def test_read_json_accepts_all_admitted_values_and_always_emits_json(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], raw: bytes, value: object
 ) -> None:
-    from underwrite_core.canonical import canonical_bytes, digest_bytes
-
     from underwrite.service.records import read_record
 
     args, root = _read_json_args(tmp_path, raw)

@@ -178,6 +178,30 @@ def test_nonadjacent_logical_name_prefix_conflict_rejected_before_store_creation
     assert not (tmp_path / "store").exists()
 
 
+def test_explicit_null_source_locator_is_rejected_before_store_creation(tmp_path: Path) -> None:
+    source = _source(tmp_path)
+    spec = _spec()
+    cast(list[dict[str, object]], spec["files"])[0]["source_locator"] = None
+
+    _assert_error("INVALID_SPEC", lambda: records.save_record(tmp_path / "store", spec, source))
+    assert not (tmp_path / "store").exists()
+
+
+def test_non_string_link_relation_is_invalid_spec_before_store_creation(tmp_path: Path) -> None:
+    source = _source(tmp_path)
+    spec = _spec()
+    cast(list[object], spec["links"]).append(
+        {
+            "relation": [],
+            "record_id": "input.001",
+            "manifest_digest": "sha256:" + "0" * 64,
+        }
+    )
+
+    _assert_error("INVALID_SPEC", lambda: records.save_record(tmp_path / "store", spec, source))
+    assert not (tmp_path / "store").exists()
+
+
 def test_source_is_opened_once_and_later_path_replacement_does_not_change_capture(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

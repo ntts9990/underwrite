@@ -22,7 +22,12 @@ What it independently re-verifies (CONTENT INTEGRITY / tamper-evidence):
      correctly hashed, contiguous append-only chain; if it also declares
      an "anchor" role, the chain's head is pinned to that anchor,
   4. any tar member with an absolute path or a ".." segment is rejected
-     outright (UNSAFE_PATH) before anything is extracted.
+     outright (UNSAFE_PATH) before anything is extracted; noncanonical path
+     components and portable separator/drive aliases are rejected likewise.
+  5. repeated tar member names are rejected (DUPLICATE_MEMBER) before a
+     dictionary can discard one member's contents.
+  6. link and other non-file members are rejected (UNSAFE_MEMBER_TYPE), while
+     ordinary directory entries may precede files.
 
 What it deliberately does NOT assert: issuer
 AUTHENTICITY. Signature verification is a separate, optional step
@@ -43,6 +48,7 @@ import argparse
 import hashlib
 import json
 import math
+import ntpath
 import re
 import sys
 import tarfile
@@ -644,27 +650,45 @@ def _parse_index(data: bytes) -> tuple[list[Descriptor], list[tuple[BundleReason
 
 
 # --- CLI -------------------------------------------------------------------------
-class _UnsafePathError(Exception):
-    """A tar member's path is absolute or contains a ".." segment."""
+class _ArchiveMemberError(Exception):
+    """A tar member cannot be represented as one safe layout entry."""
+
+    def __init__(self, reason: str, name: str) -> None:
+        self.reason = reason
+        self.name = name
+        super().__init__(name)
 
 
 def _is_unsafe_member_name(name: str) -> bool:
-    if not name or name.startswith("/"):
+    if (
+        not name
+        or name.startswith("/")
+        or ntpath.sep in name
+        or ntpath.splitdrive(name)[0]
+        or unicodedata.normalize("NFC", name) != name
+    ):
         return True
-    return ".." in name.split("/")
+    return any(part in ("", ".", "..") for part in name.split("/"))
 
 
 def _read_bundle_tar(path: str) -> dict[str, bytes]:
     files: dict[str, bytes] = {}
+    seen_identities: set[str] = set()
     with tarfile.open(path, mode="r:") as tar:
         for member in tar.getmembers():
             if _is_unsafe_member_name(member.name):
-                raise _UnsafePathError(member.name)
-            if not member.isfile():
+                raise _ArchiveMemberError("UNSAFE_PATH", member.name)
+            identity = member.name.casefold()
+            if identity in seen_identities:
+                raise _ArchiveMemberError("DUPLICATE_MEMBER", member.name)
+            seen_identities.add(identity)
+            if member.isdir():
                 continue
+            if not member.isfile():
+                raise _ArchiveMemberError("UNSAFE_MEMBER_TYPE", member.name)
             extracted = tar.extractfile(member)
             if extracted is None:
-                raise _UnsafePathError(member.name)
+                raise _ArchiveMemberError("UNSAFE_MEMBER_TYPE", member.name)
             files[member.name] = extracted.read()
     return files
 
@@ -813,9 +837,9 @@ def _build_report(
 ) -> tuple[dict[str, object], int]:
     try:
         files = _read_bundle_tar(bundle_path)
-    except _UnsafePathError as exc:
+    except _ArchiveMemberError as exc:
         return _finish(
-            reasons=[("UNSAFE_PATH", str(exc))],
+            reasons=[(exc.reason, exc.name)],
             raw_included="not_measured",
             ledger_anchored="not_measured",
         )

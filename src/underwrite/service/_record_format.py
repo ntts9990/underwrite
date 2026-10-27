@@ -194,10 +194,11 @@ def _link(value: object) -> dict[str, object]:
         frozenset({"relation", "record_id", "manifest_digest"}),
         frozenset({"relation", "record_id", "manifest_digest"}),
     )
-    if obj["relation"] not in {"input", "related"}:
+    relation = obj["relation"]
+    if type(relation) is not str or relation not in {"input", "related"}:
         raise FormatError("LINK_INVALID")
     return {
-        "relation": obj["relation"],
+        "relation": relation,
         "record_id": record_id(obj["record_id"]),
         "manifest_digest": digest(obj["manifest_digest"]),
     }
@@ -231,6 +232,8 @@ def _file_spec(value: object, *, path_required: bool) -> dict[str, object]:
     if type(media_type) is not str or _MEDIA_TYPE.fullmatch(media_type) is None:
         raise FormatError("MEDIA_TYPE_INVALID")
     locator_value = obj.get("source_locator")
+    if path_required and "source_locator" in obj and locator_value is None:
+        raise FormatError("STRING_REQUIRED")
     locator = None if locator_value is None else _text(locator_value, 512)
     result: dict[str, object] = {
         "name": logical_name(obj["name"]),
