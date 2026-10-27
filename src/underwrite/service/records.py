@@ -765,23 +765,32 @@ def _capture_bytes(
 def _write_staging(staging: Path, raw: bytes) -> Path:
     path = staging / f"manifest-{secrets.token_hex(16)}.tmp"
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, _FILE_MODE)
+    write_failed = False
     try:
-        os.fchmod(descriptor, _FILE_MODE)
-        view = memoryview(raw)
-        while view:
-            written = os.write(descriptor, view)
-            if written <= 0:
-                raise OSError(errno.EIO, "write failed")
-            view = view[written:]
-        os.fsync(descriptor)
-    except Exception:
+        try:
+            os.fchmod(descriptor, _FILE_MODE)
+            view = memoryview(raw)
+            while view:
+                written = os.write(descriptor, view)
+                if written <= 0:
+                    raise OSError(errno.EIO, "write failed")
+                view = view[written:]
+            os.fsync(descriptor)
+        except BaseException:
+            write_failed = True
+            raise
+        finally:
+            try:
+                os.close(descriptor)
+            except OSError:
+                if not write_failed:
+                    raise
+    except BaseException:
         try:
             path.unlink()
         except OSError:
             pass
         raise
-    finally:
-        os.close(descriptor)
     return path
 
 

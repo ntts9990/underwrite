@@ -592,6 +592,99 @@ def _interrupt_after_publication(
     monkeypatch.setattr(records, "_publish", publish)
 
 
+@pytest.mark.parametrize("error_type", [KeyboardInterrupt, SystemExit])
+@pytest.mark.parametrize("close_error", [False, True])
+def test_staging_write_interruption_cleans_unpublished_temp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    error_type: type[BaseException],
+    close_error: bool,
+) -> None:
+    source = _source(tmp_path)
+    root = tmp_path / "store"
+    original_open, original_write, original_close = os.open, os.write, os.close
+    staging_descriptors: list[int] = []
+    interruption = error_type("staging write interrupted")
+    close_failed = False
+
+    def track_open(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        descriptor = original_open(path, flags, mode, dir_fd=dir_fd)
+        if isinstance(path, Path) and path.parent == root / ".staging":
+            staging_descriptors.append(descriptor)
+        return descriptor
+
+    def interrupt_write(descriptor: int, data: bytes | memoryview) -> int:
+        if descriptor in staging_descriptors:
+            raise interruption
+        return original_write(descriptor, data)
+
+    def close_with_failure(descriptor: int) -> None:
+        nonlocal close_failed
+        original_close(descriptor)
+        if close_error and not close_failed and descriptor in staging_descriptors:
+            close_failed = True
+            raise OSError("staging close failed")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "open", track_open)
+        patch.setattr(os, "write", interrupt_write)
+        patch.setattr(os, "close", close_with_failure)
+        with pytest.raises(error_type) as caught:
+            records.save_record(root, _spec(), source)
+
+    assert caught.value is interruption
+    assert len(staging_descriptors) == 1
+    with pytest.raises(OSError):
+        os.fstat(staging_descriptors[0])
+    assert not (root / "records/capture.001").exists()
+    assert not list((root / ".staging").iterdir())
+    assert (source / "result.json").read_bytes() == b'{"ok":true}\n'
+
+
+def test_staging_close_failure_after_write_cleans_unpublished_temp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source(tmp_path)
+    root = tmp_path / "store"
+    original_open, original_close = os.open, os.close
+    staging_descriptors: list[int] = []
+    close_failed = False
+
+    def track_open(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        descriptor = original_open(path, flags, mode, dir_fd=dir_fd)
+        if isinstance(path, Path) and path.parent == root / ".staging":
+            staging_descriptors.append(descriptor)
+        return descriptor
+
+    def close_with_failure(descriptor: int) -> None:
+        nonlocal close_failed
+        original_close(descriptor)
+        if not close_failed and descriptor in staging_descriptors:
+            close_failed = True
+            raise OSError("staging close failed")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "open", track_open)
+        patch.setattr(os, "close", close_with_failure)
+        _assert_error("STORE_IO_ERROR", lambda: records.save_record(root, _spec(), source))
+
+    assert close_failed
+    assert not (root / "records/capture.001").exists()
+    assert not list((root / ".staging").iterdir())
+
+
 @pytest.mark.parametrize("api", ["source", "captured"])
 @pytest.mark.parametrize(
     "phase",
