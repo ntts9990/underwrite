@@ -13,12 +13,35 @@
 해당 분야의 방법을 사용하고, 작성 세션 밖의 확인으로 끝낸다.
 
 기존 [저장소 지침](../../AGENTS.md), [구현 소유권](../../CONTRIBUTING.md#implementation-owners),
-상위 `../AGENTS.md`의 반복 루프는 유지한다. Underwrite는 생산자 간 근거 의미·
+상위 작업공간의 `AGENTS.md`가 적용될 때 그 반복 루프는 유지한다.
+Underwrite는 생산자 간 근거 의미·
 비교 가능성·결측·다음 검증 과제를 소유한다. Goppi는 원생 실행·trace·검증기 결합·
 제안·통제 재실행을 소유한다. 해시=바이트 동일성, 출처 주장, 독립 인증,
 측정과 채택 권한은 서로 다른 판단이다. `not_measured`, `indeterminate`,
 `abstained`를 하나의 성공/실패로 접지 않는다. 이 계획은 Docker·서버·웹 앱,
 상시 모델 심판, 자동 승인, provider 실행, 버전 변경을 요구하지 않는다.
+
+### Goppi의 별도 방법 파일럿과 맞추기
+
+Goppi `main`에 수용된 [영상 연구](https://github.com/ntts9990/goppi/blob/5d61832b4b4799c83e2af43d1a89f1c4274fd6ec/docs/research/FELIX_DELEGATION_METHODS_GOPPI.ko.md)와
+[파일럿 계획](https://github.com/ntts9990/goppi/blob/5d61832b4b4799c83e2af43d1a89f1c4274fd6ec/docs/plan/OUTCOME_METHOD_EXTERNAL_VERIFICATION_PILOT.ko.md)은
+**스킬·하네스의 지시문 H1이 H0보다 독립 과제의 행동 성과를 개선하는가**를 묻는다.
+계획은 실제 대상·검증기·예산을 아직 봉인하지 않았다. 기존 D 수집기·저장·
+예정 단위 ledger·final-access 상태 기계·짝비교 계산 소유자는 재사용 후보로
+존재한다. **새 고정 H0/H1 계약·closure·Pi 최종 T adapter·통합 실행 경로**는
+미구현이다. 이 상태를 Underwrite의 새 입력 형식이나 완료된 효능으로 승격하지 않는다.
+
+| 분리된 연구 | 바꾸는 것 | 주 분석 단위·결과 | 별도 범위 |
+| --- | --- | --- | --- |
+| **Goppi 방법 지시 효과** | 같은 실행 조건에서 스킬·하네스의 H0 대비 H1 지시 한 구역 | 독립 T 사례의 repeat 0에서 짝지은 이진 행동 결과 H1−H0 | 실패 전이는 위험 guardrail, 결측·비용은 별도 회계. 실행·비공개 최종 자료는 Goppi grant와 사람 결정에 종속. |
+| **Underwrite 작업 준비·방법 파일럿** | 완료된 산출물을 읽는 동일 과제에서 현행 방식 대비 네 질문으로 결과·원자료·도구·확인을 먼저 명시 | 사전 고정한 작업 세션별 올바른 근거·한계·다음 행동과 사람 활동시간 | 원본 바이트·CLI·권한은 동일. 이 방법의 효과를 출력 표시의 효과와 섞지 않음. |
+| **Underwrite 출력 표시 연구** | 동일한 완료 근거를 현행 CLI/JSON, 직접 링크, 기존 기록에서 파생한 요약으로 제시 | 사전 고정한 검토 세션별 정확한 해석, 잘못된 승인/반려와 사람 활동시간 | 세 조건의 원천·권한은 동일. 파생 요약은 새 정답이나 채택 권한을 만들지 않음. |
+
+각 연구의 분모와 효과 추정은 합산하지 않는다. Underwrite의 분모는 사전 고정한
+작업·검토 세션이지 fixture 항목, 생산자 행 또는 반복 수가 아니다. Goppi 파일럿 결과를
+Underwrite의 사용자 효율 근거로 대신 쓰지 않고, Underwrite가 본 구조적 일치를
+Goppi의 원생 실행 인증으로 되돌려 말하지 않는다. 새 교환 형식이 생기면 수용된
+원본·fixture와 검증 경계를 확인한 뒤에만 기존 어댑터로 충분한지 판단한다.
 
 ## 작업 시작의 작은 결정 틀
 
