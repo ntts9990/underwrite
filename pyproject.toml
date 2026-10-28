@@ -62,6 +62,7 @@ source-include = [
     "contracts/gate_rules.v1.schema.json",
     "contracts/evidence_error.v1.schema.json",
     "contracts/promptfoo_accounting.v2.schema.json",
+    "contracts/promptfoo_accounting_actions.v1.schema.json",
     "contracts/promptfoo_row_index.v2.schema.json",
     "contracts/promptfoo_record.v2.schema.json",
     "contracts/deepeval_accounting.v3.schema.json",

@@ -58,6 +58,9 @@ from underwrite.instrument.evidence.promptfoo_compat import (
     ACCOUNTING_SCHEMA as PROMPTFOO_AUTO_ACCOUNTING_SCHEMA,
 )
 from underwrite.instrument.evidence.promptfoo_compat import (
+    ACTIONS_SCHEMA as PROMPTFOO_AUTO_ACTIONS_SCHEMA,
+)
+from underwrite.instrument.evidence.promptfoo_compat import (
     ROW_INDEX_SCHEMA as PROMPTFOO_AUTO_ROW_INDEX_SCHEMA,
 )
 from underwrite.instrument.ingest.codecs.promptfoo import SUPPORTED_VERSIONS as PROMPTFOO_VERSIONS
@@ -373,6 +376,12 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 ("file", "view"),
                 (),
                 (PROMPTFOO_AUTO_ROW_INDEX_SCHEMA,),
+            ),
+            profile(
+                "promptfoo.eval-output|auto|actions",
+                ("file", "view"),
+                (),
+                (PROMPTFOO_AUTO_ACTIONS_SCHEMA,),
             ),
         ),
         _standalone(audit_promptfoo.main),

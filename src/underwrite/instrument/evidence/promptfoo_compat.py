@@ -16,6 +16,11 @@ from underwrite.instrument.evidence.accounting import (
 
 ACCOUNTING_SCHEMA = "promptfoo_accounting.v2"
 ROW_INDEX_SCHEMA = "promptfoo_row_index.v2"
+ACTIONS_SCHEMA = "promptfoo_accounting_actions.v1"
+ACTION_BY_FINDING = (
+    ("CATEGORY_COUNT_MISMATCH", "RECONCILE_SOURCE_DECLARED_COUNTS"),
+    ("SOURCE_FLAGS_DISAGREE", "INSPECT_SOURCE_FLAG_DISAGREEMENTS"),
+)
 SOURCE_FORMAT = "promptfoo.eval-output"
 SUMMARY_VERSION = 3
 READER_PROFILE = "promptfoo.summary-v3.selected-fields.v1"
@@ -142,4 +147,13 @@ def account_promptfoo_compatible(payload: object, *, row_index: bool = False) ->
         scope["values"] = "withheld"
         result["rows"] = rows
         result["verification"] = []
+    return result
+
+
+def account_promptfoo_actions(payload: object) -> dict[str, object]:
+    """Project existing Promptfoo findings into bounded verification actions."""
+    result = account_promptfoo_compatible(payload)
+    findings = cast(list[dict[str, object]], result["findings"])
+    codes = {finding["code"] for finding in findings}
+    result["next_actions"] = [action for code, action in ACTION_BY_FINDING if code in codes]
     return result

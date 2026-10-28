@@ -11,9 +11,11 @@ from underwrite_core.canonical import digest_bytes
 
 from underwrite.instrument.evidence.promptfoo_compat import (
     ACCOUNTING_SCHEMA,
+    ACTIONS_SCHEMA,
     ROW_INDEX_SCHEMA,
     SOURCE_FORMAT,
     PromptfooCompatibilityError,
+    account_promptfoo_actions,
     account_promptfoo_compatible,
 )
 from underwrite.instrument.ingest.application import (
@@ -109,7 +111,7 @@ def _trusted_artifact_diagnostic(report: dict[str, object]) -> tuple[str, str] |
 
 def audit_case(path: Path) -> dict[str, object]:
     """Audit the original captured projection after manifest path and hash admission."""
-    validator = _compatible_validator(False)
+    validator = _compatible_validator(ACCOUNTING_SCHEMA)
     try:
         report, projection = inspect_artifact_with_projection(
             path,
@@ -128,7 +130,7 @@ def audit_case(path: Path) -> dict[str, object]:
             raise AccountingCaseError("INVALID_INPUT", reason, location)
         raise AccountingCaseError("INVALID_INPUT", "INVALID_ARTIFACT", "/artifact")
     return _account_current_payload(
-        projection.payload, report["raw_hash"], row_index=False, validator=validator
+        projection.payload, report["raw_hash"], schema=ACCOUNTING_SCHEMA, validator=validator
     )
 
 
@@ -141,9 +143,9 @@ def read_promptfoo_file(path: Path) -> bytes:
         raise AccountingCaseError(code, reason, "/file") from None
 
 
-def _compatible_validator(row_index: bool) -> Draft202012Validator:
+def _compatible_validator(schema: str) -> Draft202012Validator:
     try:
-        return packaged_validator(ROW_INDEX_SCHEMA if row_index else ACCOUNTING_SCHEMA)
+        return packaged_validator(schema)
     except SchemaConfigurationError:
         raise AccountingCaseError(
             "SCHEMA_CONFIGURATION_ERROR", "INVALID_PACKAGED_CONTRACT"
@@ -151,7 +153,7 @@ def _compatible_validator(row_index: bool) -> Draft202012Validator:
 
 
 def _compatible_bytes(
-    raw: bytes, *, row_index: bool, validator: Draft202012Validator
+    raw: bytes, *, schema: str, validator: Draft202012Validator
 ) -> dict[str, object]:
     if len(raw) > DEFAULT_MAX_BYTES:
         raise AccountingCaseError("INPUT_LIMIT_EXCEEDED", "BYTE_LIMIT_EXCEEDED", "/file")
@@ -165,22 +167,22 @@ def _compatible_bytes(
             "/file",
         ) from None
     return _account_current_payload(
-        payload, digest_bytes(raw), row_index=row_index, validator=validator
+        payload, digest_bytes(raw), schema=schema, validator=validator
     )
 
 
 def _account_current_payload(
-    payload: object, raw_hash: object, *, row_index: bool, validator: Draft202012Validator
+    payload: object, raw_hash: object, *, schema: str, validator: Draft202012Validator
 ) -> dict[str, object]:
     """Compose one current report from already captured original facts and byte identity."""
     try:
-        counted = account_promptfoo_compatible(payload, row_index=row_index)
+        counted = _account_promptfoo_payload(payload, schema)
     except PromptfooCompatibilityError as exc:
         raise AccountingCaseError(exc.code, exc.reason, exc.location) from None
     except Exception:
         raise AccountingCaseError("INTERNAL_ERROR", "INTERNAL_ERROR") from None
     report = {
-        "schema": ROW_INDEX_SCHEMA if row_index else ACCOUNTING_SCHEMA,
+        "schema": schema,
         "raw_hash": raw_hash,
         **counted,
     }
@@ -195,18 +197,42 @@ def _account_current_payload(
     return report
 
 
+def _account_promptfoo_payload(payload: object, schema: str) -> dict[str, object]:
+    if schema == ACTIONS_SCHEMA:
+        return account_promptfoo_actions(payload)
+    return account_promptfoo_compatible(payload, row_index=schema == ROW_INDEX_SCHEMA)
+
+
+def _audit_promptfoo_bytes(raw: bytes, schema: str) -> dict[str, object]:
+    validator = _compatible_validator(schema)
+    return _compatible_bytes(raw, schema=schema, validator=validator)
+
+
+def _audit_promptfoo_file(path: Path, schema: str) -> dict[str, object]:
+    validator = _compatible_validator(schema)
+    return _compatible_bytes(read_promptfoo_file(path), schema=schema, validator=validator)
+
+
 def audit_promptfoo_bytes(raw: bytes) -> dict[str, object]:
     """Audit one bounded buffer with the current selected-field contract."""
-    return _compatible_bytes(raw, row_index=False, validator=_compatible_validator(False))
+    return _audit_promptfoo_bytes(raw, ACCOUNTING_SCHEMA)
 
 
 def audit_promptfoo_file(path: Path) -> dict[str, object]:
     """Audit an export once; expected-hash checks remain in audit_case."""
-    validator = _compatible_validator(False)
-    return _compatible_bytes(read_promptfoo_file(path), row_index=False, validator=validator)
+    return _audit_promptfoo_file(path, ACCOUNTING_SCHEMA)
 
 
 def audit_promptfoo_row_index_file(path: Path) -> dict[str, object]:
     """Return a checked content-minimized current row view after one bounded read."""
-    validator = _compatible_validator(True)
-    return _compatible_bytes(read_promptfoo_file(path), row_index=True, validator=validator)
+    return _audit_promptfoo_file(path, ROW_INDEX_SCHEMA)
+
+
+def audit_promptfoo_actions_bytes(raw: bytes) -> dict[str, object]:
+    """Return count findings and finite verification actions from one bounded buffer."""
+    return _audit_promptfoo_bytes(raw, ACTIONS_SCHEMA)
+
+
+def audit_promptfoo_actions_file(path: Path) -> dict[str, object]:
+    """Return a checked action view after one bounded local read."""
+    return _audit_promptfoo_file(path, ACTIONS_SCHEMA)

@@ -405,6 +405,31 @@ def _promptfoo_auto_pilot(cli: Path, work: Path) -> None:
             directory,
         )
         wheel.require(json.loads(api.stdout) == report, "installed auto API and CLI disagree")
+        actions = _cli_json(
+            cli,
+            ["audit-promptfoo", str(source), "--view", "actions"],
+            directory / "actions.json",
+            directory,
+        )
+        actions_api = wheel.success(
+            [
+                str(cli.with_name("python")),
+                "-c",
+                "import json,sys; from pathlib import Path; "
+                "from underwrite.instrument.ingest.accounting "
+                "import audit_promptfoo_actions_bytes; "
+                "print(json.dumps(audit_promptfoo_actions_bytes(Path(sys.argv[1]).read_bytes())))",
+                str(source),
+            ],
+            directory,
+        )
+        wheel.require(
+            actions["schema"] == "promptfoo_accounting_actions.v1"
+            and actions["next_actions"] == []
+            and actions["raw_hash"] == report["raw_hash"]
+            and json.loads(actions_api.stdout) == actions,
+            "installed Promptfoo action view diverged from accounting or Python API",
+        )
         _promptfoo_record_pilot(cli, source, directory, report)
         verified = _cli_json(
             cli,
@@ -421,6 +446,18 @@ def _promptfoo_auto_pilot(cli: Path, work: Path) -> None:
         )
         wheel.require(verified["valid"] is True, "auto record did not verify after input removal")
         _promptfoo_auto_mutations(cli, source, directory)
+    mismatch = wheel.ROOT / "fixtures/examples/evidence/synthetic-promptfoo-count-mismatch.json"
+    guided = _cli_json(
+        cli,
+        ["audit-promptfoo", str(mismatch), "--view", "actions"],
+        work / "promptfoo-mismatch-actions.json",
+        work,
+    )
+    wheel.require(
+        guided["declared_relation"] == "inconsistent"
+        and guided["next_actions"] == ["RECONCILE_SOURCE_DECLARED_COUNTS"],
+        "installed Promptfoo mismatch did not yield the bounded next action",
+    )
 
 
 def _promptfoo_current_pilot(cli: Path, work: Path) -> None:

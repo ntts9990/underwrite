@@ -811,6 +811,36 @@ select the ordinal row index:
 underwrite audit-promptfoo results.json --view row-index --json
 ```
 
+To let an agent triage an inconsistency without searching this guide, select the
+bounded actions view:
+
+```sh
+underwrite audit-promptfoo results.json --view actions --json
+```
+
+This view is in the current development checkout; use `capabilities --json` to
+check whether an installed package advertises it.
+
+`promptfoo_accounting_actions.v1` retains the same selected-byte hash, counts,
+findings and limitations as the default accounting result. Its `next_actions`
+contains only actions supported by observed findings:
+
+- `RECONCILE_SOURCE_DECLARED_COUNTS`: compare declared counters and selected
+  rows with the original producer run/export. It does not identify which side
+  is wrong or prove a missing run. A planned case inventory is needed before
+  making a missingness claim.
+- `INSPECT_SOURCE_FLAG_DISAGREEMENTS`: inspect the `SOURCE_FLAGS_DISAGREE`
+  finding locations in the original export. A source flag disagreement does not
+  prove an error cause.
+
+An empty action list means no such discrepancy was observed in the supplied
+rows, not that the export is complete or independently verified. This purpose
+view is available through `audit_promptfoo_actions_file` and
+`audit_promptfoo_actions_bytes` in `underwrite.instrument.ingest.accounting`.
+The default `promptfoo_accounting.v2`, the row index and saved records keep
+their existing contracts; choosing this view does not authorize execution or
+approval.
+
 `promptfoo_accounting.v2` and `promptfoo_row_index.v2` distinguish SummaryV3 from
 the producer's declared release. A missing version declaration stays unknown.
 The reader validates the fields used for count accounting; additional unconsumed
