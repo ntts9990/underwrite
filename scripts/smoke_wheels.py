@@ -2316,6 +2316,44 @@ def _cross_artifact_review_pilot(cli: Path, work: Path) -> None:
         and no_map["improvement"] == "unknown",
         "installed review without a declaration asserted comparison",
     )
+    ordinary_promptfoo = wheel.ROOT / "fixtures/golden/external/promptfoo-0.124.1/results.json"
+    ordinary_rows = len(json.loads(ordinary_promptfoo.read_bytes())["results"]["results"])
+    readiness_args = [*arguments[:-1], str(ordinary_promptfoo), "--view", "readiness"]
+    readiness = _cli_json(cli, readiness_args, directory / "readiness.json", directory)
+    readiness_metadata = cast(dict[str, object], readiness["metadata"])
+    readiness_population = cast(dict[str, object], readiness["populations"])
+    ordinary_population = cast(dict[str, object], readiness_population["promptfoo"])
+    wheel.require(
+        readiness["schema"] == "cross_artifact_readiness.v1"
+        and readiness["relation"] == "incomparable_on_supplied_evidence"
+        and readiness_metadata["case_ids"] == "incomplete"
+        and readiness_metadata["row_roles"] == "incomplete"
+        and ordinary_population["supplied_rows"] == ordinary_rows
+        and ordinary_population["subject_rows"] is None
+        and ordinary_population["control_rows"] is None
+        and readiness["review_prerequisites"] == "missing_owner_metadata"
+        and readiness["improvement"] == "unknown",
+        "installed readiness invented row roles or case comparison",
+    )
+    readiness_api = wheel.success(
+        [
+            str(cli.parent / "python"),
+            "-I",
+            "-c",
+            "import json,sys; from pathlib import Path; "
+            "from underwrite.instrument.ingest.cross_artifact "
+            "import review_artifact_readiness_files; "
+            "print(json.dumps(review_artifact_readiness_files(*[Path(p) for p in sys.argv[1:]])))",
+            str(assessment),
+            str(result),
+            str(ordinary_promptfoo),
+        ],
+        directory,
+    )
+    wheel.require(
+        json.loads(readiness_api.stdout) == readiness,
+        "installed readiness Python API and CLI disagree",
+    )
     sources = {
         key: "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
         for key, path in (

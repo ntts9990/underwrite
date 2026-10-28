@@ -28,6 +28,7 @@ module-name = "underwrite"
 module-root = "src"
 source-include = [
     "contracts/cross_artifact_correspondence.v1.schema.json",
+    "contracts/cross_artifact_readiness.v1.schema.json",
     "contracts/cross_artifact_review.v1.schema.json",
     "contracts/goppi_trajectory_review.v1.schema.json",
     "contracts/goppi_trajectory_verifier_response.v1.schema.json",

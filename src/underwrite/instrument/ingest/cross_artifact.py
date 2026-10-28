@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 from jsonschema.exceptions import ValidationError
 from underwrite_core.canonical import digest_bytes
@@ -19,6 +19,7 @@ from underwrite.instrument.evidence.common_result import (
 )
 from underwrite.instrument.evidence.cross_artifact_relation import (
     RelationError,
+    inspect_promptfoo_source_case_metadata,
     review_declared_cases,
 )
 from underwrite.instrument.evidence.promptfoo_compat import (
@@ -36,8 +37,8 @@ from underwrite.instrument.ingest.transport import (
 
 CORRESPONDENCE_SCHEMA = "cross_artifact_correspondence.v1"
 RESULT_SCHEMA = "cross_artifact_review.v1"
+READINESS_SCHEMA = "cross_artifact_readiness.v1"
 CORRESPONDENCE_MAX_BYTES = 128 * 1024
-CASE_ID_MAX_LENGTH = 256
 MAX_PROMPTFOO_ROWS = 1000
 GOPPI_ASSESSMENT_SCHEMA = "goppi.operator_answer_exchange_assessment.v1"
 GOPPI_READER_PROFILE = "goppi.c55-selected-fields.v1"
@@ -51,6 +52,9 @@ PROMPTFOO_LIMITATIONS = [
     "PROMPTFOO_ROW_ROLES_SOURCE_DECLARED",
     "NO_IMPROVEMENT_OR_APPROVAL",
     "HASHES_AND_COORDINATES_MAY_IDENTIFY_SOURCES",
+]
+READINESS_LIMITATIONS = [
+    item for item in PROMPTFOO_LIMITATIONS if item != "PROMPTFOO_ROW_ROLES_SOURCE_DECLARED"
 ]
 
 
@@ -117,7 +121,9 @@ def _goppi_selected(
     return case_ids, items, counts
 
 
-def _promptfoo_rows(payload: dict[str, Any]) -> tuple[list[dict[str, object]], dict[str, object]]:
+def _promptfoo_accounting(
+    payload: dict[str, Any],
+) -> tuple[dict[str, object], list[object], list[dict[str, object]]]:
     try:
         accounting = account_promptfoo_compatible(payload, row_index=True)
     except PromptfooCompatibilityError as exc:
@@ -133,6 +139,11 @@ def _promptfoo_rows(payload: dict[str, Any]) -> tuple[list[dict[str, object]], d
             "COMPUTATION_LIMIT_EXCEEDED", "ROW_LIMIT_EXCEEDED", "/promptfoo/results/results"
         )
     indexed_rows = cast(list[dict[str, object]], accounting["rows"])
+    return accounting, source_rows, indexed_rows
+
+
+def _promptfoo_rows(payload: dict[str, Any]) -> tuple[list[dict[str, object]], dict[str, object]]:
+    accounting, source_rows, indexed_rows = _promptfoo_accounting(payload)
     return [
         _promptfoo_row(index, source, indexed_rows[index])
         for index, source in enumerate(source_rows)
@@ -144,36 +155,14 @@ def _promptfoo_row(index: int, source: object, indexed: dict[str, object]) -> di
     if type(source) is not dict:
         raise CrossArtifactInputError("INVALID_INPUT", "PROMPTFOO_ROW_INVALID", location)
     row = cast(dict[str, object], source)
-    test_case = row.get("testCase")
-    if type(test_case) is not dict:
+    metadata = inspect_promptfoo_source_case_metadata(row, index)
+    if metadata["blockers"]:
+        blocker = metadata["blockers"][0]
         raise CrossArtifactInputError(
-            "UNSUPPORTED_PROFILE", "PROMPTFOO_CASE_METADATA_REQUIRED", location + "/testCase"
+            "UNSUPPORTED_PROFILE", cast(str, blocker["code"]), cast(str, blocker["location"])
         )
-    metadata = cast(dict[str, object], test_case).get("metadata")
-    if type(metadata) is not dict:
-        raise CrossArtifactInputError(
-            "UNSUPPORTED_PROFILE",
-            "PROMPTFOO_CASE_METADATA_REQUIRED",
-            location + "/testCase/metadata",
-        )
-    selected = cast(dict[str, object], metadata)
-    case_id, slot_kind, success = (
-        selected.get("case_id"),
-        selected.get("slot_kind"),
-        row.get("success"),
-    )
-    if type(case_id) is not str or not case_id or len(case_id) > CASE_ID_MAX_LENGTH:
-        raise CrossArtifactInputError(
-            "UNSUPPORTED_PROFILE",
-            "PROMPTFOO_CASE_ID_REQUIRED",
-            location + "/testCase/metadata/case_id",
-        )
-    if slot_kind not in ("subject", "control"):
-        raise CrossArtifactInputError(
-            "UNSUPPORTED_PROFILE",
-            "PROMPTFOO_SLOT_KIND_REQUIRED",
-            location + "/testCase/metadata/slot_kind",
-        )
+    case_id, slot_kind, success = metadata["case_id"], metadata["slot_kind"], row.get("success")
+    assert case_id is not None and slot_kind is not None
     if type(success) is not bool:
         raise CrossArtifactInputError(
             "UNSUPPORTED_PROFILE", "PROMPTFOO_BOOLEAN_SUCCESS_REQUIRED", location + "/success"
@@ -198,6 +187,30 @@ def _source_hashes(assessment: bytes, result: bytes, promptfoo: bytes) -> dict[s
         "goppi_result_sha256": digest_bytes(result),
         "promptfoo_export_sha256": digest_bytes(promptfoo),
     }
+
+
+class _SelectedSources(NamedTuple):
+    assessment: dict[str, Any]
+    result: dict[str, Any]
+    promptfoo: dict[str, Any]
+    hashes: dict[str, str]
+
+
+def _capture_selected_sources(
+    goppi_assessment: Path, goppi_result: Path, promptfoo_export: Path
+) -> _SelectedSources:
+    assessment, assessment_raw = _read_object(
+        goppi_assessment, limit=DEFAULT_MAX_BYTES, location="/goppi_assessment"
+    )
+    result, result_raw = _read_object(
+        goppi_result, limit=DEFAULT_MAX_BYTES, location="/goppi_result"
+    )
+    promptfoo, promptfoo_raw = _read_object(
+        promptfoo_export, limit=DEFAULT_MAX_BYTES, location="/promptfoo"
+    )
+    return _SelectedSources(
+        assessment, result, promptfoo, _source_hashes(assessment_raw, result_raw, promptfoo_raw)
+    )
 
 
 def _correspondence(
@@ -278,6 +291,53 @@ def _task(
     }
 
 
+def _readers(accounting: dict[str, object]) -> dict[str, object]:
+    promptfoo_source = cast(dict[str, object], accounting["source"])
+    return {
+        "goppi": {
+            "profile": GOPPI_READER_PROFILE,
+            "assessment_schema": GOPPI_ASSESSMENT_SCHEMA,
+            "result_schema": "evidence_result.v1",
+        },
+        "promptfoo": {
+            "profile": accounting["reader_profile"],
+            "producer_version": promptfoo_source["producer_version"],
+            "producer_version_state": promptfoo_source["producer_version_state"],
+        },
+    }
+
+
+def _populations(
+    result: dict[str, Any],
+    availability: dict[str, int],
+    accounting: dict[str, object],
+    row_count: int,
+    subject_rows: int | None,
+) -> dict[str, object]:
+    population = cast(dict[str, object], result["population"])
+    categories = cast(dict[str, int], accounting["row_tallies"])
+    return {
+        "goppi": {
+            "unit": "case",
+            "planned_count": population["planned_count"],
+            "item_count": population["observed_count"],
+            "availability": {
+                name: availability[name] for name in ("observed", "missing", "error", "abstained")
+            },
+        },
+        "promptfoo": {
+            "unit": "row",
+            "supplied_rows": row_count,
+            "subject_rows": subject_rows,
+            "control_rows": row_count - subject_rows if subject_rows is not None else None,
+            "planned_count": None,
+            "category_counts": {
+                name: categories[name] for name in ("successes", "failures", "errors")
+            },
+        },
+    }
+
+
 def review_artifact_files(
     goppi_assessment: Path,
     goppi_result: Path,
@@ -285,14 +345,8 @@ def review_artifact_files(
     correspondence: Path | None = None,
 ) -> dict[str, object]:
     """Read each selected file once; compare only source claims under an optional owner map."""
-    assessment, assessment_raw = _read_object(
-        goppi_assessment, limit=DEFAULT_MAX_BYTES, location="/goppi_assessment"
-    )
-    result, result_raw = _read_object(
-        goppi_result, limit=DEFAULT_MAX_BYTES, location="/goppi_result"
-    )
-    promptfoo, promptfoo_raw = _read_object(
-        promptfoo_export, limit=DEFAULT_MAX_BYTES, location="/promptfoo"
+    assessment, result, promptfoo, hashes = _capture_selected_sources(
+        goppi_assessment, goppi_result, promptfoo_export
     )
     declaration: dict[str, Any] | None = None
     declaration_raw: bytes | None = None
@@ -300,7 +354,6 @@ def review_artifact_files(
         declaration, declaration_raw = _read_object(
             correspondence, limit=CORRESPONDENCE_MAX_BYTES, location="/correspondence"
         )
-    hashes = _source_hashes(assessment_raw, result_raw, promptfoo_raw)
     case_ids, items, availability = _goppi_selected(
         assessment, result, hashes["goppi_assessment_sha256"]
     )
@@ -333,46 +386,12 @@ def review_artifact_files(
                 )
     tasks.append(_task("VERIFY_GOPPI_PORTABLE_CLOSURE", "source_reviewer"))
     tasks.append(_task("VERIFY_SOURCE_PROVENANCE", "source_reviewer"))
-    population = cast(dict[str, object], result["population"])
-    category_counts = cast(dict[str, int], accounting["row_tallies"])
-    promptfoo_source = cast(dict[str, object], accounting["source"])
     report: dict[str, object] = {
         "schema": RESULT_SCHEMA,
         "relation": relation_state,
         "source_identity": hashes,
-        "readers": {
-            "goppi": {
-                "profile": GOPPI_READER_PROFILE,
-                "assessment_schema": GOPPI_ASSESSMENT_SCHEMA,
-                "result_schema": "evidence_result.v1",
-            },
-            "promptfoo": {
-                "profile": accounting["reader_profile"],
-                "producer_version": promptfoo_source["producer_version"],
-                "producer_version_state": promptfoo_source["producer_version_state"],
-            },
-        },
-        "populations": {
-            "goppi": {
-                "unit": "case",
-                "planned_count": population["planned_count"],
-                "item_count": population["observed_count"],
-                "availability": {
-                    name: availability[name]
-                    for name in ("observed", "missing", "error", "abstained")
-                },
-            },
-            "promptfoo": {
-                "unit": "row",
-                "supplied_rows": len(rows),
-                "subject_rows": subject_rows,
-                "control_rows": len(rows) - subject_rows,
-                "planned_count": None,
-                "category_counts": {
-                    name: category_counts[name] for name in ("successes", "failures", "errors")
-                },
-            },
-        },
+        "readers": _readers(accounting),
+        "populations": _populations(result, availability, accounting, len(rows), subject_rows),
         "correspondence": relation,
         "finding_counts": findings,
         "improvement": "unknown",
@@ -390,4 +409,80 @@ def review_artifact_files(
     # assert its producer stats are a planned case inventory.
     assert cast(dict[str, int], accounting["row_tallies"])["total"] == len(rows)
     _validate_schema(report, RESULT_SCHEMA, "")
+    return report
+
+
+def review_artifact_readiness_files(
+    goppi_assessment: Path, goppi_result: Path, promptfoo_export: Path
+) -> dict[str, object]:
+    """Report source-bound prerequisites without inferring cross-producer case meaning."""
+    assessment, result, promptfoo, hashes = _capture_selected_sources(
+        goppi_assessment, goppi_result, promptfoo_export
+    )
+    _, _, availability = _goppi_selected(
+        assessment, result, hashes["goppi_assessment_sha256"]
+    )
+    accounting, source_rows, _ = _promptfoo_accounting(promptfoo)
+    metadata = [
+        inspect_promptfoo_source_case_metadata(row, index)
+        for index, row in enumerate(source_rows)
+    ]
+    blockers = [blocker for row in metadata for blocker in row["blockers"]]
+    case_ids_complete = all(row["case_id"] is not None for row in metadata)
+    roles_complete = all(row["slot_kind"] is not None for row in metadata)
+    subject_rows = (
+        sum(row["slot_kind"] == "subject" for row in metadata) if roles_complete else None
+    )
+    if blockers:
+        prerequisite, next_owner_action = (
+            "missing_owner_metadata",
+            "PROVIDE_PROMPTFOO_CASE_METADATA",
+        )
+    elif subject_rows == 0:
+        prerequisite, next_owner_action = (
+            "missing_subject_rows",
+            "PROVIDE_PROMPTFOO_SUBJECT_ROWS",
+        )
+    else:
+        prerequisite, next_owner_action = (
+            "needs_owner_correspondence",
+            "PROVIDE_SOURCE_BOUND_CASE_CORRESPONDENCE",
+        )
+    tasks = [_task(next_owner_action, "evaluation_owner")]
+    if blockers and roles_complete and subject_rows == 0:
+        tasks.append(_task("PROVIDE_PROMPTFOO_SUBJECT_ROWS", "evaluation_owner"))
+    tasks.extend(
+        (
+            _task("VERIFY_GOPPI_PORTABLE_CLOSURE", "source_reviewer"),
+            _task("VERIFY_SOURCE_PROVENANCE", "source_reviewer"),
+        )
+    )
+    report: dict[str, object] = {
+        "schema": READINESS_SCHEMA,
+        "relation": "incomparable_on_supplied_evidence",
+        "source_identity": hashes,
+        "readers": _readers(accounting),
+        "populations": _populations(
+            result, availability, accounting, len(source_rows), subject_rows
+        ),
+        "metadata": {
+            "case_ids": "complete" if case_ids_complete else "incomplete",
+            "row_roles": "source_declared" if roles_complete else "incomplete",
+            "blockers": blockers,
+        },
+        "review_prerequisites": prerequisite,
+        "finding_counts": {"equal": 0, "different": 0, "ineligible": 0},
+        "improvement": "unknown",
+        "checks": {
+            "declaration_source_hashes": "not_supplied",
+            "goppi_assessment_result_binding": "checked_selected_fields",
+            "goppi_terminal_controls": "not_reperformed",
+            "goppi_portable_closure": "not_reperformed",
+            "source_authentication": "not_independently_verified",
+            "promptfoo_accounting": "consistent",
+        },
+        "next_verification_tasks": tasks,
+        "limitations": READINESS_LIMITATIONS.copy(),
+    }
+    _validate_schema(report, READINESS_SCHEMA, "")
     return report

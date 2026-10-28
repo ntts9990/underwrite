@@ -126,6 +126,26 @@ underwrite review-artifacts \
   --promptfoo /absolute/path/to/promptfoo-results.json --json
 ```
 
+An ordinary completed Promptfoo export may lack the owner-authored case IDs
+and subject/control roles needed for the strict review. If the installed
+`capabilities --json` advertises `goppi-c55|promptfoo-summary-v3|readiness`, use
+the same three files with `--view readiness --json` **without** a correspondence
+file. `cross_artifact_readiness.v1` checks the selected Goppi assessment/result
+binding and Promptfoo row accounting once, returns the three exact raw hashes,
+and lists row-indexed metadata blockers. When roles are absent, `subject_rows`
+and `control_rows` are `null`, not zero. Its relation is always incomparable;
+an empty blocker list means only that the row metadata is present, not that
+the tasks or metrics match. `next_verification_tasks` requests a new
+owner-authored export with the required metadata or, once that metadata and
+subject rows are present, a source-bound correspondence declaration. An
+all-control or empty export instead needs actual owner-authored subject rows;
+well-formed role labels alone cannot map C55 cases. Do not edit the original
+captured export to make it pass; a new export has a new source hash. The
+readiness view never accepts `--correspondence`; use the default strict view
+after the owner supplies one. The Python entry point is
+`underwrite.instrument.ingest.cross_artifact.review_artifact_readiness_files`.
+Older packages without this capability retain their existing typed refusal.
+
 Without `--correspondence`, `relation` is
 `incomparable_on_supplied_evidence`; `next_verification_tasks` asks the
 evaluation owner for a source-bound case map. If the owner can declare one,

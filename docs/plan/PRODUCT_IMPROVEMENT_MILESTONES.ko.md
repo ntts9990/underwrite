@@ -44,6 +44,25 @@ Goppi와 각 평가 도구의 책임으로 둔다. Underwrite는 그 결과의 �
   호출 부모·재시도·결과 소비 관계를 보존하지 않는다. 기존 사실만으로
   인과관계나 동일 지표를 새로 선언하지 않는다.
 
+### 현재 실행 목표: F2a 일반 export의 교차 검토 준비 상태
+
+실제 Promptfoo 0.124.1 완료 export는 단독 계수가 일치하지만
+`testCase.metadata.case_id`와 `slot_kind`가 없어 C55와의 엄격한
+`review-artifacts`에서 거부된다. F2a는 세 파일을 한 번씩 검토하여 정확한
+바이트 식별자·Goppi 선택 필드 결속·Promptfoo 계수와 **부족한 소유자 선언**을
+한 JSON에 반환하는 명시적 `--view readiness`다. 기존 기본
+`cross_artifact_review.v1`과 owner correspondence 검증은 그대로 둔다.
+역할이 없는 행의 subject/control 수는 `null`이고, 메타데이터가 다 있어도
+subject 행이 없으면 실제 subject 입력을 요구한다. 비교 가능한 사례·동등
+지표·개선·승인은 만들지 않는다. 이 결과는 F2의
+실사용 시간·오판율 파일럿을 대신하지 않는다.
+
+완료 기준은 실제 공개 fixture와 혼합·부분 메타데이터, 변경된 C55 해시,
+Promptfoo 집계 불일치, 지원하지 않는 세대, private canary, 잘못된 선언을
+CLI·Python API·설치 wheel에서 확인하고, 별도 리팩토링·독립 리뷰·정본
+preflight를 통과하는 것이다. 다음 단계는 F2 사용자 과제의 실제 관측이며,
+그 전에는 안내 뷰가 시간이나 정확도를 개선했다고 주장하지 않는다.
+
 각 단계는 결과·실패 반례를 먼저 정하고 구현 → 실제 진입점 검증 → 별도
 리팩토링·적대적 리뷰 → 저장소 preflight를 거친다. 필요한 후속 결함은 같은
 단계에서 해결한다. 패키지 버전 변경, provider 실행, 공개·배포는 이 계획에

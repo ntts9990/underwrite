@@ -6,7 +6,7 @@ claim that inputs, metrics, or producer execution are equivalent or authentic.
 
 from __future__ import annotations
 
-from typing import cast
+from typing import Literal, TypedDict, cast
 
 _AVAILABILITIES = frozenset({"observed", "missing", "abstained", "error"})
 _PROMPTFOO_CATEGORIES = frozenset({"successes", "failures", "errors"})
@@ -16,6 +16,74 @@ _FINDING_KEYS = {
     "source_boolean_values_different": "different",
     "value_comparison_ineligible": "ineligible",
 }
+CASE_ID_MAX_LENGTH = 256
+
+
+class SourceCaseMetadata(TypedDict):
+    case_id: str | None
+    slot_kind: Literal["subject", "control"] | None
+    blockers: list[dict[str, object]]
+
+
+def inspect_promptfoo_source_case_metadata(row: object, index: int) -> SourceCaseMetadata:
+    """Inspect only owner-authored case roles, without copying source values."""
+    location = f"/promptfoo/results/results/{index}"
+    if type(row) is not dict:
+        raise RelationError("RELATION_PROMPTFOO_ROW_INVALID", location)
+    source = cast(dict[str, object], row)
+    test_case = source.get("testCase")
+    if type(test_case) is not dict:
+        return {
+            "case_id": None,
+            "slot_kind": None,
+            "blockers": [
+                {
+                    "row_index": index,
+                    "code": "PROMPTFOO_CASE_METADATA_REQUIRED",
+                    "location": location + "/testCase",
+                }
+            ],
+        }
+    metadata = cast(dict[str, object], test_case).get("metadata")
+    if type(metadata) is not dict:
+        return {
+            "case_id": None,
+            "slot_kind": None,
+            "blockers": [
+                {
+                    "row_index": index,
+                    "code": "PROMPTFOO_CASE_METADATA_REQUIRED",
+                    "location": location + "/testCase/metadata",
+                }
+            ],
+        }
+    selected = cast(dict[str, object], metadata)
+    case_id = selected.get("case_id")
+    slot_kind = selected.get("slot_kind")
+    valid_case_id = type(case_id) is str and bool(case_id) and len(case_id) <= CASE_ID_MAX_LENGTH
+    valid_slot_kind = slot_kind in ("subject", "control")
+    blockers: list[dict[str, object]] = []
+    if not valid_case_id:
+        blockers.append(
+            {
+                "row_index": index,
+                "code": "PROMPTFOO_CASE_ID_REQUIRED",
+                "location": location + "/testCase/metadata/case_id",
+            }
+        )
+    if not valid_slot_kind:
+        blockers.append(
+            {
+                "row_index": index,
+                "code": "PROMPTFOO_SLOT_KIND_REQUIRED",
+                "location": location + "/testCase/metadata/slot_kind",
+            }
+        )
+    return {
+        "case_id": cast(str, case_id) if valid_case_id else None,
+        "slot_kind": slot_kind if valid_slot_kind else None,
+        "blockers": blockers,
+    }
 
 
 class RelationError(ValueError):

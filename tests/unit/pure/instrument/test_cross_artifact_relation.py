@@ -7,9 +7,38 @@ from typing import cast
 import pytest
 
 from underwrite.instrument.evidence.cross_artifact_relation import (
+    CASE_ID_MAX_LENGTH,
     RelationError,
+    inspect_promptfoo_source_case_metadata,
     review_declared_cases,
 )
+
+
+def test_source_metadata_inspector_reports_both_missing_owner_fields_without_values() -> None:
+    source: dict[str, object] = {"testCase": {"metadata": {}}, "prompt": "PRIVATE_CASE_CANARY"}
+    index = 3
+    inspected = inspect_promptfoo_source_case_metadata(source, index)
+    assert inspected["case_id"] is None and inspected["slot_kind"] is None
+    assert [item["code"] for item in inspected["blockers"]] == [
+        "PROMPTFOO_CASE_ID_REQUIRED",
+        "PROMPTFOO_SLOT_KIND_REQUIRED",
+    ]
+    assert all(item["row_index"] == index for item in inspected["blockers"])
+    assert "PRIVATE_CASE_CANARY" not in str(inspected)
+
+
+def test_source_metadata_inspector_keeps_valid_role_without_oversized_case_id() -> None:
+    source: dict[str, object] = {
+        "testCase": {
+            "metadata": {"case_id": "S" * (CASE_ID_MAX_LENGTH + 1), "slot_kind": "subject"}
+        }
+    }
+    inspected = inspect_promptfoo_source_case_metadata(source, 0)
+    assert inspected["case_id"] is None
+    assert inspected["slot_kind"] == "subject"
+    assert [item["code"] for item in inspected["blockers"]] == [
+        "PROMPTFOO_CASE_ID_REQUIRED"
+    ]
 
 
 def _items() -> list[dict[str, object]]:

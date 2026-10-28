@@ -194,6 +194,12 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 ("evidence_result.v1",),
                 (review_artifacts.RESULT_SCHEMA,),
             ),
+            profile(
+                "goppi-c55|promptfoo-summary-v3|readiness",
+                ("goppi_assessment", "goppi_result", "promptfoo", "view"),
+                ("evidence_result.v1",),
+                (review_artifacts.READINESS_SCHEMA,),
+            ),
         ),
         _standalone(review_artifacts.main),
     ),
