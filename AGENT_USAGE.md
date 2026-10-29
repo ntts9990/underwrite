@@ -142,9 +142,12 @@ and `control_rows` are `null`, not zero. Its relation is always incomparable;
 an empty blocker list means only that the row metadata is present, not that
 the tasks or metrics match. `next_verification_tasks` requests a new
 owner-authored export with the required metadata or, once that metadata and
-subject rows are present, a source-bound correspondence declaration. An
-all-control or empty export instead needs actual owner-authored subject rows;
-well-formed role labels alone cannot map C55 cases. Do not edit the original
+subject rows are present with at least one literal C55 case ID in common, a
+source-bound correspondence declaration. An all-control or empty export needs
+actual owner-authored subject rows. If no subject case ID matches the selected
+C55 cases, the owner must select the correct sources or provide a new export
+with matching IDs before a declaration is possible. Literal ID overlap does not
+prove the tasks or metrics are equivalent. Do not edit the original
 captured export to make it pass; a new export has a new source hash. The
 readiness view never accepts `--correspondence`; use the default strict view
 after the owner supplies one. The Python entry point is
@@ -152,8 +155,9 @@ after the owner supplies one. The Python entry point is
 Older packages without this capability retain their existing typed refusal.
 
 Without `--correspondence`, `relation` is
-`incomparable_on_supplied_evidence`; `next_verification_tasks` asks the
-evaluation owner for a source-bound case map. If the owner can declare one,
+`incomparable_on_supplied_evidence`; `next_verification_tasks` asks for the
+first applicable prerequisite: subject rows, matching literal source case IDs,
+or a source-bound case map. If the owner can declare a map,
 write a [`cross_artifact_correspondence.v1`](contracts/cross_artifact_correspondence.v1.schema.json)
 file and pass `--correspondence /absolute/path/to/correspondence.json` to the
 same command. The declaration names its owner, `complete` or `partial` coverage,

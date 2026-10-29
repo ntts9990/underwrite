@@ -63,6 +63,7 @@ def build() -> dict[str, Any]:
         "enum": [
             "PROVIDE_PROMPTFOO_CASE_METADATA",
             "PROVIDE_PROMPTFOO_SUBJECT_ROWS",
+            "PROVIDE_MATCHING_SOURCE_CASE_IDS",
             "PROVIDE_SOURCE_BOUND_CASE_CORRESPONDENCE",
             "VERIFY_GOPPI_PORTABLE_CLOSURE",
             "VERIFY_SOURCE_PROVENANCE",
@@ -140,6 +141,7 @@ def build() -> dict[str, Any]:
                 "enum": [
                     "missing_owner_metadata",
                     "missing_subject_rows",
+                    "missing_matching_case_ids",
                     "needs_owner_correspondence",
                 ]
             },
@@ -199,7 +201,11 @@ def build() -> dict[str, Any]:
                 "then": {
                     "properties": {
                         "review_prerequisites": {
-                            "enum": ["missing_subject_rows", "needs_owner_correspondence"]
+                            "enum": [
+                                "missing_subject_rows",
+                                "missing_matching_case_ids",
+                                "needs_owner_correspondence",
+                            ]
                         },
                         "metadata": {"properties": {"blockers": {"maxItems": 0}}},
                     }
@@ -304,7 +310,11 @@ def build() -> dict[str, Any]:
             },
             {
                 "if": {
-                    "properties": {"review_prerequisites": {"const": "needs_owner_correspondence"}}
+                    "properties": {
+                        "review_prerequisites": {
+                            "enum": ["missing_matching_case_ids", "needs_owner_correspondence"]
+                        }
+                    }
                 },
                 "then": {
                     "properties": {
@@ -322,6 +332,7 @@ def build() -> dict[str, Any]:
             },
             _prerequisite_task("missing_owner_metadata", "PROVIDE_PROMPTFOO_CASE_METADATA"),
             _prerequisite_task("missing_subject_rows", "PROVIDE_PROMPTFOO_SUBJECT_ROWS"),
+            _prerequisite_task("missing_matching_case_ids", "PROVIDE_MATCHING_SOURCE_CASE_IDS"),
             _prerequisite_task(
                 "needs_owner_correspondence", "PROVIDE_SOURCE_BOUND_CASE_CORRESPONDENCE"
             ),

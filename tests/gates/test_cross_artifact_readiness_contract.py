@@ -163,6 +163,13 @@ def test_complete_metadata_allows_zero_subject_rows_with_specific_next_task() ->
     cast(Validator, packaged_validator(NAME)).validate(report)
 
 
+def test_disjoint_case_ids_have_a_distinct_owner_prerequisite() -> None:
+    report = _report(complete=True)
+    report["review_prerequisites"] = "missing_matching_case_ids"
+    report["next_verification_tasks"][0]["code"] = "PROVIDE_MATCHING_SOURCE_CASE_IDS"
+    cast(Validator, packaged_validator(NAME)).validate(report)
+
+
 def test_missing_metadata_object_blocks_both_dimensions() -> None:
     report = _report(complete=False)
     report["metadata"]["blockers"] = [_blocker("PROMPTFOO_CASE_METADATA_REQUIRED")]
@@ -173,6 +180,7 @@ def test_missing_metadata_object_blocks_both_dimensions() -> None:
     ("prerequisite", "subject_rows", "task_code"),
     [
         ("missing_subject_rows", 1, "PROVIDE_PROMPTFOO_SUBJECT_ROWS"),
+        ("missing_matching_case_ids", 0, "PROVIDE_MATCHING_SOURCE_CASE_IDS"),
         ("needs_owner_correspondence", 0, "PROVIDE_SOURCE_BOUND_CASE_CORRESPONDENCE"),
     ],
 )
@@ -194,6 +202,7 @@ def test_complete_metadata_prerequisite_requires_matching_subject_population(
     [
         ("missing_owner_metadata", "PROVIDE_PROMPTFOO_SUBJECT_ROWS"),
         ("missing_subject_rows", "PROVIDE_SOURCE_BOUND_CASE_CORRESPONDENCE"),
+        ("missing_matching_case_ids", "PROVIDE_SOURCE_BOUND_CASE_CORRESPONDENCE"),
         ("needs_owner_correspondence", "PROVIDE_PROMPTFOO_CASE_METADATA"),
     ],
 )

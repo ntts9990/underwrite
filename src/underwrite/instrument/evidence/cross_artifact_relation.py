@@ -19,6 +19,17 @@ _FINDING_KEYS = {
 CASE_ID_MAX_LENGTH = 256
 
 
+def case_mapping_prerequisite(
+    goppi_case_ids: list[str], subject_case_ids: list[str]
+) -> tuple[str, str]:
+    """Name the first possible owner action; matching IDs do not prove task equivalence."""
+    if not subject_case_ids:
+        return "missing_subject_rows", "PROVIDE_PROMPTFOO_SUBJECT_ROWS"
+    if set(goppi_case_ids).isdisjoint(subject_case_ids):
+        return "missing_matching_case_ids", "PROVIDE_MATCHING_SOURCE_CASE_IDS"
+    return "needs_owner_correspondence", "PROVIDE_SOURCE_BOUND_CASE_CORRESPONDENCE"
+
+
 class SourceCaseMetadata(TypedDict):
     case_id: str | None
     slot_kind: Literal["subject", "control"] | None

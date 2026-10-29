@@ -20,6 +20,7 @@ from underwrite.instrument.evidence.common_result import (
 )
 from underwrite.instrument.evidence.cross_artifact_relation import (
     RelationError,
+    case_mapping_prerequisite,
     inspect_promptfoo_source_case_metadata,
     review_declared_cases,
 )
@@ -276,7 +277,7 @@ def _correspondence(
             "incomparable_on_supplied_evidence",
             relation,
             counts,
-            ["PROVIDE_SOURCE_BOUND_CASE_CORRESPONDENCE"],
+            [],
         )
     _validate_schema(declaration, CORRESPONDENCE_SCHEMA, "/correspondence")
     declared = cast(dict[str, object], declaration["sources"])
@@ -418,10 +419,14 @@ def _review_selected_sources(
     relation_state, relation, findings, relation_tasks = _correspondence(
         declaration, declaration_raw, hashes, items, case_ids, rows
     )
-    subject_rows = sum(row["slot_kind"] == "subject" for row in rows)
+    subject_case_ids = [
+        cast(str, row["case_id"]) for row in rows if row["slot_kind"] == "subject"
+    ]
+    subject_rows = len(subject_case_ids)
     tasks: list[dict[str, object]] = []
     if relation_state == "incomparable_on_supplied_evidence":
-        tasks.append(_task("PROVIDE_SOURCE_BOUND_CASE_CORRESPONDENCE", "evaluation_owner"))
+        _, next_owner_action = case_mapping_prerequisite(case_ids, subject_case_ids)
+        tasks.append(_task(next_owner_action, "evaluation_owner"))
     else:
         tasks.extend(
             (
@@ -482,7 +487,7 @@ def review_artifact_readiness_files(
         sources.promptfoo,
         sources.hashes,
     )
-    _, _, availability = _goppi_selected(
+    case_ids, _, availability = _goppi_selected(
         assessment, result, hashes["goppi_assessment_sha256"]
     )
     accounting, source_rows, _ = _promptfoo_accounting(promptfoo)
@@ -501,15 +506,14 @@ def review_artifact_readiness_files(
             "missing_owner_metadata",
             "PROVIDE_PROMPTFOO_CASE_METADATA",
         )
-    elif subject_rows == 0:
-        prerequisite, next_owner_action = (
-            "missing_subject_rows",
-            "PROVIDE_PROMPTFOO_SUBJECT_ROWS",
-        )
     else:
-        prerequisite, next_owner_action = (
-            "needs_owner_correspondence",
-            "PROVIDE_SOURCE_BOUND_CASE_CORRESPONDENCE",
+        prerequisite, next_owner_action = case_mapping_prerequisite(
+            case_ids,
+            [
+                cast(str, row["case_id"])
+                for row in metadata
+                if row["slot_kind"] == "subject"
+            ],
         )
     tasks = [_task(next_owner_action, "evaluation_owner")]
     if blockers and roles_complete and subject_rows == 0:

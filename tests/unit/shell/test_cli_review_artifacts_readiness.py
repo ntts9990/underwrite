@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from jsonschema import ValidationError
 from underwrite_core.canonical import digest_bytes
 
 from underwrite.cli.main import main
@@ -14,6 +16,7 @@ from underwrite.instrument.ingest.cross_artifact import (
     MAX_PROMPTFOO_ROWS,
     review_artifact_readiness_files,
 )
+from underwrite.instrument.ingest.schema import packaged_validator
 
 ROOT = Path(__file__).resolve().parents[3]
 C55 = ROOT / "fixtures/conformance/goppi-c55-common"
@@ -121,9 +124,13 @@ def test_complete_source_metadata_only_enables_a_future_owner_declaration(
 ) -> None:
     path = tmp_path / "export.json"
     source = _source(path)
+    case_ids = [
+        case["case_id"]
+        for case in json.loads((C55 / "assessment.json").read_bytes())["cases"]
+    ]
     for index, row in enumerate(source["results"]["results"]):
         metadata = row["testCase"]["metadata"]
-        metadata["case_id"] = f"case-{index}"
+        metadata["case_id"] = f"control-{index}" if index == 0 else case_ids[index - 1]
         metadata["slot_kind"] = "control" if index == 0 else "subject"
     path.write_text(json.dumps(source), encoding="utf-8")
     report = _readiness(path, capsys)
@@ -171,6 +178,49 @@ def test_all_control_rows_request_subject_rows_before_case_mapping(
     assert report["next_verification_tasks"][0]["code"] == "PROVIDE_PROMPTFOO_SUBJECT_ROWS"
     assert report["finding_counts"] == {"equal": 0, "different": 0, "ineligible": 0}
 
+    assert main([*_arguments(path), "--json"]) == 0
+    strict = json.loads(capsys.readouterr().out)
+    assert strict["relation"] == "incomparable_on_supplied_evidence"
+    assert strict["populations"]["promptfoo"]["subject_rows"] == 0
+    assert strict["next_verification_tasks"][0]["code"] == "PROVIDE_PROMPTFOO_SUBJECT_ROWS"
+    invalid = deepcopy(strict)
+    invalid["next_verification_tasks"][0]["code"] = "PROVIDE_SOURCE_BOUND_CASE_CORRESPONDENCE"
+    with pytest.raises(ValidationError):
+        packaged_validator("cross_artifact_review.v1").validate(invalid)  # pyright: ignore[reportUnknownMemberType]
+
+
+def test_disjoint_source_case_ids_need_new_export_before_mapping(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "disjoint.json"
+    source = _source(path)
+    case_ids = {
+        case["case_id"]
+        for case in json.loads((C55 / "assessment.json").read_bytes())["cases"]
+    }
+    for index, row in enumerate(source["results"]["results"]):
+        row["testCase"]["metadata"].update(
+            {"case_id": f"underwrite-no-match-{index}", "slot_kind": "subject"}
+        )
+    assert case_ids.isdisjoint(
+        row["testCase"]["metadata"]["case_id"] for row in source["results"]["results"]
+    )
+    path.write_text(json.dumps(source), encoding="utf-8")
+
+    readiness = _readiness(path, capsys)
+    assert readiness["metadata"]["blockers"] == []
+    assert readiness["populations"]["promptfoo"]["subject_rows"] == ROW_COUNT
+    assert readiness["review_prerequisites"] == "missing_matching_case_ids"
+    assert readiness["next_verification_tasks"][0]["code"] == "PROVIDE_MATCHING_SOURCE_CASE_IDS"
+
+    assert main([*_arguments(path), "--json"]) == 0
+    streams = capsys.readouterr()
+    strict = json.loads(streams.out)
+    assert streams.err == ""
+    assert strict["relation"] == "incomparable_on_supplied_evidence"
+    assert strict["next_verification_tasks"][0]["code"] == "PROVIDE_MATCHING_SOURCE_CASE_IDS"
+    assert "underwrite-no-match" not in streams.out
+
 
 def test_missing_ids_and_all_control_roles_report_both_owner_prerequisites(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
@@ -212,6 +262,11 @@ def test_empty_export_needs_subject_rows_without_inventing_a_case_map(
     assert report["populations"]["promptfoo"]["supplied_rows"] == 0
     assert report["review_prerequisites"] == "missing_subject_rows"
     assert report["next_verification_tasks"][0]["code"] == "PROVIDE_PROMPTFOO_SUBJECT_ROWS"
+
+    assert main([*_arguments(path), "--json"]) == 0
+    strict = json.loads(capsys.readouterr().out)
+    assert strict["populations"]["promptfoo"]["subject_rows"] == 0
+    assert strict["next_verification_tasks"][0]["code"] == "PROVIDE_PROMPTFOO_SUBJECT_ROWS"
 
 
 def test_mixed_metadata_is_incomplete_and_source_content_stays_private(

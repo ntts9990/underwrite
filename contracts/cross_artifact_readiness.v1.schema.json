@@ -284,6 +284,7 @@
       "enum": [
         "missing_owner_metadata",
         "missing_subject_rows",
+        "missing_matching_case_ids",
         "needs_owner_correspondence"
       ]
     },
@@ -360,6 +361,7 @@
             "enum": [
               "PROVIDE_PROMPTFOO_CASE_METADATA",
               "PROVIDE_PROMPTFOO_SUBJECT_ROWS",
+              "PROVIDE_MATCHING_SOURCE_CASE_IDS",
               "PROVIDE_SOURCE_BOUND_CASE_CORRESPONDENCE",
               "VERIFY_GOPPI_PORTABLE_CLOSURE",
               "VERIFY_SOURCE_PROVENANCE"
@@ -479,6 +481,7 @@
           "review_prerequisites": {
             "enum": [
               "missing_subject_rows",
+              "missing_matching_case_ids",
               "needs_owner_correspondence"
             ]
           },
@@ -657,7 +660,10 @@
       "if": {
         "properties": {
           "review_prerequisites": {
-            "const": "needs_owner_correspondence"
+            "enum": [
+              "missing_matching_case_ids",
+              "needs_owner_correspondence"
+            ]
           }
         }
       },
@@ -721,6 +727,33 @@
                 "properties": {
                   "code": {
                     "const": "PROVIDE_PROMPTFOO_SUBJECT_ROWS"
+                  },
+                  "owner": {
+                    "const": "evaluation_owner"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "review_prerequisites": {
+            "const": "missing_matching_case_ids"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "next_verification_tasks": {
+            "prefixItems": [
+              {
+                "properties": {
+                  "code": {
+                    "const": "PROVIDE_MATCHING_SOURCE_CASE_IDS"
                   },
                   "owner": {
                     "const": "evaluation_owner"
