@@ -32,6 +32,13 @@ Choose the narrowest supported path from the supplied evidence:
 - **Paired input, policy, and explicit comparison context:** use `review-pair --input INPUT --policy POLICY --context CONTEXT --json`. Run `pair-binary` with the same input and policy when its separately referenced report is needed. Declarations, evaluation history, and case partitions remain source claims; unchanged declarations do not prove controlled conditions or improvement.
 - **Native `underwrite.evidence-bundle` v1 with a `measurement_policy.v3` and declared event semantics:** after `ingest`, run `measure --observation OBSERVATION --policy POLICY --json`. When retention in a private store is requested, prefer capabilities-listed `records measure` as described in [recording](references/recording.md), preserving analysis and storage outcomes separately. If the caller also supplied a change candidate and declared claims, and at least one actual `read.v2` is available (supplied or produced by `measure`), run `accept --candidate CANDIDATE --claims CLAIMS --read READ --json`, repeating `--read` for available reads as needed. Use the claims contract advertised by the actual CLI: the unreleased checkout uses `declared_claims.v3` and emits `acceptance_decision.v3`, while published 0.2.0 uses v2. For the checkout, create a new owner-declared v3 document, compute its seal with `underwrite.acceptance.claims.parse_claims(document).digest`, and bind that actual new digest in the candidate. Preserve the exact measured subject, policy and semantic identities; a label change alone does not update the seal. Old v1/v2 claims receive a migration refusal. Legacy policies/reads also require actual current declarations and measurement, never relabeling. Read the semantic binding, expected-case coverage, directional status and limitations; Brier/ECE are diagnostics, not favorable quality evidence. Leave claims without reads explicit; do not fabricate a complete set. Neither an external observation nor an accounting, comparison, or paired evidence report is an acceptable `--read`.
 
+For a C55/Promptfoo review, stop after `review-artifacts` when its result already
+answers the selected-file binding, case availability, review prerequisites and
+next-evidence question.
+Run `inspect-result` separately only for a requested item-level common-result
+action or structural question; it does not verify the original C55 source or
+portable closure and is not a routine second check of a sufficient review.
+
 For an owner-mapped C55/Promptfoo review with **explicit private retention**, prefer
 capabilities-listed `records review-artifacts` with the four selected files,
 `--root` and a new `--id`. It retains the exact analyzed buffers and separates
