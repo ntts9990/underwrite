@@ -135,6 +135,12 @@ def configure(parser: argparse.ArgumentParser) -> None:
         "replay-measure", help="Compare retained measurement with current calculation."
     )
     replay_measure.configure(replay)
+    from underwrite.cli import record_cross_artifact
+
+    cross_artifact = commands.add_parser(
+        "review-artifacts", help="Review and retain strict owner-mapped C55 and Promptfoo inputs."
+    )
+    record_cross_artifact.configure(cross_artifact)
 
 
 def _input_error(code: str, reason: str, location: str) -> Exception:
@@ -271,6 +277,10 @@ def _emit_error(error: _CliError, *, as_json: bool) -> int:
 
 
 def _capture_command(argv: list[str]) -> int | None:  # noqa: PLR0911 - lazy command dispatch
+    if argv and argv[0] == "review-artifacts":
+        from underwrite.cli import record_cross_artifact
+
+        return record_cross_artifact.main(argv[1:])
     if argv and argv[0] == "audit-trajectory":
         from underwrite.cli import record_trajectory
 

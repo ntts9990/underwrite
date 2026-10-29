@@ -371,6 +371,40 @@ its known record identity in `storage.published_record`; null means no identity
 was returned, not proof that the requested ID is absent. Never overwrite or
 silently retry a reserved ID. Analysis-only `audit-promptfoo` never saves a record.
 
+For a **strict owner-mapped** C55 and Promptfoo review, current development builds
+advertising `records review-artifacts` can analyze and retain the same four
+captured input buffers without a handwritten record specification:
+
+```sh
+underwrite records review-artifacts \
+  --goppi-assessment /path/to/assessment.json \
+  --goppi-result /path/to/evidence-result.json \
+  --promptfoo /path/to/promptfoo-results.json \
+  --correspondence /path/to/owner-correspondence.json \
+  --root PRIVATE_STORE --id NEW_ID --json
+underwrite records verify --root PRIVATE_STORE --id NEW_ID --json
+underwrite records read-json --root PRIVATE_STORE --id NEW_ID \
+  --name analysis/review.json
+```
+
+`cross_artifact_record.v1` returns captured-member byte hashes, the unchanged
+`cross_artifact_review.v1` or a finite input diagnostic, and a separate storage
+outcome. The private immutable record holds all four **exact analyzed source
+buffers**, `analysis/review.json` or `analysis/error.json`, and a path-free
+`invocation.json`. Exit 0 means a review was saved and verified; exit 2 means a
+complete captured input produced a diagnostic that was saved; exit 3 means
+storage failed while the analysis remains available in the response. Incomplete
+input acquisition, argument/configuration failures, and output-admission errors
+create no record. `storage.published_record: null` does not prove the requested ID
+is free; inspect it before retrying. A duplicate ID is never overwritten.
+
+The record binds **selected bytes**, not an atomic producer snapshot, authentic
+producer identity, shared task/metric meaning, improvement or approval. It
+stores private source contents despite the content-minimized response. An
+owner-supplied correspondence file is required for this capture route; the
+no-map and readiness views remain analysis-only. Check actual installed
+capabilities because published 0.2.0 may lack this development route.
+
 For manual selection of arbitrary supported evidence, use an explicit spec:
 
 ```sh

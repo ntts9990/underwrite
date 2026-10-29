@@ -2255,6 +2255,67 @@ def _common_result_inspection_pilot(cli: Path, fixtures: Path, work: Path) -> No
     )
 
 
+def _cross_artifact_record_pilot(
+    cli: Path, directory: Path, arguments: list[str], mapped: dict[str, object], private: str
+) -> None:
+    correspondence = directory / "correspondence.json"
+    record_root = directory / "record-store"
+    record_id = "cross-artifact.mapped-001"
+    recorded = _cli_json(
+        cli,
+        [
+            "records", "review-artifacts", *arguments[1:],
+            "--correspondence", str(correspondence),
+            "--root", str(record_root), "--id", record_id,
+        ],
+        directory / "mapped-record.json",
+        directory,
+    )
+    record_analysis = cast(dict[str, object], recorded["analysis"])
+    record_storage = cast(dict[str, object], recorded["storage"])
+    private_paths = (
+        directory / "assessment.json",
+        directory / "result.json",
+        directory / "promptfoo.json",
+        correspondence,
+    )
+    serialized = json.dumps(recorded)
+    wheel.require(
+        recorded["schema"] == "cross_artifact_record.v1"
+        and record_analysis["state"] == "result"
+        and record_analysis["report"] == mapped
+        and record_storage["state"] == "saved"
+        and recorded["exit_code"] == 0
+        and private not in serialized
+        and all(str(path) not in serialized for path in private_paths),
+        "installed mapped record changed the review or leaked private sources",
+    )
+    verified_record = _cli_json(
+        cli,
+        ["records", "verify", "--root", str(record_root), "--id", record_id],
+        directory / "mapped-record-verification.json",
+        directory,
+    )
+    read_review = _cli_json(
+        cli,
+        [
+            "records", "read-json", "--root", str(record_root), "--id", record_id,
+            "--name", "analysis/review.json",
+        ],
+        directory / "mapped-record-readback.json",
+        directory,
+    )
+    source = cast(dict[str, object], recorded["source"])
+    members = cast(list[object], source["members"])
+    wheel.require(
+        verified_record["valid"] is True
+        and verified_record["files_checked"] == len(members) + 2
+        and read_review["content"] == mapped
+        and read_review["manifest_digest"] == record_storage["manifest_digest"],
+        "installed mapped record did not verify and read back the same review",
+    )
+
+
 def _cross_artifact_review_pilot(cli: Path, work: Path) -> None:
     directory = work / "cross-artifact-review"
     directory.mkdir()
@@ -2418,6 +2479,7 @@ def _cross_artifact_review_pilot(cli: Path, work: Path) -> None:
         and all(str(path) not in json.dumps(mapped) for path in (assessment, result, promptfoo)),
         "installed review leaked selected source content or paths",
     )
+    _cross_artifact_record_pilot(cli, directory, arguments, mapped, private)
     declaration["sources"]["promptfoo_export_sha256"] = "sha256:" + "0" * 64
     correspondence.write_text(json.dumps(declaration, sort_keys=True), encoding="utf-8")
     refused = wheel.command(

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, NamedTuple, cast
+from typing import Any, cast
 
 from jsonschema.exceptions import ValidationError
 from underwrite_core.canonical import digest_bytes
@@ -189,16 +190,31 @@ def _source_hashes(assessment: bytes, result: bytes, promptfoo: bytes) -> dict[s
     }
 
 
-class _SelectedSources(NamedTuple):
+@dataclass(frozen=True)
+class CapturedReviewSources:
+    """Exact selected source bytes and their decoded objects from one bounded read."""
+
     assessment: dict[str, Any]
     result: dict[str, Any]
     promptfoo: dict[str, Any]
     hashes: dict[str, str]
+    assessment_raw: bytes
+    result_raw: bytes
+    promptfoo_raw: bytes
+
+
+@dataclass(frozen=True)
+class CapturedMappedReview:
+    """All four exact buffers required for one owner-mapped source review."""
+
+    sources: CapturedReviewSources
+    declaration: dict[str, Any]
+    declaration_raw: bytes
 
 
 def _capture_selected_sources(
     goppi_assessment: Path, goppi_result: Path, promptfoo_export: Path
-) -> _SelectedSources:
+) -> CapturedReviewSources:
     assessment, assessment_raw = _read_object(
         goppi_assessment, limit=DEFAULT_MAX_BYTES, location="/goppi_assessment"
     )
@@ -208,9 +224,29 @@ def _capture_selected_sources(
     promptfoo, promptfoo_raw = _read_object(
         promptfoo_export, limit=DEFAULT_MAX_BYTES, location="/promptfoo"
     )
-    return _SelectedSources(
-        assessment, result, promptfoo, _source_hashes(assessment_raw, result_raw, promptfoo_raw)
+    return CapturedReviewSources(
+        assessment=assessment,
+        result=result,
+        promptfoo=promptfoo,
+        hashes=_source_hashes(assessment_raw, result_raw, promptfoo_raw),
+        assessment_raw=assessment_raw,
+        result_raw=result_raw,
+        promptfoo_raw=promptfoo_raw,
     )
+
+
+def capture_mapped_review_inputs(
+    goppi_assessment: Path,
+    goppi_result: Path,
+    promptfoo_export: Path,
+    correspondence: Path,
+) -> CapturedMappedReview:
+    """Capture a complete mapped review without opening any selected path twice."""
+    sources = _capture_selected_sources(goppi_assessment, goppi_result, promptfoo_export)
+    declaration, raw = _read_object(
+        correspondence, limit=CORRESPONDENCE_MAX_BYTES, location="/correspondence"
+    )
+    return CapturedMappedReview(sources=sources, declaration=declaration, declaration_raw=raw)
 
 
 def _correspondence(
@@ -345,7 +381,7 @@ def review_artifact_files(
     correspondence: Path | None = None,
 ) -> dict[str, object]:
     """Read each selected file once; compare only source claims under an optional owner map."""
-    assessment, result, promptfoo, hashes = _capture_selected_sources(
+    sources = _capture_selected_sources(
         goppi_assessment, goppi_result, promptfoo_export
     )
     declaration: dict[str, Any] | None = None
@@ -354,6 +390,27 @@ def review_artifact_files(
         declaration, declaration_raw = _read_object(
             correspondence, limit=CORRESPONDENCE_MAX_BYTES, location="/correspondence"
         )
+    return _review_selected_sources(sources, declaration, declaration_raw)
+
+
+def review_captured_mapped_artifacts(captured: CapturedMappedReview) -> dict[str, object]:
+    """Review exactly the four buffers already captured for durable retention."""
+    return _review_selected_sources(
+        captured.sources, captured.declaration, captured.declaration_raw
+    )
+
+
+def _review_selected_sources(
+    sources: CapturedReviewSources,
+    declaration: dict[str, Any] | None,
+    declaration_raw: bytes | None,
+) -> dict[str, object]:
+    assessment, result, promptfoo, hashes = (
+        sources.assessment,
+        sources.result,
+        sources.promptfoo,
+        sources.hashes,
+    )
     case_ids, items, availability = _goppi_selected(
         assessment, result, hashes["goppi_assessment_sha256"]
     )
@@ -416,8 +473,14 @@ def review_artifact_readiness_files(
     goppi_assessment: Path, goppi_result: Path, promptfoo_export: Path
 ) -> dict[str, object]:
     """Report source-bound prerequisites without inferring cross-producer case meaning."""
-    assessment, result, promptfoo, hashes = _capture_selected_sources(
+    sources = _capture_selected_sources(
         goppi_assessment, goppi_result, promptfoo_export
+    )
+    assessment, result, promptfoo, hashes = (
+        sources.assessment,
+        sources.result,
+        sources.promptfoo,
+        sources.hashes,
     )
     _, _, availability = _goppi_selected(
         assessment, result, hashes["goppi_assessment_sha256"]

@@ -175,6 +175,29 @@ diagnostic-only record. Inspect both analysis and storage on exits 0/2/3. A null
 published_record does not establish that no ID was reserved. Use the manual path
 when the caller needs selective file omission instead.
 
+### Owner-mapped cross-artifact retention
+
+When the evaluation owner supplies a source-bound C55/Promptfoo correspondence
+and the caller explicitly requests private retention, prefer the advertised
+`records review-artifacts` route over hand-authoring five file paths:
+
+```sh
+underwrite records review-artifacts \
+  --goppi-assessment ASSESSMENT --goppi-result RESULT \
+  --promptfoo EXPORT --correspondence OWNER_MAP \
+  --root PRIVATE_STORE --id NEW_ID --json
+```
+
+It retains the four exact buffers used for strict analysis, the result or
+diagnostic, and a path-free invocation. Exit 0 means saved review, 2 saved
+analysis diagnostic, 3 storage failure with analysis retained. A complete
+captured bad input can consume the ID; incomplete acquisition, configuration,
+and output-admission failures do not. Read back `analysis/review.json` or
+`analysis/error.json` and run `records verify` for the whole bundle. A null
+published identity after storage failure does not prove the ID is free.
+No-map/readiness reviews are analysis-only. Storage checks bytes, not producer
+identity, equal task meaning, causal improvement or approval.
+
 ### Goppi trajectory retention
 
 When capabilities advertises `records audit-trajectory`, use it for a requested

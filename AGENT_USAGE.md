@@ -201,6 +201,17 @@ explicit choice. Its JSON omits raw case IDs, answers, and prompts, but hashes
 and coordinates can still identify or correlate private work. Keep any retained
 JSON and records private.
 
+When the owner supplies a source-bound correspondence declaration **and** asks
+to retain the review, use the capabilities-listed `records review-artifacts`
+route with the same four files plus `--root PRIVATE_STORE --id NEW_ID --json`.
+It analyzes and stores the same captured bytes, returns analysis and storage
+outcomes separately, and verifies the new record. It is stricter than a generic
+`records save` of separately reopened paths. Missing or malformed inputs may
+produce a saved diagnostic only after all four files were captured; an
+incomplete read has no new record. The no-map and readiness views stay
+analysis-only. See [local record details](STORAGE.md) before selecting a
+private store; byte integrity is not producer authentication or approval.
+
 ## Complete native workflow
 
 The [README quickstart](README.md#quickstart) first audits a synthetic Promptfoo
