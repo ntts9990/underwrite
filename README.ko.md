@@ -2,11 +2,11 @@
 
 <h1><img src="https://raw.githubusercontent.com/ntts9990/underwrite/main/assets/brand/underwrite-logo.png" alt="underwrite" width="640"></h1>
 
-### 평가 파일로 무엇을 말할 수 있는지 확인하세요.
+### 평가는 끝났습니다. 그 결과로 어디까지 말할 수 있나요?
 
-불일치를 찾고, 빠진 근거를 드러내고, 다음에 확인할 일을 정합니다.
+지원하는 평가 파일에서 확인된 사실, 빠진 근거, 다음 확인 과제를 살펴보세요.
 
-**로컬 CLI와 Python 라이브러리 · JSON 결과 · 서버나 모델 호출 없이**
+**에이전트용 로컬 CLI · 구조화된 JSON · 서버나 모델 호출 없이**
 
 [![CI](https://github.com/ntts9990/underwrite/actions/workflows/ci.yml/badge.svg)](https://github.com/ntts9990/underwrite/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/underwrite)](https://pypi.org/project/underwrite/)
@@ -19,15 +19,17 @@
 
 </div>
 
-평가 도구는 평가를 실행하고 결과 파일을 만듭니다. underwrite는 지원하는 로컬 파일을
-읽어 파일에서 확인되는 내용, 아직 알 수 없는 점, 다음에 확인할 근거를 정리합니다.
-예를 들어 Promptfoo가 보고한 집계와 제공된 결과 행이 일치하는지 확인합니다.
-사람이나 코딩 에이전트는 JSON 결과를 보고 조사하고 결정합니다. 선택한 원본
-파일과 결과를 함께 보관해 나중에 다시 확인할 수도 있습니다.
+**한 가지 예:** Promptfoo 파일에는 결과 3개와 실패 1개가 보고됐지만 실제로
+제공된 행은 2개이고 실패 행은 없습니다. underwrite는 불일치를 보고하되
+원인은 알 수 없는 상태로 남깁니다. 이 안내는 다음으로 원래 실행 기록과
+계획된 사례 목록을 대조하도록 제안합니다. 코딩 에이전트가 JSON의
+발견 사항과 한계를 이용해 조사할 수 있고,
+선택한 원본과 결과를 함께 보관해 나중에 다시 확인할 수도 있습니다.
 
-underwrite는 평가를 다시 실행하거나, 생성 도구의 판정을 독립적으로 증명하거나,
-여러 도구의 결과를 하나의 품질 점수로 합치지 않습니다. 지원되는 로컬 파일을
-검사하는 데 Docker, 대시보드, 제공자 인증 정보는 필요하지 않습니다.
+underwrite는 평가 도구가 만든 지원 형식의 완료된 로컬 파일을 읽습니다.
+평가를 다시 실행하거나, 생성 도구의 판정을 독립적으로 증명하거나, 여러 도구의
+결과를 하나의 품질 점수로 합치지 않습니다. 지원하는 파일을 검사하는 데
+Docker, 대시보드, 제공자 인증 정보는 필요하지 않습니다.
 
 > [!NOTE]
 > **이 안내는 `underwrite==0.2.0`을 대상으로 합니다.** [CLI를 설치하면](#설치한-패키지--020)

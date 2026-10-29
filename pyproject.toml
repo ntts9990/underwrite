@@ -1,7 +1,7 @@
 [project]
 name = "underwrite"
 version = "0.2.0"
-description = "Local evidence normalization, measurement, and acceptance checks"
+description = "Review local agent eval files: findings, missing evidence, and next checks"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"

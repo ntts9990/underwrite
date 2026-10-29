@@ -1,5 +1,10 @@
 # Using underwrite from a coding agent
 
+The eval finished. What can you actually claim? Use underwrite when a summary
+does not match supplied rows, when supported artifacts may or may not describe
+the same cases, or when a source's `pass` leaves evidence gaps. The result names
+what was checked and what remains to verify; it does not approve a change.
+
 underwrite reads local artifacts. An agent can run its CLI, keep the JSON outputs,
 and report what each output establishes. It does not need a server or credentials.
 Install the versioned CLI with `uv tool install 'underwrite==0.2.0'`, then run

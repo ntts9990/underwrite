@@ -1,9 +1,13 @@
 ---
 name: underwrite-review
-description: Review local evaluation artifacts with the underwrite CLI, preserving source claims, missing evidence, and human decision boundaries. Use for an evidence review, not repository development preflight.
+description: Review supported local agent-evaluation files with underwrite to find mismatches, missing evidence, and the next check. Keep source claims and human decisions separate; not for repository development preflight.
 ---
 
 # Review local evidence with underwrite
+
+The eval finished. What can you actually claim? Use the supported local
+artifact to report observed facts, missing evidence, and the next verification
+step without presenting producer claims as independent proof.
 
 Use an `underwrite` already on `PATH`, or an explicitly supplied source checkout with its existing environment (`uv run --frozen --no-sync underwrite`). Do not install packages, sync dependencies, add hooks, or run evaluations or models. The advertised trajectory route may invoke an already installed Goppi only for offline verification. If neither CLI is available, report that limitation. Inspect `underwrite --help`; when listed, use `capabilities --json` to discover supported commands, input/output contracts, and exact source selectors. Fall back to command help on older installations. Inspect the chosen command's `--help` before using it. The unchanged package version does not establish which pilot commands exist.
 

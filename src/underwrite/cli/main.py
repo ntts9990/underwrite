@@ -599,7 +599,13 @@ COMMANDS = _dispatch()
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="underwrite")
+    parser = argparse.ArgumentParser(
+        prog="underwrite",
+        description=(
+            "Review supported local eval files: what they establish, what is missing, "
+            "and what to check next."
+        ),
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
     for descriptor in COMMAND_DESCRIPTORS:
         child = subparsers.add_parser(

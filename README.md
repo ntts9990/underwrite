@@ -2,11 +2,11 @@
 
 <h1><img src="https://raw.githubusercontent.com/ntts9990/underwrite/main/assets/brand/underwrite-logo.png" alt="underwrite" width="640"></h1>
 
-### Know what your eval files actually support.
+### The eval finished. What can you actually claim?
 
-Find mismatches. Keep missing evidence visible. Know what to check next.
+Know what supported eval files establish, what is missing, and what to check next.
 
-**Local CLI & Python library · JSON results · No server or model calls**
+**Agent-ready local CLI · Typed JSON · No server or model calls**
 
 [![CI](https://github.com/ntts9990/underwrite/actions/workflows/ci.yml/badge.svg)](https://github.com/ntts9990/underwrite/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/underwrite)](https://pypi.org/project/underwrite/)
@@ -19,16 +19,17 @@ Find mismatches. Keep missing evidence visible. Know what to check next.
 
 </div>
 
-Evaluation tools run evaluations and export result files. Underwrite reads the
-local files it supports and shows what those files establish, what remains
-unknown, and what evidence to check next. For example, it checks whether
-Promptfoo’s reported totals agree with its supplied result rows. You or your
-coding agent use the JSON result to investigate and decide. You can also save
-selected inputs with the result for later review.
+**A concrete example:** a Promptfoo export reports three results, including one
+failure, but supplies only two rows and no failure row. Underwrite reports the
+mismatch and keeps its cause unknown. This guide then asks you to check the
+original run record and planned case inventory. Your coding agent can use the
+JSON finding and limits to investigate;
+selected inputs and the result can also be kept together for later review.
 
-Underwrite does not rerun evaluations, independently prove a producer's verdict,
-or assign one quality score across tools. Checking supported local files needs
-no Docker, dashboard, or provider credentials.
+Underwrite reads supported completed local files from evaluation tools. It does
+not rerun evaluations, independently prove a producer's verdict, or assign one
+quality score across tools. No Docker, dashboard, or provider credentials are
+needed to inspect supported files.
 
 > [!NOTE]
 > **This guide targets `underwrite==0.2.0`.** [Install the CLI](#installed-package--020)
