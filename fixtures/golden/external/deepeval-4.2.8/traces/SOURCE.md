@@ -60,5 +60,10 @@ Published `underwrite==0.1.1` predates this route. The selected index reports
 observed source statuses and within-trace parent references without copying raw
 names, UUIDs, prompts, arguments or error text. It does not evaluate metrics,
 certify execution, prove instrumentation completeness or align different runs.
-The ordinary metric accountant still refuses populated traces; do not delete
-source branches to force acceptance. Keep real exports private.
+The current development checkout also accepts selected metric accounting on this
+unchanged file, returning `deepeval_accounting.v3` with
+`scope.trace: present_unanalyzed` and `INSPECT_TRACE_INDEX`. That accounting does
+not analyze the trace; use the separate trace-index view and compare `raw_hash`.
+Published `underwrite==0.2.0` still refuses its default metric accounting at
+`/testCases/0/trace`, while its explicit trace-index view accepts this file.
+Do not delete source branches to force acceptance. Keep real exports private.
