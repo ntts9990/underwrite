@@ -31,6 +31,14 @@ underwrite는 평가 도구가 만든 지원 형식의 완료된 로컬 파일�
 결과를 하나의 품질 점수로 합치지 않습니다. 지원하는 파일을 검사하는 데
 Docker, 대시보드, 제공자 인증 정보는 필요하지 않습니다.
 
+underwrite는 Goppi의 **선택형 퍼스트파티 근거 검토 동반 앱**으로 개발 중입니다.
+Goppi는 평가 실행·내보내기·원생 오프라인
+검증을, underwrite는 완료된 내보내기의 비교·누락 근거·다음 확인 과제 해석을
+맡습니다. CLI 패키지는 서로 독립적이며 Promptfoo·DeepEval·Langfuse 등의
+지원도 유지합니다. 이 운영 관계가 생성 도구의 출처나 판정의 진실성을
+독립적으로 증명하지는 않습니다. 현재 Goppi 인계는 호환되는 로컬 소스 빌드가
+필요하며, 공개 npm `0.0.1`에는 필요한 명령이 없습니다.
+
 > [!NOTE]
 > **이 안내는 `underwrite==0.2.0`을 대상으로 합니다.** [CLI를 설치하면](#설치한-패키지--020)
 > 자동 입력 처리, 목적별 근거 보기와 실행 단계 검토·보관을 사용할 수 있습니다.
@@ -239,11 +247,14 @@ Claude Code에서 재사용할 수 있는 지침을 제공합니다.
 - **공통 결과:** `inspect-result`가 `evidence_result.v2`도 받습니다.
 - **Goppi 단계:** [`audit-trajectory`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#compare-a-goppi-paired-trajectory)는
   조기 중단된 실행을 포함해 paired+trajectory 내보내기의 도구 상태와 평가 결과를
-  비교합니다. 이 선택형 경로는 오프라인 검증을 위해 설치된 Goppi가 필요합니다.
+  비교합니다. 이 선택형 경로는 `run verify-paired`를 지원하는 Goppi 설치본이
+  필요합니다. 공개 Goppi npm `0.0.1`에는 이 명령이 없어 현재는 로컬 소스
+  빌드 경로입니다.
   제공자를 실행하거나 인과관계를 확립하거나 재시도 효과를 측정하지 않습니다.
   [`records audit-trajectory`](https://github.com/ntts9990/underwrite/blob/main/STORAGE.md#retain-a-goppi-paired-trajectory)로
   같은 입력과 결과를 보관하고, `records read-trajectory`로 원본 내보내기와
   Goppi 없이 다시 확인할 수 있습니다.
+
 
 fixture 출처와 검사 범위는
 [아티팩트 요구사항](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#get-the-right-producer-artifact)과

@@ -31,6 +31,15 @@ not rerun evaluations, independently prove a producer's verdict, or assign one
 quality score across tools. No Docker, dashboard, or provider credentials are
 needed to inspect supported files.
 
+We are developing Underwrite as an **optional first-party evidence-review
+companion to Goppi**. Goppi owns evaluation execution, export, and native
+offline verification; Underwrite reads completed exports to describe supported
+comparisons, missing evidence, and next checks. They remain separate CLI
+packages, and Underwrite also reads Promptfoo, DeepEval, Langfuse, and other
+supported files. This relationship does not authenticate a producer or turn a
+source verdict into independent truth. The Goppi handoff currently requires a
+compatible local source build; the public Goppi npm `0.0.1` lacks the commands.
+
 > [!NOTE]
 > **This guide targets `underwrite==0.2.0`.** [Install the CLI](#installed-package--020)
 > for automatic input handling, focused evidence views and retained trajectory review.
@@ -243,7 +252,9 @@ for exact input requirements.
 - **Goppi steps:** [`audit-trajectory`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#compare-a-goppi-paired-trajectory)
   compares recorded tool states and evaluation results from a paired+trajectory
   export, including runs that stopped early. This optional route requires installed
-  Goppi for offline verification; it does not run providers, establish causality,
+  Goppi with `run verify-paired` for offline verification; public Goppi npm
+  `0.0.1` does not supply it. The current handoff is a local source-build path.
+  Underwrite does not run providers, establish causality,
   or measure retry effects. [`records audit-trajectory`](https://github.com/ntts9990/underwrite/blob/main/STORAGE.md#retain-a-goppi-paired-trajectory)
   retains the same inputs and result; `records read-trajectory` reopens them
   without Goppi or the original export.
