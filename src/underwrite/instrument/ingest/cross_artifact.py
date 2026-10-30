@@ -29,7 +29,7 @@ from underwrite.instrument.evidence.promptfoo_compat import (
     account_promptfoo_compatible,
 )
 from underwrite.instrument.ingest.application import DEFAULT_MAX_BYTES, DEFAULT_MAX_DEPTH
-from underwrite.instrument.ingest.schema import packaged_validator
+from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
 from underwrite.instrument.ingest.transport import (
     DecodeError,
     TransportError,
@@ -68,6 +68,17 @@ class CrossArtifactInputError(ValueError):
         super().__init__(reason)
 
 
+class CrossArtifactResultError(ValueError):
+    """A generated review violated its trusted output contract."""
+
+    code = "INTERNAL_ERROR"
+    reason = "CROSS_ARTIFACT_RESULT_INVALID"
+    location = "/report"
+
+    def __init__(self) -> None:
+        super().__init__(self.reason)
+
+
 def _read_object(path: Path, *, limit: int, location: str) -> tuple[dict[str, Any], bytes]:
     try:
         raw = read_local_file(path, limit)
@@ -86,13 +97,29 @@ def _read_object(path: Path, *, limit: int, location: str) -> tuple[dict[str, An
     return cast(dict[str, Any], value), raw
 
 
-def _validate_schema(value: object, name: str, location: str) -> None:
+def _validate_packaged_schema(value: object, name: str) -> None:
     try:
         packaged_validator(name).validate(value)  # pyright: ignore[reportUnknownMemberType]
+    except (ValidationError, SchemaConfigurationError):
+        raise
+    except Exception as exc:
+        raise SchemaConfigurationError("SCHEMA_EVALUATION_FAILED") from exc
+
+
+def _validate_schema(value: object, name: str, location: str) -> None:
+    try:
+        _validate_packaged_schema(value, name)
     except ValidationError:
         raise CrossArtifactInputError(
             "INVALID_INPUT", "SCHEMA_VALIDATION_FAILED", location
         ) from None
+
+
+def _validate_result_schema(value: object, name: str) -> None:
+    try:
+        _validate_packaged_schema(value, name)
+    except ValidationError:
+        raise CrossArtifactResultError() from None
 
 
 def _goppi_selected(
@@ -470,7 +497,7 @@ def _review_selected_sources(
     # The underlying Promptfoo accounting is required to admit the supplied rows, not to
     # assert its producer stats are a planned case inventory.
     assert cast(dict[str, int], accounting["row_tallies"])["total"] == len(rows)
-    _validate_schema(report, RESULT_SCHEMA, "")
+    _validate_result_schema(report, RESULT_SCHEMA)
     return report
 
 
@@ -551,5 +578,5 @@ def review_artifact_readiness_files(
         "next_verification_tasks": tasks,
         "limitations": READINESS_LIMITATIONS.copy(),
     }
-    _validate_schema(report, READINESS_SCHEMA, "")
+    _validate_result_schema(report, READINESS_SCHEMA)
     return report

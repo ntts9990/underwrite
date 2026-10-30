@@ -8,15 +8,16 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from jsonschema import ValidationError
+from jsonschema import Draft202012Validator, ValidationError
 from underwrite_core.canonical import digest_bytes
 
 from underwrite.cli.main import main
 from underwrite.instrument.ingest.cross_artifact import (
     MAX_PROMPTFOO_ROWS,
+    CrossArtifactResultError,
     review_artifact_readiness_files,
 )
-from underwrite.instrument.ingest.schema import packaged_validator
+from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
 
 ROOT = Path(__file__).resolve().parents[3]
 C55 = ROOT / "fixtures/conformance/goppi-c55-common"
@@ -51,6 +52,50 @@ def _source(path: Path, *, canary: str = "") -> dict[str, Any]:
         source["results"]["results"][0]["prompt"] = canary
     path.write_text(json.dumps(source), encoding="utf-8")
     return source
+
+
+@pytest.mark.parametrize(
+    "failure", ["rejected_report", "dangling_reference", "schema_configuration"]
+)
+def test_generated_readiness_validation_failure_is_not_input_failure(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    from underwrite.instrument.ingest import cross_artifact
+
+    original = cross_artifact.packaged_validator
+    broken = Draft202012Validator(
+        {"not": {}} if failure == "rejected_report" else {"$ref": "#/$defs/missing"}
+    )
+
+    def validator(name: str) -> Draft202012Validator:
+        if name == cross_artifact.READINESS_SCHEMA:
+            if failure == "schema_configuration":
+                raise SchemaConfigurationError("WRONG_INSPECTION_CONTRACT")
+            return broken
+        return original(name)
+
+    monkeypatch.setattr(cross_artifact, "packaged_validator", validator)
+    assert main([*_arguments(), "--view", "readiness", "--json"]) == ERROR_EXIT
+    streams = capsys.readouterr()
+    assert streams.out == ""
+    error = json.loads(streams.err)
+    assert error["schema"] == "evidence_error.v1"
+    assert (error["code"], error["reason"], error["next_action"]) == (
+        ("INTERNAL_ERROR", "CROSS_ARTIFACT_RESULT_INVALID", "REPORT_INTERNAL_ERROR")
+        if failure == "rejected_report"
+        else ("SCHEMA_CONFIGURATION_ERROR", "INVALID_PACKAGED_CONTRACT", "REINSTALL_PACKAGE")
+    )
+    if failure != "rejected_report":
+        with pytest.raises(SchemaConfigurationError):
+            review_artifact_readiness_files(
+                C55 / "assessment.json", C55 / "evidence-result.json", PROMPTFOO
+            )
+    else:
+        with pytest.raises(CrossArtifactResultError) as raised:
+            review_artifact_readiness_files(
+                C55 / "assessment.json", C55 / "evidence-result.json", PROMPTFOO
+            )
+        assert raised.value.code == "INTERNAL_ERROR"
 
 
 def test_native_export_returns_bound_readiness_without_invented_roles(

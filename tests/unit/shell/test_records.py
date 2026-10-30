@@ -395,6 +395,55 @@ def test_links_are_bound_before_mutation_and_checked_directly(tmp_path: Path) ->
     assert not (root / "records/analysis.002").exists()
 
 
+@pytest.mark.parametrize(
+    ("failure", "expected"),
+    [
+        ("RECORD_NOT_FOUND", "INVALID_SPEC"),
+        ("RECORD_NOT_PUBLISHED", "INVALID_SPEC"),
+        ("INVALID_RECORD", "INVALID_RECORD"),
+        ("INSECURE_STORE", "INSECURE_STORE"),
+        ("INVALID_STORE_LAYOUT", "INVALID_STORE_LAYOUT"),
+        ("STORE_IO_ERROR", "STORE_IO_ERROR"),
+    ],
+)
+def test_link_validation_preserves_target_failure_ownership(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str, expected: str
+) -> None:
+    source = _source(tmp_path)
+    root = tmp_path / "store"
+    spec = _spec("analysis.001")
+    spec["links"] = [
+        {
+            "relation": "input",
+            "record_id": "input.001",
+            "manifest_digest": "sha256:" + "0" * 64,
+        }
+    ]
+
+    def fail_read(_root: Path, _identifier: str) -> records.RecordSnapshot:
+        raise RecordError(failure, "/record")
+
+    monkeypatch.setattr(records, "read_record", fail_read)
+    error = _assert_error(expected, lambda: records.save_record(root, spec, source))
+    assert error.location == ("/spec/links" if expected == "INVALID_SPEC" else "/record")
+    assert not root.exists()
+
+
+def test_link_validation_reports_corrupt_target_manifest(tmp_path: Path) -> None:
+    source = _source(tmp_path)
+    root = tmp_path / "store"
+    target = records.save_record(root, _spec("input.001"), source)
+    spec = _spec("analysis.001")
+    spec["links"] = [
+        {"relation": "input", "record_id": "input.001", "manifest_digest": target.digest}
+    ]
+    (root / "records/input.001/manifest.json").write_bytes(b"invalid manifest")
+
+    error = _assert_error("INVALID_RECORD", lambda: records.save_record(root, spec, source))
+    assert error.location == "/record"
+    assert not (root / "records/analysis.001").exists()
+
+
 def test_truth_axes_and_artifact_roles_are_validated_independently(tmp_path: Path) -> None:
     source = _source(tmp_path)
     spec = _spec()
@@ -1103,16 +1152,25 @@ def test_selected_read_refuses_symlinks_at_every_control_node(
     )
 
 
-@pytest.mark.parametrize("kind", ["missing", "fifo", "directory"])
+@pytest.mark.parametrize("kind", ["missing", "missing_parent", "fifo", "directory"])
 def test_selected_read_missing_and_wrong_type(tmp_path: Path, kind: str) -> None:
     root, _ = _save(tmp_path)
     path = root / "records/capture.001/files/source/result.json"
-    path.unlink()
+    if kind == "missing_parent":
+        path = path.parent
+        (path / "result.json").unlink()
+        path.rmdir()
+    else:
+        path.unlink()
     if kind == "fifo":
         os.mkfifo(path, 0o600)
     elif kind == "directory":
         path.mkdir(mode=0o700)
-    code = "SOURCE_READ_FAILED" if kind == "missing" else "INVALID_STORE_LAYOUT"
+    code = (
+        "RECORD_FILE_INTEGRITY_MISMATCH"
+        if kind in {"missing", "missing_parent"}
+        else "INVALID_STORE_LAYOUT"
+    )
     _assert_error(code, lambda: records.read_record_file(root, "capture.001", "source/result.json"))
 
 
@@ -1274,7 +1332,7 @@ def test_legacy_manifest_transport_refusal_keeps_invalid_record_location(
         (
             node,
             facade,
-            "FILE_READ_FAILED" if facade == "verify" else "SOURCE_READ_FAILED",
+            "FILE_READ_FAILED" if facade == "verify" else "STORE_IO_ERROR",
             "/record",
         )
         for node in ("files", "leaf")
@@ -1722,7 +1780,7 @@ def test_selected_read_allows_ancestor_symlink_but_anchors_root(
     )
 
 
-def test_selected_read_checks_opened_size_and_source_io_failure(
+def test_selected_read_checks_opened_size_and_store_io_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root, _ = _save(tmp_path, b"1234")
@@ -1742,7 +1800,7 @@ def test_selected_read_checks_opened_size_and_source_io_failure(
 
     monkeypatch.setattr(records, "read_descriptor", unreadable)
     error = _assert_error(
-        "SOURCE_READ_FAILED",
+        "STORE_IO_ERROR",
         lambda: records.read_record_file(root, "capture.001", "source/result.json"),
     )
     assert "private-path" not in str(error)

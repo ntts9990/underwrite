@@ -8,10 +8,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from jsonschema import Draft202012Validator
 from underwrite_core.canonical import canonical_bytes, digest_bytes
 
 from underwrite.cli.main import main
-from underwrite.instrument.ingest.schema import packaged_validator
+from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
 
 ROOT = Path(__file__).resolve().parents[3]
 C55 = ROOT / "fixtures/conformance/goppi-c55-common"
@@ -106,6 +107,44 @@ def _run(args: list[str], capsys: pytest.CaptureFixture[str]) -> tuple[int, dict
     code = main(args)
     streams = capsys.readouterr()
     return code, json.loads(streams.out or streams.err), streams.out + streams.err
+
+
+@pytest.mark.parametrize(
+    "failure", ["rejected_report", "dangling_reference", "schema_configuration"]
+)
+def test_generated_review_failure_is_not_retained_as_input_diagnostic(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    from underwrite.instrument.ingest import cross_artifact
+
+    original = cross_artifact.packaged_validator
+    broken = Draft202012Validator(
+        {"not": {}} if failure == "rejected_report" else {"$ref": "#/$defs/missing"}
+    )
+
+    def validator(name: str) -> Draft202012Validator:
+        if name == cross_artifact.RESULT_SCHEMA:
+            if failure == "schema_configuration":
+                raise SchemaConfigurationError("WRONG_INSPECTION_CONTRACT")
+            return broken
+        return original(name)
+
+    monkeypatch.setattr(cross_artifact, "packaged_validator", validator)
+    paths = _inputs(tmp_path)
+    root = tmp_path / "records"
+    code, error, output = _run(_args(paths, root, "invalid-generated"), capsys)
+    assert code == ANALYSIS_EXIT
+    assert error["schema"] == "evidence_error.v1"
+    assert (error["code"], error["reason"], error["next_action"]) == (
+        ("INTERNAL_ERROR", "CROSS_ARTIFACT_RESULT_INVALID", "REPORT_INTERNAL_ERROR")
+        if failure == "rejected_report"
+        else ("SCHEMA_CONFIGURATION_ERROR", "INVALID_PACKAGED_CONTRACT", "REINSTALL_PACKAGE")
+    )
+    assert not root.exists()
+    assert CANARY not in output
 
 
 def test_mapped_success_and_verified_readback(

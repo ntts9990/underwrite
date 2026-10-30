@@ -561,6 +561,44 @@ def test_read_json_checks_integrity_before_content_and_distinguishes_unknown_nam
     _error(capsys, [*args[:-1], "../escape"], "INVALID_SPEC")
 
 
+@pytest.mark.parametrize(
+    ("failure", "expected", "action"),
+    [
+        ("missing", "RECORD_FILE_INTEGRITY_MISMATCH", "SELECT_VALID_RECORD"),
+        ("io", "STORE_IO_ERROR", "CHECK_STORE_IO"),
+    ],
+)
+def test_read_json_retained_member_failure_has_owner_specific_recovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    failure: str,
+    expected: str,
+    action: str,
+) -> None:
+    args, root = _read_json_args(tmp_path, b'{"ok":true}')
+    selected = root / "records/synthetic.capture-001/files" / args[-1]
+    if failure == "missing":
+        selected.unlink()
+    else:
+        identity = (selected.stat().st_dev, selected.stat().st_ino)
+        original_read = os.read
+
+        def refuse_retained_member(descriptor: int, size: int) -> bytes:
+            info = os.fstat(descriptor)
+            if (info.st_dev, info.st_ino) == identity:
+                raise OSError("private-retained-member-error")
+            return original_read(descriptor, size)
+
+        monkeypatch.setattr(os, "read", refuse_retained_member)
+
+    error = _error(capsys, args, expected)
+    assert error["next_action"] == action
+    assert error["location"] == "/record"
+    assert "private-retained-member-error" not in json.dumps(error)
+    assert str(root) not in json.dumps(error)
+
+
 @pytest.mark.parametrize("extra", [[], ["--json"]])
 def test_read_json_usage_errors_are_json_without_json_flag(
     capsys: pytest.CaptureFixture[str], extra: list[str]

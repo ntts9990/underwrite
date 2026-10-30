@@ -11,6 +11,7 @@ from underwrite.instrument.ingest.cross_artifact import (
     READINESS_SCHEMA,
     RESULT_SCHEMA,
     CrossArtifactInputError,
+    CrossArtifactResultError,
     review_artifact_files,
     review_artifact_readiness_files,
 )
@@ -53,7 +54,7 @@ def produce(args: argparse.Namespace) -> dict[str, object]:
             cast(Path, args.promptfoo),
             cast(Path | None, args.correspondence),
         )
-    except CrossArtifactInputError as exc:
+    except (CrossArtifactInputError, CrossArtifactResultError) as exc:
         raise EvidenceError(exc.code, exc.reason, exc.location) from None
 
 

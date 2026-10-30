@@ -8,12 +8,16 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from jsonschema import Draft202012Validator
 from underwrite_core.canonical import canonical_bytes, digest_bytes
 
 from underwrite.cli.main import main
 from underwrite.instrument.ingest.application import DEFAULT_MAX_BYTES
-from underwrite.instrument.ingest.cross_artifact import review_artifact_files
-from underwrite.instrument.ingest.schema import packaged_validator
+from underwrite.instrument.ingest.cross_artifact import (
+    CrossArtifactResultError,
+    review_artifact_files,
+)
+from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
 
 ROOT = Path(__file__).resolve().parents[3]
 C55 = ROOT / "fixtures/conformance/goppi-c55-common"
@@ -115,6 +119,50 @@ def _invoke(
     code = main([*args, "--json"])
     streams = capsys.readouterr()
     return code, json.loads(streams.out or streams.err), streams.out, streams.err
+
+
+@pytest.mark.parametrize(
+    "failure", ["rejected_report", "dangling_reference", "schema_configuration"]
+)
+def test_generated_review_validation_failure_is_not_input_failure(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    from underwrite.instrument.ingest import cross_artifact
+
+    assessment, result, promptfoo, _, _ = _inputs(tmp_path)
+    paths = (assessment, result, promptfoo)
+    original = cross_artifact.packaged_validator
+    broken = Draft202012Validator(
+        {"not": {}} if failure == "rejected_report" else {"$ref": "#/$defs/missing"}
+    )
+
+    def validator(name: str) -> Draft202012Validator:
+        if name == cross_artifact.RESULT_SCHEMA:
+            if failure == "schema_configuration":
+                raise SchemaConfigurationError("WRONG_INSPECTION_CONTRACT")
+            return broken
+        return original(name)
+
+    monkeypatch.setattr(cross_artifact, "packaged_validator", validator)
+    code, error, stdout, stderr = _invoke(capsys, paths, None)
+    assert code == ERROR_EXIT and stdout == ""
+    assert error["schema"] == "evidence_error.v1"
+    assert (error["code"], error["reason"], error["next_action"]) == (
+        ("INTERNAL_ERROR", "CROSS_ARTIFACT_RESULT_INVALID", "REPORT_INTERNAL_ERROR")
+        if failure == "rejected_report"
+        else ("SCHEMA_CONFIGURATION_ERROR", "INVALID_PACKAGED_CONTRACT", "REINSTALL_PACKAGE")
+    )
+    assert CANARY not in stderr
+    if failure != "rejected_report":
+        with pytest.raises(SchemaConfigurationError):
+            cross_artifact.review_artifact_files(*paths)
+    else:
+        with pytest.raises(CrossArtifactResultError) as raised:
+            cross_artifact.review_artifact_files(*paths)
+        assert raised.value.code == "INTERNAL_ERROR"
 
 
 def test_no_map_is_incomparable_and_cli_equals_python_api(

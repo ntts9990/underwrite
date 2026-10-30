@@ -322,7 +322,7 @@ def read_record(root: Path, identifier: str) -> RecordSnapshot:
 
 @contextmanager
 def _opened_file_at(
-    directory: int, name: str, *, missing: str = "SOURCE_READ_FAILED"
+    directory: int, name: str, *, missing: str = "RECORD_FILE_INTEGRITY_MISMATCH"
 ) -> Generator[int]:
     """Open and check the declared member through the anchored files directory."""
     with ExitStack() as opened:
@@ -339,13 +339,8 @@ def _opened_file_at(
 
 
 def _selected_bytes_at(directory: int, name: str, limit: int) -> bytes:
-    try:
-        with _opened_file_at(directory, name) as descriptor:
-            return _read_descriptor_bytes(descriptor, limit)
-    except RecordError as exc:
-        if exc.code == "STORE_IO_ERROR":
-            raise RecordError("SOURCE_READ_FAILED", "/record") from None
-        raise
+    with _opened_file_at(directory, name) as descriptor:
+        return _read_descriptor_bytes(descriptor, limit)
 
 
 def _selected_file(snapshot: RecordSnapshot, name: str, limit: int) -> dict[str, object]:
@@ -396,9 +391,9 @@ def _validate_references(root: Path, spec: dict[str, object]) -> None:
         try:
             snapshot = read_record(root, identifier)
         except RecordError as exc:
-            if exc.code == "RECORD_NOT_FOUND":
+            if exc.code in {"RECORD_NOT_FOUND", "RECORD_NOT_PUBLISHED"}:
                 raise RecordError("INVALID_SPEC", "/spec/links") from None
-            raise RecordError("INVALID_SPEC", "/spec/links") from None
+            raise
         if snapshot.digest != item["manifest_digest"]:
             raise RecordError("INVALID_SPEC", "/spec/links")
         linked[identifier] = snapshot

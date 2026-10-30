@@ -21,6 +21,7 @@ from underwrite.instrument.ingest.cross_artifact import (
     RESULT_SCHEMA,
     CapturedMappedReview,
     CrossArtifactInputError,
+    CrossArtifactResultError,
     capture_mapped_review_inputs,
     review_captured_mapped_artifacts,
 )
@@ -89,6 +90,8 @@ def _bounded_json(document: object, maximum: int) -> bytes:
 def _analysis(captured: CapturedMappedReview, result_validator: Validator) -> dict[str, Any]:
     try:
         report = review_captured_mapped_artifacts(captured)
+    except CrossArtifactResultError as exc:
+        raise EvidenceError(exc.code, exc.reason, exc.location) from None
     except CrossArtifactInputError as exc:
         error = _input_error(exc).payload
         validate(packaged_validator("evidence_error.v1"), error, EvidenceError, "INTERNAL_ERROR")
