@@ -43,6 +43,7 @@ from underwrite.cli import (
     review_pair,
 )
 from underwrite.cli.capabilities import CommandDescriptor, Handler, profile
+from underwrite.cli.evidence import EvidenceArgumentParser, EvidenceError, emit_error
 from underwrite.instrument.evidence.deepeval_compat import (
     ACCOUNTING_SCHEMA as DEEPEVAL_AUTO_ACCOUNTING_SCHEMA,
 )
@@ -600,7 +601,7 @@ COMMANDS = _dispatch()
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = EvidenceArgumentParser(
         prog="underwrite",
         description=(
             "Review supported local eval files: what they establish, what is missing, "
@@ -623,7 +624,10 @@ def main(argv: list[str] | None = None) -> int:
     if args_list and (descriptor := COMMANDS.get(args_list[0])) is not None:
         if descriptor.handler is not None:
             return descriptor.handler(args_list[0], args_list[1:])
-    args = build_parser().parse_args(args_list)
+    try:
+        args = build_parser().parse_args(args_list)
+    except EvidenceError as exc:
+        return emit_error(exc, as_json="--json" in args_list)
     exit_code, payload = args.handler(args)
     bounded = payload["command"] in {"boundary scan", "drift check"}
     rendered_exit = render.render(

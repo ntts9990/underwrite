@@ -24,6 +24,7 @@ else:
 EVIDENCE_ERROR_EXIT = 2
 STORAGE_ERROR_EXIT = 3
 BASELINE_RECORD_FILE_COUNT = 7
+LEGACY_USAGE_CANARY = "PRIVATE_AGENT_TOKEN"
 
 
 def _cli_json(cli: Path, args: list[str], output: Path, cwd: Path) -> dict[str, object]:
@@ -204,6 +205,45 @@ def _pin_cli_pilot(cli: Path, work: Path) -> None:
         )
 
 
+def _legacy_usage_pilot(cli: Path, work: Path) -> None:
+    """Installed root parsing must preserve the typed, content-minimized error boundary."""
+    contract = json.loads((wheel.ROOT / "contracts/evidence_error.v1.schema.json").read_bytes())
+    validator = Draft202012Validator(contract)
+    observed = wheel.command(
+        [
+            str(cli),
+            "boundary",
+            "scan",
+            str(work),
+            "--unexpected",
+            LEGACY_USAGE_CANARY,
+            "--json",
+        ],
+        work,
+    )
+    wheel.require(observed.returncode == EVIDENCE_ERROR_EXIT, "legacy usage exit changed")
+    wheel.require(observed.stdout == "", "legacy usage error wrote stdout")
+    wheel.require(
+        LEGACY_USAGE_CANARY not in observed.stderr,
+        "legacy usage error reflected a private argument",
+    )
+    try:
+        parsed: object = json.loads(observed.stderr)
+    except json.JSONDecodeError as exc:
+        raise wheel.SmokeFailure("legacy usage error did not write JSON stderr") from exc
+    wheel.require(isinstance(parsed, dict), "legacy usage error was not a JSON object")
+    diagnostic = cast(dict[str, object], parsed)
+    wheel.require(
+        validator.is_valid(cast(Any, diagnostic)),  # pyright: ignore[reportUnknownMemberType]
+        "legacy usage error broke evidence_error.v1",
+    )
+    wheel.require(
+        diagnostic.get("code") == "USAGE_ERROR"
+        and diagnostic.get("reason") == "INVALID_ARGUMENTS_SEE_HELP",
+        "legacy usage error changed its stable classification",
+    )
+
+
 def _registry_core_smoke(dist: Path) -> None:
     candidates = sorted(dist.glob("underwrite-*.whl"))
     wheel.require(len(candidates) == 1, "expected one application wheel for registry-core smoke")
@@ -216,6 +256,7 @@ def _registry_core_smoke(dist: Path) -> None:
         venv = work / "venv"
         _, registry = wheel.install_registry_core(work, venv, app)
         cli = venv / "bin/underwrite"
+        _legacy_usage_pilot(cli, work)
         _pin_cli_pilot(cli, work)
         fixtures = wheel.ROOT / "fixtures/examples"
         _native_measurement_pilot(cli, fixtures, work)
@@ -3283,6 +3324,7 @@ def _smoke(dist: Path) -> None:
         wheel.install_wheels(work, venv, wheels)
         wheel.check_wheel_origins(venv, wheels)
         wheel.stale_core_upgrade(work, wheels)
+        _legacy_usage_pilot(cli, work)
         _pin_cli_pilot(cli, work)
         _evidence_pilots(cli, fixtures, work)
         _record_pilots(cli, fixtures, work)

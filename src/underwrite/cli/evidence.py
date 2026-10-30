@@ -75,7 +75,13 @@ class EvidenceError(ValueError):
         super().__init__(reason)
 
 
-class _Parser(argparse.ArgumentParser):
+class EvidenceArgumentParser(argparse.ArgumentParser):
+    """Argument parser whose failures never repeat caller-supplied values."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("allow_abbrev", False)
+        super().__init__(*args, **kwargs)
+
     def error(self, message: str) -> NoReturn:
         raise EvidenceError("USAGE_ERROR", "INVALID_ARGUMENTS_SEE_HELP")
 
@@ -91,7 +97,8 @@ def read_validated(
     return document, digest
 
 
-def _error(error: EvidenceError, as_json: bool) -> int:
+def emit_error(error: EvidenceError, *, as_json: bool) -> int:
+    """Emit one fixed diagnostic without caller-controlled error details."""
     encoded = canonical_bytes(error.payload).decode("utf-8")
     output = encoded if as_json else "Evidence command could not complete: " + encoded
     print(output, file=sys.stderr)
@@ -107,7 +114,7 @@ def run_cli(
     output_max_bytes: int = REPORT_MAX_BYTES,
 ) -> int:
     """Emit a complete report once, or one typed error with no stdout prefix."""
-    parser = _Parser(prog=f"underwrite {command}", allow_abbrev=False)
+    parser = EvidenceArgumentParser(prog=f"underwrite {command}")
     specification = (
         ReportOutput(result_schema, output_max_bytes)
         if isinstance(result_schema, str)
@@ -152,13 +159,15 @@ def run_cli(
             specification.exit_status(report) if specification.exit_status is not None else 0
         )
     except EvidenceError as exc:
-        return _error(exc, "--json" in argv)
+        return emit_error(exc, as_json="--json" in argv)
     except SchemaConfigurationError:
-        return _error(
+        return emit_error(
             EvidenceError("SCHEMA_CONFIGURATION_ERROR", "INVALID_PACKAGED_CONTRACT"),
-            "--json" in argv,
+            as_json="--json" in argv,
         )
     except Exception:
-        return _error(EvidenceError("INTERNAL_ERROR", "INTERNAL_ERROR"), "--json" in argv)
+        return emit_error(
+            EvidenceError("INTERNAL_ERROR", "INTERNAL_ERROR"), as_json="--json" in argv
+        )
     print(output)
     return exit_code
