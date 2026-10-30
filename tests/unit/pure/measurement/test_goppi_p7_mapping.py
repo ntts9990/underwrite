@@ -137,6 +137,36 @@ def test_bundle_and_identity_join_mismatches_are_typed(fault: str, reason: str) 
     assert (exc.value.code, exc.value.reason) == ("INVALID_INPUT", reason)
 
 
+@pytest.mark.parametrize("malformed", [[], {}], ids=["list", "object"])
+@pytest.mark.parametrize(
+    ("document_name", "path"),
+    [
+        ("derivation_provenance", ("original_run", "run_id")),
+        ("original_result", ("cycle", "run_id")),
+        ("completion_manifest", ("regrade_id",)),
+        ("regrade_source", ("regrade_id",)),
+        ("regrade_source", ("verifier", "corrected", "invocation_digest")),
+        ("regrade_source", ("verifier", "original", "failed_invocation_digest")),
+    ],
+)
+def test_malformed_identity_join_leaf_is_typed(
+    document_name: str, path: tuple[str, ...], malformed: object
+) -> None:
+    documents = _documents()
+    node = cast(dict[str, object], getattr(documents, document_name))
+    for key in path[:-1]:
+        node = cast(dict[str, object], node[key])
+    node[path[-1]] = malformed
+
+    with pytest.raises(HandoffMappingError) as exc:
+        _verify(documents)
+    assert (exc.value.code, exc.value.reason, exc.value.location) == (
+        "INVALID_INPUT",
+        "HANDOFF_IDENTITY_JOIN_MISMATCH",
+        "/paired_input/metadata",
+    )
+
+
 @pytest.mark.parametrize(
     ("fault", "reason"),
     [
