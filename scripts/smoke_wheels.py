@@ -2316,6 +2316,126 @@ def _cross_artifact_record_pilot(
     )
 
 
+def _cross_artifact_unmapped_prerequisites_pilot(
+    cli: Path,
+    directory: Path,
+    arguments: list[str],
+    promptfoo: Path,
+    case_ids: list[str],
+    private: str,
+) -> None:
+    cases = (
+        (
+            "all-controls",
+            "control",
+            None,
+            0,
+            "missing_subject_rows",
+            "PROVIDE_PROMPTFOO_SUBJECT_ROWS",
+        ),
+        (
+            "disjoint",
+            "subject",
+            "underwrite-no-match-",
+            len(case_ids) + 1,
+            "missing_matching_case_ids",
+            "PROVIDE_MATCHING_SOURCE_CASE_IDS",
+        ),
+    )
+    for name, role, new_id_prefix, subject_count, prerequisite, task_code in cases:
+        payload = json.loads(promptfoo.read_bytes())
+        for index, row in enumerate(payload["results"]["results"]):
+            metadata = row["testCase"]["metadata"]
+            metadata["slot_kind"] = role
+            if new_id_prefix is not None:
+                metadata["case_id"] = f"{new_id_prefix}{index}"
+            elif index == 0:
+                metadata["case_id"] = "PRIVATE_WHEEL_CONTROL_CASE_0"
+        if new_id_prefix is not None:
+            selected_ids = {
+                row["testCase"]["metadata"]["case_id"] for row in payload["results"]["results"]
+            }
+            wheel.require(
+                set(case_ids).isdisjoint(selected_ids), "smoke disjoint IDs accidentally overlap"
+            )
+        selected = directory / f"{name}.json"
+        selected.write_text(json.dumps(payload), encoding="utf-8")
+        selected_args = [*arguments[:-1], str(selected)]
+        strict = cast(
+            dict[str, Any],
+            _cli_json(cli, selected_args, directory / f"{name}-review.json", directory),
+        )
+        readiness = cast(
+            dict[str, Any],
+            _cli_json(
+                cli,
+                [*selected_args, "--view", "readiness"],
+                directory / f"{name}-readiness.json",
+                directory,
+            ),
+        )
+        wheel.require(
+            strict["relation"] == "incomparable_on_supplied_evidence"
+            and strict["populations"]["promptfoo"]["subject_rows"] == subject_count
+            and strict["correspondence"]["pairs"] == []
+            and strict["finding_counts"] == {"equal": 0, "different": 0, "ineligible": 0}
+            and strict["improvement"] == "unknown"
+            and strict["next_verification_tasks"][0]["code"] == task_code
+            and readiness["review_prerequisites"] == prerequisite
+            and readiness["finding_counts"] == {"equal": 0, "different": 0, "ineligible": 0}
+            and readiness["improvement"] == "unknown"
+            and readiness["next_verification_tasks"][0]["code"] == task_code
+            and private not in json.dumps(strict) + json.dumps(readiness),
+            f"installed {name} review requested an impossible case map or leaked source content",
+        )
+        displayed = json.dumps(strict) + json.dumps(readiness)
+        marker = new_id_prefix or "PRIVATE_WHEEL_CONTROL_CASE_0"
+        wheel.require(marker not in displayed, f"installed {name} review leaked case IDs")
+
+
+def _cross_artifact_missing_metadata_pilot(
+    cli: Path, directory: Path, arguments: list[str], assessment: Path, result: Path
+) -> None:
+    ordinary_promptfoo = wheel.ROOT / "fixtures/golden/external/promptfoo-0.124.1/results.json"
+    ordinary_rows = len(json.loads(ordinary_promptfoo.read_bytes())["results"]["results"])
+    readiness_args = [*arguments[:-1], str(ordinary_promptfoo), "--view", "readiness"]
+    readiness = _cli_json(cli, readiness_args, directory / "readiness.json", directory)
+    readiness_metadata = cast(dict[str, object], readiness["metadata"])
+    readiness_population = cast(dict[str, object], readiness["populations"])
+    ordinary_population = cast(dict[str, object], readiness_population["promptfoo"])
+    wheel.require(
+        readiness["schema"] == "cross_artifact_readiness.v1"
+        and readiness["relation"] == "incomparable_on_supplied_evidence"
+        and readiness_metadata["case_ids"] == "incomplete"
+        and readiness_metadata["row_roles"] == "incomplete"
+        and ordinary_population["supplied_rows"] == ordinary_rows
+        and ordinary_population["subject_rows"] is None
+        and ordinary_population["control_rows"] is None
+        and readiness["review_prerequisites"] == "missing_owner_metadata"
+        and readiness["improvement"] == "unknown",
+        "installed readiness invented row roles or case comparison",
+    )
+    readiness_api = wheel.success(
+        [
+            str(cli.parent / "python"),
+            "-I",
+            "-c",
+            "import json,sys; from pathlib import Path; "
+            "from underwrite.instrument.ingest.cross_artifact "
+            "import review_artifact_readiness_files; "
+            "print(json.dumps(review_artifact_readiness_files(*[Path(p) for p in sys.argv[1:]])))",
+            str(assessment),
+            str(result),
+            str(ordinary_promptfoo),
+        ],
+        directory,
+    )
+    wheel.require(
+        json.loads(readiness_api.stdout) == readiness,
+        "installed readiness Python API and CLI disagree",
+    )
+
+
 def _cross_artifact_review_pilot(cli: Path, work: Path) -> None:
     directory = work / "cross-artifact-review"
     directory.mkdir()
@@ -2377,44 +2497,10 @@ def _cross_artifact_review_pilot(cli: Path, work: Path) -> None:
         and no_map["improvement"] == "unknown",
         "installed review without a declaration asserted comparison",
     )
-    ordinary_promptfoo = wheel.ROOT / "fixtures/golden/external/promptfoo-0.124.1/results.json"
-    ordinary_rows = len(json.loads(ordinary_promptfoo.read_bytes())["results"]["results"])
-    readiness_args = [*arguments[:-1], str(ordinary_promptfoo), "--view", "readiness"]
-    readiness = _cli_json(cli, readiness_args, directory / "readiness.json", directory)
-    readiness_metadata = cast(dict[str, object], readiness["metadata"])
-    readiness_population = cast(dict[str, object], readiness["populations"])
-    ordinary_population = cast(dict[str, object], readiness_population["promptfoo"])
-    wheel.require(
-        readiness["schema"] == "cross_artifact_readiness.v1"
-        and readiness["relation"] == "incomparable_on_supplied_evidence"
-        and readiness_metadata["case_ids"] == "incomplete"
-        and readiness_metadata["row_roles"] == "incomplete"
-        and ordinary_population["supplied_rows"] == ordinary_rows
-        and ordinary_population["subject_rows"] is None
-        and ordinary_population["control_rows"] is None
-        and readiness["review_prerequisites"] == "missing_owner_metadata"
-        and readiness["improvement"] == "unknown",
-        "installed readiness invented row roles or case comparison",
+    _cross_artifact_unmapped_prerequisites_pilot(
+        cli, directory, arguments, promptfoo, case_ids, private
     )
-    readiness_api = wheel.success(
-        [
-            str(cli.parent / "python"),
-            "-I",
-            "-c",
-            "import json,sys; from pathlib import Path; "
-            "from underwrite.instrument.ingest.cross_artifact "
-            "import review_artifact_readiness_files; "
-            "print(json.dumps(review_artifact_readiness_files(*[Path(p) for p in sys.argv[1:]])))",
-            str(assessment),
-            str(result),
-            str(ordinary_promptfoo),
-        ],
-        directory,
-    )
-    wheel.require(
-        json.loads(readiness_api.stdout) == readiness,
-        "installed readiness Python API and CLI disagree",
-    )
+    _cross_artifact_missing_metadata_pilot(cli, directory, arguments, assessment, result)
     sources = {
         key: "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
         for key, path in (
