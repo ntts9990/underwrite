@@ -5,12 +5,16 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import sys
 import tempfile
 from collections import Counter
 from pathlib import Path
 from typing import Any, cast
+from unittest.mock import patch
+
+from jsonschema import Draft202012Validator
 
 if __package__:
     from . import _wheel_smoke as wheel
@@ -34,6 +38,172 @@ def _cli_json(cli: Path, args: list[str], output: Path, cwd: Path) -> dict[str, 
     return cast(dict[str, object], document)
 
 
+def _pin_cli_pilot(cli: Path, work: Path) -> None:
+    """An installed command must not derive registry roots from its wheel or cwd."""
+    contract = json.loads((wheel.ROOT / "contracts/cli_result.v1.schema.json").read_bytes())
+    validator = Draft202012Validator(contract)
+    pins = work / "contracts/pins"
+    pins.mkdir(parents=True)
+    siblings = work / "siblings"
+    repo = siblings / "smoke-repo"
+    repo.mkdir(parents=True)
+    source = repo / "contract.json"
+    source.write_bytes(b'{"smoke":true}\n')
+    selected = pins / "active/smoke-repo"
+    selected.mkdir(parents=True)
+    (selected / source.name).write_bytes(source.read_bytes())
+    (selected / "PINS.json").write_text(
+        json.dumps(
+            {
+                "schema": "pins.v1",
+                "repo": "smoke-repo",
+                "source_root": "smoke-repo",
+                "source_commit": "fixture",
+                "captured_at": "2026-01-01T00:00:00Z",
+                "files": {
+                    source.name: {
+                        "source_path": source.name,
+                        "sha256": "sha256:" + hashlib.sha256(source.read_bytes()).hexdigest(),
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def invoke(*args: str) -> tuple[int, dict[str, object]]:
+        observed = wheel.command([str(cli), *args, "--json"], work)
+        wheel.require(observed.stderr == "", f"pin CLI emitted stderr: {observed.stderr[:300]}")
+        result = cast(dict[str, object], json.loads(observed.stdout))
+        wheel.require(
+            validator.is_valid(cast(Any, result)),  # pyright: ignore[reportUnknownMemberType]
+            f"installed {' '.join(args[:2])} broke cli_result.v1",
+        )
+        return observed.returncode, result
+
+    with patch.dict(os.environ, {"UNDERWRITE_SIBLINGS_ROOT": str(work / "absent")}, clear=False):
+        code, result = invoke("drift", "check")
+        wheel.require(
+            code == EVIDENCE_ERROR_EXIT
+            and result["details"] == {"reason": "PINS_ROOT_REQUIRED", "location": "/pins"},
+            "installed drift inferred an implicit pin registry",
+        )
+        code, result = invoke("drift", "check", "--pins-root", str(pins))
+        wheel.require(
+            code == EVIDENCE_ERROR_EXIT
+            and result["state"] == "UNCONFIGURED"
+            and cast(dict[str, object], result["details"])["unconfigured_repos"] == ["smoke-repo"],
+            "installed drift ignored the siblings environment override",
+        )
+        code, result = invoke(
+            "drift", "check", "--pins-root", str(pins), "--siblings-root", str(siblings)
+        )
+        wheel.require(
+            code == 0 and result["state"] == "PASS",
+            "installed drift ignored the explicit siblings root",
+        )
+    code, result = invoke(
+        "drift", "check", "--pins-root", str(work / "missing"), "--siblings-root", str(siblings)
+    )
+    wheel.require(
+        code == EVIDENCE_ERROR_EXIT
+        and result["details"] == {"reason": "PIN_READ_FAILED", "location": "/pins"},
+        "installed drift treated a missing explicit registry as an empty population",
+    )
+    empty = work / "empty-pins"
+    empty.mkdir()
+    code, result = invoke(
+        "drift", "check", "--pins-root", str(empty), "--siblings-root", str(siblings)
+    )
+    wheel.require(
+        code == 1 and result["state"] == "EMPTY_POPULATION",
+        "installed drift lost the existing empty-registry outcome",
+    )
+
+    code, result = invoke("pins", "refresh", "--repo", "smoke-repo")
+    wheel.require(
+        code == EVIDENCE_ERROR_EXIT
+        and result["details"]
+        == {"reason": "PINS_ROOT_REQUIRED", "location": "/pins", "publication": "not_started"},
+        "installed refresh did not return JSON for missing configuration",
+    )
+    wheel.success(["git", "-C", str(repo), "init", "-q"], work)
+    wheel.success(["git", "-C", str(repo), "add", "contract.json"], work)
+    wheel.success(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "-c",
+            "user.email=fixture@test.invalid",
+            "-c",
+            "user.name=fixture",
+            "commit",
+            "-q",
+            "-m",
+            "fixture",
+        ],
+        work,
+    )
+    code, result = invoke(
+        "pins",
+        "refresh",
+        "--repo",
+        "smoke-repo",
+        "--pins-root",
+        str(pins),
+        "--siblings-root",
+        str(siblings),
+    )
+    wheel.require(
+        code == 0 and result["state"] == "PASS" and result["schema"] == "cli_result.v1",
+        "installed refresh JSON success changed",
+    )
+    published = json.loads((selected / "PINS.json").read_bytes())
+    actual_commit = wheel.success(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], work
+    ).stdout.strip()
+    details = cast(dict[str, object], result["details"])
+    wheel.require(
+        details == {
+            "repo": published["repo"],
+            "source_commit": published["source_commit"],
+            "captured_at": published["captured_at"],
+            "files": sorted(published["files"]),
+        }
+        and details["source_commit"] == actual_commit,
+        "installed refresh JSON disagrees with published pin manifest or Git commit",
+    )
+    code, result = invoke(
+        "pins",
+        "refresh",
+        "--repo",
+        "../unsafe",
+        "--pins-root",
+        str(pins),
+        "--siblings-root",
+        str(siblings),
+    )
+    wheel.require(
+        code == EVIDENCE_ERROR_EXIT
+        and result["details"] == {"reason": "INVALID_REPO", "publication": "not_started"},
+        "installed refresh JSON refusal lost publication state",
+    )
+    capabilities = _cli_json(cli, ["capabilities"], work / "pins-capabilities.json", work)
+    commands = cast(list[dict[str, object]], capabilities["commands"])
+    for name, required in (
+        ("drift", ["pins_root", "siblings_root"]),
+        ("pins", ["repo", "pins_root", "siblings_root"]),
+    ):
+        descriptor = next(row for row in commands if row["command"] == name)
+        selected_profile = cast(list[dict[str, object]], descriptor["profiles"])[0]
+        wheel.require(
+            selected_profile["required_inputs"] == required
+            and selected_profile["output_schemas"] == ["cli_result.v1"],
+            f"installed {name} capability metadata drifted",
+        )
+
+
 def _registry_core_smoke(dist: Path) -> None:
     candidates = sorted(dist.glob("underwrite-*.whl"))
     wheel.require(len(candidates) == 1, "expected one application wheel for registry-core smoke")
@@ -46,6 +216,7 @@ def _registry_core_smoke(dist: Path) -> None:
         venv = work / "venv"
         _, registry = wheel.install_registry_core(work, venv, app)
         cli = venv / "bin/underwrite"
+        _pin_cli_pilot(cli, work)
         fixtures = wheel.ROOT / "fixtures/examples"
         _native_measurement_pilot(cli, fixtures, work)
         _baseline_event_pilot(cli, fixtures, work)
@@ -3112,6 +3283,7 @@ def _smoke(dist: Path) -> None:
         wheel.install_wheels(work, venv, wheels)
         wheel.check_wheel_origins(venv, wheels)
         wheel.stale_core_upgrade(work, wheels)
+        _pin_cli_pilot(cli, work)
         _evidence_pilots(cli, fixtures, work)
         _record_pilots(cli, fixtures, work)
         _handoff_pilot(cli, work)

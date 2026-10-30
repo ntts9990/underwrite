@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import os
 import subprocess
+import tomllib
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, cast
@@ -42,14 +43,48 @@ from underwrite.fleet.pins import (
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_PINS_ROOT = _REPO_ROOT / "contracts" / "pins"
 SIBLINGS_ROOT_ENV = "UNDERWRITE_SIBLINGS_ROOT"
 
 
-def default_siblings_root() -> Path:
-    """`--siblings-root` default: $UNDERWRITE_SIBLINGS_ROOT when set, else the repo's parent."""
-    override = os.environ.get(SIBLINGS_ROOT_ENV)
-    return Path(override) if override else _REPO_ROOT.parent
+def _checkout_roots() -> tuple[Path | None, Path | None]:
+    """Use checkout defaults only when this module belongs to that source tree."""
+    source = _REPO_ROOT / "src" / "underwrite" / "cli" / "commands.py"
+    pins = _REPO_ROOT / "contracts" / "pins"
+    if source.resolve() != Path(__file__).resolve() or not pins.is_dir():
+        return None, None
+    try:
+        metadata = tomllib.loads((_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None, None
+    project = metadata.get("project")
+    if not isinstance(project, dict):
+        return None, None
+    if cast(dict[str, object], project).get("name") != "underwrite":
+        return None, None
+    return pins, _REPO_ROOT.parent
+
+
+def _selected_roots(args: argparse.Namespace) -> tuple[Path | None, Path | None]:
+    pins_root: Path | None = args.pins_root
+    siblings_root: Path | None = args.siblings_root
+    if siblings_root is None:
+        override = os.environ.get(SIBLINGS_ROOT_ENV)
+        siblings_root = Path(override) if override else None
+    if pins_root is None or siblings_root is None:
+        checkout_pins, checkout_siblings = _checkout_roots()
+        pins_root = pins_root if pins_root is not None else checkout_pins
+        siblings_root = siblings_root if siblings_root is not None else checkout_siblings
+    return pins_root, siblings_root
+
+
+def _required_root_details(
+    pins_root: Path | None, siblings_root: Path | None
+) -> dict[str, str] | None:
+    if pins_root is None:
+        return {"reason": "PINS_ROOT_REQUIRED", "location": "/pins"}
+    if siblings_root is None:
+        return {"reason": "SIBLINGS_ROOT_REQUIRED", "location": "/siblings"}
+    return None
 
 
 # absence's outcome vocabulary comes from underwrite_core.absence plus the
@@ -186,6 +221,10 @@ def _repo_table(
 
 def cmd_drift_check(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
     """`underwrite drift check` -- underwrite.fleet.drift.drift_check over pins + siblings."""
+    pins_root, siblings_root = _selected_roots(args)
+    if (missing := _required_root_details(pins_root, siblings_root)) is not None:
+        return 2, _result("drift check", "UNCONFIGURED", 2, missing)
+    assert pins_root is not None and siblings_root is not None
     try:
         validate_date(args.now)
         exemptions, config_bytes = (
@@ -198,8 +237,8 @@ def cmd_drift_check(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         return 2, _result("drift check", "UNCONFIGURED", 2, refusal.details())
     try:
         verdict, manifests = _inspect_drift(
-            args.pins_root,
-            args.siblings_root,
+            pins_root,
+            siblings_root,
             exemptions=exemptions,
             now=args.now,
             remaining=pin_registry.PIN_TOTAL_MAX_BYTES - config_bytes,
@@ -229,8 +268,14 @@ def cmd_drift_check(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
 
 def cmd_pins_refresh(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
     """`underwrite pins refresh` -- re-copy one repo's pinned bytes from its sibling checkout."""
+    pins_root, siblings_root = _selected_roots(args)
+    if (missing := _required_root_details(pins_root, siblings_root)) is not None:
+        return 2, _result(
+            "pins refresh", "UNCONFIGURED", 2, {**missing, "publication": "not_started"}
+        )
+    assert pins_root is not None and siblings_root is not None
     try:
-        manifest = refresh_pins(args.pins_root, args.siblings_root, args.repo)
+        manifest = refresh_pins(pins_root, siblings_root, args.repo)
     except PinError as exc:
         return 2, _result(
             "pins refresh",

@@ -762,9 +762,59 @@
         "publication"
       ],
       "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "reason": {
+                "const": "PINS_ROOT_REQUIRED"
+              }
+            },
+            "required": ["reason"]
+          },
+          "then": {
+            "required": ["location"],
+            "properties": {
+              "location": {"const": "/pins"},
+              "publication": {"const": "not_started"}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "reason": {
+                "const": "SIBLINGS_ROOT_REQUIRED"
+              }
+            },
+            "required": ["reason"]
+          },
+          "then": {
+            "required": ["location"],
+            "properties": {
+              "location": {"const": "/siblings"},
+              "publication": {"const": "not_started"}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "reason": {
+                "enum": ["PINS_ROOT_REQUIRED", "SIBLINGS_ROOT_REQUIRED"]
+              }
+            }
+          },
+          "else": {
+            "not": {"required": ["location"]}
+          }
+        }
+      ],
       "properties": {
         "reason": {
           "enum": [
+            "PINS_ROOT_REQUIRED",
+            "SIBLINGS_ROOT_REQUIRED",
             "INVALID_REPO",
             "INVALID_MANIFEST",
             "INVALID_PIN_PATH",
@@ -777,6 +827,9 @@
             "INPUT_LIMIT_EXCEEDED",
             "DECLARED_FILE_LIMIT_EXCEEDED"
           ]
+        },
+        "location": {
+          "enum": ["/pins", "/siblings"]
         },
         "publication": {
           "enum": [
@@ -795,6 +848,16 @@
             "location"
           ],
           "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {"properties": {"reason": {"const": "PINS_ROOT_REQUIRED"}}},
+              "then": {"properties": {"location": {"const": "/pins"}}}
+            },
+            {
+              "if": {"properties": {"reason": {"const": "SIBLINGS_ROOT_REQUIRED"}}},
+              "then": {"properties": {"location": {"const": "/siblings"}}}
+            }
+          ],
           "properties": {
             "reason": {
               "enum": [
@@ -808,7 +871,9 @@
                 "INVALID_GLOB",
                 "INVALID_PIN_MANIFEST",
                 "INVALID_PIN_PATH",
-                "PIN_READ_FAILED"
+                "PIN_READ_FAILED",
+                "PINS_ROOT_REQUIRED",
+                "SIBLINGS_ROOT_REQUIRED"
               ]
             },
             "location": {
@@ -819,7 +884,8 @@
                 "/files",
                 "/root",
                 "/glob",
-                "/pins"
+                "/pins",
+                "/siblings"
               ]
             }
           }

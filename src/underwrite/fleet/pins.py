@@ -223,7 +223,7 @@ def _root_branches(pins_root: Path) -> tuple[dict[str, Path], int]:
     try:
         entries = os.scandir(pins_root)
     except FileNotFoundError:
-        return {}, visited
+        raise PinReadError("PIN_READ_FAILED") from None
     except OSError:
         raise PinReadError("PIN_READ_FAILED") from None
     try:

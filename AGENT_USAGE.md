@@ -1685,6 +1685,17 @@ guarantee. Missing or nonregular selected copies are reported as DRIFT; malforme
 unreadable, or excessive registry input returns a typed `UNCONFIGURED` result
 without fabricated population counts.
 
+`drift check` and `pins refresh` need an actual pin registry and sibling checkout
+root. Supply `--pins-root` and `--siblings-root` for a portable installed CLI;
+`UNDERWRITE_SIBLINGS_ROOT` can supply the latter. A source checkout uses defaults
+only when its own `contracts/pins` registry exists. The wheel does not select a
+registry from its installation directory or the current working directory.
+Unresolved roots return typed `UNCONFIGURED` with `PINS_ROOT_REQUIRED` or
+`SIBLINGS_ROOT_REQUIRED`. For `drift check`, an explicitly nonexistent registry
+returns `PIN_READ_FAILED` and a readable but empty registry remains
+`EMPTY_POPULATION`. `pins refresh` rejects a missing target as `PIN_TARGET_UNSAFE`.
+These states identify configuration and population separately.
+
 `pins refresh` selects one registry repository and copies committed Git blobs.
 Refresh paths must be normalized relative `/`-separated components; empty, dot,
 parent, backslash, Unicode control/format, oversized, and colliding destinations
@@ -1696,6 +1707,9 @@ unchanged. A later filesystem failure reports `publication: may_be_partial`;
 refresh is not an all-files transaction or a durability guarantee.
 Refresh captures each committed Git blob within 4 MiB and the 32 MiB aggregate
 budget, and checks the fully serialized 1 MiB manifest before its first write.
+`pins refresh --json` returns `cli_result.v1` with the published file list on
+success or a reason and `publication` state on refusal. Exit 0 records a
+completed pin refresh, not producer provenance or an agent-evaluation verdict.
 
 ## Task prompt for a coding agent
 

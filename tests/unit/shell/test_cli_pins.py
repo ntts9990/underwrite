@@ -104,6 +104,63 @@ def test_pins_refresh_human_output_names_command_and_repo(
     assert "sample-tool" in result.stdout
 
 
+def test_pins_refresh_json_success_and_missing_defaults(
+    stale_sample_pins: tuple[Path, Path], hermetic_git_sibling: Callable[[str], Path]
+) -> None:
+    missing = _run_cli("--repo", "sample-tool", "--json")
+    assert missing.returncode == REFUSAL_EXIT and missing.stderr == ""
+    assert json.loads(missing.stdout) == {
+        "schema": "cli_result.v1",
+        "command": "pins refresh",
+        "state": "UNCONFIGURED",
+        "exit_code": 2,
+        "details": {
+            "reason": "PINS_ROOT_REQUIRED",
+            "location": "/pins",
+            "publication": "not_started",
+        },
+    }
+    pins_root, _ = stale_sample_pins
+    sibling_dir = hermetic_git_sibling("sample-tool")
+    success = _run_cli(
+        "--repo",
+        "sample-tool",
+        "--pins-root",
+        str(pins_root),
+        "--siblings-root",
+        str(sibling_dir.parent),
+        "--json",
+    )
+    assert success.returncode == 0 and success.stderr == ""
+    result = json.loads(success.stdout)
+    assert result["schema"] == "cli_result.v1"
+    assert result["command"] == "pins refresh"
+    assert result["state"] == "PASS"
+    assert result["details"]["repo"] == "sample-tool"
+    assert result["details"]["files"]
+
+
+def test_pins_refresh_json_refusal_preserves_publication(
+    stale_sample_pins: tuple[Path, Path], hermetic_git_sibling: Callable[[str], Path]
+) -> None:
+    pins_root, manifest_path = stale_sample_pins
+    sibling_dir = hermetic_git_sibling("sample-tool")
+    _replace_file_key(manifest_path, "../escape")
+    refused = _run_cli(
+        "--repo",
+        "sample-tool",
+        "--pins-root",
+        str(pins_root),
+        "--siblings-root",
+        str(sibling_dir.parent),
+        "--json",
+    )
+    assert refused.returncode == REFUSAL_EXIT and refused.stderr == ""
+    payload = json.loads(refused.stdout)
+    assert payload["state"] == "UNCONFIGURED"
+    assert payload["details"] == {"reason": "INVALID_PIN_PATH", "publication": "not_started"}
+
+
 def test_refresh_refuses_registry_escape_before_any_write(
     stale_sample_pins: tuple[Path, Path], hermetic_git_sibling: Callable[[str], Path]
 ) -> None:

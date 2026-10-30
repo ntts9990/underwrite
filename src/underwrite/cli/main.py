@@ -95,8 +95,8 @@ def _configure_absence(parser: argparse.ArgumentParser) -> None:
 def _configure_drift(parser: argparse.ArgumentParser) -> None:
     drift_sub = parser.add_subparsers(dest="drift_command", required=True)
     check = drift_sub.add_parser("check", help="Verify pins and fold in the population rule.")
-    check.add_argument("--pins-root", type=Path, default=commands.DEFAULT_PINS_ROOT)
-    check.add_argument("--siblings-root", type=Path, default=commands.default_siblings_root())
+    check.add_argument("--pins-root", type=Path, default=None)
+    check.add_argument("--siblings-root", type=Path, default=None)
     check.add_argument("--exemptions", type=Path, default=None, help="exemptions.v1 JSON path.")
     check.add_argument("--now", default=None, help="ISO8601 date vs. exemption expiry.")
     check.add_argument("--json", action="store_true", help="Print cli_result.v1 JSON.")
@@ -107,8 +107,9 @@ def _configure_pins(parser: argparse.ArgumentParser) -> None:
     pins_sub = parser.add_subparsers(dest="pins_command", required=True)
     refresh = pins_sub.add_parser("refresh", help="Re-pin a repo from its sibling checkout.")
     refresh.add_argument("--repo", required=True, help="Repo name under --pins-root/active/.")
-    refresh.add_argument("--pins-root", type=Path, default=commands.DEFAULT_PINS_ROOT)
-    refresh.add_argument("--siblings-root", type=Path, default=commands.default_siblings_root())
+    refresh.add_argument("--pins-root", type=Path, default=None)
+    refresh.add_argument("--siblings-root", type=Path, default=None)
+    refresh.add_argument("--json", action="store_true", help="Print cli_result.v1 JSON.")
     refresh.set_defaults(handler=commands.cmd_pins_refresh)
 
 
@@ -550,7 +551,7 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
         (
             profile(
                 "check",
-                (),
+                ("pins_root", "siblings_root"),
                 ("exemptions.v1",),
                 ("cli_result.v1",),
             ),
@@ -560,7 +561,7 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
         "pins",
         "Contract pin registry.",
         _configure_pins,
-        (profile("refresh", ("repo",), (), ()),),
+        (profile("refresh", ("repo", "pins_root", "siblings_root"), (), ("cli_result.v1",)),),
     ),
     CommandDescriptor(
         "boundary",

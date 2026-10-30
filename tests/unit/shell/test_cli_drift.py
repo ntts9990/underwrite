@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import shutil
@@ -11,8 +12,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import pytest
 from conftest import SAMPLE_PINS_ROOT
 
+from underwrite.cli import commands
 from underwrite.fleet.pins import load_manifests
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -40,10 +43,12 @@ def _active_repo_names(pins_root: Path) -> list[str]:
     return sorted(_active_repo_pins(pins_root))
 
 
-def _run_cli(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+def _run_cli(
+    *args: str, env: dict[str, str] | None = None, cwd: Path = REPO_ROOT
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-m", "underwrite.cli.main", "drift", "check", *args],
-        cwd=REPO_ROOT,
+        cwd=cwd,
         capture_output=True,
         text=True,
         env=env,
@@ -219,8 +224,78 @@ def test_json_payload_has_cli_result_v1_shape() -> None:
     assert payload["schema"] == "cli_result.v1"
     assert payload["command"] == "drift check"
     assert set(payload) == {"schema", "command", "state", "exit_code", "details"}
-    assert "repos" in payload["details"]
-    assert "retired" in payload["details"]
+    assert result.returncode == _UNCONFIGURED_EXIT
+    assert payload["state"] == "UNCONFIGURED"
+    assert payload["details"] == {"reason": "PINS_ROOT_REQUIRED", "location": "/pins"}
+
+
+def test_unrelated_cwd_does_not_supply_implicit_registry(tmp_path: Path) -> None:
+    (tmp_path / "contracts/pins").mkdir(parents=True)
+    result = _run_cli(
+        "--json",
+        cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")},
+    )
+    assert result.returncode == _UNCONFIGURED_EXIT
+    assert _payload(result)["details"] == {"reason": "PINS_ROOT_REQUIRED", "location": "/pins"}
+
+
+def test_missing_siblings_default_is_typed_refusal(pins_tree: Path) -> None:
+    result = _run_cli(
+        "--pins-root",
+        str(pins_tree),
+        "--json",
+        env={key: value for key, value in os.environ.items() if key != "UNDERWRITE_SIBLINGS_ROOT"},
+    )
+    assert result.returncode == _UNCONFIGURED_EXIT
+    assert _payload(result)["details"] == {
+        "reason": "SIBLINGS_ROOT_REQUIRED",
+        "location": "/siblings",
+    }
+
+
+def test_explicit_siblings_root_precedes_environment(
+    pins_tree: Path, hermetic_siblings: Callable[..., Path], tmp_path: Path
+) -> None:
+    sibling_root = hermetic_siblings("sample-metrics", "sample-tool")
+    result = _run_cli(
+        "--pins-root",
+        str(pins_tree),
+        "--siblings-root",
+        str(sibling_root),
+        "--json",
+        env={**os.environ, "UNDERWRITE_SIBLINGS_ROOT": str(tmp_path / "missing")},
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _payload(result)["state"] == "PASS"
+
+
+def test_verified_source_checkout_can_supply_defaults(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkout = tmp_path / "underwrite"
+    source = checkout / "src/underwrite/cli/commands.py"
+    source.parent.mkdir(parents=True)
+    source.touch()
+    pins = checkout / "contracts/pins"
+    pins.mkdir(parents=True)
+    (checkout / "pyproject.toml").write_text('[project]\nname = "underwrite"\n')
+    monkeypatch.setattr(commands, "_REPO_ROOT", checkout)
+    monkeypatch.setattr(commands, "__file__", str(source))
+    monkeypatch.delenv("UNDERWRITE_SIBLINGS_ROOT", raising=False)
+    assert commands._selected_roots(  # pyright: ignore[reportPrivateUsage]
+        argparse.Namespace(pins_root=None, siblings_root=None)
+    ) == (
+        pins,
+        checkout.parent,
+    )
+    (checkout / "pyproject.toml").write_text('[project]\nname = "other"\n')
+    assert commands._selected_roots(  # pyright: ignore[reportPrivateUsage]
+        argparse.Namespace(pins_root=None, siblings_root=None)
+    ) == (
+        None,
+        None,
+    )
 
 
 # --- rules/exemptions.json validates against contracts/exemptions.v1.schema.json
