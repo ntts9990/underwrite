@@ -20,9 +20,11 @@ from underwrite.instrument.evidence.goppi_trajectory import (
     OUTCOME_ACTION_TASK_EVIDENCE,
     OUTCOME_ACTIONS_POLICY,
     OUTCOME_ACTIONS_SCHEMA,
+    OUTCOME_ACTIONS_SCHEMA_V2,
     OUTCOME_HARNESS_BINDINGS,
     OUTCOME_REASONS,
     RESULT_SCHEMA,
+    RESULT_SCHEMA_V2,
     REVIEW_POLICY,
     STAGES,
     TASK_EVIDENCE,
@@ -31,6 +33,7 @@ from underwrite.instrument.evidence.goppi_trajectory import (
 
 JSON = dict[str, Any]
 ROOT = Path(__file__).resolve().parents[1]
+V2 = 2
 
 
 def array(items: JSON, maximum: int = MAX_ROWS) -> JSON:
@@ -53,8 +56,14 @@ def integer(maximum: int = MAX_ROWS) -> JSON:
     return {"type": "integer", "minimum": 0, "maximum": maximum}
 
 
-def build(*, outcome_actions: bool = False) -> JSON:
-    schema = OUTCOME_ACTIONS_SCHEMA if outcome_actions else RESULT_SCHEMA
+def build(*, outcome_actions: bool = False, version: int = 1) -> JSON:
+    if version not in (1, V2):
+        raise ValueError("UNSUPPORTED_GOPPI_TRAJECTORY_CONTRACT_VERSION")
+    schema = (
+        OUTCOME_ACTIONS_SCHEMA_V2 if outcome_actions else RESULT_SCHEMA_V2
+    ) if version == V2 else (
+        OUTCOME_ACTIONS_SCHEMA if outcome_actions else RESULT_SCHEMA
+    )
     policy = OUTCOME_ACTIONS_POLICY if outcome_actions else REVIEW_POLICY
     task_evidence = (
         {**TASK_EVIDENCE, **OUTCOME_ACTION_TASK_EVIDENCE} if outcome_actions else TASK_EVIDENCE
@@ -299,28 +308,71 @@ def build(*, outcome_actions: bool = False) -> JSON:
             "source_context": object_schema(
                 {k: digest for k in ("cycle_run_id", "plan_digest", "execution_identity_digest")}
             ),
-            "trust_scope": tagged(
-                [
-                    object_schema(
-                        {
-                            "native_verification": const(state),
-                            "integrity_scope": const(integrity),
-                            "authenticity": const(authenticity),
-                            "source_authentication_independently_verified": const(False),
-                            "producer_projection_independently_verified": const(False),
-                            "outcome_harness_binding": enum(OUTCOME_HARNESS_BINDINGS),
-                        }
-                    )
-                    for state, integrity, authenticity in (
-                        ("not_performed", "not_checked", "not_checked"),
-                        (
-                            "local_goppi_same_byte_snapshot",
-                            "self_consistent_content_closure",
-                            "content_digest_only",
+            "trust_scope": (
+                tagged(
+                    [
+                        object_schema(
+                            {
+                                "verifier_report_state": const("not_performed"),
+                                "verifier_source": const(None),
+                                "verifier_identity_verified": const(False),
+                                "response_snapshot_binding": const("not_checked"),
+                                "snapshot_postcheck": const("not_checked"),
+                                "content_closure": const("not_checked"),
+                                "authenticity": const("not_checked"),
+                                "source_authentication_independently_verified": const(False),
+                                "producer_projection_independently_verified": const(False),
+                                "outcome_harness_binding": enum(OUTCOME_HARNESS_BINDINGS),
+                            }
                         ),
-                    )
-                ],
-                field="native_verification",
+                        object_schema(
+                            {
+                                "verifier_report_state": const("report_accepted"),
+                                "verifier_source": enum(
+                                    (
+                                        "caller_supplied_python_port",
+                                        "operator_configured_executable",
+                                    )
+                                ),
+                                "verifier_identity_verified": const(False),
+                                "response_snapshot_binding": const("selected_fields_matched"),
+                                "snapshot_postcheck": const("unchanged"),
+                                "content_closure": const("verifier_reported_valid"),
+                                "authenticity": const(
+                                    "verifier_reported_content_digest_only"
+                                ),
+                                "source_authentication_independently_verified": const(False),
+                                "producer_projection_independently_verified": const(False),
+                                "outcome_harness_binding": enum(OUTCOME_HARNESS_BINDINGS),
+                            }
+                        ),
+                    ],
+                    field="verifier_report_state",
+                )
+                if version == V2
+                else tagged(
+                    [
+                        object_schema(
+                            {
+                                "native_verification": const(state),
+                                "integrity_scope": const(integrity),
+                                "authenticity": const(authenticity),
+                                "source_authentication_independently_verified": const(False),
+                                "producer_projection_independently_verified": const(False),
+                                "outcome_harness_binding": enum(OUTCOME_HARNESS_BINDINGS),
+                            }
+                        )
+                        for state, integrity, authenticity in (
+                            ("not_performed", "not_checked", "not_checked"),
+                            (
+                                "local_goppi_same_byte_snapshot",
+                                "self_consistent_content_closure",
+                                "content_digest_only",
+                            ),
+                        )
+                    ],
+                    field="native_verification",
+                )
             ),
             "populations": object_schema(
                 {
@@ -361,10 +413,20 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
-    for schema, outcome_actions in ((RESULT_SCHEMA, False), (OUTCOME_ACTIONS_SCHEMA, True)):
+    contracts = (
+        (RESULT_SCHEMA, False, 1),
+        (OUTCOME_ACTIONS_SCHEMA, True, 1),
+        (RESULT_SCHEMA_V2, False, V2),
+        (OUTCOME_ACTIONS_SCHEMA_V2, True, V2),
+    )
+    for schema, outcome_actions, version in contracts:
         path = ROOT / "contracts" / f"{schema}.schema.json"
         rendered = (
-            json.dumps(build(outcome_actions=outcome_actions), indent=2, ensure_ascii=False)
+            json.dumps(
+                build(outcome_actions=outcome_actions, version=version),
+                indent=2,
+                ensure_ascii=False,
+            )
             + "\n"
         )
         if args.check:

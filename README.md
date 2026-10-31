@@ -252,7 +252,8 @@ for exact input requirements.
 - **Goppi steps:** [`audit-trajectory`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#compare-a-goppi-paired-trajectory)
   compares recorded tool states and evaluation results from a paired+trajectory
   export, including runs that stopped early. This optional route requires installed
-  Goppi with `run verify-paired` for offline verification; public Goppi npm
+  Goppi with `run verify-paired` for an offline verifier report; Underwrite
+  does not authenticate the configured executable or its closure work. Public Goppi npm
   `0.0.1` does not supply it. The current handoff is a local source-build path.
   Underwrite does not run providers, establish causality,
   or measure retry effects. [`records audit-trajectory`](https://github.com/ntts9990/underwrite/blob/main/STORAGE.md#retain-a-goppi-paired-trajectory)

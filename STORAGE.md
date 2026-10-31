@@ -220,7 +220,8 @@ underwrite records read-trajectory --root PRIVATE_STORE --id trajectory.review-0
 
 The complete outer export must contain `paired/` and `trajectory/`, at a physical
 path without symlink components. An optional `--goppi-executable PATH` selects an
-existing trusted executable for recording. No evaluation or model is run.
+operator-configured executable for recording. Underwrite requests only the offline
+verifier command; it does not sandbox or authenticate the selected executable.
 
 The `goppi.trajectory-review` record contains the seven exact analyzed inputs
 under `source/`, `analysis/trajectory.json` or `analysis/error.json`,
@@ -229,19 +230,25 @@ full and can contain identifying metadata. Use a private store and backup policy
 No source paths are reopened between analysis and storage. Duplicate IDs are
 refused rather than overwritten.
 
-The `trajectory_record.v1` response keeps source capture, analysis, native history,
-and storage separate. Exit 0 means a result was saved and verified; exit 2 means
+The `trajectory_record.v2` response keeps source capture, analysis,
+configured-verifier report history, and storage separate. Exit 0 means a result
+was saved and its stored bytes verified; exit 2 means
 a supported diagnostic was saved, or an earlier typed refusal occurred without
 publication; exit 3 means storage or stored-byte verification failed. Safely
-classified source diagnostics before the native check have history `not_performed`;
-semantic diagnostics after a successful check have history `verified`. All verifier
+classified source diagnostics before invoking the verifier have history
+`not_performed`; semantic diagnostics after an accepted report have history
+`report_accepted`. Neither state authenticates the executable or proves its
+reported closure work. All verifier
 failures, including nonzero exits, produce no record. Failed/incomplete captures,
 configuration faults, and output-admission failures also publish no diagnostic
 record. A storage failure with `published_record: null` does not prove absence:
 inspect the requested ID with `records show` and `records verify` before retrying.
 
 `records read-trajectory` verifies the complete record and binds the result,
-source identities, and original verification history to the same manifest. Its
+source identities, and retained report history to the same manifest. Old v1
+records remain readable by exact layout: their native labels are historical,
+while the effective interpretation is `legacy_unattributed_report` or
+`legacy_not_performed`. Its
 `current_storage_verification` is a new stored-byte check, while
 `native_verification_performed_now` is always false. Neither the original export
 nor Goppi is needed. Content integrity is not source authentication, independent

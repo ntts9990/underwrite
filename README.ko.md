@@ -248,7 +248,9 @@ Claude Code에서 재사용할 수 있는 지침을 제공합니다.
 - **Goppi 단계:** [`audit-trajectory`](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#compare-a-goppi-paired-trajectory)는
   조기 중단된 실행을 포함해 paired+trajectory 내보내기의 도구 상태와 평가 결과를
   비교합니다. 이 선택형 경로는 `run verify-paired`를 지원하는 Goppi 설치본이
-  필요합니다. 공개 Goppi npm `0.0.1`에는 이 명령이 없어 현재는 로컬 소스
+  필요합니다. Underwrite는 설정된 실행 파일의 신원이나 실제 결속 검사를 독립적으로
+  인증하지 않고, 그 검증 보고를 출처가 표시된 주장으로 다룹니다.
+  공개 Goppi npm `0.0.1`에는 이 명령이 없어 현재는 로컬 소스
   빌드 경로입니다.
   제공자를 실행하거나 인과관계를 확립하거나 재시도 효과를 측정하지 않습니다.
   [`records audit-trajectory`](https://github.com/ntts9990/underwrite/blob/main/STORAGE.md#retain-a-goppi-paired-trajectory)로

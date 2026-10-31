@@ -111,6 +111,7 @@ def _positive_review() -> dict[str, Any]:
         "schema": check.CONTRACTS["underwrite_review"],
         "state": "analyzed",
         "trust_scope": dict(check.REVIEW_TRUST),
+        "authority": dict(check.REVIEW_AUTHORITY),
         "populations": dict(check.POPULATIONS),
         "comparisons": [copy.deepcopy(stable) for _ in range(72)],
     }
@@ -125,6 +126,23 @@ def test_positive_review_rejects_population_or_semantic_drift(mutation: str) -> 
     else:
         for comparison in review["comparisons"]:
             comparison["difference"]["outcome_changed"] = False
+    with pytest.raises(check.Failure, match="UNDERWRITE_POSITIVE_CONTRACT_DRIFT"):
+        check.validate_review(review)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("native_verification", "local_goppi_same_byte_snapshot"),
+        ("verifier_identity_verified", True),
+        ("content_closure", "self_consistent_content_closure"),
+    ],
+)
+def test_positive_review_rejects_native_or_elevated_underwrite_trust(
+    field: str, value: object
+) -> None:
+    review = _positive_review()
+    review["trust_scope"][field] = value
     with pytest.raises(check.Failure, match="UNDERWRITE_POSITIVE_CONTRACT_DRIFT"):
         check.validate_review(review)
 

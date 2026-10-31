@@ -1,5 +1,16 @@
 # Current contract consolidation milestone
 
+Post-milestone trajectory update (2026-10-31): the trajectory v1 rows in the
+inventory below describe the original consolidation decision. Current development
+emits `goppi_trajectory_review.v2`,
+`goppi_trajectory_outcome_actions.v2`, `trajectory_verification_history.v2`,
+`trajectory_record.v2`, and `trajectory_record_read.v2`. The v1 contracts remain
+byte-stable for existing pure calculations and to reopen stored v1 records with
+historical labels. New CLI reports call an accepted configured-verifier response
+a report, not independent native verification. This later change does not alter
+the initial inventory
+denominator or the published 0.2.0 package.
+
 Scope: unreleased development changes across the entire repository. Published
 0.2.0 remains unchanged. [Milestone #2](https://github.com/ntts9990/underwrite/milestone/2)
 tracks checkpoint delivery and final verification. Package versions and publication

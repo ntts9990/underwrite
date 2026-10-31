@@ -208,15 +208,18 @@ underwrite records audit-trajectory --exchange DIR --root ROOT --id ID --json
 underwrite records read-trajectory --root ROOT --id ID --json
 ```
 
-Recording uses an already installed trusted Goppi only for offline verification;
-`--goppi-executable PATH` selects that installation. Preserve source, analysis,
-historical native verification and storage states separately. All seven raw files
+Recording sends a private copy to an operator-configured Goppi executable for
+an offline verifier report; `--goppi-executable PATH` selects that installation.
+Underwrite does not authenticate the executable or independently confirm its
+closure work. Preserve source, analysis, verifier-report history and storage
+states separately. All seven raw files
 are retained in full. A saved diagnostic is not a successful analysis; a verifier
 failure creates no record. On storage failure, inspect the requested ID before
 retrying. Do not overwrite it or manufacture a successful history.
 
-Reopening verifies the whole stored record and returns the original result and
-history. It needs neither Goppi nor the original export and reports
+Reopening verifies the whole stored record and returns current v2 analysis and
+report history, or old v1 documents under explicitly historical fields with a
+non-native effective interpretation. It needs neither Goppi nor the original export and reports
 `native_verification_performed_now: false`. Use this dedicated reader for the
 trajectory report's existing 8 MiB bound; do not work around the generic
 `read-json` 1 MiB cap by truncating analysis. See [storage details](https://github.com/ntts9990/underwrite/blob/main/STORAGE.md#retain-a-goppi-paired-trajectory).

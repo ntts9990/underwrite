@@ -88,7 +88,6 @@ def test_records_audit_trajectory_rejects_view_before_capture_and_store(
         pytest.fail("record view usage error must precede capture and verifier effects")
 
     monkeypatch.setattr(command, "capture_goppi_trajectory", forbidden)
-    monkeypatch.setattr(command, "GoppiCliVerifier", forbidden)
     assert main.main([
         "records", "audit-trajectory", "--exchange", str(FIXTURE),
         "--view", "outcome-actions", "--root", str(root), "--id", "sample", "--json",
@@ -131,6 +130,144 @@ def _assert_schema(value: dict[str, Any]) -> None:
     cast(Validator, packaged_validator(value["schema"])).validate(value)
 
 
+@pytest.mark.parametrize("configured", [None, Path("/configured/goppi")])
+def test_python_executable_selection_is_operator_configured_and_path_free(
+    exchange: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    configured: Path | None,
+) -> None:
+    choices: list[Path | None] = []
+
+    def factory(path: Path | None) -> Stub:
+        choices.append(path)
+        return Stub()
+
+    monkeypatch.setattr(ingest, "GoppiCliVerifier", factory)
+    result = cast(
+        dict[str, Any],
+        command.run_record_trajectory(
+            exchange, tmp_path / "store", "sample", goppi_executable=configured
+        ),
+    )
+    assert choices == [configured]
+    history = result["verifier_report_history"]
+    assert history["verifier_source"] == "operator_configured_executable"
+    invocation = json.loads(
+        read_record_file(
+            tmp_path / "store", "sample", command.INVOCATION_NAME
+        ).data
+    )
+    assert invocation == {
+        "command": command.COMMAND,
+        "layout": command.LAYOUT_V2,
+        "analysis_state": "result",
+        "verifier_report_state": "report_accepted",
+        "configured_verifier_source": "operator_configured_executable",
+        "verification_scope": "report_only",
+    }
+    if configured is not None:
+        assert str(configured).encode() not in canonical_bytes(result)
+        assert str(configured).encode() not in canonical_bytes(invocation)
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_record_cli_classifies_path_and_explicit_executable_as_operator_configured(
+    exchange: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    explicit: bool,
+) -> None:
+    selected = tmp_path / "configured-goppi" if explicit else None
+    choices: list[Path | None] = []
+
+    def factory(path: Path | None) -> Stub:
+        choices.append(path)
+        return Stub()
+
+    monkeypatch.setattr(ingest, "GoppiCliVerifier", factory)
+    argv = [
+        "--exchange",
+        str(exchange),
+        "--root",
+        str(tmp_path / "store"),
+        "--id",
+        "sample",
+        "--json",
+    ]
+    if selected is not None:
+        argv.extend(["--goppi-executable", str(selected)])
+    assert command.main(argv) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert choices == [selected]
+    assert result["verifier_report_history"]["verifier_source"] == (
+        "operator_configured_executable"
+    )
+
+
+def test_python_port_and_executable_are_refused_before_capture(
+    exchange: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def forbidden(*_: object, **__: object) -> None:
+        pytest.fail("ambiguous verifier selection must precede capture")
+
+    monkeypatch.setattr(command, "capture_goppi_trajectory", forbidden)
+    with pytest.raises(EvidenceError, match="TRAJECTORY_VERIFIER_SELECTION_AMBIGUOUS"):
+        command.run_record_trajectory(
+            exchange,
+            tmp_path / "store",
+            "sample",
+            verifier=Stub(),
+            goppi_executable=tmp_path / "goppi",
+        )
+    assert not (tmp_path / "store").exists()
+
+
+def test_invalid_executable_type_is_refused_before_capture(
+    exchange: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def forbidden(*_: object, **__: object) -> None:
+        pytest.fail("invalid executable selection must precede capture")
+
+    monkeypatch.setattr(command, "capture_goppi_trajectory", forbidden)
+    with pytest.raises(EvidenceError, match="TRAJECTORY_VERIFIER_EXECUTABLE_INVALID"):
+        command.run_record_trajectory(
+            exchange,
+            tmp_path / "store",
+            "sample",
+            goppi_executable=cast(Path, "not-a-path"),
+        )
+    assert not (tmp_path / "store").exists()
+
+
+def test_mutated_execution_with_nonverifying_port_stays_report_only_on_record_and_read(
+    exchange: Path, tmp_path: Path
+) -> None:
+    execution_path = exchange / "paired/execution.json"
+    execution = json.loads(execution_path.read_bytes())
+    execution["source"]["runner"]["executable_digest"] = "sha256:" + "0" * 64
+    execution_path.write_bytes(canonical_bytes(execution))
+    root = tmp_path / "store"
+    result = _run(exchange, root, Stub())
+    assert result["schema"] == command.SCHEMA_V2
+    assert result["verifier_report_history"]["verifier_report_state"] == "report_accepted"
+    assert result["verifier_report_history"]["verifier_identity_verified"] is False
+    assert result["analysis"]["report"]["trust_scope"]["content_closure"] == (
+        "verifier_reported_valid"
+    )
+    reopened = cast(dict[str, Any], command.run_read_trajectory(root, "sample"))
+    assert reopened["record_layout"] == command.LAYOUT_V2
+    assert reopened["verification_interpretation"]["state"] == "current_report_only"
+    assert reopened["verification_interpretation"]["current_native_verification"] == (
+        "not_performed"
+    )
+    raw = canonical_bytes(reopened)
+    assert b'"native_verification"' not in raw
+    assert b"local_goppi_same_byte_snapshot" not in raw
+    assert b"self_consistent_content_closure" not in raw
+
+
 def test_same_buffer_capture_survives_source_removal_and_no_native_on_reopen(
     exchange: Path,
     tmp_path: Path,
@@ -147,18 +284,27 @@ def test_same_buffer_capture_survives_source_removal_and_no_native_on_reopen(
     assert manifest["rerun_verification"] == {"status": "not_performed", "reference": None}
     assert manifest["provenance"] == {"verified": False, "attestation_ref": None}
     assert manifest["kind"] == command.KIND
+    assert manifest["metadata"] == {
+        "layout": command.LAYOUT_V2,
+        "analysis_state": "result",
+    }
     assert len(cast(list[Any], manifest["files"])) == len(MEMBERS) + 3
 
     def forbidden(*_: object, **__: object) -> None:
         pytest.fail("Reopen must not resolve or invoke a producer")
 
     monkeypatch.setenv("PATH", "")
-    monkeypatch.setattr(command, "GoppiCliVerifier", forbidden)
     monkeypatch.setattr(command, "capture_goppi_trajectory", forbidden)
     reopened = cast(dict[str, Any], command.run_read_trajectory(root, "sample"))
     _assert_schema(reopened)
     assert reopened["analysis"] == result["analysis"]
-    assert reopened["native_verification_history"] == result["native_verification_history"]
+    assert reopened["verifier_report_history"] == result["verifier_report_history"]
+    assert reopened["verification_interpretation"] == {
+        "state": "current_report_only",
+        "verifier_identity_verified": False,
+        "current_native_verification": "not_performed",
+        "limitations": [],
+    }
     assert reopened["native_verification_performed_now"] is False
     assert reopened["current_storage_verification"]["valid"] is True
     for name, raw in originals.items():
@@ -203,12 +349,20 @@ def test_diagnostic_saved_and_reopened_with_honest_history(
     _assert_schema(result)
     assert result["exit_code"] == DIAGNOSTIC_EXIT
     assert result["analysis"]["state"] == "error"
-    expected = "not_performed" if stage == "before_native" else "verified"
-    assert result["native_verification_history"]["state"] == expected
+    expected = "not_performed" if stage == "before_native" else "report_accepted"
+    assert result["verifier_report_history"]["verifier_report_state"] == expected
     assert stub.calls == (0 if stage == "before_native" else 1)
+    invocation = json.loads(
+        read_record_file(root, "sample", command.INVOCATION_NAME).data
+    )
+    assert invocation["verifier_report_state"] == expected
+    assert invocation["configured_verifier_source"] == (
+        None if stage == "before_native" else "caller_supplied_python_port"
+    )
+    assert invocation["verification_scope"] == "report_only"
     reopened = cast(dict[str, Any], command.run_read_trajectory(root, "sample"))
     assert reopened["analysis"] == result["analysis"]
-    assert reopened["native_verification_history"]["state"] == expected
+    assert reopened["verifier_report_history"]["verifier_report_state"] == expected
     assert b"private malformed" not in canonical_bytes(result)
     assert (
         read_record_file(root, "sample", "source/paired/rows.jsonl").data
@@ -336,6 +490,17 @@ def _rewrite(root: Path, name: str, change: Callable[[dict[str, Any]], object]) 
     manifest_path.write_bytes(canonical_bytes(manifest))
 
 
+def _history_not_performed(history: dict[str, Any]) -> None:
+    history.update(
+        verifier_report_state="not_performed",
+        verifier_source=None,
+        response_snapshot_binding="not_checked",
+        snapshot_postcheck="not_checked",
+        content_closure="not_checked",
+        authenticity="not_checked",
+    )
+
+
 CORRUPTIONS: list[tuple[str, Callable[[dict[str, Any]], object]]] = [
     (
         command.HISTORY_NAME,
@@ -363,7 +528,7 @@ CORRUPTIONS: list[tuple[str, Callable[[dict[str, Any]], object]]] = [
     (command.HISTORY_NAME, lambda d: d.update(source_authentication_independently_verified=0)),
     (
         command.HISTORY_NAME,
-        lambda d: d.update(state="not_performed", integrity_scope=None, authenticity=None),
+        _history_not_performed,
     ),
     (command.RESULT_NAME, lambda d: d["input_members"][0].update(sha256="sha256:" + "0" * 64)),
     (
@@ -376,11 +541,11 @@ CORRUPTIONS: list[tuple[str, Callable[[dict[str, Any]], object]]] = [
     ),
     (
         command.RESULT_NAME,
-        lambda d: d["trust_scope"].update(
-            native_verification="not_performed",
-            integrity_scope="not_checked",
-            authenticity="not_checked",
-        ),
+        lambda d: d["trust_scope"].update(verifier_source="operator_configured_executable"),
+    ),
+    (
+        command.INVOCATION_NAME,
+        lambda d: d.update(configured_verifier_source="operator_configured_executable"),
     ),
 ]
 
@@ -530,14 +695,14 @@ def test_actual_large_analysis_retains_and_reopens_without_generic_limit_change(
     assert verify_record(root, "sample")["valid"] is True
 
 
-@pytest.mark.parametrize("native_state", ["not_performed", "verified"])
+@pytest.mark.parametrize("report_state", ["not_performed", "report_accepted"])
 def test_diagnostic_history_cannot_claim_wrong_analysis_stage(
     exchange: Path,
     tmp_path: Path,
-    native_state: str,
+    report_state: str,
 ) -> None:
     root = tmp_path / "store"
-    if native_state == "not_performed":
+    if report_state == "not_performed":
         (exchange / "paired/rows.jsonl").write_text("malformed")
     else:
         path = exchange / "trajectory/trajectory.json"
@@ -547,14 +712,24 @@ def test_diagnostic_history_cannot_claim_wrong_analysis_stage(
     _run(exchange, root)
 
     def change(history: dict[str, Any]) -> None:
-        if native_state == "not_performed":
+        if report_state == "not_performed":
             history.update(
-                state="verified",
-                integrity_scope="self_consistent_content_closure",
-                authenticity="content_digest_only",
+                verifier_report_state="report_accepted",
+                verifier_source="caller_supplied_python_port",
+                response_snapshot_binding="selected_fields_matched",
+                snapshot_postcheck="unchanged",
+                content_closure="verifier_reported_valid",
+                authenticity="verifier_reported_content_digest_only",
             )
         else:
-            history.update(state="not_performed", integrity_scope=None, authenticity=None)
+            history.update(
+                verifier_report_state="not_performed",
+                verifier_source=None,
+                response_snapshot_binding="not_checked",
+                snapshot_postcheck="not_checked",
+                content_closure="not_checked",
+                authenticity="not_checked",
+            )
 
     _rewrite(root, command.HISTORY_NAME, change)
     with pytest.raises(EvidenceError, match="TRAJECTORY_RECORD_BINDING_MISMATCH"):

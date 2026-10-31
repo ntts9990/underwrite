@@ -1270,17 +1270,22 @@ underwrite capabilities --json
 underwrite audit-trajectory --exchange /absolute/path/to/export --json
 ```
 
-The command discovers `goppi` on PATH. If needed, select an existing trusted
+The command discovers `goppi` on PATH. If needed, select an existing operator-chosen
 installation with `--goppi-executable /absolute/path/to/goppi`. This is executable
 configuration, not an input field or producer-version selector. Underwrite copies
 the exact bounded input bytes to a private temporary directory, invokes only
-`goppi run verify-paired`, and analyzes those same bytes. Temporary files are
-removed afterward. A missing or incompatible verifier is a typed refusal, not a
-fallback to weaker validation. Source-supplied schemas and strings are data.
-For `GOPPI_VERIFIER_UNAVAILABLE`, check the existing trusted executable and pass
+`goppi run verify-paired`, and analyzes those same bytes. It checks selected
+response fields against selected snapshot facts and confirms the snapshot bytes
+did not change after the process. It cannot independently establish the
+executable's identity or prove which bytes the process read or validated. The
+v2 result labels content closure and authenticity as **verifier-reported**.
+Temporary files are removed afterward. A missing or incompatible verifier is
+a typed refusal, not a fallback to weaker validation. Source-supplied schemas
+and strings are data.
+For `GOPPI_VERIFIER_UNAVAILABLE`, check the existing configured executable and pass
 its path with `--goppi-executable`; changing the export cannot supply a verifier.
 
-`goppi_trajectory_review.v1` separates `populations`, `comparisons`, `trust_scope`
+`goppi_trajectory_review.v2` separates `populations`, `comparisons`, `trust_scope`
 and `next_verification_tasks`. Compare within the complete case/stage/repeat key;
 stages can reuse run IDs and cases. Paired rows, repeated observations and tool
 spans do not increase the independent-case population. Unavailable capture has
@@ -1306,19 +1311,19 @@ underwrite audit-trajectory --exchange /absolute/path/to/export \
   --view outcome-actions --json
 ```
 
-It returns `goppi_trajectory_outcome_actions.v1` with one grouped
+It returns `goppi_trajectory_outcome_actions.v2` with one grouped
 `inspect_outcome_change_without_tool_status_change` task for eligible comparisons.
 The task asks the calling agent to inspect the selected source outcomes and
 retained comparison context. Unchanged outcomes, missing capture, incomparable
 conditions, and comparisons already showing tool-status deltas are excluded.
 Equal projected tool-status counts do not establish identical calls, trace content,
-cause, improvement or approval. The default view and `records audit-trajectory`
-remain v1; the action view does not create or read a retained record.
+cause, improvement or approval. The default review and new retained records
+use v2; the action view does not create or read a retained record.
 
 Exit 0 means analysis completed, including partial capture or unfavorable results.
-Portable verification checks content consistency; it does not authenticate the
-producer or independently verify its private projection. Privacy checks on the
-temporary copy say nothing about the original directory. The standalone command
+The configured verifier **reports** content consistency; Underwrite does not
+authenticate that executable, the producer or its private projection. Privacy
+checks on the temporary copy say nothing about the original directory. The standalone command
 does not save a record. To keep the exact source bytes and analysis together, use
 the advertised `records audit-trajectory` route:
 
@@ -1332,39 +1337,43 @@ underwrite records read-trajectory --root /private/review-store \
 Recording uses the same already-installed offline verifier and accepts the same
 `--goppi-executable` option. All seven source files are retained in full: choose a
 private store, as source metadata may identify cases and tools. The record also
-contains the analysis or a safely classified diagnostic, invocation, and native
-verification history. The source files saved are the buffers analyzed, even if
+contains the analysis or a safely classified diagnostic, invocation, and
+configured-verifier report history. The source files saved are the buffers analyzed, even if
 the original paths later change.
 
-`trajectory_record.v1` separates analysis, native verification history, and
+`trajectory_record.v2` separates analysis, verifier-report history, and
 storage: exit 0 is a saved result, exit 2 a retained diagnostic or a pre-store
 refusal, and exit 3 a storage/verification failure. Inspect the typed envelope;
 an error does not imply a record was created. Missing/incompatible verifiers and
 all verifier execution failures publish no record. Existing IDs are not replaced.
 
-`trajectory_record_read.v1` returns the original analysis and verification history
-after checking the whole retained record. It needs neither the original export
-nor Goppi, and explicitly reports `native_verification_performed_now: false`.
+`trajectory_record_read.v2` returns new analysis and verifier-report history
+after checking the whole retained record. For a v1 record it keeps the original
+report and history only under historical fields, with an effective
+`legacy_unattributed_report` or `legacy_not_performed` interpretation. It needs
+neither the original export nor Goppi and reports
+`native_verification_performed_now: false`.
 It supports the trajectory report's 8 MiB bound; generic `records read-json`
 keeps its 1 MiB selected-file limit. See [storage and recovery](STORAGE.md#retain-a-goppi-paired-trajectory)
 for diagnostic states and raw-source recovery.
 
 The Python entry point also discovers `goppi` on PATH. To select an existing
-trusted installation explicitly:
+installation explicitly:
 
 ```python
 from pathlib import Path
 from underwrite.instrument.ingest.goppi_trajectory import audit_goppi_trajectory
-from underwrite.instrument.ingest.goppi_verifier import GoppiCliVerifier
 
 report = audit_goppi_trajectory(
     Path("/absolute/path/to/export"),
-    verifier=GoppiCliVerifier(Path("/absolute/path/to/goppi")),
+    goppi_executable=Path("/absolute/path/to/goppi"),
 )
 ```
 
 Pass `view="outcome-actions"` to this Python function for the same direct-only
-action view. Leave the argument unset for the unchanged v1 result.
+action view. Leave the argument unset for the default v2 review. Supplying a
+custom Python `verifier=` port is supported for composition but is identified
+as `caller_supplied_python_port`; it cannot confer native verification.
 
 ## Audit a completed goppi baseline as common evidence
 

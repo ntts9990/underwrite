@@ -1,4 +1,4 @@
-"""Capture and verify one adopted Goppi exchange before descriptive interpretation."""
+"""Capture one Goppi exchange and check a configured verifier report."""
 
 from __future__ import annotations
 
@@ -22,8 +22,8 @@ from underwrite.instrument.evidence.goppi_trajectory import (
     MAX_SPANS_PER_UNIT,
     MAX_UNITS,
     MEMBERS,
-    OUTCOME_ACTIONS_SCHEMA,
-    RESULT_SCHEMA,
+    OUTCOME_ACTIONS_SCHEMA_V2,
+    RESULT_SCHEMA_V2,
     TrajectoryError,
     analyze_goppi_trajectory,
     analyze_goppi_trajectory_actions,
@@ -50,6 +50,7 @@ MAX_MANIFEST_BYTES = 64 * 1024
 MAX_DEPTH = 32
 RESPONSE_SCHEMA = "goppi_trajectory_verifier_response.v1"
 HISTORY_SCHEMA = "trajectory_verification_history.v1"
+HISTORY_SCHEMA_V2 = "trajectory_verification_history.v2"
 CAPTURE_POLICY = CapturePolicy(len(MEMBERS), MAX_FAMILY_BYTES, 128 * 1024 * 1024, 2)
 
 _PRE_VERIFICATION_DIAGNOSTICS = {
@@ -65,10 +66,10 @@ _PRE_VERIFICATION_DIAGNOSTICS = {
 
 
 def trajectory_diagnostic_history_matches(code: str, reason: str, state: str) -> bool:
-    """Whether this source diagnostic belongs to the recorded native verification stage."""
+    """Whether a source diagnostic belongs before or after the verifier report."""
     if state == "not_performed":
         return _PRE_VERIFICATION_DIAGNOSTICS.get(reason) == code
-    if state == "verified":
+    if state in ("verified", "report_accepted"):
         return DIAGNOSTIC_CODES.get(reason) == code
     return False
 
@@ -244,7 +245,7 @@ def _check_snapshot(snapshot: Path, captured: Mapping[str, CapturedBytes]) -> No
 
 @dataclass(frozen=True)
 class TrajectoryAnalysis:
-    """One analysis outcome and the bounded history of its native verification."""
+    """One analysis outcome and the bounded configured-verifier report history."""
 
     report: dict[str, object] | None
     error: CaptureError | TrajectoryInputError | TrajectoryError | None
@@ -257,9 +258,9 @@ class TrajectoryAnalysis:
 
 def _result_schema(view: str) -> str:
     if view == "review":
-        return RESULT_SCHEMA
+        return RESULT_SCHEMA_V2
     if view == "outcome-actions":
-        return OUTCOME_ACTIONS_SCHEMA
+        return OUTCOME_ACTIONS_SCHEMA_V2
     raise TrajectoryInputError("UNSUPPORTED_PROFILE", "TRAJECTORY_VIEW_UNSUPPORTED", "/view")
 
 
@@ -276,7 +277,7 @@ def _contracts(
     return _Contracts(
         result=packaged_validator(_result_schema(view)),
         response=packaged_validator(RESPONSE_SCHEMA),
-        history=packaged_validator(HISTORY_SCHEMA),
+        history=packaged_validator(HISTORY_SCHEMA_V2),
     )
 
 
@@ -332,18 +333,18 @@ def capture_goppi_trajectory(exchange: Path) -> Mapping[str, CapturedBytes]:
 def _history(
     captured: Mapping[str, CapturedBytes],
     *,
-    verified: bool,
+    state: str,
+    verifier_source: str | None,
     validator: Draft202012Validator,
 ) -> dict[str, object]:
+    report_fields = _verifier_report_fields(state, verifier_source)
     history: dict[str, object] = {
-        "schema": HISTORY_SCHEMA,
-        "state": "verified" if verified else "not_performed",
+        "schema": HISTORY_SCHEMA_V2,
+        **report_fields,
         "source_members": [
             {"name": name, "raw_hash": captured[name].sha256, "bytes": captured[name].size}
             for name in MEMBERS
         ],
-        "integrity_scope": "self_consistent_content_closure" if verified else None,
-        "authenticity": "content_digest_only" if verified else None,
         "source_authentication_independently_verified": False,
         "producer_projection_independently_verified": False,
     }
@@ -351,10 +352,64 @@ def _history(
     return history
 
 
+def _verifier_report_fields(state: str, source: str | None) -> dict[str, object]:
+    if state == "not_performed":
+        return {
+            "verifier_report_state": state,
+            "verifier_source": None,
+            "verifier_identity_verified": False,
+            "response_snapshot_binding": "not_checked",
+            "snapshot_postcheck": "not_checked",
+            "content_closure": "not_checked",
+            "authenticity": "not_checked",
+        }
+    if state != "report_accepted" or source not in (
+        "caller_supplied_python_port",
+        "operator_configured_executable",
+    ):
+        raise TrajectoryInputError("INTERNAL_ERROR", "TRAJECTORY_VERIFIER_STATE_INVALID")
+    return {
+        "verifier_report_state": state,
+        "verifier_source": source,
+        "verifier_identity_verified": False,
+        "response_snapshot_binding": "selected_fields_matched",
+        "snapshot_postcheck": "unchanged",
+        "content_closure": "verifier_reported_valid",
+        "authenticity": "verifier_reported_content_digest_only",
+    }
+
+
+def validate_trajectory_verifier_selection(
+    verifier: TrajectoryVerifier | None,
+    goppi_executable: object,
+) -> None:
+    """Refuse ambiguous or invalid selection before reading private input."""
+    if verifier is not None and goppi_executable is not None:
+        raise TrajectoryInputError(
+            "USAGE_ERROR", "TRAJECTORY_VERIFIER_SELECTION_AMBIGUOUS", "/verifier"
+        )
+    if goppi_executable is not None and not isinstance(goppi_executable, Path):
+        raise TrajectoryInputError(
+            "USAGE_ERROR", "TRAJECTORY_VERIFIER_EXECUTABLE_INVALID", "/goppi_executable"
+        )
+
+
+def select_trajectory_verifier(
+    verifier: TrajectoryVerifier | None,
+    goppi_executable: Path | None,
+) -> tuple[TrajectoryVerifier, str]:
+    """Classify the selected port; this does not verify its identity."""
+    validate_trajectory_verifier_selection(verifier, goppi_executable)
+    if verifier is not None:
+        return verifier, "caller_supplied_python_port"
+    return GoppiCliVerifier(goppi_executable), "operator_configured_executable"
+
+
 def audit_captured_goppi_trajectory(
     captured: Mapping[str, CapturedBytes],
     *,
     verifier: TrajectoryVerifier | None = None,
+    goppi_executable: Path | None = None,
     view: str = "review",
 ) -> TrajectoryAnalysis:
     """Analyze fixed captured bytes, retaining only explicitly scoped source diagnostics.
@@ -362,9 +417,11 @@ def audit_captured_goppi_trajectory(
     Verifier/process, snapshot, contract and result-encoding failures always raise.
     History describes this call, not independent source authenticity or a future rerun.
     """
+    selected, source = select_trajectory_verifier(verifier, goppi_executable)
     return _audit_captured_goppi_trajectory(
         captured,
-        verifier=verifier,
+        verifier=selected,
+        verifier_source=source,
         view=view,
         contracts=_contracts(view),
     )
@@ -373,12 +430,15 @@ def audit_captured_goppi_trajectory(
 def _audit_captured_goppi_trajectory(
     captured: Mapping[str, CapturedBytes],
     *,
-    verifier: TrajectoryVerifier | None,
+    verifier: TrajectoryVerifier,
+    verifier_source: str,
     view: str,
     contracts: _Contracts,
 ) -> TrajectoryAnalysis:
     captured = _validated_capture(captured)
-    history = _history(captured, verified=False, validator=contracts.history)
+    history = _history(
+        captured, state="not_performed", verifier_source=None, validator=contracts.history
+    )
     try:
         documents = {
             name: decode_captured_object(item, max_depth=MAX_DEPTH, location="/exchange/" + name)
@@ -392,19 +452,23 @@ def _audit_captured_goppi_trajectory(
         if not trajectory_diagnostic_history_matches(exc.code, exc.reason, "not_performed"):
             raise
         return TrajectoryAnalysis(None, exc, history)
-    selected = verifier if verifier is not None else GoppiCliVerifier()
     try:
         with tempfile.TemporaryDirectory(prefix="underwrite-trajectory-") as temporary:
             snapshot = Path(temporary).resolve()
             _write_snapshot(snapshot, captured)
-            raw = selected.verify(snapshot)
+            raw = verifier.verify(snapshot)
             _response(raw, contracts.response, snapshot, documents, len(rows))
             _check_snapshot(snapshot, captured)
     except VerifierError as exc:
         raise TrajectoryInputError(exc.code, exc.reason) from None
     except OSError:
         raise TrajectoryInputError("SOURCE_READ_FAILED", "TRAJECTORY_SNAPSHOT_FAILED") from None
-    history = _history(captured, verified=True, validator=contracts.history)
+    history = _history(
+        captured,
+        state="report_accepted",
+        verifier_source=verifier_source,
+        validator=contracts.history,
+    )
     try:
         analyzer = (
             analyze_goppi_trajectory_actions
@@ -418,14 +482,14 @@ def _audit_captured_goppi_trajectory(
             {name: (item.sha256, item.size) for name, item in captured.items()},
         )
     except TrajectoryError as exc:
-        if not trajectory_diagnostic_history_matches(exc.code, exc.reason, "verified"):
+        if not trajectory_diagnostic_history_matches(exc.code, exc.reason, "report_accepted"):
             raise
         return TrajectoryAnalysis(None, exc, history)
-    _object(report["trust_scope"]).update(
-        native_verification="local_goppi_same_byte_snapshot",
-        integrity_scope="self_consistent_content_closure",
-        authenticity="content_digest_only",
-    )
+    trust = _object(report["trust_scope"])
+    for old_field in ("native_verification", "integrity_scope", "authenticity"):
+        trust.pop(old_field)
+    trust.update(_verifier_report_fields("report_accepted", verifier_source))
+    report["schema"] = _result_schema(view)
     _validate(contracts.result, report, response=False)
     try:
         size = len(canonical_bytes(report)) + 1
@@ -440,17 +504,20 @@ def audit_goppi_trajectory(
     exchange: Path,
     *,
     verifier: TrajectoryVerifier | None = None,
+    goppi_executable: Path | None = None,
     view: str = "review",
 ) -> dict[str, object]:
-    """Verify captured bytes with the native owner, preserving the standalone API.
+    """Accept a configured verifier report over captured bytes, preserving the API.
 
     The private snapshot's permissions do not attest the original directory's
-    privacy. The installed executable is trusted software supplied by the operator.
+    privacy. Executable selection is operator configuration, not identity proof.
     """
+    selected, source = select_trajectory_verifier(verifier, goppi_executable)
     contracts = _contracts(view)
     analysis = _audit_captured_goppi_trajectory(
         _capture_complete_exchange(exchange),
-        verifier=verifier,
+        verifier=selected,
+        verifier_source=source,
         view=view,
         contracts=contracts,
     )

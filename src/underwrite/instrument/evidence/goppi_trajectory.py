@@ -17,8 +17,10 @@ from typing import Any, cast
 from underwrite_core.canonical import CanonicalizationError, canonical_bytes
 
 RESULT_SCHEMA = "goppi_trajectory_review.v1"
+RESULT_SCHEMA_V2 = "goppi_trajectory_review.v2"
 REVIEW_POLICY = "goppi.descriptive-paired-trajectory.v1"
 OUTCOME_ACTIONS_SCHEMA = "goppi_trajectory_outcome_actions.v1"
+OUTCOME_ACTIONS_SCHEMA_V2 = "goppi_trajectory_outcome_actions.v2"
 OUTCOME_ACTIONS_POLICY = "goppi.descriptive-paired-trajectory-outcome-actions.v1"
 OUTCOME_REASONS = {
     "endpoint_failure": ("agent_timeout", "agent_budget", "agent_answer"),

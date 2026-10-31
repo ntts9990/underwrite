@@ -39,21 +39,49 @@ ARTIFACT_ROLES = (
 CONTRACTS = {
     "fixture_pins": "underwrite.goppi_trajectory_fixture_pins.v1",
     "native_verification": "goppi.paired_run_verification_result.v2",
-    "underwrite_review": "goppi_trajectory_review.v1",
+    "underwrite_review": "goppi_trajectory_review.v2",
 }
 TRUST_LIMITS = {
-    "authenticity": "content_digest_only",
+    "goppi_native_verification": "separately_performed",
+    "goppi_native_integrity_scope": "self_consistent_content_closure",
+    "goppi_native_authenticity": "content_digest_only",
+    "underwrite_independent_native_verification_claimed": False,
+    "underwrite_verifier_report_state": "report_accepted",
+    "underwrite_verifier_identity_verified": False,
+    "underwrite_content_closure": "verifier_reported_valid",
+    "underwrite_authenticity": "verifier_reported_content_digest_only",
     "independent_provenance_established": False,
     "producer_projection_independently_verified": False,
     "source_authentication_independently_verified": False,
 }
 REVIEW_TRUST = {
-    "native_verification": "local_goppi_same_byte_snapshot",
-    "integrity_scope": "self_consistent_content_closure",
-    "authenticity": "content_digest_only",
+    "verifier_report_state": "report_accepted",
+    "verifier_source": "operator_configured_executable",
+    "verifier_identity_verified": False,
+    "response_snapshot_binding": "selected_fields_matched",
+    "snapshot_postcheck": "unchanged",
+    "content_closure": "verifier_reported_valid",
+    "authenticity": "verifier_reported_content_digest_only",
     "outcome_harness_binding": "v2_verified_against_patch_manifest",
     "source_authentication_independently_verified": False,
     "producer_projection_independently_verified": False,
+}
+REVIEW_AUTHORITY = {
+    "human_review": "required",
+    "execution_authorized": False,
+    "merge_authorized": False,
+    "revert_authorized": False,
+}
+EXPECTED_NATIVE_VERIFICATION = {
+    "schema": "goppi.paired_run_verification_result.v2",
+    "status": "valid",
+    "row_count": POPULATIONS["paired_rows"],
+    "integrity_scope": "self_consistent_content_closure",
+    "authenticity": "content_digest_only",
+    "portable_checks": {"content_closure": "valid"},
+    "source_local_authentication_independently_reverified": False,
+    "producer_projection_independently_verified": False,
+    "independent_provenance_established": False,
 }
 
 
@@ -374,6 +402,7 @@ def validate_review(review: dict[str, Any]) -> None:
         review.get("schema") == CONTRACTS["underwrite_review"]
         and review.get("state") == "analyzed"
         and review.get("trust_scope") == REVIEW_TRUST
+        and review.get("authority") == REVIEW_AUTHORITY
         and all(populations.get(key) == value for key, value in POPULATIONS.items())
         and len(review.get("comparisons", [])) == POPULATIONS["case_stage_repeat_pairs"]
         and stable_change(review),
@@ -430,19 +459,8 @@ def exercise(
     producer = success(
         native(node, goppi, complete, work, env), "NATIVE_VERIFICATION_FAILED", "native"
     )["data"]
-    expected_native = {
-        "schema": "goppi.paired_run_verification_result.v2",
-        "status": "valid",
-        "row_count": POPULATIONS["paired_rows"],
-        "integrity_scope": "self_consistent_content_closure",
-        "authenticity": "content_digest_only",
-        "portable_checks": {"content_closure": "valid"},
-        "source_local_authentication_independently_reverified": False,
-        "producer_projection_independently_verified": False,
-        "independent_provenance_established": False,
-    }
     require(
-        all(producer.get(key) == value for key, value in expected_native.items()),
+        all(producer.get(key) == value for key, value in EXPECTED_NATIVE_VERIFICATION.items()),
         "NATIVE_CONTRACT_DRIFT",
         "/native",
     )

@@ -248,22 +248,27 @@ underwrite records read-trajectory \
   --root PRIVATE_STORE --id trajectory-001 --json
 ```
 
-`trajectory_record.v1` separates analysis, verification history, and storage.
-`trajectory_record_read.v1` returns the original analysis/history together with
-current whole-record integrity checks. Reopening does not need Goppi and reports
+New `trajectory_record.v2` separates analysis, the configured verifier's report
+history, and storage. `trajectory_record_read.v2` returns that history with
+current whole-record integrity checks. It also reads old v1 records by exact
+layout, retaining their original labels only under historical fields; effective
+interpretation is `legacy_unattributed_report` or `legacy_not_performed`, never
+fresh native verification. Reopening does not need Goppi and reports
 `native_verification_performed_now: false`. Use this dedicated reader for trajectory
 reports up to their supported 8 MiB bound; generic `records read-json` keeps its
 1 MiB selected-file limit. See [storage](STORAGE.md) for retention and error handling.
 
 The optional direct `audit-trajectory --view outcome-actions` projection returns
-`goppi_trajectory_outcome_actions.v1`. It groups comparable source-outcome changes
+`goppi_trajectory_outcome_actions.v2`. It groups comparable source-outcome changes
 whose recorded tool-status counts did not change into a calling-agent inspection
-task. The default `goppi_trajectory_review.v1` output and both trajectory record
-contracts remain unchanged. This view has no dedicated retained-record route;
+task. The default review is `goppi_trajectory_review.v2`; old v1 authored
+contracts and stored records remain byte-stable. This view has no dedicated retained-record route;
 it does not establish cause, retry benefit, improvement, or approval.
 
-A working adopted Goppi offline verifier is needed to create a successfully
-verified trajectory result. The accepted source implementation and npm package
+A working adopted Goppi offline verifier is needed for its own content-closure
+check. Underwrite v2 records only that a configured verifier report was accepted;
+it does not independently establish executable identity or actual closure work.
+The accepted source implementation and npm package
 are distinct: on 2026-10-18, accepted Goppi main declared package version `0.1.0`,
 while npm `@ntts9990/goppi` latest was `0.0.1`. Installing that npm release does not
 establish availability of this verifier. Reopening a saved record never installs

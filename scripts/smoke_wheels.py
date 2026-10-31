@@ -3296,7 +3296,7 @@ def _trajectory_pilot(cli: Path, work: Path) -> None:
     report = _cli_json(cli, args, work / "trajectory-review.json", work)
     populations = cast(dict[str, object], report["populations"])
     manifest = json.loads((exchange / "paired/manifest.json").read_bytes())
-    wheel.require(report["schema"] == "goppi_trajectory_review.v1", "trajectory output contract")
+    wheel.require(report["schema"] == "goppi_trajectory_review.v2", "trajectory output contract")
     wheel.require(populations["paired_rows"] == manifest["row_count"], "trajectory row population")
     tasks = cast(list[dict[str, object]], report["next_verification_tasks"])
     wheel.require(
@@ -3306,10 +3306,9 @@ def _trajectory_pilot(cli: Path, work: Path) -> None:
     code = (
         "import json,sys; from pathlib import Path; "
         "from underwrite.instrument.ingest.goppi_trajectory import audit_goppi_trajectory; "
-        "from underwrite.instrument.ingest.goppi_verifier import GoppiCliVerifier; "
         "kwargs={} if len(sys.argv)==3 else {'view':sys.argv[3]}; "
         "print(json.dumps(audit_goppi_trajectory(Path(sys.argv[1]),"
-        "verifier=GoppiCliVerifier(Path(sys.argv[2])),**kwargs)))"
+        "goppi_executable=Path(sys.argv[2]),**kwargs)))"
     )
     result = wheel.success(
         [str(cli.parent / "python"), "-c", code, str(exchange), str(verifier)], work
@@ -3319,13 +3318,13 @@ def _trajectory_pilot(cli: Path, work: Path) -> None:
         cli, [*args, "--view", "outcome-actions"], work / "trajectory-outcome-actions.json", work
     )
     wheel.require(
-        actions["schema"] == "goppi_trajectory_outcome_actions.v1",
+        actions["schema"] == "goppi_trajectory_outcome_actions.v2",
         "trajectory outcome-actions output contract",
     )
     installed_contract = (
         "import hashlib,json,sys; from importlib.resources import files; "
         "from underwrite.instrument.ingest.schema import packaged_validator; "
-        "name='goppi_trajectory_outcome_actions.v1'; "
+        "name='goppi_trajectory_outcome_actions.v2'; "
         "packaged_validator(name).validate(json.load(open(sys.argv[1],encoding='utf-8'))); "
         "print(hashlib.sha256(files('underwrite').joinpath('_contracts',"
         "name+'.schema.json').read_bytes()).hexdigest())"
@@ -3336,7 +3335,7 @@ def _trajectory_pilot(cli: Path, work: Path) -> None:
     )
     wheel.require(
         checked.stdout.strip() == hashlib.sha256(
-            (wheel.ROOT / "contracts/goppi_trajectory_outcome_actions.v1.schema.json").read_bytes()
+            (wheel.ROOT / "contracts/goppi_trajectory_outcome_actions.v2.schema.json").read_bytes()
         ).hexdigest(),
         "trajectory installed contract differs from authored contract",
     )
@@ -3380,13 +3379,38 @@ def _trajectory_pilot(cli: Path, work: Path) -> None:
     authority = cast(dict[str, object], actions["authority"])
     wheel.require(
         trust == report["trust_scope"]
-        and trust["authenticity"] == "content_digest_only"
+        and trust["verifier_report_state"] == "report_accepted"
+        and trust["verifier_source"] == "operator_configured_executable"
+        and trust["verifier_identity_verified"] is False
+        and trust["response_snapshot_binding"] == "selected_fields_matched"
+        and trust["snapshot_postcheck"] == "unchanged"
+        and trust["content_closure"] == "verifier_reported_valid"
+        and trust["authenticity"] == "verifier_reported_content_digest_only"
+        and "native_verification" not in trust
         and trust["source_authentication_independently_verified"] is False
         and trust["producer_projection_independently_verified"] is False
         and authority == report["authority"]
         and authority["human_review"] == "required"
         and authority["execution_authorized"] is False,
         "trajectory outcome-actions widened source trust or decision authority",
+    )
+    stale = work / "trajectory-stale-manifest"
+    shutil.copytree(exchange, stale)
+    execution = stale / "paired/execution.json"
+    execution.write_bytes(execution.read_bytes() + b"\n")
+    reported_only = _cli_json(
+        cli,
+        ["audit-trajectory", "--exchange", str(stale), "--goppi-executable", str(verifier)],
+        work / "trajectory-stale-report.json",
+        work,
+    )
+    stale_trust = cast(dict[str, object], reported_only["trust_scope"])
+    wheel.require(
+        stale_trust["verifier_report_state"] == "report_accepted"
+        and stale_trust["content_closure"] == "verifier_reported_valid"
+        and stale_trust["verifier_identity_verified"] is False
+        and "native_verification" not in stale_trust,
+        "non-verifying stub was promoted to native closure for stale manifest",
     )
     _native_refusal(
         cli,
@@ -3421,7 +3445,7 @@ def _trajectory_record_pilot(
     )
     analysis = cast(dict[str, object], captured["analysis"])
     storage = cast(dict[str, object], captured["storage"])
-    wheel.require(captured["schema"] == "trajectory_record.v1", "trajectory record contract")
+    wheel.require(captured["schema"] == "trajectory_record.v2", "trajectory record contract")
     wheel.require(analysis["report"] == expected, "trajectory retention changed analysis")
     wheel.require(storage["state"] == "saved", "trajectory retention failed")
     hashes = {
@@ -3436,6 +3460,14 @@ def _trajectory_record_pilot(
         work / "trajectory-record-read.json", work,
     )
     wheel.require(reopened["analysis"] == analysis, "trajectory reopen changed historical analysis")
+    interpretation = cast(dict[str, object], reopened["verification_interpretation"])
+    wheel.require(
+        reopened["schema"] == "trajectory_record_read.v2"
+        and interpretation["state"] == "current_report_only"
+        and interpretation["verifier_identity_verified"] is False
+        and interpretation["current_native_verification"] == "not_performed",
+        "trajectory reopen promoted a verifier report to native verification",
+    )
     wheel.require(
         reopened["native_verification_performed_now"] is False,
         "trajectory reopen invented native verification",
