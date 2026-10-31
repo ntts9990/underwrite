@@ -510,7 +510,8 @@ def _tasks(comparisons: list[dict[str, Any]]) -> list[dict[str, Any]]:
             if item["difference"]["tool_status_deltas"]
             else [],
             "obtain_call_relationships": list(arms)
-            if item["difference"]["tool_status_deltas"]
+            if item["comparability"]["state"] == "comparable"
+            and item["difference"]["tool_status_deltas"]
             else [],
         }
         for kind, affected in gaps.items():

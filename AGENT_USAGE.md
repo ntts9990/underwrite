@@ -1277,6 +1277,10 @@ report cannot establish call correspondence, retry benefit or causality. The
 structured tasks identify what evidence to inspect or obtain next; they do not
 execute commands, generate patches or authorize changes. Source metadata such as
 case and tool names can remain identifying even when payload text is omitted.
+An observed tool-status difference can still be inspected descriptively when
+declared conditions are not comparable. Resolve `check_outcome_comparability`
+before requesting call relationships for a retry or causal investigation;
+`obtain_call_relationships` only scopes comparable pairs with tool-status changes.
 
 Exit 0 means analysis completed, including partial capture or unfavorable results.
 Portable verification checks content consistency; it does not authenticate the

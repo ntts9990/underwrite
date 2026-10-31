@@ -59,6 +59,15 @@ def target(report: dict[str, Any], documents: Documents) -> dict[str, Any]:
     )
 
 
+def task_scopes(report: dict[str, Any], kind: str) -> dict[str, list[str]]:
+    return {
+        scope["comparison_id"]: scope["arms"]
+        for task in report["next_verification_tasks"]
+        if task["kind"] == kind
+        for scope in task["scope"]
+    }
+
+
 def test_pinned_bytes_and_separate_populations(documents: Documents) -> None:
     pins = json.loads((FIXTURE / "pins.json").read_bytes())
     assert {
@@ -158,6 +167,8 @@ def test_unavailable_coverage_counts_cases_not_units(
     assert item["difference"]["state"] == "unavailable"
     assert item["comparability"]["state"] == "unknown"
     assert "obtain_supported_capture" in {t["kind"] for t in report["next_verification_tasks"]}
+    assert item["id"] not in task_scopes(report, "inspect_tool_status_difference")
+    assert item["id"] not in task_scopes(report, "obtain_call_relationships")
 
 
 def test_retained_zero_is_observed_zero_and_not_observed_is_not_unlinked(
@@ -219,6 +230,61 @@ def test_context_differences_are_not_comparable(documents: Documents, field: str
     assert {"field": "context." + field, "reason": "different_context"} in item["comparability"][
         "reasons"
     ]
+
+
+@pytest.mark.parametrize(
+    "runner_model,expected_state,expected_reason",
+    [
+        ("other-model", "not_comparable", "different_context"),
+        (None, "unknown", "missing_context"),
+    ],
+)
+def test_tool_delta_tasks_respect_comparability(
+    documents: Documents, runner_model: str | None, expected_state: str, expected_reason: str
+) -> None:
+    baseline = analyze(documents)
+    comparable = target(baseline, documents)
+    assert comparable["comparability"]["state"] == "comparable"
+    assert comparable["difference"]["tool_status_deltas"]
+    assert comparable["id"] in task_scopes(baseline, "inspect_tool_status_difference")
+    assert comparable["id"] in task_scopes(baseline, "obtain_call_relationships")
+    assert comparable["id"] not in task_scopes(baseline, "check_outcome_comparability")
+
+    context = documents[2]["units"][0]["context"]
+    if runner_model is None:
+        context.pop("runner_model")
+    else:
+        context["runner_model"] = runner_model
+    report = analyze(documents)
+    item = target(report, documents)
+    assert item["comparability"]["state"] == expected_state
+    assert {"field": "context.runner_model", "reason": expected_reason} in item["comparability"][
+        "reasons"
+    ]
+    assert item["difference"] == comparable["difference"]
+    assert task_scopes(report, "check_outcome_comparability")[item["id"]] == [
+        "baseline",
+        "candidate",
+    ]
+    assert task_scopes(report, "inspect_tool_status_difference")[item["id"]] == [
+        "baseline",
+        "candidate",
+    ]
+    assert item["id"] not in task_scopes(report, "obtain_call_relationships")
+
+
+def test_observed_no_delta_adds_no_tool_tasks(documents: Documents) -> None:
+    report = analyze(documents)
+    item = next(
+        comparison
+        for comparison in report["comparisons"]
+        if comparison["comparability"]["state"] == "comparable"
+        and comparison["difference"]["state"] == "observed"
+        and not comparison["difference"]["tool_status_deltas"]
+    )
+    assert item["id"] not in task_scopes(report, "check_outcome_comparability")
+    assert item["id"] not in task_scopes(report, "inspect_tool_status_difference")
+    assert item["id"] not in task_scopes(report, "obtain_call_relationships")
 
 
 def test_intended_harness_changes_and_weaker_source_scope(documents: Documents) -> None:
