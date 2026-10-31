@@ -1379,6 +1379,11 @@ Published 0.2.0 emits baseline result v1. The current v2 result identifies its
 applied Underwrite reader, keeps the Goppi software version unknown and sets
 `declaration_source:null`: the original scope file is not a separate neutral
 metric-meaning pack. The exchange wire version v2 is not a software version.
+Current Goppi baseline result v2 may declare the `pi_1_3_0` runner with
+`support_scope: existing_pi`; this checkout accepts that pair without treating
+it as provider authentication or billing proof. Historical result v1 and
+result v2 have distinct runner sets, so an unknown or mismatched profile is
+still refused rather than retried under a different reader.
 
 The result lists the raw SHA-256 identity of `manifest.json` and each of the
 five fixed exchange files, plus planned and parsed source-record counts. Each

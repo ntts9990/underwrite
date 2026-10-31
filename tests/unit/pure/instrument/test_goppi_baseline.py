@@ -9,7 +9,11 @@ from dataclasses import replace
 from typing import Any, cast
 
 import pytest
-from _baseline_exchange import SyntheticBaselineExchange, build_baseline_exchange
+from _baseline_exchange import (
+    SyntheticBaselineExchange,
+    build_baseline_exchange,
+    build_pi13_v2_exchange,
+)
 from underwrite_core.canonical import canonical_bytes
 
 from underwrite.instrument.evidence.goppi_baseline import (
@@ -88,6 +92,59 @@ def test_projection_preserves_population_and_withholds_unsupported_measurements(
     for key in ("brier", "ece"):
         assert result["diagnostics"][key]["value"] is None
     assert "outcome_population_incomplete" in result["reason_codes"]
+
+
+def test_pi13_result_v2_is_descriptive_and_keeps_source_claims_unverified() -> None:
+    fixture = build_pi13_v2_exchange()
+    result = project_baseline_result(fixture.documents())
+    assert result["schema"] == "evidence_result.v2"
+    assert result["processing"] == {"state": "analyzed", "reason": None, "next_action": "none"}
+    source = cast(dict[str, Any], result["source"])
+    assert source["producer_version_state"] == "unknown"
+    assert result["verification"] == []
+    items = cast(list[dict[str, Any]], result["items"])
+    assert all(item["origin"] == "source_claim" for item in items)
+
+
+@pytest.mark.parametrize("result_v2", [False, True])
+def test_legacy_pi_runner_remains_supported_in_both_result_generations(result_v2: bool) -> None:
+    fixture = build_pi13_v2_exchange() if result_v2 else build_baseline_exchange()
+    runner = {
+        **fixture.export["source"]["runner"],
+        "profile": "pi_0_84_4",
+        "support_scope": "existing_pi",
+    }
+    fixture.export["source"]["runner"] = runner
+    for row in fixture.rows:
+        row["runner"] = dict(runner)
+    assert project_baseline_result(fixture.documents())["processing"] == {
+        "state": "analyzed", "reason": None, "next_action": "none"
+    }
+
+
+@pytest.mark.parametrize(
+    ("result_v2", "profile", "scope"),
+    [
+        (True, "pi_1_3_0", "preview_protocol"),
+        (True, "future_pi", "existing_pi"),
+        (False, "pi_1_3_0", "existing_pi"),
+        (False, "claude_code_2_1_283_preview", "preview_protocol"),
+        (True, "deterministic_node_conformance", "deterministic_conformance"),
+    ],
+)
+def test_runner_result_generation_matrix_refuses_impossible_pairs(
+    result_v2: bool, profile: str, scope: str
+) -> None:
+    fixture = build_pi13_v2_exchange() if result_v2 else build_baseline_exchange()
+    runner = {**fixture.export["source"]["runner"], "profile": profile, "support_scope": scope}
+    fixture.export["source"]["runner"] = runner
+    for row in fixture.rows:
+        row["runner"] = dict(runner)
+    with pytest.raises(BaselineProjectionError) as caught:
+        project_baseline_result(fixture.documents())
+    assert (caught.value.code, caught.value.reason, caught.value.location) == (
+        "INVALID_INPUT", "BASELINE_PROFILE_INVALID", "/export"
+    )
 
 
 def test_common_result_preserves_false_missing_and_exact_file_identities() -> None:

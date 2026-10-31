@@ -45,9 +45,15 @@ _DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _ALIAS = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 _ISO_UTC = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\Z")
 _RUNNERS = {
-    "deterministic_node_conformance": "deterministic_conformance",
-    "pi_0_84_4": "existing_pi",
-    "claude_code_2_1_283_preview": "preview_protocol",
+    "goppi.baseline_discovery_result.v1": {
+        "deterministic_node_conformance": "deterministic_conformance",
+        "pi_0_84_4": "existing_pi",
+    },
+    "goppi.baseline_discovery_result.v2": {
+        "pi_0_84_4": "existing_pi",
+        "pi_1_3_0": "existing_pi",
+        "claude_code_2_1_283_preview": "preview_protocol",
+    },
 }
 _CLAIMS = (
     "model_contacted_by_exporter network_contacted_by_exporter "
@@ -273,15 +279,16 @@ def _scope(value: object) -> tuple[dict[str, Any], list[str], str]:
     return scope, ids, next(iter(verifiers))
 
 
-def _runner(value: object, location: str) -> dict[str, Any]:
+def _runner(value: object, result_schema: str, location: str) -> dict[str, Any]:
     runner = _closed(
         value,
         "profile support_scope provider_authentication_verified provider_billing_verified",
         location,
     )
     profile = _text(runner["profile"], location)
+    accepted = _RUNNERS.get(result_schema, {})
     _require(
-        profile in _RUNNERS and runner["support_scope"] == _RUNNERS[profile],
+        profile in accepted and runner["support_scope"] == accepted[profile],
         "BASELINE_PROFILE_INVALID",
         location,
     )
@@ -415,7 +422,7 @@ def _export(value: object) -> tuple[dict[str, Any], dict[str, Any]]:
         "BASELINE_PROFILE_INVALID",
         location,
     )
-    _runner(source["runner"], location)
+    _runner(source["runner"], source["result_schema"], location)
     _literal(source["local_authenticated_source_checked"], True, location)
     _literal(source["authenticity_scope"], "same_local_integrity_key_operator", location)
     material = _closed(
@@ -471,7 +478,7 @@ def _row(value: object, source: dict[str, Any], case_id: str, include_answers: b
     ):
         _require(row[key] == source[source_key], "BASELINE_SOURCE_JOIN_MISMATCH", location)
     _require(
-        _runner(row["runner"], location) == source["runner"],
+        _runner(row["runner"], source["result_schema"], location) == source["runner"],
         "BASELINE_SOURCE_JOIN_MISMATCH",
         location,
     )

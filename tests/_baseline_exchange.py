@@ -229,3 +229,38 @@ def build_baseline_exchange(
         "content_digest": _digest("placeholder"),
     }
     return SyntheticBaselineExchange(manifest, export, scope, rows)
+
+
+def build_pi13_v2_exchange() -> SyntheticBaselineExchange:
+    """Exercise the accepted Pi 1.3/result.v2 pairing without producer execution."""
+    exchange = build_baseline_exchange()
+    source = exchange.export["source"]
+    source["result_schema"] = "goppi.baseline_discovery_result.v2"
+    source["runner"] = {
+        "profile": "pi_1_3_0",
+        "support_scope": "existing_pi",
+        "provider_authentication_verified": False,
+        "provider_billing_verified": False,
+    }
+    source["snapshot_material"].update(
+        bind_schema="goppi.native_harness_snapshot_bind.v2",
+        graph_digest=_digest("graph"),
+        materialization_binding_digest=_digest("materialization"),
+        data_identity_digest=_digest("data-identity"),
+    )
+    exchange.export["aggregate_cost"].update(
+        status="reported_estimate",
+        source="source_result.runner_reported_cost_usd",
+    )
+    for row in exchange.rows:
+        row["source_result_schema"] = source["result_schema"]
+        row["runner"] = dict(source["runner"])
+    exchange.rows[0]["usage"].update(
+        status="observed",
+        input_tokens=1,
+        output_tokens=1,
+        total_tokens=2,
+        reported_cost=0,
+        source="pi_reported_runner_usage",
+    )
+    return exchange
