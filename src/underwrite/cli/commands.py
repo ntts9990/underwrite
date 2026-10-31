@@ -198,20 +198,19 @@ def _repo_table(
     """
     repos: dict[str, dict[str, Any]] = {}
     retired: dict[str, int] = {}
+    states = {
+        result.repo: result.state
+        for result in verdict.pin_report.repositories
+        if result.state is not PinState.RETIRED
+    }
     for manifest in manifests:
         pins = len(manifest.files)
         if manifest.retired:
             retired[manifest.repo] = pins
             continue
         repo_results = [r for r in verdict.pin_report.results if r.repo == manifest.repo]
-        if any(r.state is PinState.DRIFT for r in repo_results):
-            state = "DRIFT"
-        elif any(r.state is PinState.UNCONFIGURED for r in repo_results):
-            state = "UNCONFIGURED"
-        else:
-            state = "PASS"
         repos[manifest.repo] = {
-            "state": state,
+            "state": states[manifest.repo].value,
             "pins": pins,
             "source_commit": manifest.source_commit,
             "drifted": [r.relpath for r in repo_results if r.state is PinState.DRIFT],
@@ -251,7 +250,11 @@ def cmd_drift_check(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         "active_population": verdict.pin_report.active_population,
         "retired_population": verdict.pin_report.retired_population,
         "drifted": [f"{r.repo}/{r.relpath}" for r in verdict.pin_report.failures()],
-        "unconfigured_repos": sorted({r.repo for r in verdict.pin_report.unconfigured()}),
+        "unconfigured_repos": sorted(
+            result.repo
+            for result in verdict.pin_report.repositories
+            if result.state is PinState.UNCONFIGURED
+        ),
         "repos": repos,
         "retired": retired,
     }

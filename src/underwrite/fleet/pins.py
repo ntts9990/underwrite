@@ -75,12 +75,21 @@ class PinResult:
 
 
 @dataclass(frozen=True)
+class PinRepositoryResult:
+    """Checkout availability and aggregate pin state for one manifest."""
+
+    repo: str
+    state: PinState
+
+
+@dataclass(frozen=True)
 class PinReport:
     """The full verdict of one `verify_pins` run."""
 
     results: tuple[PinResult, ...]
     active_population: int
     retired_population: int
+    repositories: tuple[PinRepositoryResult, ...] = ()
 
     def failures(self) -> tuple[PinResult, ...]:
         """Every DRIFT result."""
@@ -391,23 +400,36 @@ def _inspect_pins(
         raise ValueError("INVALID_PIN_READ_BUDGET")
     manifests, remaining = _capture_manifests(pins_root, remaining)
     results: list[PinResult] = []
+    repositories: list[PinRepositoryResult] = []
     active_population = 0
     retired_population = 0
     for manifest in manifests:
         if manifest.retired:
             retired_population += len(manifest.files)
             results.extend(_retired_results(manifest))
+            repositories.append(PinRepositoryResult(manifest.repo, PinState.RETIRED))
             continue
         active_population += len(manifest.files)
         sibling_dir = siblings_root / manifest.repo
         if not _checkout_present(sibling_dir):
             results.extend(_unconfigured_results(manifest, sibling_dir))
+            repositories.append(PinRepositoryResult(manifest.repo, PinState.UNCONFIGURED))
             continue
+        repository_results: list[PinResult] = []
         for relpath, file in manifest.files.items():
             result, remaining = _file_result(manifest, relpath, file, sibling_dir, remaining)
-            results.append(result)
+            repository_results.append(result)
+        state = (
+            PinState.DRIFT
+            if any(result.state is PinState.DRIFT for result in repository_results)
+            else PinState.PASS
+        )
+        results.extend(repository_results)
+        repositories.append(PinRepositoryResult(manifest.repo, state))
     results.sort(key=lambda r: (r.repo, r.relpath))
-    return manifests, PinReport(tuple(results), active_population, retired_population)
+    return manifests, PinReport(
+        tuple(results), active_population, retired_population, tuple(repositories)
+    )
 
 
 def verify_pins(pins_root: Path, siblings_root: Path) -> PinReport:

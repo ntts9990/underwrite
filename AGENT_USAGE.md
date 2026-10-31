@@ -1724,6 +1724,11 @@ it does not create an atomic filesystem snapshot or a hostile-path containment
 guarantee. Missing or nonregular selected copies are reported as DRIFT; malformed,
 unreadable, or excessive registry input returns a typed `UNCONFIGURED` result
 without fabricated population counts.
+An active manifest with `files: {}` remains visible with `pins: 0`: a missing
+sibling is `UNCONFIGURED` even when other repositories pass. If that sibling
+exists, its `PASS` row records checkout availability only, not verified pin
+coverage; it does not defeat `ci-no-siblings` when every declared pinned file's
+checkout is missing.
 
 `drift check` and `pins refresh` need an actual pin registry and sibling checkout
 root. Supply `--pins-root` and `--siblings-root` for a portable installed CLI;

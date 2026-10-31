@@ -43,6 +43,23 @@ def _active_repo_names(pins_root: Path) -> list[str]:
     return sorted(_active_repo_pins(pins_root))
 
 
+def _add_empty_active_manifest(pins_root: Path, repo: str = "empty") -> None:
+    selected = pins_root / "active" / repo
+    selected.mkdir()
+    (selected / "PINS.json").write_text(
+        json.dumps(
+            {
+                "schema": "pins.v1",
+                "repo": repo,
+                "source_root": repo,
+                "source_commit": "local-fixture",
+                "captured_at": "2026-01-01T00:00:00Z",
+                "files": {},
+            }
+        )
+    )
+
+
 def _run_cli(
     *args: str, env: dict[str, str] | None = None, cwd: Path = REPO_ROOT
 ) -> subprocess.CompletedProcess[str]:
@@ -82,6 +99,113 @@ def test_hermetic_pinned_bytes_pass_exit_0(
         row = details["repos"][repo]
         assert row["state"] == "PASS"
         assert row["pins"] == expected_pins
+
+
+def test_empty_active_missing_sibling_does_not_hide_behind_other_passing_pins(
+    pins_tree: Path, hermetic_siblings: Callable[..., Path]
+) -> None:
+    _add_empty_active_manifest(pins_tree)
+    siblings_root = hermetic_siblings()
+
+    result = _run_cli(
+        "--pins-root", str(pins_tree), "--siblings-root", str(siblings_root), "--json"
+    )
+
+    assert result.returncode == _UNCONFIGURED_EXIT
+    payload = _payload(result)
+    assert payload["state"] == "UNCONFIGURED"
+    assert payload["details"]["unconfigured_repos"] == ["empty"]
+    assert payload["details"]["repos"]["empty"]["state"] == "UNCONFIGURED"
+    assert payload["details"]["repos"]["empty"]["pins"] == 0
+    assert payload["details"]["repos"]["sample-tool"]["state"] == "PASS"
+
+
+def test_empty_active_present_sibling_is_visible_without_fabricated_pins(
+    pins_tree: Path, hermetic_siblings: Callable[..., Path]
+) -> None:
+    _add_empty_active_manifest(pins_tree)
+    siblings_root = hermetic_siblings()
+    (siblings_root / "empty").mkdir()
+
+    result = _run_cli(
+        "--pins-root", str(pins_tree), "--siblings-root", str(siblings_root), "--json"
+    )
+
+    assert result.returncode == 0
+    payload = _payload(result)
+    assert payload["state"] == "PASS"
+    assert payload["details"]["repos"]["empty"]["state"] == "PASS"
+    assert payload["details"]["repos"]["empty"]["pins"] == 0
+
+
+def test_all_active_manifests_empty_still_uses_empty_population(tmp_path: Path) -> None:
+    pins_root = tmp_path / "pins"
+    (pins_root / "active").mkdir(parents=True)
+    _add_empty_active_manifest(pins_root)
+    siblings_root = tmp_path / "siblings"
+    siblings_root.mkdir()
+
+    result = _run_cli(
+        "--pins-root", str(pins_root), "--siblings-root", str(siblings_root), "--json"
+    )
+
+    assert result.returncode == 1
+    payload = _payload(result)
+    assert payload["state"] == "EMPTY_POPULATION"
+    assert payload["details"]["repos"]["empty"]["state"] == "UNCONFIGURED"
+
+
+def test_empty_present_checkout_does_not_defeat_no_pinned_siblings_exemption(
+    pins_tree: Path, empty_siblings: Path, tmp_path: Path
+) -> None:
+    _add_empty_active_manifest(pins_tree)
+    (empty_siblings / "empty").mkdir()
+    exemptions = tmp_path / "exemptions.json"
+    exemptions.write_text(
+        json.dumps(
+            {
+                "schema": "exemptions.v1",
+                "exemptions": {
+                    "ci-no-siblings": {
+                        "reason": "fixture",
+                        "expiry": "2099-01-01",
+                        "adr": "fixture",
+                    }
+                },
+            }
+        )
+    )
+
+    result = _run_cli(
+        "--pins-root", str(pins_tree), "--siblings-root", str(empty_siblings),
+        "--exemptions", str(exemptions), "--now", "2026-09-04", "--json",
+    )
+
+    assert result.returncode == 0
+    payload = _payload(result)
+    assert payload["state"] == "SKIPPED_WITH_REASON"
+    assert sorted(payload["details"]["unconfigured_repos"]) == [
+        "sample-metrics", "sample-tool"
+    ]
+    assert payload["details"]["repos"]["empty"]["state"] == "PASS"
+
+
+def test_pin_drift_keeps_precedence_over_empty_missing_checkout(
+    pins_tree: Path, hermetic_siblings: Callable[..., Path]
+) -> None:
+    _add_empty_active_manifest(pins_tree)
+    siblings_root = hermetic_siblings()
+    (siblings_root / "sample-tool/contracts/sample.schema.json").write_bytes(b"changed")
+
+    result = _run_cli(
+        "--pins-root", str(pins_tree), "--siblings-root", str(siblings_root), "--json"
+    )
+
+    assert result.returncode == 1
+    payload = _payload(result)
+    assert payload["state"] == "DRIFT"
+    assert payload["details"]["repos"]["sample-tool"]["state"] == "DRIFT"
+    assert payload["details"]["repos"]["empty"]["state"] == "UNCONFIGURED"
 
 
 # --- every sibling missing, no exemptions: UNCONFIGURED exit 2 -------------
