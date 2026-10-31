@@ -6,9 +6,10 @@ import copy
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from underwrite_core.canonical import canonical_bytes
 
 from underwrite.instrument.evidence.goppi_trajectory import (
     AVAILABILITIES,
@@ -24,6 +25,7 @@ FIXTURE = Path(__file__).resolve().parents[3] / "fixtures/conformance/goppi-traj
 Documents = tuple[
     dict[str, Any], tuple[dict[str, Any], ...], dict[str, Any], dict[str, tuple[str, int]]
 ]
+EXPECTED_OUTCOME_ACTION_SCOPES = 64
 
 
 @pytest.fixture
@@ -103,6 +105,86 @@ def test_pinned_bytes_and_separate_populations(documents: Documents) -> None:
         c["difference"]["tool_status_deltas"] == [] and not c["difference"]["outcome_changed"]
         for c in report["comparisons"]
     )
+
+
+def test_default_trajectory_report_keeps_pinned_v1_bytes(documents: Documents) -> None:
+    assert hashlib.sha256(canonical_bytes(analyze(documents))).hexdigest() == (
+        "303c37e3d86e439af3344dc99d9035ad37f75acfd1d26e732875dafc38438980"
+    )
+
+
+def test_outcome_actions_selects_exactly_comparable_observed_changed_pairs(
+    documents: Documents,
+) -> None:
+    from underwrite.instrument.evidence.goppi_trajectory import (
+        OUTCOME_ACTIONS_SCHEMA,
+        analyze_goppi_trajectory_actions,
+    )
+
+    report = analyze_goppi_trajectory_actions(*documents)
+    comparisons = cast(list[dict[str, Any]], report["comparisons"])
+    verification_tasks = cast(list[dict[str, Any]], report["next_verification_tasks"])
+    assert report["schema"] == OUTCOME_ACTIONS_SCHEMA == "goppi_trajectory_outcome_actions.v1"
+    assert report["policy"] == "goppi.descriptive-paired-trajectory-outcome-actions.v1"
+    assert report["authority"] == analyze(documents)["authority"]
+    assert report["trust_scope"] == analyze(documents)["trust_scope"]
+    assert report["interpretation_limits"] == analyze(documents)["interpretation_limits"]
+    tasks = [
+        task for task in verification_tasks
+        if task["kind"] == "inspect_outcome_change_without_tool_status_change"
+    ]
+    assert len(tasks) == 1
+    task = tasks[0]
+    assert task["owner"] == "calling_agent"
+    assert task["execution_authorized"] is False
+    assert "command" not in task
+    expected = {
+        comparison["id"]
+        for comparison in comparisons
+        if comparison["comparability"]["state"] == "comparable"
+        and comparison["difference"]["state"] == "observed"
+        and comparison["difference"]["outcome_changed"] is True
+        and comparison["difference"]["tool_status_deltas"] == []
+    }
+    assert len(expected) == EXPECTED_OUTCOME_ACTION_SCOPES
+    assert {scope["comparison_id"] for scope in task["scope"]} == expected
+    assert all(scope["arms"] == ["baseline", "candidate"] for scope in task["scope"])
+    assert len(task["scope"]) == len(expected)
+    assert any(
+        item["difference"]["outcome_changed"] is True
+        and item["difference"]["tool_status_deltas"]
+        and item["id"] not in expected
+        for item in comparisons
+    )
+    assert any(
+        item["difference"]["outcome_changed"] is False
+        and item["difference"]["tool_status_deltas"] == []
+        and item["id"] not in expected
+        for item in comparisons
+    )
+
+
+def test_outcome_actions_preserves_existing_tasks_and_order_independence(
+    documents: Documents,
+) -> None:
+    from underwrite.instrument.evidence.goppi_trajectory import analyze_goppi_trajectory_actions
+
+    ordinary = analyze(documents)
+    actions = analyze_goppi_trajectory_actions(*documents)
+    verification_tasks = cast(list[dict[str, Any]], actions["next_verification_tasks"])
+    existing = [
+        task for task in verification_tasks
+        if task["kind"] != "inspect_outcome_change_without_tool_status_change"
+    ]
+    assert existing == ordinary["next_verification_tasks"]
+    execution, rows, trajectory, identities = documents
+    trajectory["units"].reverse()
+    for unit in trajectory["units"]:
+        unit["cases"].reverse()
+    reordered = analyze_goppi_trajectory_actions(
+        execution, tuple(reversed(rows)), trajectory, identities
+    )
+    assert reordered["next_verification_tasks"] == actions["next_verification_tasks"]
 
 
 def test_reordering_preserves_aggregates_ids_tasks_and_valid_pointers(documents: Documents) -> None:

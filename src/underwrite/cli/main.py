@@ -167,6 +167,12 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 (),
                 (audit_trajectory.RESULT_SCHEMA,),
             ),
+            profile(
+                "goppi-paired-trajectory-v1|outcome-actions",
+                ("exchange", "view"),
+                (),
+                (audit_trajectory.OUTCOME_ACTIONS_SCHEMA,),
+            ),
         ),
         _standalone(audit_trajectory.main),
     ),

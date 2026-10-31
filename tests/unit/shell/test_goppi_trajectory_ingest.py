@@ -230,6 +230,47 @@ def test_schema_configuration_precedes_source_effects(monkeypatch: pytest.Monkey
         app.audit_goppi_trajectory(Path("/missing"), verifier=StubVerifier())
 
 
+def test_invalid_python_view_refused_before_capture_or_verification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    verifier = StubVerifier()
+
+    def forbidden_capture(_: Path) -> None:
+        pytest.fail("invalid view must be rejected before source capture")
+
+    monkeypatch.setattr(app, "_capture", forbidden_capture)
+    with pytest.raises(app.TrajectoryInputError):
+        app.audit_goppi_trajectory(Path("/not-read"), verifier=verifier, view="invented")
+    assert verifier.snapshots == []
+
+
+@pytest.mark.parametrize(
+    "reason", ["MISSING_OUTCOME_ACTIONS_CONTRACT", "INVALID_INSPECTION_SCHEMA"]
+)
+def test_outcome_actions_contract_loaded_before_source_capture(
+    monkeypatch: pytest.MonkeyPatch, reason: str,
+) -> None:
+    original = app.packaged_validator
+    loaded: list[str] = []
+
+    def validator(name: str) -> object:
+        loaded.append(name)
+        if name == "goppi_trajectory_outcome_actions.v1":
+            raise SchemaConfigurationError(reason)
+        return original(name)
+
+    def forbidden_capture(_: Path) -> None:
+        pytest.fail("view contract must be loaded before source capture")
+
+    monkeypatch.setattr(app, "packaged_validator", validator)
+    monkeypatch.setattr(app, "_capture", forbidden_capture)
+    with pytest.raises(SchemaConfigurationError, match=reason):
+        app.audit_goppi_trajectory(
+            Path("/not-read"), verifier=StubVerifier(), view="outcome-actions"
+        )
+    assert "goppi_trajectory_outcome_actions.v1" in loaded
+
+
 def test_final_output_limit_before_return(exchange: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(app, "MAX_REPORT_BYTES", 1)
     with pytest.raises(app.TrajectoryInputError, match="TRAJECTORY_REPORT_LIMIT"):

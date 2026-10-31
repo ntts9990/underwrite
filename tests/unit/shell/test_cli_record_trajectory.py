@@ -79,6 +79,28 @@ def test_failed_verifier_process_never_publishes_record(
     assert not store.exists()
 
 
+def test_records_audit_trajectory_rejects_view_before_capture_and_store(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "store"
+
+    def forbidden(*_: object, **__: object) -> None:
+        pytest.fail("record view usage error must precede capture and verifier effects")
+
+    monkeypatch.setattr(command, "capture_goppi_trajectory", forbidden)
+    monkeypatch.setattr(command, "GoppiCliVerifier", forbidden)
+    assert main.main([
+        "records", "audit-trajectory", "--exchange", str(FIXTURE),
+        "--view", "outcome-actions", "--root", str(root), "--id", "sample", "--json",
+    ]) == DIAGNOSTIC_EXIT
+    streams = capsys.readouterr()
+    assert streams.out == ""
+    error = json.loads(streams.err)
+    assert error["code"] == "USAGE_ERROR"
+    assert error["reason"] == "INVALID_ARGUMENTS_SEE_HELP"
+    assert not root.exists()
+
+
 class Stub:
     """This response fixture deliberately does not implement producer verification."""
 

@@ -82,6 +82,25 @@ def test_capability_command_validates_and_is_registration_derived(
     assert "package_version" not in report
 
 
+def test_outcome_actions_profile_advertises_direct_view_only(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main.main(["capabilities", "--json"]) == 0
+    catalog = json.loads(capsys.readouterr().out)
+    direct = next(item for item in catalog["commands"] if item["command"] == "audit-trajectory")
+    records = next(item for item in catalog["commands"] if item["command"] == "records")
+    selected = next(
+        profile for profile in direct["profiles"]
+        if profile["name"] == "goppi-paired-trajectory-v1|outcome-actions"
+    )
+    assert selected["required_inputs"] == ["exchange", "view"]
+    assert selected["output_schemas"] == ["goppi_trajectory_outcome_actions.v1"]
+    assert all(
+        "goppi_trajectory_outcome_actions.v1" not in profile["output_schemas"]
+        for profile in records["profiles"]
+    )
+
+
 @pytest.mark.parametrize(
     ("command", "name", "fixture", "version", "schema"),
     [

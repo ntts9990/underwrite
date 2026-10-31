@@ -1282,6 +1282,23 @@ declared conditions are not comparable. Resolve `check_outcome_comparability`
 before requesting call relationships for a retry or causal investigation;
 `obtain_call_relationships` only scopes comparable pairs with tool-status changes.
 
+To find comparable source-outcome changes with **no recorded tool-status count
+change**, request the direct-only action view:
+
+```sh
+underwrite audit-trajectory --exchange /absolute/path/to/export \
+  --view outcome-actions --json
+```
+
+It returns `goppi_trajectory_outcome_actions.v1` with one grouped
+`inspect_outcome_change_without_tool_status_change` task for eligible comparisons.
+The task asks the calling agent to inspect the selected source outcomes and
+retained comparison context. Unchanged outcomes, missing capture, incomparable
+conditions, and comparisons already showing tool-status deltas are excluded.
+Equal projected tool-status counts do not establish identical calls, trace content,
+cause, improvement or approval. The default view and `records audit-trajectory`
+remain v1; the action view does not create or read a retained record.
+
 Exit 0 means analysis completed, including partial capture or unfavorable results.
 Portable verification checks content consistency; it does not authenticate the
 producer or independently verify its private projection. Privacy checks on the
@@ -1329,6 +1346,9 @@ report = audit_goppi_trajectory(
     verifier=GoppiCliVerifier(Path("/absolute/path/to/goppi")),
 )
 ```
+
+Pass `view="outcome-actions"` to this Python function for the same direct-only
+action view. Leave the argument unset for the unchanged v1 result.
 
 ## Audit a completed goppi baseline as common evidence
 

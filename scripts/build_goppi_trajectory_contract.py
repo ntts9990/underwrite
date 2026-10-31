@@ -17,6 +17,9 @@ from underwrite.instrument.evidence.goppi_trajectory import (
     MAX_ROWS,
     MAX_SPANS_PER_UNIT,
     MEMBERS,
+    OUTCOME_ACTION_TASK_EVIDENCE,
+    OUTCOME_ACTIONS_POLICY,
+    OUTCOME_ACTIONS_SCHEMA,
     OUTCOME_HARNESS_BINDINGS,
     OUTCOME_REASONS,
     RESULT_SCHEMA,
@@ -50,7 +53,12 @@ def integer(maximum: int = MAX_ROWS) -> JSON:
     return {"type": "integer", "minimum": 0, "maximum": maximum}
 
 
-def build() -> JSON:
+def build(*, outcome_actions: bool = False) -> JSON:
+    schema = OUTCOME_ACTIONS_SCHEMA if outcome_actions else RESULT_SCHEMA
+    policy = OUTCOME_ACTIONS_POLICY if outcome_actions else REVIEW_POLICY
+    task_evidence = (
+        {**TASK_EVIDENCE, **OUTCOME_ACTION_TASK_EVIDENCE} if outcome_actions else TASK_EVIDENCE
+    )
     digest = {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
     boolean = {"type": "boolean"}
     null = {"type": "null"}
@@ -273,15 +281,15 @@ def build() -> JSON:
                     "required_evidence": const(evidence),
                 }
             )
-            for kind, (owner, evidence) in TASK_EVIDENCE.items()
+            for kind, (owner, evidence) in task_evidence.items()
         ],
         field="kind",
     )
     result = object_schema(
         {
-            "schema": const(RESULT_SCHEMA),
+            "schema": const(schema),
             "state": const("analyzed"),
-            "policy": const(REVIEW_POLICY),
+            "policy": const(policy),
             "input_members": array(
                 object_schema(
                     {"path": enum(MEMBERS), "sha256": digest, "bytes": integer(128 * 1024 * 1024)}
@@ -329,7 +337,7 @@ def build() -> JSON:
             "capture_counts": reference("coverage"),
             "stages": array(reference("stage"), len(STAGES)),
             "comparisons": array(reference("comparison")),
-            "next_verification_tasks": array(reference("task"), len(TASK_EVIDENCE)),
+            "next_verification_tasks": array(reference("task"), len(task_evidence)),
             "interpretation_limits": const(list(INTERPRETATION_LIMITS)),
             "authority": object_schema(
                 {
@@ -343,7 +351,7 @@ def build() -> JSON:
     )
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": f"urn:underwrite:contract:{RESULT_SCHEMA}",
+        "$id": f"urn:underwrite:contract:{schema}",
         **result,
         "$defs": definitions,
     }
@@ -353,13 +361,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
-    path = ROOT / "contracts" / f"{RESULT_SCHEMA}.schema.json"
-    rendered = json.dumps(build(), indent=2, ensure_ascii=False) + "\n"
-    if args.check:
-        if path.read_text() != rendered:
-            raise SystemExit("STALE_GOPPI_TRAJECTORY_CONTRACT")
-    else:
-        path.write_text(rendered)
+    for schema, outcome_actions in ((RESULT_SCHEMA, False), (OUTCOME_ACTIONS_SCHEMA, True)):
+        path = ROOT / "contracts" / f"{schema}.schema.json"
+        rendered = (
+            json.dumps(build(outcome_actions=outcome_actions), indent=2, ensure_ascii=False)
+            + "\n"
+        )
+        if args.check:
+            if not path.exists() or path.read_text() != rendered:
+                raise SystemExit(f"STALE_GOPPI_TRAJECTORY_CONTRACT: {schema}")
+        else:
+            path.write_text(rendered)
 
 
 if __name__ == "__main__":

@@ -247,6 +247,13 @@ current whole-record integrity checks. Reopening does not need Goppi and reports
 reports up to their supported 8 MiB bound; generic `records read-json` keeps its
 1 MiB selected-file limit. See [storage](STORAGE.md) for retention and error handling.
 
+The optional direct `audit-trajectory --view outcome-actions` projection returns
+`goppi_trajectory_outcome_actions.v1`. It groups comparable source-outcome changes
+whose recorded tool-status counts did not change into a calling-agent inspection
+task. The default `goppi_trajectory_review.v1` output and both trajectory record
+contracts remain unchanged. This view has no dedicated retained-record route;
+it does not establish cause, retry benefit, improvement, or approval.
+
 A working adopted Goppi offline verifier is needed to create a successfully
 verified trajectory result. The accepted source implementation and npm package
 are distinct: on 2026-10-18, accepted Goppi main declared package version `0.1.0`,

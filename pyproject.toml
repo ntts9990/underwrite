@@ -32,6 +32,7 @@ source-include = [
     "contracts/cross_artifact_review.v1.schema.json",
     "contracts/cross_artifact_record.v1.schema.json",
     "contracts/goppi_trajectory_review.v1.schema.json",
+    "contracts/goppi_trajectory_outcome_actions.v1.schema.json",
     "contracts/goppi_trajectory_verifier_response.v1.schema.json",
     "contracts/trajectory_record.v1.schema.json",
     "contracts/trajectory_record_read.v1.schema.json",

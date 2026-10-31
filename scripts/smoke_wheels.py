@@ -24,6 +24,7 @@ else:
 EVIDENCE_ERROR_EXIT = 2
 STORAGE_ERROR_EXIT = 3
 BASELINE_RECORD_FILE_COUNT = 7
+TRAJECTORY_OUTCOME_ACTION_SCOPE_COUNT = 64
 LEGACY_USAGE_CANARY = "PRIVATE_AGENT_TOKEN"
 
 
@@ -3235,13 +3236,87 @@ def _trajectory_pilot(cli: Path, work: Path) -> None:
         "import json,sys; from pathlib import Path; "
         "from underwrite.instrument.ingest.goppi_trajectory import audit_goppi_trajectory; "
         "from underwrite.instrument.ingest.goppi_verifier import GoppiCliVerifier; "
+        "kwargs={} if len(sys.argv)==3 else {'view':sys.argv[3]}; "
         "print(json.dumps(audit_goppi_trajectory(Path(sys.argv[1]),"
-        "verifier=GoppiCliVerifier(Path(sys.argv[2])))))"
+        "verifier=GoppiCliVerifier(Path(sys.argv[2])),**kwargs)))"
     )
     result = wheel.success(
         [str(cli.parent / "python"), "-c", code, str(exchange), str(verifier)], work
     )
     wheel.require(json.loads(result.stdout) == report, "trajectory installed API/CLI mismatch")
+    actions = _cli_json(
+        cli, [*args, "--view", "outcome-actions"], work / "trajectory-outcome-actions.json", work
+    )
+    wheel.require(
+        actions["schema"] == "goppi_trajectory_outcome_actions.v1",
+        "trajectory outcome-actions output contract",
+    )
+    installed_contract = (
+        "import hashlib,json,sys; from importlib.resources import files; "
+        "from underwrite.instrument.ingest.schema import packaged_validator; "
+        "name='goppi_trajectory_outcome_actions.v1'; "
+        "packaged_validator(name).validate(json.load(open(sys.argv[1],encoding='utf-8'))); "
+        "print(hashlib.sha256(files('underwrite').joinpath('_contracts',"
+        "name+'.schema.json').read_bytes()).hexdigest())"
+    )
+    checked = wheel.success(
+        [str(cli.parent / "python"), "-c", installed_contract,
+         str(work / "trajectory-outcome-actions.json")], work
+    )
+    wheel.require(
+        checked.stdout.strip() == hashlib.sha256(
+            (wheel.ROOT / "contracts/goppi_trajectory_outcome_actions.v1.schema.json").read_bytes()
+        ).hexdigest(),
+        "trajectory installed contract differs from authored contract",
+    )
+    action_result = wheel.success(
+        [
+            str(cli.parent / "python"),
+            "-c",
+            code,
+            str(exchange),
+            str(verifier),
+            "outcome-actions",
+        ],
+        work,
+    )
+    wheel.require(
+        json.loads(action_result.stdout) == actions,
+        "trajectory outcome-actions installed API/CLI mismatch",
+    )
+    action_tasks = [
+        task for task in cast(list[dict[str, object]], actions["next_verification_tasks"])
+        if task["kind"] == "inspect_outcome_change_without_tool_status_change"
+    ]
+    wheel.require(len(action_tasks) == 1, "trajectory outcome-actions task population")
+    action_scope = cast(list[dict[str, object]], action_tasks[0]["scope"])
+    eligible_ids = {
+        item["id"]
+        for item in cast(list[dict[str, object]], actions["comparisons"])
+        if cast(dict[str, object], item["comparability"])["state"] == "comparable"
+        and cast(dict[str, object], item["difference"])["state"] == "observed"
+        and cast(dict[str, object], item["difference"])["outcome_changed"] is True
+        and cast(dict[str, object], item["difference"])["tool_status_deltas"] == []
+    }
+    wheel.require(
+        len(action_scope) == TRAJECTORY_OUTCOME_ACTION_SCOPE_COUNT
+        and {item["comparison_id"] for item in action_scope} == eligible_ids
+        and all(item["arms"] == ["baseline", "candidate"] for item in action_scope)
+        and action_tasks[0]["execution_authorized"] is False,
+        "trajectory outcome-actions scope or authority changed",
+    )
+    trust = cast(dict[str, object], actions["trust_scope"])
+    authority = cast(dict[str, object], actions["authority"])
+    wheel.require(
+        trust == report["trust_scope"]
+        and trust["authenticity"] == "content_digest_only"
+        and trust["source_authentication_independently_verified"] is False
+        and trust["producer_projection_independently_verified"] is False
+        and authority == report["authority"]
+        and authority["human_review"] == "required"
+        and authority["execution_authorized"] is False,
+        "trajectory outcome-actions widened source trust or decision authority",
+    )
     _native_refusal(
         cli,
         ["audit-trajectory", "--exchange", str(exchange / "paired"),

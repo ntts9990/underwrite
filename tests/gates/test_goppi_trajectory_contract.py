@@ -121,3 +121,73 @@ def test_context_missing_and_unavailable_outcome_variants(report: dict[str, Any]
         variant = copy.deepcopy(report)
         variant["comparisons"][0]["baseline"]["outcome"] = outcome
         validator.validate(variant)
+
+
+def test_v1_schema_bytes_remain_pinned() -> None:
+    raw = (ROOT / "contracts" / f"{RESULT_SCHEMA}.schema.json").read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == (
+        "946bbf749acb448899bca0a5438ffc67c69c835a702cd60d38d79c9ae8a80775"
+    )
+
+
+@pytest.fixture
+def action_report(report: dict[str, Any]) -> dict[str, Any]:
+    from underwrite.instrument.evidence.goppi_trajectory import analyze_goppi_trajectory_actions
+
+    return analyze_goppi_trajectory_actions(
+        json.loads((FIXTURE / "paired/execution.json").read_bytes()),
+        tuple(
+            json.loads(line) for line in (FIXTURE / "paired/rows.jsonl").read_text().splitlines()
+        ),
+        json.loads((FIXTURE / "trajectory/trajectory.json").read_bytes()),
+        {item["path"]: (item["sha256"], item["bytes"]) for item in report["input_members"]},
+    )
+
+
+def test_outcome_actions_schema_accepts_pure_result_and_matches_packaged_asset(
+    action_report: dict[str, Any],
+) -> None:
+    from underwrite.instrument.evidence.goppi_trajectory import OUTCOME_ACTIONS_SCHEMA
+
+    authored = (ROOT / "contracts" / f"{OUTCOME_ACTIONS_SCHEMA}.schema.json").read_bytes()
+    packaged = (
+        ROOT / "src/underwrite/_contracts" / f"{OUTCOME_ACTIONS_SCHEMA}.schema.json"
+    ).read_bytes()
+    assert authored == packaged
+    validator = cast(Validator, packaged_validator(OUTCOME_ACTIONS_SCHEMA))
+    validator.validate(action_report)
+    action_report["trust_scope"].update(
+        native_verification="local_goppi_same_byte_snapshot",
+        integrity_scope="self_consistent_content_closure",
+        authenticity="content_digest_only",
+    )
+    validator.validate(action_report)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["owner", "command", "authorization", "scope_size", "kind", "extra"],
+)
+def test_outcome_actions_schema_refuses_task_masquerades(
+    action_report: dict[str, Any], mutation: str
+) -> None:
+    from underwrite.instrument.evidence.goppi_trajectory import OUTCOME_ACTIONS_SCHEMA
+
+    task = next(
+        item for item in action_report["next_verification_tasks"]
+        if item["kind"] == "inspect_outcome_change_without_tool_status_change"
+    )
+    if mutation == "owner":
+        task["owner"] = "goppi"
+    elif mutation == "command":
+        task["command"] = "rerun"
+    elif mutation == "authorization":
+        task["execution_authorized"] = True
+    elif mutation == "scope_size":
+        task["scope"] = task["scope"] * 157
+    elif mutation == "kind":
+        task["kind"] = "approve_change"
+    else:
+        action_report["fabricated"] = True
+    with pytest.raises(ValidationError):
+        cast(Validator, packaged_validator(OUTCOME_ACTIONS_SCHEMA)).validate(action_report)

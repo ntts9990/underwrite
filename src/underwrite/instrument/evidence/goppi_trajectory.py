@@ -18,6 +18,8 @@ from underwrite_core.canonical import CanonicalizationError, canonical_bytes
 
 RESULT_SCHEMA = "goppi_trajectory_review.v1"
 REVIEW_POLICY = "goppi.descriptive-paired-trajectory.v1"
+OUTCOME_ACTIONS_SCHEMA = "goppi_trajectory_outcome_actions.v1"
+OUTCOME_ACTIONS_POLICY = "goppi.descriptive-paired-trajectory-outcome-actions.v1"
 OUTCOME_REASONS = {
     "endpoint_failure": ("agent_timeout", "agent_budget", "agent_answer"),
     "missing": ("infra", "verifier_infra", "exhausted_retries", "not_started"),
@@ -112,6 +114,13 @@ TASK_EVIDENCE = {
     "obtain_call_relationships": (
         "goppi",
         "explicit call parentage and retry relationships before retry or causal investigation",
+    ),
+}
+_OUTCOME_ACTION_TASK_KIND = "inspect_outcome_change_without_tool_status_change"
+OUTCOME_ACTION_TASK_EVIDENCE = {
+    _OUTCOME_ACTION_TASK_KIND: (
+        "calling_agent",
+        "selected baseline/candidate source outcome claims and retained comparison context review",
     ),
 }
 INTERPRETATION_LIMITS = (
@@ -691,4 +700,43 @@ def analyze_goppi_trajectory(
             "merge_authorized": False,
             "revert_authorized": False,
         },
+    }
+
+
+def analyze_goppi_trajectory_actions(
+    execution: dict[str, Any],
+    rows: tuple[dict[str, Any], ...],
+    trajectory: dict[str, Any],
+    identities: Mapping[str, tuple[str, int]],
+) -> dict[str, object]:
+    """Add source-review tasks for observed outcome changes without tool-count changes."""
+    report = analyze_goppi_trajectory(execution, rows, trajectory, identities)
+    comparisons = cast(list[dict[str, Any]], report["comparisons"])
+    kind = _OUTCOME_ACTION_TASK_KIND
+    scope = [
+        {"comparison_id": item["id"], "arms": ["baseline", "candidate"]}
+        for item in comparisons
+        if item["comparability"]["state"] == "comparable"
+        and item["difference"]["state"] == "observed"
+        and item["difference"]["outcome_changed"] is True
+        and item["difference"]["tool_status_deltas"] == []
+    ]
+    tasks = list(cast(list[dict[str, Any]], report["next_verification_tasks"]))
+    if scope:
+        owner, evidence = OUTCOME_ACTION_TASK_EVIDENCE[kind]
+        tasks.append(
+            {
+                "id": _identity("task:", {"kind": kind, "scope": scope}),
+                "kind": kind,
+                "scope": scope,
+                "owner": owner,
+                "required_evidence": evidence,
+                "execution_authorized": False,
+            }
+        )
+    return {
+        **report,
+        "schema": OUTCOME_ACTIONS_SCHEMA,
+        "policy": OUTCOME_ACTIONS_POLICY,
+        "next_verification_tasks": sorted(tasks, key=lambda task: task["kind"]),
     }

@@ -22,9 +22,11 @@ from underwrite.instrument.evidence.goppi_trajectory import (
     MAX_SPANS_PER_UNIT,
     MAX_UNITS,
     MEMBERS,
+    OUTCOME_ACTIONS_SCHEMA,
     RESULT_SCHEMA,
     TrajectoryError,
     analyze_goppi_trajectory,
+    analyze_goppi_trajectory_actions,
 )
 from underwrite.instrument.ingest.goppi_verifier import (
     STDOUT_MAX_BYTES,
@@ -253,11 +255,28 @@ class TrajectoryAnalysis:
             raise ValueError("TRAJECTORY_ANALYSIS_REQUIRES_ONE_OUTCOME")
 
 
-def _contracts() -> tuple[Draft202012Validator, Draft202012Validator, Draft202012Validator]:
-    return (
-        packaged_validator(RESULT_SCHEMA),
-        packaged_validator(RESPONSE_SCHEMA),
-        packaged_validator(HISTORY_SCHEMA),
+def _result_schema(view: str) -> str:
+    if view == "review":
+        return RESULT_SCHEMA
+    if view == "outcome-actions":
+        return OUTCOME_ACTIONS_SCHEMA
+    raise TrajectoryInputError("UNSUPPORTED_PROFILE", "TRAJECTORY_VIEW_UNSUPPORTED", "/view")
+
+
+@dataclass(frozen=True)
+class _Contracts:
+    result: Draft202012Validator
+    response: Draft202012Validator
+    history: Draft202012Validator
+
+
+def _contracts(
+    view: str = "review",
+) -> _Contracts:
+    return _Contracts(
+        result=packaged_validator(_result_schema(view)),
+        response=packaged_validator(RESPONSE_SCHEMA),
+        history=packaged_validator(HISTORY_SCHEMA),
     )
 
 
@@ -292,9 +311,7 @@ def _validated_capture(captured: Mapping[str, CapturedBytes]) -> Mapping[str, Ca
     return MappingProxyType(frozen)
 
 
-def capture_goppi_trajectory(exchange: Path) -> Mapping[str, CapturedBytes]:
-    """Capture the complete source once, loading required contracts before file effects."""
-    _contracts()
+def _capture_complete_exchange(exchange: Path) -> Mapping[str, CapturedBytes]:
     try:
         captured = _capture(exchange)
     except CaptureError as exc:
@@ -304,6 +321,12 @@ def capture_goppi_trajectory(exchange: Path) -> Mapping[str, CapturedBytes]:
             "INVALID_INPUT", "TRAJECTORY_COMPLETE_HANDOFF_REQUIRED", "/exchange"
         ) from None
     return MappingProxyType(captured)
+
+
+def capture_goppi_trajectory(exchange: Path) -> Mapping[str, CapturedBytes]:
+    """Capture the complete source once, loading required contracts before file effects."""
+    _contracts()
+    return _capture_complete_exchange(exchange)
 
 
 def _history(
@@ -329,16 +352,33 @@ def _history(
 
 
 def audit_captured_goppi_trajectory(
-    captured: Mapping[str, CapturedBytes], *, verifier: TrajectoryVerifier | None = None
+    captured: Mapping[str, CapturedBytes],
+    *,
+    verifier: TrajectoryVerifier | None = None,
+    view: str = "review",
 ) -> TrajectoryAnalysis:
     """Analyze fixed captured bytes, retaining only explicitly scoped source diagnostics.
 
     Verifier/process, snapshot, contract and result-encoding failures always raise.
     History describes this call, not independent source authenticity or a future rerun.
     """
-    result_validator, response_validator, history_validator = _contracts()
+    return _audit_captured_goppi_trajectory(
+        captured,
+        verifier=verifier,
+        view=view,
+        contracts=_contracts(view),
+    )
+
+
+def _audit_captured_goppi_trajectory(
+    captured: Mapping[str, CapturedBytes],
+    *,
+    verifier: TrajectoryVerifier | None,
+    view: str,
+    contracts: _Contracts,
+) -> TrajectoryAnalysis:
     captured = _validated_capture(captured)
-    history = _history(captured, verified=False, validator=history_validator)
+    history = _history(captured, verified=False, validator=contracts.history)
     try:
         documents = {
             name: decode_captured_object(item, max_depth=MAX_DEPTH, location="/exchange/" + name)
@@ -358,15 +398,20 @@ def audit_captured_goppi_trajectory(
             snapshot = Path(temporary).resolve()
             _write_snapshot(snapshot, captured)
             raw = selected.verify(snapshot)
-            _response(raw, response_validator, snapshot, documents, len(rows))
+            _response(raw, contracts.response, snapshot, documents, len(rows))
             _check_snapshot(snapshot, captured)
     except VerifierError as exc:
         raise TrajectoryInputError(exc.code, exc.reason) from None
     except OSError:
         raise TrajectoryInputError("SOURCE_READ_FAILED", "TRAJECTORY_SNAPSHOT_FAILED") from None
-    history = _history(captured, verified=True, validator=history_validator)
+    history = _history(captured, verified=True, validator=contracts.history)
     try:
-        report = analyze_goppi_trajectory(
+        analyzer = (
+            analyze_goppi_trajectory_actions
+            if view == "outcome-actions"
+            else analyze_goppi_trajectory
+        )
+        report = analyzer(
             documents["paired/execution.json"],
             rows,
             trajectory,
@@ -381,7 +426,7 @@ def audit_captured_goppi_trajectory(
         integrity_scope="self_consistent_content_closure",
         authenticity="content_digest_only",
     )
-    _validate(result_validator, report, response=False)
+    _validate(contracts.result, report, response=False)
     try:
         size = len(canonical_bytes(report)) + 1
     except CanonicalizationError:
@@ -392,15 +437,22 @@ def audit_captured_goppi_trajectory(
 
 
 def audit_goppi_trajectory(
-    exchange: Path, *, verifier: TrajectoryVerifier | None = None
+    exchange: Path,
+    *,
+    verifier: TrajectoryVerifier | None = None,
+    view: str = "review",
 ) -> dict[str, object]:
     """Verify captured bytes with the native owner, preserving the standalone API.
 
     The private snapshot's permissions do not attest the original directory's
     privacy. The installed executable is trusted software supplied by the operator.
     """
-    analysis = audit_captured_goppi_trajectory(
-        capture_goppi_trajectory(exchange), verifier=verifier
+    contracts = _contracts(view)
+    analysis = _audit_captured_goppi_trajectory(
+        _capture_complete_exchange(exchange),
+        verifier=verifier,
+        view=view,
+        contracts=contracts,
     )
     if analysis.error is not None:
         raise analysis.error

@@ -12,6 +12,7 @@ from typing import cast
 from underwrite.cli.evidence import EvidenceError, ReportOutput, run_cli
 from underwrite.instrument.evidence.goppi_trajectory import (
     MAX_REPORT_BYTES,
+    OUTCOME_ACTIONS_SCHEMA,
     RESULT_SCHEMA,
     TrajectoryError,
 )
@@ -42,6 +43,12 @@ def configure(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--exchange", type=Path, required=True, metavar="DIR")
     parser.add_argument(
+        "--view",
+        choices=("review", "outcome-actions"),
+        default="review",
+        help="Select the default review or direct outcome-actions report.",
+    )
+    parser.add_argument(
         "--goppi-executable",
         type=Path,
         metavar="PATH",
@@ -65,7 +72,9 @@ def trajectory_cli_error(
 def produce(args: argparse.Namespace) -> dict[str, object]:
     try:
         verifier = GoppiCliVerifier(cast(Path | None, args.goppi_executable))
-        return audit_goppi_trajectory(cast(Path, args.exchange), verifier=verifier)
+        return audit_goppi_trajectory(
+            cast(Path, args.exchange), verifier=verifier, view=cast(str, args.view)
+        )
     except (CaptureError, TrajectoryInputError, TrajectoryError, VerifierError) as exc:
         raise trajectory_cli_error(exc) from None
 
@@ -76,5 +85,10 @@ def main(argv: list[str]) -> int:
         argv,
         configure,
         produce,
-        ReportOutput(RESULT_SCHEMA, max_bytes=MAX_REPORT_BYTES),
+        ReportOutput(
+            lambda args: (
+                OUTCOME_ACTIONS_SCHEMA if args.view == "outcome-actions" else RESULT_SCHEMA
+            ),
+            max_bytes=MAX_REPORT_BYTES,
+        ),
     )
