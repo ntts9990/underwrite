@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from itertools import islice
 from pathlib import Path
-from typing import Final, NamedTuple, cast
+from typing import Final, NamedTuple, NoReturn, cast
 
 from underwrite_core.canonical import canonical_bytes, digest_bytes
 
@@ -451,26 +451,52 @@ def _open_sources(
         yield opened
 
 
-def _reserve(records: Path, identifier: str) -> Path:
-    target = records / identifier
+def _reservation_conflict(target: Path) -> NoReturn:
     try:
-        target.mkdir(mode=_DIR_MODE)
-        target.chmod(_DIR_MODE)
-        _fsync_dir(target)
-        _fsync_dir(records)
-        return target
-    except FileExistsError:
-        try:
-            _validate_control(target, directory=True, missing="RECORD_CAPTURE_INCOMPLETE")
-        except RecordError as exc:
-            if exc.code in {"INVALID_STORE_LAYOUT", "INSECURE_STORE"}:
-                raise
-            raise RecordError("RECORD_CAPTURE_INCOMPLETE", "/record_id") from None
-        if (target / "manifest.json").exists() or (target / "manifest.json").is_symlink():
-            raise RecordError("RECORD_EXISTS", "/record_id") from None
+        _validate_control(target, directory=True, missing="RECORD_CAPTURE_INCOMPLETE")
+    except RecordError as exc:
+        if exc.code in {"INVALID_STORE_LAYOUT", "INSECURE_STORE"}:
+            raise
         raise RecordError("RECORD_CAPTURE_INCOMPLETE", "/record_id") from None
-    except OSError:
-        raise RecordError("STORE_IO_ERROR") from None
+    if (target / "manifest.json").exists() or (target / "manifest.json").is_symlink():
+        raise RecordError("RECORD_EXISTS", "/record_id") from None
+    raise RecordError("RECORD_CAPTURE_INCOMPLETE", "/record_id") from None
+
+
+def _reserve(records: Path, identifier: str) -> Path:
+    try:
+        import fcntl
+    except ImportError:
+        raise RecordError("UNSUPPORTED_PLATFORM") from None
+    target = records / identifier
+    with _private_descriptor(
+        records, directory=True, missing="STORE_NOT_FOUND", location="/catalog"
+    ) as records_fd:
+        try:
+            fcntl.flock(records_fd, fcntl.LOCK_EX)
+            try:
+                target.lstat()
+            except FileNotFoundError:
+                pass
+            else:
+                _reservation_conflict(target)
+            with os.scandir(records_fd) as iterator:
+                population = sum(1 for _ in islice(iterator, MAX_RECORDS))
+            if population >= MAX_RECORDS:
+                raise RecordError("RECORD_LIMIT_EXCEEDED", "/catalog")
+            try:
+                os.mkdir(identifier, mode=_DIR_MODE, dir_fd=records_fd)
+            except FileExistsError:
+                _reservation_conflict(target)
+            with _private_descriptor(
+                identifier, parent=records_fd, directory=True, missing="STORE_IO_ERROR"
+            ) as reserved_fd:
+                os.fchmod(reserved_fd, _DIR_MODE)
+                os.fsync(reserved_fd)
+            os.fsync(records_fd)
+        except OSError:
+            raise RecordError("STORE_IO_ERROR") from None
+    return target
 
 
 def _fsync_dir(path: Path) -> None:

@@ -228,6 +228,22 @@ def test_captured_collision_and_unpublished_reservation_match_existing_contract(
     )
 
 
+def test_captured_record_shares_catalog_capacity_guard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "store"
+    monkeypatch.setattr(records, "MAX_RECORDS", 1)
+    save_captured_record(root, captured_spec("slot.001"))
+
+    error = assert_error(
+        "RECORD_LIMIT_EXCEEDED",
+        lambda: save_captured_record(root, captured_spec("slot.002")),
+    )
+    assert error.location == "/catalog"
+    assert not (root / "records/slot.002").exists()
+    assert records.list_records(root)["record_count"] == 1
+
+
 def test_captured_partial_write_failure_cleans_only_owned_record(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

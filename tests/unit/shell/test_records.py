@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import errno
+import fcntl
 import json
 import os
 import stat
@@ -292,6 +293,92 @@ def test_two_writers_for_one_id_have_one_winner_and_do_not_mix_bytes(tmp_path: P
     assert records.verify_record(root, "capture.001")["valid"] is True
     stored_path = root / "records/capture.001/files/source/result.json"
     assert stored_path.read_bytes() == b"winner bytes"
+
+
+def test_save_refuses_first_record_beyond_catalog_capacity_before_reservation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source(tmp_path)
+    root = tmp_path / "store"
+    limit = 2
+    monkeypatch.setattr(records, "MAX_RECORDS", limit)
+
+    records.save_record(root, _spec("slot.001"), source)
+    records.save_record(root, _spec("slot.002"), source)
+    error = _assert_error(
+        "RECORD_LIMIT_EXCEEDED", lambda: records.save_record(root, _spec("slot.003"), source)
+    )
+
+    assert error.location == "/catalog"
+    assert not (root / "records/slot.003").exists()
+    assert records.list_records(root)["record_count"] == limit
+    _assert_error("RECORD_EXISTS", lambda: records.save_record(root, _spec("slot.001"), source))
+
+
+def test_unpublished_reservation_consumes_catalog_capacity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source(tmp_path)
+    root = tmp_path / "store"
+    limit = 2
+    monkeypatch.setattr(records, "MAX_RECORDS", limit)
+    records.save_record(root, _spec("slot.001"), source)
+    (root / "records/slot.002").mkdir(mode=PRIVATE_DIR_MODE)
+
+    _assert_error(
+        "RECORD_LIMIT_EXCEEDED", lambda: records.save_record(root, _spec("slot.003"), source)
+    )
+    _assert_error(
+        "RECORD_CAPTURE_INCOMPLETE", lambda: records.save_record(root, _spec("slot.002"), source)
+    )
+    assert records.list_records(root)["record_count"] == limit
+    assert not (root / "records/slot.003").exists()
+
+
+@pytest.mark.parametrize("operation", ["lock", "scan"])
+def test_reservation_gate_io_failure_leaves_no_record_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str
+) -> None:
+    source = _source(tmp_path)
+    root = tmp_path / "store"
+    before = (source / "result.json").read_bytes()
+
+    def refuse(*args: object, **kwargs: object) -> None:
+        raise OSError("private storage failure")
+
+    if operation == "lock":
+        monkeypatch.setattr(fcntl, "flock", refuse)
+    else:
+        monkeypatch.setattr(records.os, "scandir", refuse)
+
+    error = _assert_error("STORE_IO_ERROR", lambda: records.save_record(root, _spec(), source))
+    assert "private storage failure" not in str(error)
+    assert not (root / "records/capture.001").exists()
+    assert (source / "result.json").read_bytes() == before
+
+
+def test_distinct_concurrent_writers_cannot_exceed_catalog_capacity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source(tmp_path)
+    root = tmp_path / "store"
+    limit = 2
+    monkeypatch.setattr(records, "MAX_RECORDS", limit)
+    records.save_record(root, _spec("slot.001"), source)
+
+    def capture(identifier: str) -> str:
+        try:
+            records.save_record(root, _spec(identifier), source)
+        except RecordError as error:
+            return error.code
+        return "OK"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(capture, identifier) for identifier in ("slot.002", "slot.003")]
+        outcomes = sorted(future.result() for future in futures)
+
+    assert outcomes == ["OK", "RECORD_LIMIT_EXCEEDED"]
+    assert records.list_records(root)["record_count"] == limit
 
 
 def test_unpublished_capture_is_listed_but_cannot_be_read_or_reused(tmp_path: Path) -> None:

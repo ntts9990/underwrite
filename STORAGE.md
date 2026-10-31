@@ -517,7 +517,11 @@ hostile-filesystem sandbox: a descriptor opened before a pathname replacement
 may still read the admitted original inode.
 
 Bounds are 64 files, 128 MiB per file, 512 MiB per capture, a 256 KiB manifest,
-16 direct links, and 1,000 records per catalog. There is no hidden global store.
+16 direct links, and 1,000 record-directory entries per catalog. Complete and
+unpublished reservations both consume a slot. `save` refuses a new ID with
+`RECORD_LIMIT_EXCEEDED` before reserving it when the catalog is full; cooperating
+local writers serialize this capacity check with ID reservation. There is no
+hidden global store.
 The root's parent must already exist; read commands never create the supplied
 root. Keep separate stores when a
 project's retention or population exceeds these bounds.

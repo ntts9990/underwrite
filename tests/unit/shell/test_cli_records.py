@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -14,6 +17,7 @@ from underwrite_core.canonical import canonical_bytes, digest_bytes
 
 from underwrite.cli import records
 from underwrite.instrument.ingest.schema import SchemaConfigurationError
+from underwrite.service import records as record_service
 from underwrite.service.records import RecordError
 
 ROOT = repo_root(Path(__file__).resolve())
@@ -191,6 +195,57 @@ def test_save_show_list_and_verify_emit_their_exact_contracts(
     assert code == 0 and other == ""
     _validator("record_verification.v1").validate(verification)
     assert verification["valid"] is True and verification["findings"] == []
+
+
+def test_cli_save_capacity_refusal_preserves_usable_catalog(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root, spec_path, _ = _inputs(tmp_path)
+    monkeypatch.setattr(record_service, "MAX_RECORDS", 1)
+    code, _, other = _invoke(capsys, _save_args(root, spec_path))
+    assert code == 0 and other == ""
+    new_spec = _spec("synthetic.capture-002")
+    spec_path.write_text(json.dumps(new_spec))
+
+    error = _error(capsys, _save_args(root, spec_path), "RECORD_LIMIT_EXCEEDED")
+    assert error["location"] == "/catalog"
+    assert not (root / "records/synthetic.capture-002").exists()
+    code, catalog, other = _invoke(capsys, ["list", "--root", str(root), "--json"])
+    assert code == 0 and other == "" and catalog["record_count"] == 1
+
+
+def test_distinct_cli_processes_share_record_capacity_lock(tmp_path: Path) -> None:
+    root, first_spec, _ = _inputs(tmp_path, _spec("parallel.001"))
+    second_spec = first_spec.with_name("parallel-second.json")
+    second_spec.write_text(json.dumps(_spec("parallel.002")))
+    records_dir = root / "records"
+    records_dir.mkdir(parents=True, mode=0o700)
+    root.chmod(0o700)
+    for index in range(record_service.MAX_RECORDS - 1):
+        (records_dir / f"seed.{index:04d}").mkdir(mode=0o700)
+
+    def save(spec: Path) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, "-m", "underwrite.cli.main", "records", *_save_args(root, spec)],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(save, spec) for spec in (first_spec, second_spec)]
+        results = [future.result() for future in futures]
+
+    assert sorted(result.returncode for result in results) == [0, ERROR_EXIT]
+    refused = next(result for result in results if result.returncode == ERROR_EXIT)
+    assert refused.stdout == ""
+    assert json.loads(refused.stderr)["code"] == "RECORD_LIMIT_EXCEEDED"
+    assert len(list(records_dir.iterdir())) == record_service.MAX_RECORDS
+    catalog = record_service.list_records(root)
+    assert catalog["record_count"] == record_service.MAX_RECORDS
 
 
 def test_catalog_distinguishes_unpublished_and_show_verify_refuse_it(
