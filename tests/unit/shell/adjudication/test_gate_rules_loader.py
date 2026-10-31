@@ -658,7 +658,7 @@ SEMANTIC_ROWS: list[Row] = [
     ),
     (
         "unknown-decision",
-        rules_edit("    decision: Approve", f"    decision: Promote  # {TOKEN}"),
+        rules_edit("    decision: HITL-only", f"    decision: Promote  # {TOKEN}"),
         "SCHEMA_VALIDATION_FAILED",
         "/rules/4/decision",
         "enum",
@@ -815,13 +815,13 @@ def test_committed_rules_load_as_exact_plain_data(trusted: None) -> None:
                 "decision": "Rollback",
             },
             {
-                "id": "improvement_confirmed",
+                "id": "improvement_signal",
                 "kind": "optimization_metric",
                 "priority": 0,
                 "when": {
                     "all": [{"bootstrap_ci_lower": {"min": "0"}}, {"cohens_d": {"min": "0.2"}}]
                 },
-                "decision": "Approve",
+                "decision": "HITL-only",
             },
         ],
     }
