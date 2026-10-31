@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from underwrite.cli.evidence import EvidenceError, ReportOutput, run_cli
 from underwrite.instrument.evidence.langfuse_compat import (
@@ -14,10 +14,12 @@ from underwrite.instrument.evidence.langfuse_compat import BLOB_READER, CLI_READ
 from underwrite.instrument.evidence.langfuse_compat import (
     ROW_INDEX_SCHEMA as AUTO_ROW_INDEX_SCHEMA,
 )
+from underwrite.instrument.evidence.langfuse_compat import (
+    SCORE_SOURCE_SCHEMA as AUTO_SCORE_SOURCE_SCHEMA,
+)
 from underwrite.instrument.ingest.langfuse_accounting import (
     LangfuseFileError,
     audit_langfuse_files,
-    audit_langfuse_row_index_files,
     output_schema,
 )
 
@@ -46,9 +48,9 @@ def configure(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--view",
-        choices=("accounting", "row-index"),
+        choices=("accounting", "row-index", "score-source"),
         default="accounting",
-        help="Select full accounting or a content-minimized per-score row index.",
+        help="Select accounting, a per-score row index, or declared score-source coverage.",
     )
     parser.add_argument("--json", action="store_true", help="Emit the selected view as JSON.")
     parser.description = (
@@ -66,10 +68,10 @@ def configure(parser: argparse.ArgumentParser) -> None:
 
 def produce(args: argparse.Namespace) -> dict[str, object]:
     try:
-        audit = audit_langfuse_row_index_files if args.view == "row-index" else audit_langfuse_files
-        return audit(
+        return audit_langfuse_files(
             cast(Path, args.observations),
             cast(Path, args.scores),
+            view=cast(Literal["accounting", "row-index", "score-source"], args.view),
         )
     except LangfuseFileError as exc:
         raise EvidenceError(exc.code, exc.reason, exc.location) from None
@@ -96,6 +98,26 @@ def render_human(report: dict[str, object]) -> str:
 
 
 def render_selected_human(report: dict[str, object]) -> str:
+    if report["schema"] == AUTO_SCORE_SOURCE_SCHEMA:
+        counts = cast(dict[str, Any], report["counts"])
+        known = cast(dict[str, int], counts["known"])
+        unknown = cast(dict[str, int], counts["unknown"])
+        known_count, unknown_count = sum(known.values()), sum(unknown.values())
+        return "\n".join(
+            [
+                f"Supplied scores: {known_count + unknown_count}; "
+                f"declared source known {known_count}; unknown {unknown_count}.",
+                "Source classes: "
+                + "; ".join(
+                    f"{name} {known[name]}" for name in ("API", "ANNOTATION", "EVAL")
+                )
+                + ".",
+                "Producer source claims are unverified; completeness and collection "
+                "windows unknown.",
+                "No actor authentication, evaluator execution, task verdict, or approval.",
+                "Next: " + "; ".join(cast(list[str], report["next_actions"])),
+            ]
+        )
     if report["schema"] == AUTO_ACCOUNTING_SCHEMA and report.get("reader_profile") == BLOB_READER:
         return render_human(report)
     if (

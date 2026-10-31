@@ -405,6 +405,17 @@ kind is a source claim, not a task verdict. Full accounting can include selected
 score names, IDs and values; use the row index when those contents are unnecessary.
 No custom query or producer execution is required.
 
+When the question is how supplied scores were **source-labeled**, select the
+capabilities-listed `--view score-source` on `audit-langfuse`. Its
+`langfuse_score_source_summary.v1` counts producer-declared `API`, `ANNOTATION`
+and `EVAL` scores and reports missing, null or unfamiliar strings as unknown.
+The summary withholds score IDs, names, values, comments, metadata and optional
+provenance identifiers; selected-file hashes remain linkable. A source label is
+not proof of the actor, annotation review, evaluator execution or score truth.
+Langfuse's optional `score_metadata` and `score_provenance` field groups are not
+interpreted by this view. Use the default accounting or row index for their
+different questions; neither is silently replaced by the source summary.
+
 For blob arrays, an exact `(project_id, trace_id, observation_id)` match identifies
 a supplied observation. A null observation ID is trace-level only when no
 contradictory session/dataset-run target is declared; such contradictory rows
@@ -440,6 +451,11 @@ underwrite records audit-langfuse --observations observations_v2.json --scores s
 underwrite records read-json --root /private/review-store --id langfuse.review-001 \
   --name analysis/accounting.json
 ```
+
+For an explicitly requested private `score-source` result, pass the same view
+to `records audit-langfuse` and read `analysis/score-source.json`. Its analysis
+is aggregate-only, but the private record still retains both entire originals,
+including any metadata and provenance identifiers they contain.
 
 This retains the entire selected files, including source content omitted from the
 accounting report. Analysis and storage use the same captured bytes; the two exports

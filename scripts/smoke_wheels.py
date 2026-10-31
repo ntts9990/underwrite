@@ -1707,7 +1707,11 @@ def _langfuse_record_pilot(  # noqa: PLR0913 — keep both source roles and view
     *,
     view: str = "accounting",
 ) -> None:
-    record_schema = "langfuse_row_record.v2" if view == "row-index" else "langfuse_record.v2"
+    record_schema = {
+        "accounting": "langfuse_record.v2",
+        "row-index": "langfuse_row_record.v2",
+        "score-source": "langfuse_score_source_record.v1",
+    }[view]
     slug = "langfuse-current"
     if view != "accounting":
         slug += "-" + view
@@ -1733,6 +1737,11 @@ def _langfuse_record_pilot(  # noqa: PLR0913 — keep both source roles and view
     storage = cast(dict[str, object], report["storage"])
     wheel.require(report["schema"] == record_schema, "Langfuse record selected the wrong contract")
     wheel.require(analysis["report"] == expected, "Langfuse capture changed analysis")
+    if view == "score-source":
+        wheel.require(
+            "PRIVATE_SCORE_CANARY" not in json.dumps(report),
+            "Langfuse score-source record exposed private score fields",
+        )
     wheel.require(storage["state"] == "saved", "Langfuse capture failed to save")
     expected_hashes: dict[str, str] = {}
     for source, role in zip(inputs, ("observations", "scores"), strict=True):
@@ -1770,6 +1779,11 @@ def _langfuse_record_pilot(  # noqa: PLR0913 — keep both source roles and view
         recovered["manifest_digest"] == storage["manifest_digest"],
         "Langfuse recovered manifest differs",
     )
+    if view == "score-source":
+        wheel.require(
+            "PRIVATE_SCORE_CANARY" not in json.dumps(recovered),
+            "Langfuse stored score-source analysis exposed private score fields",
+        )
     source_code = (
         "import json,sys; from pathlib import Path; "
         "from underwrite.service.records import read_record_file; "
@@ -2029,6 +2043,33 @@ def _langfuse_auto_pilot(cli: Path, work: Path) -> None:
             and rows["counts"] == report["counts"],
             "automatic Langfuse row projection changed accounting",
         )
+        score_source = _cli_json(
+            cli, [*args, "--view", "score-source"], selected / "score-source.json", selected
+        )
+        source_counts = cast(dict[str, Any], score_source["counts"])
+        known = cast(dict[str, int], source_counts["known"])
+        unknown = cast(dict[str, int], source_counts["unknown"])
+        accounting_counts = cast(dict[str, Any], report["counts"])
+        wheel.require(
+            score_source["schema"] == "langfuse_score_source_summary.v1"
+            and score_source["reader_profile"] == reader
+            and sum(known.values()) + sum(unknown.values()) == accounting_counts["scores"],
+            "automatic Langfuse source projection changed score population",
+        )
+        source_api_code = (
+            "import json,sys; from pathlib import Path; "
+            "from underwrite.instrument.ingest.langfuse_accounting import audit_langfuse_bytes; "
+            "print(json.dumps(audit_langfuse_bytes(Path(sys.argv[1]).read_bytes(),"
+            "Path(sys.argv[2]).read_bytes(),view='score-source'),sort_keys=True))"
+        )
+        source_api = wheel.success(
+            [str(cli.parent / "python"), "-c", source_api_code, str(observed), str(scores)],
+            selected,
+        )
+        wheel.require(
+            json.loads(source_api.stdout) == score_source,
+            "automatic Langfuse score-source API/CLI outcomes differ",
+        )
         api_code = (
             "import json,sys; from pathlib import Path; "
             "from underwrite.instrument.ingest.langfuse_accounting import audit_langfuse_bytes; "
@@ -2056,6 +2097,36 @@ def _langfuse_auto_pilot(cli: Path, work: Path) -> None:
             rows,
             view="row-index",
         )
+        if index in (0, 1):
+            private_scores = selected / "scores-private.json"
+            private_document = json.loads(scores.read_bytes())
+            if isinstance(private_document, list):
+                first_score = cast(dict[str, Any], private_document[0])
+            else:
+                body = private_document.get("body", private_document)
+                first_score = cast(dict[str, Any], body["data"][0])
+            first_score["metadata"] = {"secret": "PRIVATE_SCORE_CANARY"}
+            first_score["evaluatorId"] = "PRIVATE_SCORE_CANARY"
+            private_scores.write_text(json.dumps(private_document), encoding="utf-8")
+            private_args = [
+                "audit-langfuse", "--observations", str(observed), "--scores", str(private_scores),
+                "--view", "score-source",
+            ]
+            private_summary = _cli_json(
+                cli, private_args, selected / "private-score-source.json", selected
+            )
+            wheel.require(
+                "PRIVATE_SCORE_CANARY" not in json.dumps(private_summary),
+                "Langfuse score-source summary exposed private score fields",
+            )
+            private_human = wheel.success([str(cli), *private_args], selected)
+            wheel.require(
+                "PRIVATE_SCORE_CANARY" not in private_human.stdout,
+                "Langfuse score-source human output exposed private score fields",
+            )
+            _langfuse_record_pilot(
+                cli, selected, observed, private_scores, private_summary, view="score-source"
+            )
     _native_refusal(
         cli,
         ["audit-langfuse", "--observations", str(pairs[0][0]), "--scores", str(pairs[1][1])],

@@ -13,6 +13,7 @@ from underwrite.instrument.evidence.langfuse_accounting import LangfuseAccountin
 from underwrite.instrument.evidence.langfuse_compat import (
     ACCOUNTING_SCHEMA,
     ROW_INDEX_SCHEMA,
+    SCORE_SOURCE_SCHEMA,
     account_langfuse_compatible,
     index_langfuse_compatible,
 )
@@ -28,14 +29,15 @@ from underwrite.instrument.ingest.langfuse_accounting import (
 from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
 from underwrite.instrument.ingest.transport import DecodeError, decode_json
 
-type View = Literal["accounting", "row-index"]
+type View = Literal["accounting", "row-index", "score-source"]
 
 
 def _validators(view: View) -> tuple[Draft202012Validator, Draft202012Validator | None]:
-    if view not in ("accounting", "row-index"):
+    if view not in ("accounting", "row-index", "score-source"):
         raise LangfuseFileError("UNSUPPORTED_FORMAT", "LANGFUSE_AUTO_VIEW_UNSUPPORTED", "/view")
     try:
-        full = packaged_validator(ACCOUNTING_SCHEMA)
+        selected_schema = SCORE_SOURCE_SCHEMA if view == "score-source" else ACCOUNTING_SCHEMA
+        full = packaged_validator(selected_schema)
         index = packaged_validator(ROW_INDEX_SCHEMA) if view == "row-index" else None
     except SchemaConfigurationError:
         raise LangfuseFileError("SCHEMA_CONFIGURATION_ERROR", "INVALID_PACKAGED_CONTRACT") from None
@@ -79,14 +81,18 @@ def _audit(
     observation_document = _decoded(observations, "observations")
     score_document = _decoded(scores, "scores")
     try:
-        counted = account_langfuse_compatible(observation_document, score_document)
+        counted = account_langfuse_compatible(
+            observation_document,
+            score_document,
+            view="score-source" if view == "score-source" else "accounting",
+        )
     except LangfuseAccountingError as exc:
         raise LangfuseFileError(exc.code, exc.reason, exc.location) from None
     except Exception:
         raise LangfuseFileError("INTERNAL_ERROR", "LANGFUSE_AUTO_RESULT_INVALID") from None
     sources = cast(dict[str, dict[str, object]], counted["sources"])
     report = {
-        "schema": ACCOUNTING_SCHEMA,
+        "schema": SCORE_SOURCE_SCHEMA if view == "score-source" else ACCOUNTING_SCHEMA,
         **counted,
         "sources": {
             "observations": {**sources["observations"], "raw_hash": digest_bytes(observations)},
@@ -94,7 +100,7 @@ def _audit(
         },
     }
     _checked(full_validator, report)
-    if view == "accounting":
+    if view in ("accounting", "score-source"):
         return report
     try:
         selected = {"schema": ROW_INDEX_SCHEMA, **index_langfuse_compatible(report)}

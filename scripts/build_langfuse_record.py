@@ -17,13 +17,19 @@ else:
 from underwrite.cli.record_langfuse import (
     AUTO_RECORD_SCHEMA,
     ROW_RECORD_SCHEMA,
+    SCORE_SOURCE_RECORD_SCHEMA,
 )
-from underwrite.instrument.evidence.langfuse_compat import ACCOUNTING_SCHEMA, ROW_INDEX_SCHEMA
+from underwrite.instrument.evidence.langfuse_compat import (
+    ACCOUNTING_SCHEMA,
+    ROW_INDEX_SCHEMA,
+    SCORE_SOURCE_SCHEMA,
+)
 from underwrite.instrument.ingest.application import DEFAULT_MAX_BYTES
 
 ROOT = Path(__file__).resolve().parents[1]
 AUTO_TARGET = ROOT / f"contracts/{AUTO_RECORD_SCHEMA}.schema.json"
 ROW_TARGET = ROOT / f"contracts/{ROW_RECORD_SCHEMA}.schema.json"
+SCORE_SOURCE_TARGET = ROOT / f"contracts/{SCORE_SOURCE_RECORD_SCHEMA}.schema.json"
 RECORD_OWNERS = ("evidence_error", "record_error", "record_verification")
 
 
@@ -225,6 +231,18 @@ def build_row_schema() -> dict[str, Any]:
     )
 
 
+def build_score_source_schema() -> dict[str, Any]:
+    """Compose score-source capture from the selected aggregate owner."""
+    return _build_schema(
+        SCORE_SOURCE_RECORD_SCHEMA,
+        SCORE_SOURCE_SCHEMA,
+        "Declared Langfuse score-source coverage and whole-file private capture outcomes. "
+        "The complete selected originals are retained, including possible headers and text. "
+        "Stored-byte verification is not producer authentication or approval. "
+        "Null published_record means no returned identity, not proven absence.",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
@@ -232,6 +250,7 @@ def main() -> int:
     targets = (
         (AUTO_TARGET, build_auto_schema()),
         (ROW_TARGET, build_row_schema()),
+        (SCORE_SOURCE_TARGET, build_score_source_schema()),
     )
     for target, schema in targets:
         raw = (json.dumps(schema, ensure_ascii=False, indent=2) + "\n").encode()

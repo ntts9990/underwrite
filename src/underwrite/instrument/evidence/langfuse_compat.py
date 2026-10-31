@@ -37,6 +37,8 @@ from underwrite.instrument.evidence.langfuse_row_index import (
 AUTO_PROFILE = "auto"
 ACCOUNTING_SCHEMA = "langfuse_accounting.v2"
 ROW_INDEX_SCHEMA = "langfuse_row_index.v2"
+SCORE_SOURCE_SCHEMA = "langfuse_score_source_summary.v1"
+SCORE_SOURCE_RULE_PROFILE = "langfuse.score-source.v1"
 BLOB_READER = "langfuse.blob-array.selected-fields.v1"
 CLI_READER = "langfuse.cli-list.selected-fields.v1"
 READERS = (BLOB_READER, CLI_READER)
@@ -109,6 +111,33 @@ EXTRA_LIMITATIONS = (
     "SELECTED_FIELDS_ONLY",
     "SOURCE_WINDOWS_UNKNOWN",
     "SOURCE_HASHES_AND_ROW_PATTERNS_LINKABLE",
+)
+SCORE_SOURCE_CLASSES = ("API", "ANNOTATION", "EVAL")
+SCORE_SOURCE_UNKNOWN_REASONS = ("missing", "null", "unrecognized")
+SCORE_SOURCE_SCOPE = MappingProxyType(
+    {
+        "population": "supplied_rows",
+        "selected_file_binding": "independent_selected_files",
+        "export_completeness": "unknown",
+        "source_windows": "unknown",
+        "score_sources": "source_claim",
+        "claims_verified": False,
+    }
+)
+SCORE_SOURCE_LIMITATIONS = (
+    "SOURCE_CLAIMS_UNVERIFIED",
+    "SELECTED_FILES_NOT_ATOMICALLY_BOUND",
+    "SELECTED_FIELDS_ONLY",
+    "EXPORT_COMPLETENESS_UNKNOWN",
+    "SOURCE_WINDOWS_UNKNOWN",
+    "SCORE_CONTENT_WITHHELD",
+    "SOURCE_HASHES_LINKABLE",
+    "NO_ACTOR_OR_EVALUATOR_VERIFICATION",
+    "NO_TASK_VERDICT_OR_APPROVAL_AUTHORITY",
+)
+SCORE_SOURCE_NEXT_ACTIONS = (
+    "VERIFY_PRODUCING_ACTOR_AND_CONFIGURATION_IF_DECISION_REQUIRES_IT",
+    "REQUEST_SUPPORTED_COMPLETE_SCORE_SOURCE_DECLARATION",
 )
 
 
@@ -208,8 +237,39 @@ def extended_limitations(values: object) -> list[str]:
     return [*original, *(name for name in EXTRA_LIMITATIONS if name not in original)]
 
 
-def account_langfuse_compatible(observations: object, scores: object) -> dict[str, object]:
+def _score_source_counts(scores: object, reader: str) -> dict[str, object]:
+    """Count only source classes in the bounded rows already decoded by the caller."""
+    if reader == BLOB_READER:
+        rows = cast(list[object], scores)
+    else:
+        document = cast(dict[str, object], scores)
+        body = cast(dict[str, object], document.get("body", document))
+        rows = cast(list[object], body["data"])
+    known: dict[str, int] = dict.fromkeys(SCORE_SOURCE_CLASSES, 0)
+    unknown: dict[str, int] = dict.fromkeys(SCORE_SOURCE_UNKNOWN_REASONS, 0)
+    for index, value in enumerate(rows):
+        row = cast(dict[str, object], value)
+        if "source" not in row:
+            unknown["missing"] += 1
+        elif row["source"] is None:
+            unknown["null"] += 1
+        elif type(row["source"]) is not str:
+            raise LangfuseAccountingError(
+                "INVALID_INPUT", "LANGFUSE_SCORE_SOURCE_INVALID", f"/scores/{index}/source"
+            )
+        elif row["source"] in SCORE_SOURCE_CLASSES:
+            known[cast(str, row["source"])] += 1
+        else:
+            unknown["unrecognized"] += 1
+    return {"known": known, "unknown": unknown}
+
+
+def account_langfuse_compatible(
+    observations: object, scores: object, *, view: str = "accounting"
+) -> dict[str, object]:
     """Choose a wire family from both containers, then account selected rows once."""
+    if view not in ("accounting", "score-source"):
+        raise _error("LANGFUSE_AUTO_VIEW_UNSUPPORTED", "/view")
     observation_mode = _mode(observations, "observations")
     score_mode = _mode(scores, "scores")
     if observation_mode != score_mode:
@@ -233,18 +293,33 @@ def account_langfuse_compatible(observations: object, scores: object) -> dict[st
             _selected_cli(observations, "observations"),
             _selected_cli(scores, "scores"),
         )
+    sources = {
+        role: {
+            "format": SOURCE_FORMATS[reader][role],
+            "producer_version": None,
+            "producer_version_state": "unknown",
+            "claims_verified": False,
+        }
+        for role in ROLES
+    }
+    if view == "score-source":
+        counts = _score_source_counts(scores, reader)
+        actions = [SCORE_SOURCE_NEXT_ACTIONS[0]]
+        if any(cast(dict[str, int], counts["unknown"]).values()):
+            actions.append(SCORE_SOURCE_NEXT_ACTIONS[1])
+        return {
+            "reader_profile": reader,
+            "source_rule_profile": SCORE_SOURCE_RULE_PROFILE,
+            "sources": sources,
+            "scope": dict(SCORE_SOURCE_SCOPE),
+            "counts": counts,
+            "limitations": list(SCORE_SOURCE_LIMITATIONS),
+            "next_actions": actions,
+        }
     scope = cast(dict[str, object], counted["scope"])
     return {
         "reader_profile": reader,
-        "sources": {
-            role: {
-                "format": SOURCE_FORMATS[reader][role],
-                "producer_version": None,
-                "producer_version_state": "unknown",
-                "claims_verified": False,
-            }
-            for role in ROLES
-        },
+        "sources": sources,
         **counted,
         "scope": {**scope, **EXTRA_SCOPE},
         "limitations": extended_limitations(counted["limitations"]),

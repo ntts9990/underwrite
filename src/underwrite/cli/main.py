@@ -56,6 +56,9 @@ from underwrite.instrument.evidence.langfuse_compat import (
 )
 from underwrite.instrument.evidence.langfuse_compat import AUTO_PROFILE as LANGFUSE_AUTO_PROFILE
 from underwrite.instrument.evidence.langfuse_compat import ROW_INDEX_SCHEMA as LANGFUSE_ROW_SCHEMA
+from underwrite.instrument.evidence.langfuse_compat import (
+    SCORE_SOURCE_SCHEMA as LANGFUSE_SCORE_SOURCE_SCHEMA,
+)
 from underwrite.instrument.evidence.promptfoo_compat import (
     ACCOUNTING_SCHEMA as PROMPTFOO_AUTO_ACCOUNTING_SCHEMA,
 )
@@ -283,6 +286,12 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 (record_langfuse.ROW_RECORD_SCHEMA,),
             ),
             profile(
+                "audit-langfuse|score-source",
+                ("observations", "scores", "view", "root", "id"),
+                (),
+                (record_langfuse.SCORE_SOURCE_RECORD_SCHEMA,),
+            ),
+            profile(
                 "measure",
                 ("observation", "policy", "root", "id"),
                 ("observation.v1", "measurement_policy.v3"),
@@ -351,6 +360,12 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 ("observations", "scores", "view"),
                 (),
                 (LANGFUSE_ROW_SCHEMA,),
+            ),
+            profile(
+                f"{LANGFUSE_AUTO_PROFILE}|score-source",
+                ("observations", "scores", "view"),
+                (),
+                (LANGFUSE_SCORE_SOURCE_SCHEMA,),
             ),
         ),
         _standalone(audit_langfuse.main),

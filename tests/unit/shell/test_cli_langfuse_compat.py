@@ -18,6 +18,7 @@ from underwrite.instrument.evidence.langfuse_compat import (
     BLOB_READER,
     CLI_READER,
     ROW_INDEX_SCHEMA,
+    SCORE_SOURCE_SCHEMA,
 )
 from underwrite.instrument.ingest import langfuse_accounting as adapter
 from underwrite.instrument.ingest import langfuse_compat as auto_adapter
@@ -99,6 +100,68 @@ def test_no_profile_row_index_keeps_family_counts_without_source_content(
     assert "value" not in row["score_rows"][0]
     for private in ("score-1", "synthetic review", "underwrite-capture-project"):
         assert private not in stdout
+
+
+@pytest.mark.parametrize("family", ["blob", "cli"])
+def test_score_source_view_counts_claimed_classes_without_private_fields(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], family: str
+) -> None:
+    observations, original_scores = PAIRS[family]
+    score_document: Any = json.loads(original_scores.read_bytes())
+    score_rows: list[dict[str, Any]] = (
+        score_document if family == "blob" else score_document["body"]["data"]
+    )
+    for row, source in zip(
+        score_rows, ("API", "ANNOTATION", "EVAL", None, "PRIVATE_UNKNOWN_SOURCE"), strict=True
+    ):
+        row["source"] = source
+    del score_rows[3]["source"]
+    score_rows[0]["metadata"] = {"private": "PRIVATE_PROVENANCE_CANARY"}
+    score_rows[0]["author_user_id"] = "PRIVATE_REVIEWER_CANARY"
+    scores = tmp_path / "scores.json"
+    scores.write_text(json.dumps(score_document), encoding="utf-8")
+
+    code, report, stdout, stderr = _invoke(
+        capsys, observations, scores, "--view", "score-source"
+    )
+    assert code == 0 and stderr == ""
+    assert report["schema"] == SCORE_SOURCE_SCHEMA
+    counts = report["counts"]
+    assert sum(counts["known"].values()) + sum(counts["unknown"].values()) == len(score_rows)
+    assert counts["known"] == {"API": 1, "ANNOTATION": 1, "EVAL": 1}
+    assert counts["unknown"] == {
+        "missing": 1, "null": 0, "unrecognized": 1
+    }
+    assert report["scope"]["score_sources"] == "source_claim"
+    assert report["scope"]["claims_verified"] is False
+    assert report["sources"]["scores"]["raw_hash"] == digest_bytes(scores.read_bytes())
+    assert report == adapter.audit_langfuse_bytes(
+        observations.read_bytes(), scores.read_bytes(), view="score-source"
+    )
+    assert report == adapter.audit_langfuse_files(observations, scores, view="score-source")
+    packaged_validator(SCORE_SOURCE_SCHEMA).validate(report)  # pyright: ignore[reportUnknownMemberType]
+    for private in (
+        "PRIVATE_UNKNOWN_SOURCE", "PRIVATE_PROVENANCE_CANARY", "PRIVATE_REVIEWER_CANARY",
+        score_rows[0]["id"], score_rows[0]["name"],
+    ):
+        assert private not in stdout
+
+
+def test_score_source_view_refuses_non_string_without_echo(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    score_document: list[dict[str, Any]] = json.loads(PAIRS["blob"][1].read_bytes())
+    score_document[0]["source"] = {"private": "PRIVATE_SOURCE_CANARY"}
+    scores = tmp_path / "scores.json"
+    scores.write_text(json.dumps(score_document), encoding="utf-8")
+    code, error, stdout, stderr = _invoke(
+        capsys, PAIRS["blob"][0], scores, "--view", "score-source"
+    )
+    assert code == ERROR_EXIT and stdout == ""
+    assert error["code"] == "INVALID_INPUT"
+    assert error["reason"] == "LANGFUSE_SCORE_SOURCE_INVALID"
+    assert error["location"] == "/scores/0/source"
+    assert "PRIVATE_SOURCE_CANARY" not in stderr
 
 
 @pytest.mark.parametrize(

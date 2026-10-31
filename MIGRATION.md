@@ -207,6 +207,14 @@ identity. Promptfoo v2 accounting no longer emits the legacy
 blob/CLI branches and collection scope. Review the versioned schema before
 assuming a field from the old report is still present.
 
+The opt-in `audit-langfuse --view score-source` reports only aggregate,
+producer-declared score-source categories in `langfuse_score_source_summary.v1`.
+The matching `records audit-langfuse --view score-source` stores that analysis in
+`langfuse_score_source_record.v1` while retaining both complete private input
+files. Default accounting, row-index outputs, and existing records retain their
+original contracts and bytes; optional Langfuse score metadata and provenance
+identifiers are not interpreted by this view.
+
 `compare-declarations` still requires `promptfoo_accounting.v1` for both inputs
 and a digest-bound `declared_comparison_case.v1` manifest. Use an appropriate
 explicit historical selector to produce those reports, then bind the actual new

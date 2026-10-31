@@ -246,3 +246,89 @@ def test_unknown_reader_cannot_be_projected_to_a_row_contract() -> None:
     with pytest.raises(LangfuseAccountingError) as caught:
         index_langfuse_compatible({"reader_profile": "PRIVATE_CANARY"})
     assert caught.value.location == "/reader_profile"
+
+
+@pytest.mark.parametrize("family", ["blob", "cli"])
+def test_score_source_tally_preserves_existing_pure_views(family: str) -> None:
+    observations, scores = _pair(family)
+    original_full = _account(observations, scores)
+    original_rows = index_langfuse_compatible(original_full)
+    selected = scores if family == "blob" else scores["body"]["data"]
+    for row, source in zip(
+        selected,
+        ("API", "ANNOTATION", "EVAL", None, "PRIVATE_UNKNOWN_SOURCE"),
+        strict=True,
+    ):
+        row["source"] = source
+    del selected[3]["source"]
+
+    changed_full = _account(observations, scores)
+    changed_rows = index_langfuse_compatible(changed_full)
+    assert changed_full == original_full
+    assert changed_rows == original_rows
+    selected[3]["source"] = None
+    assert _account(observations, scores) == original_full
+
+
+@pytest.mark.parametrize("family", ["blob", "cli"])
+def test_score_source_view_counts_classes_and_unknown_reasons_without_rows(family: str) -> None:
+    observations, scores = _pair(family)
+    selected = scores if family == "blob" else scores["body"]["data"]
+    selected[0]["source"] = "API"
+    selected[1]["source"] = "ANNOTATION"
+    selected[2]["source"] = "EVAL"
+    del selected[3]["source"]
+    selected[4]["source"] = "PRIVATE_UNKNOWN_SOURCE"
+
+    report = account_langfuse_compatible(observations, scores, view="score-source")
+    counts = cast(dict[str, Any], report["counts"])
+    assert sum(counts["known"].values()) + sum(counts["unknown"].values()) == len(selected)
+    assert counts["known"] == {
+        "API": 1,
+        "ANNOTATION": 1,
+        "EVAL": 1,
+    }
+    assert counts["unknown"] == {
+        "missing": 1,
+        "null": 0,
+        "unrecognized": 1,
+    }
+    assert report["next_actions"] == [
+        "VERIFY_PRODUCING_ACTOR_AND_CONFIGURATION_IF_DECISION_REQUIRES_IT",
+        "REQUEST_SUPPORTED_COMPLETE_SCORE_SOURCE_DECLARATION",
+    ]
+    serialized = json.dumps(report)
+    for private in ("PRIVATE_UNKNOWN_SOURCE", selected[0]["id"], selected[0]["name"]):
+        assert private not in serialized
+
+
+@pytest.mark.parametrize("family", ["blob", "cli"])
+def test_score_source_view_with_complete_known_classes_has_no_declaration_request(
+    family: str,
+) -> None:
+    observations, scores = _pair(family)
+    selected = scores if family == "blob" else scores["body"]["data"]
+    for index, row in enumerate(selected):
+        row["source"] = ("API", "ANNOTATION", "EVAL")[index % 3]
+
+    report = account_langfuse_compatible(observations, scores, view="score-source")
+    counts = cast(dict[str, Any], report["counts"])
+    assert sum(counts["known"].values()) == len(selected)
+    assert all(value == 0 for value in counts["unknown"].values())
+    assert report["next_actions"] == [
+        "VERIFY_PRODUCING_ACTOR_AND_CONFIGURATION_IF_DECISION_REQUIRES_IT"
+    ]
+
+
+@pytest.mark.parametrize("family", ["blob", "cli"])
+@pytest.mark.parametrize("source", [False, 0, [], {}])
+def test_score_source_view_refuses_non_string_source_at_row_path(
+    family: str, source: object
+) -> None:
+    observations, scores = _pair(family)
+    selected = scores if family == "blob" else scores["body"]["data"]
+    selected[0]["source"] = source
+    with pytest.raises(LangfuseAccountingError) as caught:
+        account_langfuse_compatible(observations, scores, view="score-source")
+    assert caught.value.location == "/scores/0/source"
+    assert caught.value.code in {"INVALID_INPUT", "UNSUPPORTED_PROFILE"}

@@ -1,0 +1,506 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "reader_profile",
+    "source_rule_profile",
+    "sources",
+    "scope",
+    "counts",
+    "limitations",
+    "next_actions"
+  ],
+  "properties": {
+    "schema": {
+      "const": "langfuse_score_source_summary.v1"
+    },
+    "reader_profile": {
+      "enum": [
+        "langfuse.blob-array.selected-fields.v1",
+        "langfuse.cli-list.selected-fields.v1"
+      ]
+    },
+    "source_rule_profile": {
+      "const": "langfuse.score-source.v1"
+    },
+    "sources": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "observations",
+            "scores"
+          ],
+          "properties": {
+            "observations": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "format",
+                "raw_hash",
+                "producer_version",
+                "producer_version_state",
+                "claims_verified"
+              ],
+              "properties": {
+                "format": {
+                  "const": "langfuse.observations-v2"
+                },
+                "raw_hash": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}(?![\\s\\S])"
+                },
+                "producer_version": {
+                  "type": "null"
+                },
+                "producer_version_state": {
+                  "const": "unknown"
+                },
+                "claims_verified": {
+                  "const": false
+                }
+              }
+            },
+            "scores": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "format",
+                "raw_hash",
+                "producer_version",
+                "producer_version_state",
+                "claims_verified"
+              ],
+              "properties": {
+                "format": {
+                  "const": "langfuse.scores"
+                },
+                "raw_hash": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}(?![\\s\\S])"
+                },
+                "producer_version": {
+                  "type": "null"
+                },
+                "producer_version_state": {
+                  "const": "unknown"
+                },
+                "claims_verified": {
+                  "const": false
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "observations",
+            "scores"
+          ],
+          "properties": {
+            "observations": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "format",
+                "raw_hash",
+                "producer_version",
+                "producer_version_state",
+                "claims_verified"
+              ],
+              "properties": {
+                "format": {
+                  "const": "langfuse.cli.observations-v2"
+                },
+                "raw_hash": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}(?![\\s\\S])"
+                },
+                "producer_version": {
+                  "type": "null"
+                },
+                "producer_version_state": {
+                  "const": "unknown"
+                },
+                "claims_verified": {
+                  "const": false
+                }
+              }
+            },
+            "scores": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "format",
+                "raw_hash",
+                "producer_version",
+                "producer_version_state",
+                "claims_verified"
+              ],
+              "properties": {
+                "format": {
+                  "const": "langfuse.cli.scores-v3"
+                },
+                "raw_hash": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}(?![\\s\\S])"
+                },
+                "producer_version": {
+                  "type": "null"
+                },
+                "producer_version_state": {
+                  "const": "unknown"
+                },
+                "claims_verified": {
+                  "const": false
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "population",
+        "selected_file_binding",
+        "export_completeness",
+        "source_windows",
+        "score_sources",
+        "claims_verified"
+      ],
+      "properties": {
+        "population": {
+          "const": "supplied_rows"
+        },
+        "selected_file_binding": {
+          "const": "independent_selected_files"
+        },
+        "export_completeness": {
+          "const": "unknown"
+        },
+        "source_windows": {
+          "const": "unknown"
+        },
+        "score_sources": {
+          "const": "source_claim"
+        },
+        "claims_verified": {
+          "const": false
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "known",
+        "unknown"
+      ],
+      "properties": {
+        "known": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "API",
+            "ANNOTATION",
+            "EVAL"
+          ],
+          "properties": {
+            "API": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2048
+            },
+            "ANNOTATION": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2048
+            },
+            "EVAL": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2048
+            }
+          }
+        },
+        "unknown": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "missing",
+            "null",
+            "unrecognized"
+          ],
+          "properties": {
+            "missing": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2048
+            },
+            "null": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2048
+            },
+            "unrecognized": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2048
+            }
+          }
+        }
+      }
+    },
+    "limitations": {
+      "const": [
+        "SOURCE_CLAIMS_UNVERIFIED",
+        "SELECTED_FILES_NOT_ATOMICALLY_BOUND",
+        "SELECTED_FIELDS_ONLY",
+        "EXPORT_COMPLETENESS_UNKNOWN",
+        "SOURCE_WINDOWS_UNKNOWN",
+        "SCORE_CONTENT_WITHHELD",
+        "SOURCE_HASHES_LINKABLE",
+        "NO_ACTOR_OR_EVALUATOR_VERIFICATION",
+        "NO_TASK_VERDICT_OR_APPROVAL_AUTHORITY"
+      ]
+    },
+    "next_actions": {
+      "oneOf": [
+        {
+          "const": [
+            "VERIFY_PRODUCING_ACTOR_AND_CONFIGURATION_IF_DECISION_REQUIRES_IT"
+          ]
+        },
+        {
+          "const": [
+            "VERIFY_PRODUCING_ACTOR_AND_CONFIGURATION_IF_DECISION_REQUIRES_IT",
+            "REQUEST_SUPPORTED_COMPLETE_SCORE_SOURCE_DECLARATION"
+          ]
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:langfuse_score_source_summary.v1",
+  "title": "langfuse_score_source_summary.v1",
+  "description": "Aggregate score source classes in independently selected Langfuse files. Source labels are producer claims; hashes bind selected bytes but do not authenticate actors, execution, completeness, task verdicts, or approval.",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "reader_profile": {
+            "const": "langfuse.blob-array.selected-fields.v1"
+          }
+        },
+        "required": [
+          "reader_profile"
+        ]
+      },
+      "then": {
+        "properties": {
+          "sources": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "observations",
+              "scores"
+            ],
+            "properties": {
+              "observations": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "format",
+                  "raw_hash",
+                  "producer_version",
+                  "producer_version_state",
+                  "claims_verified"
+                ],
+                "properties": {
+                  "format": {
+                    "const": "langfuse.observations-v2"
+                  },
+                  "raw_hash": {
+                    "type": "string",
+                    "pattern": "^sha256:[a-f0-9]{64}(?![\\s\\S])"
+                  },
+                  "producer_version": {
+                    "type": "null"
+                  },
+                  "producer_version_state": {
+                    "const": "unknown"
+                  },
+                  "claims_verified": {
+                    "const": false
+                  }
+                }
+              },
+              "scores": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "format",
+                  "raw_hash",
+                  "producer_version",
+                  "producer_version_state",
+                  "claims_verified"
+                ],
+                "properties": {
+                  "format": {
+                    "const": "langfuse.scores"
+                  },
+                  "raw_hash": {
+                    "type": "string",
+                    "pattern": "^sha256:[a-f0-9]{64}(?![\\s\\S])"
+                  },
+                  "producer_version": {
+                    "type": "null"
+                  },
+                  "producer_version_state": {
+                    "const": "unknown"
+                  },
+                  "claims_verified": {
+                    "const": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "reader_profile": {
+            "const": "langfuse.cli-list.selected-fields.v1"
+          }
+        },
+        "required": [
+          "reader_profile"
+        ]
+      },
+      "then": {
+        "properties": {
+          "sources": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "observations",
+              "scores"
+            ],
+            "properties": {
+              "observations": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "format",
+                  "raw_hash",
+                  "producer_version",
+                  "producer_version_state",
+                  "claims_verified"
+                ],
+                "properties": {
+                  "format": {
+                    "const": "langfuse.cli.observations-v2"
+                  },
+                  "raw_hash": {
+                    "type": "string",
+                    "pattern": "^sha256:[a-f0-9]{64}(?![\\s\\S])"
+                  },
+                  "producer_version": {
+                    "type": "null"
+                  },
+                  "producer_version_state": {
+                    "const": "unknown"
+                  },
+                  "claims_verified": {
+                    "const": false
+                  }
+                }
+              },
+              "scores": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "format",
+                  "raw_hash",
+                  "producer_version",
+                  "producer_version_state",
+                  "claims_verified"
+                ],
+                "properties": {
+                  "format": {
+                    "const": "langfuse.cli.scores-v3"
+                  },
+                  "raw_hash": {
+                    "type": "string",
+                    "pattern": "^sha256:[a-f0-9]{64}(?![\\s\\S])"
+                  },
+                  "producer_version": {
+                    "type": "null"
+                  },
+                  "producer_version_state": {
+                    "const": "unknown"
+                  },
+                  "claims_verified": {
+                    "const": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "counts": {
+            "properties": {
+              "unknown": {
+                "properties": {
+                  "missing": {
+                    "const": 0
+                  },
+                  "null": {
+                    "const": 0
+                  },
+                  "unrecognized": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "next_actions": {
+            "const": [
+              "VERIFY_PRODUCING_ACTOR_AND_CONFIGURATION_IF_DECISION_REQUIRES_IT"
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "next_actions": {
+            "const": [
+              "VERIFY_PRODUCING_ACTOR_AND_CONFIGURATION_IF_DECISION_REQUIRES_IT",
+              "REQUEST_SUPPORTED_COMPLETE_SCORE_SOURCE_DECLARATION"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

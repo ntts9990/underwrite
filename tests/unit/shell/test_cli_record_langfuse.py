@@ -86,6 +86,55 @@ def test_same_buffer_capture_survives_original_mutation_and_independent_read(
     assert str(tmp_path) not in canonical_bytes(result).decode()
 
 
+def test_score_source_record_retains_same_private_bytes_and_minimized_analysis(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths, store = inputs(tmp_path), tmp_path / "store"
+    scores = json.loads(paths["scores"].read_bytes())
+    scores[0]["source"] = "EVAL"
+    scores[0]["metadata"] = {"private": "PRIVATE_METADATA_CANARY"}
+    scores[0]["evaluator_id"] = "PRIVATE_EVALUATOR_CANARY"
+    scores[1]["source"] = "ANNOTATION"
+    scores[2]["source"] = "PRIVATE_UNKNOWN_SOURCE"
+    paths["scores"].write_text(json.dumps(scores), encoding="utf-8")
+    originals = {role: path.read_bytes() for role, path in paths.items()}
+    actual_read = command.read_langfuse_file
+    reads: list[str] = []
+
+    def read(path: Path, role: str) -> bytes:
+        reads.append(role)
+        raw = actual_read(path, role)
+        path.unlink()
+        return raw
+
+    monkeypatch.setattr(command, "read_langfuse_file", read)
+    result = command.run_record_langfuse(
+        paths["observations"], paths["scores"], store, "sample", view="score-source"
+    )
+    assert reads == ["observations", "scores"]
+    assert result["schema"] == "langfuse_score_source_record.v1"
+    analysis_state = cast(dict[str, Any], result["analysis"])
+    storage_state = cast(dict[str, Any], result["storage"])
+    assert analysis_state["state"] == "result"
+    assert storage_state["state"] == "saved"
+    analysis = cast(dict[str, Any], analysis_state["report"])
+    assert analysis["schema"] == "langfuse_score_source_summary.v1"
+    counts = cast(dict[str, Any], analysis["counts"])
+    assert counts["known"] == {"API": 2, "ANNOTATION": 1, "EVAL": 1}
+    assert counts["unknown"] == {"missing": 0, "null": 0, "unrecognized": 1}
+    for private in (
+        "PRIVATE_METADATA_CANARY",
+        "PRIVATE_EVALUATOR_CANARY",
+        "PRIVATE_UNKNOWN_SOURCE",
+    ):
+        assert private not in canonical_bytes(analysis).decode()
+    retained = records.read_record_file(store, "sample", "analysis/score-source.json")
+    assert json.loads(retained.data) == analysis
+    for role, raw in originals.items():
+        assert records.read_record_file(store, "sample", f"source/{role}.bin").data == raw
+    assert records.verify_record(store, "sample")["valid"] is True
+
+
 @pytest.mark.parametrize(
     "missing", [(), ("observations",), ("scores",), ("observations", "scores")]
 )

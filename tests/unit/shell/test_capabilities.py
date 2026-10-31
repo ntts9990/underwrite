@@ -348,6 +348,25 @@ def test_langfuse_auto_capabilities_need_no_profile_and_run_both_families(
     assert saved["storage"]["state"] == "saved"
 
 
+def test_langfuse_score_source_capabilities_are_opt_in_and_recordable(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main.main(["capabilities", "--json"]) == 0
+    commands = {row["command"]: row for row in json.loads(capsys.readouterr().out)["commands"]}
+    direct = next(
+        row for row in commands["audit-langfuse"]["profiles"]
+        if row["name"] == "auto|score-source"
+    )
+    record = next(
+        row for row in commands["records"]["profiles"]
+        if row["name"] == "audit-langfuse|score-source"
+    )
+    assert direct["required_inputs"] == ["observations", "scores", "view"]
+    assert direct["output_schemas"] == ["langfuse_score_source_summary.v1"]
+    assert record["required_inputs"] == ["observations", "scores", "view", "root", "id"]
+    assert record["output_schemas"] == ["langfuse_score_source_record.v1"]
+
+
 def test_help_and_dispatch_names_come_from_each_descriptor(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
