@@ -1,0 +1,160 @@
+{
+  "schema": "underwrite.legacy_trajectory_records_prechange.v1",
+  "source_commit": "89594225f505ffd4101b16a52b54237ad4f1bc87",
+  "archive": {
+    "name": "legacy-records-v1.tar.gz",
+    "bytes": 84633,
+    "sha256": "sha256:2abac1d0eba265f291ae395a8f995751ffb403e8cdbada68f4a452fcf9ddc272"
+  },
+  "tar_members": {
+    ".staging": "directory",
+    "records": "directory",
+    "records/legacy.diagnostic.v1": "directory",
+    "records/legacy.diagnostic.v1/files": "directory",
+    "records/legacy.diagnostic.v1/files/analysis": "directory",
+    "records/legacy.diagnostic.v1/files/analysis/error.json": "file",
+    "records/legacy.diagnostic.v1/files/invocation.json": "file",
+    "records/legacy.diagnostic.v1/files/source": "directory",
+    "records/legacy.diagnostic.v1/files/source/paired": "directory",
+    "records/legacy.diagnostic.v1/files/source/paired/execution.json": "file",
+    "records/legacy.diagnostic.v1/files/source/paired/manifest.json": "file",
+    "records/legacy.diagnostic.v1/files/source/paired/rows.jsonl": "file",
+    "records/legacy.diagnostic.v1/files/source/paired/schema.json": "file",
+    "records/legacy.diagnostic.v1/files/source/trajectory": "directory",
+    "records/legacy.diagnostic.v1/files/source/trajectory/manifest.json": "file",
+    "records/legacy.diagnostic.v1/files/source/trajectory/schema.json": "file",
+    "records/legacy.diagnostic.v1/files/source/trajectory/trajectory.json": "file",
+    "records/legacy.diagnostic.v1/files/verification": "directory",
+    "records/legacy.diagnostic.v1/files/verification/history.json": "file",
+    "records/legacy.diagnostic.v1/manifest.json": "file",
+    "records/legacy.v1": "directory",
+    "records/legacy.v1/files": "directory",
+    "records/legacy.v1/files/analysis": "directory",
+    "records/legacy.v1/files/analysis/trajectory.json": "file",
+    "records/legacy.v1/files/invocation.json": "file",
+    "records/legacy.v1/files/source": "directory",
+    "records/legacy.v1/files/source/paired": "directory",
+    "records/legacy.v1/files/source/paired/execution.json": "file",
+    "records/legacy.v1/files/source/paired/manifest.json": "file",
+    "records/legacy.v1/files/source/paired/rows.jsonl": "file",
+    "records/legacy.v1/files/source/paired/schema.json": "file",
+    "records/legacy.v1/files/source/trajectory": "directory",
+    "records/legacy.v1/files/source/trajectory/manifest.json": "file",
+    "records/legacy.v1/files/source/trajectory/schema.json": "file",
+    "records/legacy.v1/files/source/trajectory/trajectory.json": "file",
+    "records/legacy.v1/files/verification": "directory",
+    "records/legacy.v1/files/verification/history.json": "file",
+    "records/legacy.v1/manifest.json": "file"
+  },
+  "records": {
+    "legacy.v1": {
+      "analysis_state": "result",
+      "history_state": "verified",
+      "files": {
+        "files/analysis/trajectory.json": {
+          "bytes": 207929,
+          "sha256": "sha256:acb8a4072aa0542f850827f6b2e0b91596ce2926e54babebad62a0c3f1a3a82f"
+        },
+        "files/invocation.json": {
+          "bytes": 180,
+          "sha256": "sha256:a8a34c9a9111d68b71c01b7a28d6f4d81d15612e3dccc2210ac672c9c1c5ba42"
+        },
+        "files/source/paired/execution.json": {
+          "bytes": 4595,
+          "sha256": "sha256:c84382fd7e9c9900f3074f50fee91a239969d4e1384c63a9bf3214f828979e54"
+        },
+        "files/source/paired/manifest.json": {
+          "bytes": 798,
+          "sha256": "sha256:d437983b3ced8fa3d63dfe35183ef8e6005506b65aa7f58b1081d064476e8074"
+        },
+        "files/source/paired/rows.jsonl": {
+          "bytes": 187384,
+          "sha256": "sha256:13c3e066e7ea45849f18118d0f81f0a49998d43adfbbfec7ac4b3541702ae554"
+        },
+        "files/source/paired/schema.json": {
+          "bytes": 12306,
+          "sha256": "sha256:0e76595668255eecea653090b66d9948626fa55a01c2f947c1b5463440fe1c81"
+        },
+        "files/source/trajectory/manifest.json": {
+          "bytes": 622,
+          "sha256": "sha256:350e037a4b56b0266e4712f1f73589c91cd228bb40bcbd77a984c1dded8a07c5"
+        },
+        "files/source/trajectory/schema.json": {
+          "bytes": 11253,
+          "sha256": "sha256:56501dee20f0b2afc28066c6d8a2b8af04dbe31d62b46bd26107377be66cd8dd"
+        },
+        "files/source/trajectory/trajectory.json": {
+          "bytes": 234824,
+          "sha256": "sha256:99d6d54ba2bbeb2309129d621cd87be52597ed5d08c5818f6394dc318f4aedbe"
+        },
+        "files/verification/history.json": {
+          "bytes": 1201,
+          "sha256": "sha256:2f8b538c1bcde0a673864cee8dfdb1f8e1842babb4a6ef536df5d2691c7c618f"
+        },
+        "manifest.json": {
+          "bytes": 2536,
+          "sha256": "sha256:3c1ec7799581a6e4696f3aa9468e6eff63ade21ced1da328deb12f2709eef01f"
+        }
+      }
+    },
+    "legacy.diagnostic.v1": {
+      "analysis_state": "error",
+      "history_state": "not_performed",
+      "files": {
+        "files/analysis/error.json": {
+          "bytes": 198,
+          "sha256": "sha256:b20a70b0d2c3158da6eacedb96a48e6325b9e0e934f2be2bafd83aae60d101c0"
+        },
+        "files/invocation.json": {
+          "bytes": 179,
+          "sha256": "sha256:e83ce7b8a94556c8a7e0c2cdc9e50d705fb2220633be26c6bb46b443d2621f2a"
+        },
+        "files/source/paired/execution.json": {
+          "bytes": 4595,
+          "sha256": "sha256:c84382fd7e9c9900f3074f50fee91a239969d4e1384c63a9bf3214f828979e54"
+        },
+        "files/source/paired/manifest.json": {
+          "bytes": 798,
+          "sha256": "sha256:d437983b3ced8fa3d63dfe35183ef8e6005506b65aa7f58b1081d064476e8074"
+        },
+        "files/source/paired/rows.jsonl": {
+          "bytes": 187384,
+          "sha256": "sha256:13c3e066e7ea45849f18118d0f81f0a49998d43adfbbfec7ac4b3541702ae554"
+        },
+        "files/source/paired/schema.json": {
+          "bytes": 12306,
+          "sha256": "sha256:0e76595668255eecea653090b66d9948626fa55a01c2f947c1b5463440fe1c81"
+        },
+        "files/source/trajectory/manifest.json": {
+          "bytes": 622,
+          "sha256": "sha256:350e037a4b56b0266e4712f1f73589c91cd228bb40bcbd77a984c1dded8a07c5"
+        },
+        "files/source/trajectory/schema.json": {
+          "bytes": 11253,
+          "sha256": "sha256:56501dee20f0b2afc28066c6d8a2b8af04dbe31d62b46bd26107377be66cd8dd"
+        },
+        "files/source/trajectory/trajectory.json": {
+          "bytes": 13,
+          "sha256": "sha256:9b60fca5ee82ffb9afc0d382b727815b0b0e70a096b08a1ccb82cc2ec8909066"
+        },
+        "files/verification/history.json": {
+          "bytes": 1156,
+          "sha256": "sha256:e2c333ca07f6a18d48475f88245fbee1a701c5f996c62bab0c46659fc8ec0bbb"
+        },
+        "manifest.json": {
+          "bytes": 2531,
+          "sha256": "sha256:491aab0613a300f2e19485d76b84d5997cee68c7c73374eefbc7c7d7f433b555"
+        }
+      }
+    }
+  },
+  "contracts": {
+    "goppi_trajectory_review.v1": "sha256:946bbf749acb448899bca0a5438ffc67c69c835a702cd60d38d79c9ae8a80775",
+    "goppi_trajectory_outcome_actions.v1": "sha256:c3ff3787340fc4cc2c8fb1c6709831375431ff1acb3f70ff10618cf50469af5c",
+    "trajectory_verification_history.v1": "sha256:5239384d9247ec2d6afa8f2629869cc7ed118850c9c701e140584f6e2e10e69c",
+    "trajectory_record.v1": "sha256:7f3fe0d78e79d76a3ab996ef7cc36802a1beef8fb41418b31c672e8c69825796",
+    "trajectory_record_read.v1": "sha256:5d522615096b1b597d4ddd7bf608125ba502398457f0853f6d211e9e21bde3f1",
+    "goppi_trajectory_verifier_response.v1": "sha256:94dbe84701934d5c567a891450a10e39cb1aabbb034473cc4b20cb3fca571a7c"
+  },
+  "historical_claim_warning": "Stored v1 verifier claims are not independent executable or closure authentication; preserve as historical data only."
+}
