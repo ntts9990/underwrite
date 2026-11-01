@@ -103,6 +103,20 @@ def test_ingest_capabilities_include_body_transport_locator_clause(
     assert all(row["required_inputs"] == required for row in catalog["codecs"])
 
 
+def test_handoff_record_profile_advertises_paired_record_options(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main.main(["capabilities", "--json"]) == 0
+    catalog = json.loads(capsys.readouterr().out)
+    command = next(item for item in catalog["commands"] if item["command"] == "review-handoff")
+    profiles = {item["name"]: item for item in command["profiles"]}
+    base = profiles["goppi.p7_regrade_consumer_handoff.v1"]
+    stored = profiles["goppi.p7_regrade_consumer_handoff.v1|record"]
+    assert base["required_inputs"] == ["handoff"]
+    assert stored["required_inputs"] == ["handoff", "record_root", "record_id"]
+    assert stored["output_schemas"] == base["output_schemas"] == ["paired_handoff_review.v1"]
+
+
 def test_outcome_actions_profile_advertises_direct_view_only(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

@@ -489,10 +489,16 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
         handoff_review.configure,
         (
             profile(
-                "goppi.p7_regrade_consumer_handoff.v1",
+                handoff_review.PROFILE,
                 ("handoff",),
                 (),
-                ("paired_handoff_review.v1",),
+                (handoff_review.RESULT_SCHEMA,),
+            ),
+            profile(
+                f"{handoff_review.PROFILE}|record",
+                handoff_review.RECORD_CAPABILITY_REQUIRED_INPUTS,
+                (),
+                (handoff_review.RESULT_SCHEMA,),
             ),
         ),
         _standalone(handoff_review.main),

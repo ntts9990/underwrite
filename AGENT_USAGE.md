@@ -1609,8 +1609,10 @@ cannot escape the root or traverse symlinks. This profile reads completed local
 artifacts; it never runs goppi, a model, the supplied verifier, or a producer schema.
 
 Add `--record-root /path/to/private-store --record-id review-001` to save the same
-captured bytes and generated results. The store parent must exist. No handwritten
-record specification is needed. Without those options, no store is created.
+captured bytes and generated results. The installed `|record` capability profile
+lists `handoff`, `record_root`, and `record_id` as required inputs. The store
+parent must exist. No handwritten record specification is needed. Without those
+options, no store is created.
 An existing ID is a conflict; it is never overwritten or treated as a new success.
 Analysis and storage have separate resource limits. A valid analysis can exceed
 the record file budget: requested storage then returns `INPUT_LIMIT_EXCEEDED`
