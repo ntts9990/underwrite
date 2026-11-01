@@ -412,9 +412,12 @@ score names, IDs and values; use the row index when those contents are unnecessa
 No custom query or producer execution is required.
 
 When the question is how supplied scores were **source-labeled**, select the
-capabilities-listed `--view score-source` on `audit-langfuse`. Its
-`langfuse_score_source_summary.v1` counts producer-declared `API`, `ANNOTATION`
-and `EVAL` scores and reports missing, null or unfamiliar strings as unknown.
+capabilities-listed `--view score-source` on `audit-langfuse` **from the current
+checkout**. Published `underwrite==0.2.0` does not offer this view; use its
+default accounting or row index for the questions those views support. The
+current checkout's `langfuse_score_source_summary.v1` counts producer-declared
+`API`, `ANNOTATION` and `EVAL` scores and reports missing, null or unfamiliar
+strings as unknown.
 The summary withholds score IDs, names, values, comments, metadata and optional
 provenance identifiers; selected-file hashes remain linkable. A source label is
 not proof of the actor, annotation review, evaluator execution or score truth.
@@ -458,10 +461,11 @@ underwrite records read-json --root /private/review-store --id langfuse.review-0
   --name analysis/accounting.json
 ```
 
-For an explicitly requested private `score-source` result, pass the same view
-to `records audit-langfuse` and read `analysis/score-source.json`. Its analysis
-is aggregate-only, but the private record still retains both entire originals,
-including any metadata and provenance identifiers they contain.
+Only the current checkout can retain an explicitly requested private
+`score-source` result: pass the same view to `records audit-langfuse` and read
+`analysis/score-source.json`. Published 0.2.0 does not offer this record view.
+The analysis is aggregate-only, but the private record still retains both entire
+originals, including any metadata and provenance identifiers they contain.
 
 This retains the entire selected files, including source content omitted from the
 accounting report. Analysis and storage use the same captured bytes; the two exports
