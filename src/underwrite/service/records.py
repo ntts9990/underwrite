@@ -11,6 +11,7 @@ from collections.abc import Callable, Generator, Iterable
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import partial
 from itertools import islice
 from pathlib import Path
 from typing import Final, NamedTuple, NoReturn, cast
@@ -723,50 +724,21 @@ def _checked_captured_spec(
     return checked, tuple(zip(checked_files, data, strict=True))
 
 
-def _capture_files(
+def _capture_outputs(
     record_dir: Path,
-    sources: list[tuple[dict[str, object], int, int]],
+    files: Iterable[
+        tuple[dict[str, object], Callable[[Path, int], tuple[int, str]]]
+    ],
     owned_files: list[Path],
     owned_dirs: list[Path],
 ) -> list[dict[str, object]]:
     stored: list[dict[str, object]] = []
     total = 0
     files_root = _files_root(record_dir, owned_dirs)
-    for item, descriptor, expected in sources:
+    for item, write_file in files:
         output = _ensure_output_parent(files_root, cast(str, item["name"]), owned_dirs)
         owned_files.append(output)
-        size, checksum = _copy_one(descriptor, expected, output, MAX_TOTAL_BYTES - total)
-        total += size
-        if total > MAX_TOTAL_BYTES:
-            raise RecordError("INPUT_LIMIT_EXCEEDED", "/spec/files")
-        stored.append(
-            {
-                "name": item["name"],
-                "role": item["role"],
-                "sha256": checksum,
-                "bytes": size,
-                "media_type": item["media_type"],
-                "source_locator": item["source_locator"],
-            }
-        )
-    for directory in sorted(owned_dirs, key=lambda item: len(item.parts), reverse=True):
-        _fsync_dir(directory)
-    return stored
-
-
-def _capture_bytes(
-    record_dir: Path,
-    files: tuple[tuple[dict[str, object], bytes], ...],
-    owned_files: list[Path],
-    owned_dirs: list[Path],
-) -> list[dict[str, object]]:
-    stored: list[dict[str, object]] = []
-    total = 0
-    files_root = _files_root(record_dir, owned_dirs)
-    for item, data in files:
-        output = _ensure_output_parent(files_root, cast(str, item["name"]), owned_dirs)
-        owned_files.append(output)
-        size, checksum = _write_bytes(data, output, MAX_TOTAL_BYTES - total)
+        size, checksum = write_file(output, MAX_TOTAL_BYTES - total)
         total += size
         stored.append(
             {
@@ -885,7 +857,15 @@ def save_record(root: Path, spec: object, source_base: Path) -> RecordSnapshot:
         def capture(
             record_dir: Path, owned_files: list[Path], owned_dirs: list[Path]
         ) -> list[dict[str, object]]:
-            return _capture_files(record_dir, sources, owned_files, owned_dirs)
+            return _capture_outputs(
+                record_dir,
+                (
+                    (item, partial(_copy_one, descriptor, expected))
+                    for item, descriptor, expected in sources
+                ),
+                owned_files,
+                owned_dirs,
+            )
 
         return _save_checked(root, checked, capture)
 
@@ -897,7 +877,12 @@ def save_captured_record(root: Path, spec: CapturedRecordSpec) -> RecordSnapshot
     def capture(
         record_dir: Path, owned_files: list[Path], owned_dirs: list[Path]
     ) -> list[dict[str, object]]:
-        return _capture_bytes(record_dir, files, owned_files, owned_dirs)
+        return _capture_outputs(
+            record_dir,
+            ((item, partial(_write_bytes, data)) for item, data in files),
+            owned_files,
+            owned_dirs,
+        )
 
     return _save_checked(root, checked, capture)
 
