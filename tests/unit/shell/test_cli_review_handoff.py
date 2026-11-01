@@ -9,12 +9,17 @@ from typing import Any, cast
 import pytest
 from drivers.goppi_p7_fixture import build_goppi_p7_fixture
 from jsonschema.exceptions import ValidationError
-from underwrite_core.canonical import canonical_bytes, content_digest
+from underwrite_core.canonical import canonical_bytes, content_digest, digest_bytes
 
 from underwrite.cli import handoff_review
 from underwrite.cli.local_json import Validator
 from underwrite.cli.main import main
-from underwrite.instrument.evidence.goppi_p7_handoff import HandoffMappingError
+from underwrite.instrument.evidence.goppi_p7_handoff import (
+    MAPPING_HANDOFF,
+    MAPPING_MANIFEST,
+    MAPPING_PROVENANCE,
+    HandoffMappingError,
+)
 from underwrite.instrument.evidence.paired_review import evaluate_paired_review
 from underwrite.instrument.ingest.schema import packaged_validator
 from underwrite.service.records import RECORD_MAX_FILES, RecordError, read_record, verify_record
@@ -66,6 +71,43 @@ def test_exact_review_reuses_existing_engine_once_without_store(
     assert report["storage"] == {"state": "not_requested"}
     assert {p.name for p in tmp_path.iterdir()} == {"source"}
     assert report["findings"][0]["code"] == "PRODUCER_POLICY_INCLUDED_FLAG_CONTRADICTION"
+
+
+def test_malformed_join_leaf_preserves_typed_error_through_cli(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fixture = build_goppi_p7_fixture()
+    provenance = fixture.documents.derivation_provenance
+    cast(dict[str, object], provenance["original_run"])["run_id"] = []
+    fixture.files[MAPPING_PROVENANCE] = canonical_bytes(provenance) + b"\n"
+
+    handoff = fixture.documents.handoff
+    entries = cast(dict[str, dict[str, object]], handoff["entry_files"])
+    entries["derivation_provenance"]["sha256"] = digest_bytes(fixture.files[MAPPING_PROVENANCE])
+    fixture.files[MAPPING_HANDOFF] = canonical_bytes(handoff) + b"\n"
+
+    manifest = fixture.documents.mapping_manifest
+    for item in cast(list[dict[str, object]], manifest["files"]):
+        logical = "mapping/" + cast(str, item["path"])
+        if logical in (MAPPING_PROVENANCE, MAPPING_HANDOFF):
+            item["sha256"] = digest_bytes(fixture.files[logical])
+            item["bytes"] = len(fixture.files[logical])
+    fixture.files[MAPPING_MANIFEST] = canonical_bytes(manifest) + b"\n"
+
+    source = tmp_path / "source"
+    handoff_dir = fixture.write(source)
+    code = main(
+        ["review-handoff", "--handoff", str(handoff_dir), "--source-root", str(source), "--json"]
+    )
+    streams = capsys.readouterr()
+    assert streams.err == ""
+    report = json.loads(streams.out)
+    cast(Validator, packaged_validator("paired_handoff_review.v1")).validate(report)
+    assert code == report["exit_code"] == ANALYSIS_ERROR_EXIT
+    assert report["analysis"]["phase"] == "analysis"
+    assert report["analysis"]["error"]["code"] == "INVALID_INPUT"
+    assert report["analysis"]["error"]["reason"] == "HANDOFF_IDENTITY_JOIN_MISMATCH"
+    assert report["analysis"]["error"]["location"] == "/paired_input/metadata"
 
 
 def test_record_captures_the_same_source_and_results(

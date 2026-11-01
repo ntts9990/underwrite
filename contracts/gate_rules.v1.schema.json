@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:underwrite:contract:gate_rules.v1",
   "title": "gate_rules.v1",
-  "description": "Declarative gate-rule conditions and permitted decisions. The loader enforces types, ranges, unique rule ids and canonical decimal bounds. Rule order carries no evaluation meaning. No evaluator is implemented here. Unmatched input is declared Hold; not_measured and indeterminate cannot be matched into authorization.",
+  "description": "Declarative gate-rule conditions and decision labels. The loader checks structure, types, ranges, unique rule ids and canonical decimal bounds only. Labels are uninterpreted declarations: loading a rule grants no approval, adoption or deployment authority. Rule order carries no evaluation meaning and no evaluator is implemented here. Unmatched input is declared Hold; not_measured and indeterminate have no matchable predicate values.",
   "type": "object",
   "required": [
     "schema",
@@ -16,7 +16,7 @@
     },
     "default": {
       "type": "object",
-      "description": "What an unmatched situation decides. Fixed to Hold by design.",
+      "description": "Required structural label for an unmatched situation, fixed to Hold. No evaluator applies it here.",
       "required": [
         "decision"
       ],
@@ -80,7 +80,7 @@
             "Reject",
             "Rollback"
           ],
-          "description": "The decision this condition cell permits."
+          "description": "Uninterpreted decision label associated with this condition cell. Loading it neither permits nor issues a decision."
         }
       }
     },

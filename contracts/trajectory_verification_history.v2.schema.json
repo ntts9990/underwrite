@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:trajectory_verification_history.v2",
+  "type": "object",
+  "required": [
+    "verifier_report_state"
+  ],
+  "properties": {
+    "verifier_report_state": {
+      "enum": [
+        "not_performed",
+        "report_accepted"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "verifier_report_state": {
+            "const": "not_performed"
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema",
+          "verifier_identity_verified",
+          "source_members",
+          "source_authentication_independently_verified",
+          "producer_projection_independently_verified",
+          "verifier_report_state",
+          "verifier_source",
+          "response_snapshot_binding",
+          "snapshot_postcheck",
+          "content_closure",
+          "authenticity"
+        ],
+        "properties": {
+          "schema": {
+            "const": "trajectory_verification_history.v2"
+          },
+          "verifier_identity_verified": {
+            "const": false
+          },
+          "source_members": {
+            "$ref": "#/$defs/source_members"
+          },
+          "source_authentication_independently_verified": {
+            "const": false
+          },
+          "producer_projection_independently_verified": {
+            "const": false
+          },
+          "verifier_report_state": {
+            "const": "not_performed"
+          },
+          "verifier_source": {
+            "const": null
+          },
+          "response_snapshot_binding": {
+            "const": "not_checked"
+          },
+          "snapshot_postcheck": {
+            "const": "not_checked"
+          },
+          "content_closure": {
+            "const": "not_checked"
+          },
+          "authenticity": {
+            "const": "not_checked"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "verifier_report_state": {
+            "const": "report_accepted"
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema",
+          "verifier_identity_verified",
+          "source_members",
+          "source_authentication_independently_verified",
+          "producer_projection_independently_verified",
+          "verifier_report_state",
+          "verifier_source",
+          "response_snapshot_binding",
+          "snapshot_postcheck",
+          "content_closure",
+          "authenticity"
+        ],
+        "properties": {
+          "schema": {
+            "const": "trajectory_verification_history.v2"
+          },
+          "verifier_identity_verified": {
+            "const": false
+          },
+          "source_members": {
+            "$ref": "#/$defs/source_members"
+          },
+          "source_authentication_independently_verified": {
+            "const": false
+          },
+          "producer_projection_independently_verified": {
+            "const": false
+          },
+          "verifier_report_state": {
+            "const": "report_accepted"
+          },
+          "verifier_source": {
+            "enum": [
+              "caller_supplied_python_port",
+              "operator_configured_executable"
+            ]
+          },
+          "response_snapshot_binding": {
+            "const": "selected_fields_matched"
+          },
+          "snapshot_postcheck": {
+            "const": "unchanged"
+          },
+          "content_closure": {
+            "const": "verifier_reported_valid"
+          },
+          "authenticity": {
+            "const": "verifier_reported_content_digest_only"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "source_members": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "raw_hash",
+          "bytes"
+        ],
+        "properties": {
+          "name": {
+            "enum": [
+              "paired/execution.json",
+              "paired/manifest.json",
+              "paired/rows.jsonl",
+              "paired/schema.json",
+              "trajectory/manifest.json",
+              "trajectory/schema.json",
+              "trajectory/trajectory.json"
+            ]
+          },
+          "raw_hash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 67108864
+          }
+        }
+      }
+    }
+  }
+}

@@ -110,6 +110,35 @@ def test_complete_cohort_reports_descriptive_evidence_with_no_approval(
     validator.validate(report)  # Historical reports remain accepted.
 
 
+def test_equal_declared_contexts_do_not_upgrade_a_numeric_difference(
+    tmp_path: Path, capsys: Any
+) -> None:
+    original_status, original, original_other = invoke(tmp_path, capsys)
+    value = input_doc()
+    value["metadata"]["candidate_context_id"] = value["metadata"]["baseline_context_id"]
+    status, report, other = invoke(tmp_path, capsys, value=value)
+
+    assert original_status == status == 0 and original_other == other == ""
+    assert report["status"] == "measured"
+    assert report["estimate"]["effect"] == 1.0
+    assert report["estimate"]["direction"] == "positive"
+    assert report["source_claims"]["metadata"]["baseline_context_id"] == "baseline-fixture"
+    assert report["source_claims"]["metadata"]["candidate_context_id"] == "baseline-fixture"
+    assert report["source_claims"]["verified"] is False
+    assert {
+        "SOURCE_CLAIMS_UNVERIFIED",
+        "ASSUMPTIONS_DECLARED_NOT_VERIFIED",
+        "OUTCOME_DEFINITION_UNVERIFIED",
+        "NO_APPROVAL_OR_DEPLOYMENT_AUTHORITY",
+        "descriptive_statistics_only",
+    }.issubset(report["limitations"])
+    assert "improvement" not in report and "merge_authorized" not in report
+
+    original["input_digest"] = report["input_digest"]
+    original["source_claims"]["metadata"]["candidate_context_id"] = "baseline-fixture"
+    assert report == original
+
+
 def test_observed_zero_and_one_reasons_remain_source_claims(tmp_path: Path, capsys: Any) -> None:
     value = input_doc()
     value["slot_records"][0]["source_reason"] = "ERROR-like text, still observed zero"

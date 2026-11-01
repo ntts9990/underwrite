@@ -87,6 +87,33 @@ Test no-selector audit and same-byte record workflows as well as explicit legacy
 contracts. Document any default output-schema migration; do not alter old stored
 contracts to pretend they are new results.
 
+For the optional Goppi first-party companion path, keep the products independently
+installable. The public Goppi npm `0.0.1` does not include the native paired-export
+commands; use a compatible accepted Goppi source build when checking this path.
+Build the Goppi tarball from an isolated copy of an accepted source commit with
+its declared Node/pnpm toolchain (`pnpm pack`); `uv build --all-packages --wheel
+--out-dir output/underwrite-dist` builds both Underwrite wheels. A compatible
+`npm` CLI must be on `PATH`; the checker launches it with the explicit Node 24
+binary supplied below. Then run local installed-pair acceptance:
+
+```sh
+uv run --frozen --no-sync python scripts/check_goppi_installed_pair.py \
+  --goppi-tarball /absolute/path/to/goppi.tgz \
+  --underwrite-wheel /absolute/path/to/underwrite.whl \
+  --underwrite-core-wheel /absolute/path/to/underwrite_core.whl \
+  --node /absolute/path/to/node-24 \
+  --report output/goppi-installed-pair.json
+```
+
+The script installs the selected artifacts in a fresh temporary directory and exercises
+the pinned public synthetic trajectory with native positive and refusal cases.
+It records artifact hashes and the observed npm/Python dependency-resolution
+identities. Registry access is allowed for installation; the runtime is not a
+network sandbox. It does not claim reproducible transitive resolution, producer
+authentication, real-provider performance, or permission to merge. Run it for Goppi integration changes and
+release preparation, not as a scheduled or everyday CI dependency. The normal
+Underwrite preflight remains mandatory for changed code and documentation.
+
 ## Implementation owners
 
 The optional workspace policy loaded by AGENTS.md owns shared development and

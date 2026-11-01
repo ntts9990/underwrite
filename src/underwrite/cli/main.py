@@ -31,6 +31,7 @@ from underwrite.cli import (
     prepare_event_policy,
     project_baseline,
     record_baseline,
+    record_cross_artifact,
     record_deepeval,
     record_deepeval_bound,
     record_langfuse,
@@ -38,9 +39,11 @@ from underwrite.cli import (
     records,
     release,
     render,
+    review_artifacts,
     review_pair,
 )
 from underwrite.cli.capabilities import CommandDescriptor, Handler, profile
+from underwrite.cli.evidence import EvidenceArgumentParser, EvidenceError, emit_error
 from underwrite.instrument.evidence.deepeval_compat import (
     ACCOUNTING_SCHEMA as DEEPEVAL_AUTO_ACCOUNTING_SCHEMA,
 )
@@ -53,8 +56,14 @@ from underwrite.instrument.evidence.langfuse_compat import (
 )
 from underwrite.instrument.evidence.langfuse_compat import AUTO_PROFILE as LANGFUSE_AUTO_PROFILE
 from underwrite.instrument.evidence.langfuse_compat import ROW_INDEX_SCHEMA as LANGFUSE_ROW_SCHEMA
+from underwrite.instrument.evidence.langfuse_compat import (
+    SCORE_SOURCE_SCHEMA as LANGFUSE_SCORE_SOURCE_SCHEMA,
+)
 from underwrite.instrument.evidence.promptfoo_compat import (
     ACCOUNTING_SCHEMA as PROMPTFOO_AUTO_ACCOUNTING_SCHEMA,
+)
+from underwrite.instrument.evidence.promptfoo_compat import (
+    ACTIONS_SCHEMA as PROMPTFOO_AUTO_ACTIONS_SCHEMA,
 )
 from underwrite.instrument.evidence.promptfoo_compat import (
     ROW_INDEX_SCHEMA as PROMPTFOO_AUTO_ROW_INDEX_SCHEMA,
@@ -90,8 +99,8 @@ def _configure_absence(parser: argparse.ArgumentParser) -> None:
 def _configure_drift(parser: argparse.ArgumentParser) -> None:
     drift_sub = parser.add_subparsers(dest="drift_command", required=True)
     check = drift_sub.add_parser("check", help="Verify pins and fold in the population rule.")
-    check.add_argument("--pins-root", type=Path, default=commands.DEFAULT_PINS_ROOT)
-    check.add_argument("--siblings-root", type=Path, default=commands.default_siblings_root())
+    check.add_argument("--pins-root", type=Path, default=None)
+    check.add_argument("--siblings-root", type=Path, default=None)
     check.add_argument("--exemptions", type=Path, default=None, help="exemptions.v1 JSON path.")
     check.add_argument("--now", default=None, help="ISO8601 date vs. exemption expiry.")
     check.add_argument("--json", action="store_true", help="Print cli_result.v1 JSON.")
@@ -102,8 +111,9 @@ def _configure_pins(parser: argparse.ArgumentParser) -> None:
     pins_sub = parser.add_subparsers(dest="pins_command", required=True)
     refresh = pins_sub.add_parser("refresh", help="Re-pin a repo from its sibling checkout.")
     refresh.add_argument("--repo", required=True, help="Repo name under --pins-root/active/.")
-    refresh.add_argument("--pins-root", type=Path, default=commands.DEFAULT_PINS_ROOT)
-    refresh.add_argument("--siblings-root", type=Path, default=commands.default_siblings_root())
+    refresh.add_argument("--pins-root", type=Path, default=None)
+    refresh.add_argument("--siblings-root", type=Path, default=None)
+    refresh.add_argument("--json", action="store_true", help="Print cli_result.v1 JSON.")
     refresh.set_defaults(handler=commands.cmd_pins_refresh)
 
 
@@ -127,7 +137,7 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
         (
             profile(
                 "registered-codecs",
-                ("format", "version", "file|http_body_file"),
+                instrument.CAPABILITY_REQUIRED_INPUTS,
                 (),
                 ("observation.v1",),
             ),
@@ -160,6 +170,12 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 (),
                 (audit_trajectory.RESULT_SCHEMA,),
             ),
+            profile(
+                "goppi-paired-trajectory-v1|outcome-actions",
+                ("exchange", "view"),
+                (),
+                (audit_trajectory.OUTCOME_ACTIONS_SCHEMA,),
+            ),
         ),
         _standalone(audit_trajectory.main),
     ),
@@ -178,6 +194,26 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
             for view, output in inspect_result.OUTPUT_SCHEMAS.items()
         ),
         _standalone(inspect_result.main),
+    ),
+    CommandDescriptor(
+        "review-artifacts",
+        "Align selected Goppi C55 and Promptfoo source claims under an optional owner case map.",
+        review_artifacts.configure,
+        (
+            profile(
+                "goppi-c55|promptfoo-summary-v3",
+                ("goppi_assessment", "goppi_result", "promptfoo"),
+                ("evidence_result.v1",),
+                (review_artifacts.RESULT_SCHEMA,),
+            ),
+            profile(
+                "goppi-c55|promptfoo-summary-v3|readiness",
+                ("goppi_assessment", "goppi_result", "promptfoo", "view"),
+                ("evidence_result.v1",),
+                (review_artifacts.READINESS_SCHEMA,),
+            ),
+        ),
+        _standalone(review_artifacts.main),
     ),
     CommandDescriptor(
         "project-baseline",
@@ -250,6 +286,12 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 (record_langfuse.ROW_RECORD_SCHEMA,),
             ),
             profile(
+                "audit-langfuse|score-source",
+                ("observations", "scores", "view", "root", "id"),
+                (),
+                (record_langfuse.SCORE_SOURCE_RECORD_SCHEMA,),
+            ),
+            profile(
                 "measure",
                 ("observation", "policy", "root", "id"),
                 ("observation.v1", "measurement_policy.v3"),
@@ -266,9 +308,15 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 "audit-trajectory",
                 ("exchange", "root", "id"),
                 (),
-                ("trajectory_record.v1",),
+                ("trajectory_record.v2",),
             ),
-            profile("read-trajectory", ("root", "id"), (), ("trajectory_record_read.v1",)),
+            profile("read-trajectory", ("root", "id"), (), ("trajectory_record_read.v2",)),
+            profile(
+                "review-artifacts",
+                ("goppi_assessment", "goppi_result", "promptfoo", "correspondence", "root", "id"),
+                ("cross_artifact_correspondence.v1",),
+                (record_cross_artifact.SCHEMA,),
+            ),
             profile("list", ("root",), (), ("record_catalog.v1",)),
             profile("show", ("root", "id"), (), ("record_view.v1",)),
             profile("read-json", ("root", "id", "name"), (), ("record_document.v1",)),
@@ -312,6 +360,12 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 ("observations", "scores", "view"),
                 (),
                 (LANGFUSE_ROW_SCHEMA,),
+            ),
+            profile(
+                f"{LANGFUSE_AUTO_PROFILE}|score-source",
+                ("observations", "scores", "view"),
+                (),
+                (LANGFUSE_SCORE_SOURCE_SCHEMA,),
             ),
         ),
         _standalone(audit_langfuse.main),
@@ -358,6 +412,12 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 ("file", "view"),
                 (),
                 (PROMPTFOO_AUTO_ROW_INDEX_SCHEMA,),
+            ),
+            profile(
+                "promptfoo.eval-output|auto|actions",
+                ("file", "view"),
+                (),
+                (PROMPTFOO_AUTO_ACTIONS_SCHEMA,),
             ),
         ),
         _standalone(audit_promptfoo.main),
@@ -429,10 +489,16 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
         handoff_review.configure,
         (
             profile(
-                "goppi.p7_regrade_consumer_handoff.v1",
+                handoff_review.PROFILE,
                 ("handoff",),
                 (),
-                ("paired_handoff_review.v1",),
+                (handoff_review.RESULT_SCHEMA,),
+            ),
+            profile(
+                f"{handoff_review.PROFILE}|record",
+                handoff_review.RECORD_CAPABILITY_REQUIRED_INPUTS,
+                (),
+                (handoff_review.RESULT_SCHEMA,),
             ),
         ),
         _standalone(handoff_review.main),
@@ -513,7 +579,7 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
         (
             profile(
                 "check",
-                (),
+                ("pins_root", "siblings_root"),
                 ("exemptions.v1",),
                 ("cli_result.v1",),
             ),
@@ -523,7 +589,7 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
         "pins",
         "Contract pin registry.",
         _configure_pins,
-        (profile("refresh", ("repo",), (), ()),),
+        (profile("refresh", ("repo", "pins_root", "siblings_root"), (), ("cli_result.v1",)),),
     ),
     CommandDescriptor(
         "boundary",
@@ -562,7 +628,13 @@ COMMANDS = _dispatch()
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="underwrite")
+    parser = EvidenceArgumentParser(
+        prog="underwrite",
+        description=(
+            "Review supported local eval files: what they establish, what is missing, "
+            "and what to check next."
+        ),
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
     for descriptor in COMMAND_DESCRIPTORS:
         child = subparsers.add_parser(
@@ -579,7 +651,10 @@ def main(argv: list[str] | None = None) -> int:
     if args_list and (descriptor := COMMANDS.get(args_list[0])) is not None:
         if descriptor.handler is not None:
             return descriptor.handler(args_list[0], args_list[1:])
-    args = build_parser().parse_args(args_list)
+    try:
+        args = build_parser().parse_args(args_list)
+    except EvidenceError as exc:
+        return emit_error(exc, as_json="--json" in args_list)
     exit_code, payload = args.handler(args)
     bounded = payload["command"] in {"boundary scan", "drift check"}
     rendered_exit = render.render(

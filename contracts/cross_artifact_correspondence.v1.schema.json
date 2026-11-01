@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:cross_artifact_correspondence.v1",
+  "title": "cross_artifact_correspondence.v1",
+  "description": "Owner-declared case coordinates bound to three selected local source files. Byte identity and case IDs do not prove shared task inputs, metric equivalence, producer provenance, or improvement.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "scope", "declared_by", "coverage", "sources", "pairs"],
+  "properties": {
+    "schema": {"const": "cross_artifact_correspondence.v1"},
+    "scope": {"const": "owner_declared_case_mapping"},
+    "declared_by": {"type": "string", "minLength": 1, "maxLength": 256},
+    "coverage": {"enum": ["complete", "partial"]},
+    "sources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["goppi_assessment_sha256", "goppi_result_sha256", "promptfoo_export_sha256"],
+      "properties": {
+        "goppi_assessment_sha256": {"$ref": "#/$defs/hash"},
+        "goppi_result_sha256": {"$ref": "#/$defs/hash"},
+        "promptfoo_export_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "pairs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["case_index", "row_index", "case_id"],
+        "properties": {
+          "case_index": {"type": "integer", "minimum": 0},
+          "row_index": {"type": "integer", "minimum": 0},
+          "case_id": {"type": "string", "minLength": 1, "maxLength": 256}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+  }
+}

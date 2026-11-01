@@ -68,6 +68,70 @@ def _drift_args(**overrides: Any) -> argparse.Namespace:
     return argparse.Namespace(**defaults)
 
 
+def test_missing_roots_have_closed_cli_result_contract() -> None:
+    drift_exit, drift = commands.cmd_drift_check(_drift_args(pins_root=None))
+    assert drift_exit == REFUSAL_EXIT
+    assert drift["details"] == {"reason": "PINS_ROOT_REQUIRED", "location": "/pins"}
+    _validate(drift)
+    drift["details"]["location"] = "/siblings"
+    with pytest.raises(ValidationError):
+        _validate(drift)
+
+    refresh_exit, refresh = commands.cmd_pins_refresh(
+        argparse.Namespace(repo="sample-tool", pins_root=None, siblings_root=None)
+    )
+    assert refresh_exit == REFUSAL_EXIT
+    assert refresh["details"] == {
+        "reason": "PINS_ROOT_REQUIRED",
+        "location": "/pins",
+        "publication": "not_started",
+    }
+    _validate(refresh)
+    refresh["details"]["publication"] = "may_be_partial"
+    with pytest.raises(ValidationError):
+        _validate(refresh)
+
+
+def test_non_root_refresh_refusal_cannot_claim_root_location() -> None:
+    refusal: dict[str, Any] = {
+        "schema": "cli_result.v1",
+        "command": "pins refresh",
+        "state": "UNCONFIGURED",
+        "exit_code": REFUSAL_EXIT,
+        "details": {"reason": "INVALID_REPO", "publication": "not_started"},
+    }
+    _validate(refusal)
+    refusal["details"]["location"] = "/pins"
+    with pytest.raises(ValidationError):
+        _validate(refusal)
+
+
+@pytest.mark.parametrize(
+    ("reason", "location", "wrong_location"),
+    [
+        ("PINS_ROOT_REQUIRED", "/pins", "/siblings"),
+        ("SIBLINGS_ROOT_REQUIRED", "/siblings", "/pins"),
+    ],
+)
+def test_root_refresh_refusal_requires_exact_location(
+    reason: str, location: str, wrong_location: str
+) -> None:
+    refusal: dict[str, Any] = {
+        "schema": "cli_result.v1",
+        "command": "pins refresh",
+        "state": "UNCONFIGURED",
+        "exit_code": REFUSAL_EXIT,
+        "details": {"reason": reason, "location": location, "publication": "not_started"},
+    }
+    _validate(refusal)
+    del refusal["details"]["location"]
+    with pytest.raises(ValidationError):
+        _validate(refusal)
+    refusal["details"]["location"] = wrong_location
+    with pytest.raises(ValidationError):
+        _validate(refusal)
+
+
 # --- absence: all six states it can emit ------------------------------------
 
 

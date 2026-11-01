@@ -220,7 +220,8 @@ underwrite records read-trajectory --root PRIVATE_STORE --id trajectory.review-0
 
 The complete outer export must contain `paired/` and `trajectory/`, at a physical
 path without symlink components. An optional `--goppi-executable PATH` selects an
-existing trusted executable for recording. No evaluation or model is run.
+operator-configured executable for recording. Underwrite requests only the offline
+verifier command; it does not sandbox or authenticate the selected executable.
 
 The `goppi.trajectory-review` record contains the seven exact analyzed inputs
 under `source/`, `analysis/trajectory.json` or `analysis/error.json`,
@@ -229,19 +230,25 @@ full and can contain identifying metadata. Use a private store and backup policy
 No source paths are reopened between analysis and storage. Duplicate IDs are
 refused rather than overwritten.
 
-The `trajectory_record.v1` response keeps source capture, analysis, native history,
-and storage separate. Exit 0 means a result was saved and verified; exit 2 means
+The `trajectory_record.v2` response keeps source capture, analysis,
+configured-verifier report history, and storage separate. Exit 0 means a result
+was saved and its stored bytes verified; exit 2 means
 a supported diagnostic was saved, or an earlier typed refusal occurred without
 publication; exit 3 means storage or stored-byte verification failed. Safely
-classified source diagnostics before the native check have history `not_performed`;
-semantic diagnostics after a successful check have history `verified`. All verifier
+classified source diagnostics before invoking the verifier have history
+`not_performed`; semantic diagnostics after an accepted report have history
+`report_accepted`. Neither state authenticates the executable or proves its
+reported closure work. All verifier
 failures, including nonzero exits, produce no record. Failed/incomplete captures,
 configuration faults, and output-admission failures also publish no diagnostic
 record. A storage failure with `published_record: null` does not prove absence:
 inspect the requested ID with `records show` and `records verify` before retrying.
 
 `records read-trajectory` verifies the complete record and binds the result,
-source identities, and original verification history to the same manifest. Its
+source identities, and retained report history to the same manifest. Old v1
+records remain readable by exact layout: their native labels are historical,
+while the effective interpretation is `legacy_unattributed_report` or
+`legacy_not_performed`. Its
 `current_storage_verification` is a new stored-byte check, while
 `native_verification_performed_now` is always false. Neither the original export
 nor Goppi is needed. Content integrity is not source authentication, independent
@@ -371,6 +378,40 @@ its known record identity in `storage.published_record`; null means no identity
 was returned, not proof that the requested ID is absent. Never overwrite or
 silently retry a reserved ID. Analysis-only `audit-promptfoo` never saves a record.
 
+For a **strict owner-mapped** C55 and Promptfoo review, current development builds
+advertising `records review-artifacts` can analyze and retain the same four
+captured input buffers without a handwritten record specification:
+
+```sh
+underwrite records review-artifacts \
+  --goppi-assessment /path/to/assessment.json \
+  --goppi-result /path/to/evidence-result.json \
+  --promptfoo /path/to/promptfoo-results.json \
+  --correspondence /path/to/owner-correspondence.json \
+  --root PRIVATE_STORE --id NEW_ID --json
+underwrite records verify --root PRIVATE_STORE --id NEW_ID --json
+underwrite records read-json --root PRIVATE_STORE --id NEW_ID \
+  --name analysis/review.json
+```
+
+`cross_artifact_record.v1` returns captured-member byte hashes, the unchanged
+`cross_artifact_review.v1` or a finite input diagnostic, and a separate storage
+outcome. The private immutable record holds all four **exact analyzed source
+buffers**, `analysis/review.json` or `analysis/error.json`, and a path-free
+`invocation.json`. Exit 0 means a review was saved and verified; exit 2 means a
+complete captured input produced a diagnostic that was saved; exit 3 means
+storage failed while the analysis remains available in the response. Incomplete
+input acquisition, argument/configuration failures, and output-admission errors
+create no record. `storage.published_record: null` does not prove the requested ID
+is free; inspect it before retrying. A duplicate ID is never overwritten.
+
+The record binds **selected bytes**, not an atomic producer snapshot, authentic
+producer identity, shared task/metric meaning, improvement or approval. It
+stores private source contents despite the content-minimized response. An
+owner-supplied correspondence file is required for this capture route; the
+no-map and readiness views remain analysis-only. Check actual installed
+capabilities because published 0.2.0 may lack this development route.
+
 For manual selection of arbitrary supported evidence, use an explicit spec:
 
 ```sh
@@ -384,12 +425,17 @@ underwrite records verify --root output/records-store --id synthetic.capture-001
 
 The manual example is synthetic. Each `records save` capture needs its own explicit
 [`record_spec.v1`](contracts/record_spec.v1.schema.json), unique record ID,
-selection, and honest reproduction status. Source paths are relative to the
-specification file. They are not persisted; a `source_locator` is recorded only
-when explicitly supplied as a nonblank string. Omit an unknown locator; do not
-write `"source_locator": null`. The portable
+selection, and honest reproduction status. Relative source paths resolve from the
+specification file's directory; absolute source paths are used as supplied.
+Source paths are execution-only and are not persisted; a `source_locator` is
+recorded only when explicitly supplied as a nonblank string. Omit an unknown
+locator; do not write `"source_locator": null`. The portable
 [complete four-file spec example](skills/underwrite-review/references/recording.md#minimal-manual-record-specification)
 shows actual input, result, command, and exit files without inventing a locator.
+All spec text must be UTF-8 encodable. Runtime validation also requires NFC for
+non-path text, even when the JSON Schema accepts it. Source path strings are not
+NFC-normalized. Normalize labels, metadata keys and values, selection exclusions,
+and source locators before saving.
 Avoid secrets, credentials, raw thinking streams,
 caches, environments, and unrelated working files. Captures copy bytes and leave
 the originals in place. A record is not automatically a complete reproduction kit.
@@ -478,7 +524,11 @@ hostile-filesystem sandbox: a descriptor opened before a pathname replacement
 may still read the admitted original inode.
 
 Bounds are 64 files, 128 MiB per file, 512 MiB per capture, a 256 KiB manifest,
-16 direct links, and 1,000 records per catalog. There is no hidden global store.
+16 direct links, and 1,000 record-directory entries per catalog. Complete and
+unpublished reservations both consume a slot. `save` refuses a new ID with
+`RECORD_LIMIT_EXCEEDED` before reserving it when the catalog is full; cooperating
+local writers serialize this capacity check with ID reservation. There is no
+hidden global store.
 The root's parent must already exist; read commands never create the supplied
 root. Keep separate stores when a
 project's retention or population exceeds these bounds.

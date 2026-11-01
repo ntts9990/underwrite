@@ -12,11 +12,9 @@ from underwrite_core.canonical import CanonicalizationError, canonical_bytes, di
 from underwrite.cli.evidence import EvidenceError, ReportOutput, run_cli
 from underwrite.cli.local_json import Validator, validate
 from underwrite.cli.record_capture import (
-    STORAGE_FAILURE_EXIT,
-    admit_record_response,
+    finalize_captured_record,
     render_record_response,
     storage_validator,
-    store_captured_record,
 )
 from underwrite.cli.records import OUTPUT_MAX_BYTES
 from underwrite.instrument.evidence.goppi_baseline import (
@@ -205,16 +203,6 @@ def run_record_baseline(
         "exit_code": 0 if analysis["state"] == "result" else 2,
     }
     files = _files(captured, analysis, identifier)
-    admit_record_response(
-        envelope,
-        aggregate_validator=contracts.aggregate,
-        storage_validator=contracts.storage,
-        identifier=identifier,
-        count=len(files),
-        analysis_text=_analysis_text(analysis),
-        as_json=as_json,
-        max_bytes=OUTPUT_MAX_BYTES,
-    )
     spec = CapturedRecordSpec(
         record_id=identifier,
         kind="goppi.baseline-exchange",
@@ -226,12 +214,18 @@ def run_record_baseline(
         provenance={"verified": False, "attestation_ref": None},
         files=files,
     )
-    envelope["storage"] = store_captured_record(
-        root, spec, contracts.verification, contracts.record_error
+    return finalize_captured_record(
+        envelope,
+        root,
+        spec,
+        aggregate_validator=contracts.aggregate,
+        storage_validator=contracts.storage,
+        verification_validator=contracts.verification,
+        record_error_validator=contracts.record_error,
+        analysis_text=_analysis_text(analysis),
+        as_json=as_json,
+        max_bytes=OUTPUT_MAX_BYTES,
     )
-    if envelope["storage"]["state"] == "error":
-        envelope["exit_code"] = STORAGE_FAILURE_EXIT
-    return envelope
 
 
 def produce(args: argparse.Namespace) -> dict[str, object]:

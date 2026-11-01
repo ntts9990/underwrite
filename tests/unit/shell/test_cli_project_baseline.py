@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from _baseline_exchange import build_baseline_exchange
+from _baseline_exchange import build_baseline_exchange, build_pi13_v2_exchange
 from _repo_paths import repo_root
 from underwrite_core.canonical import canonical_bytes
 
@@ -86,6 +86,20 @@ def test_generated_bundle_identity_and_private_fields(
         == "sha256:" + hashlib.sha256(canonical_bytes(bundle)).hexdigest()
     )
     assert observation["payload"] == bundle
+
+
+def test_accepted_pi13_v2_exchange_projects_through_cli(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _write(tmp_path, build_pi13_v2_exchange().files())
+    assert main(_args(tmp_path)) == 0
+    streams = capsys.readouterr()
+    assert streams.err == ""
+    observation = json.loads(streams.out)
+    assert observation["schema"] == "observation.v1"
+    source = observation["payload"]["sources"][0]
+    assert source["format_version"] == "v2"
+    assert "source_claims_not_independently_verified" in source["limitations"]
 
 
 @pytest.mark.parametrize(

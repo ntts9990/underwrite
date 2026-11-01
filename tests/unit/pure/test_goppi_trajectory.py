@@ -6,9 +6,10 @@ import copy
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from underwrite_core.canonical import canonical_bytes
 
 from underwrite.instrument.evidence.goppi_trajectory import (
     AVAILABILITIES,
@@ -24,6 +25,7 @@ FIXTURE = Path(__file__).resolve().parents[3] / "fixtures/conformance/goppi-traj
 Documents = tuple[
     dict[str, Any], tuple[dict[str, Any], ...], dict[str, Any], dict[str, tuple[str, int]]
 ]
+EXPECTED_OUTCOME_ACTION_SCOPES = 64
 
 
 @pytest.fixture
@@ -57,6 +59,15 @@ def target(report: dict[str, Any], documents: Documents) -> dict[str, Any]:
     return next(
         c for c in report["comparisons"] if all(c["key"][field] == row[field] for field in c["key"])
     )
+
+
+def task_scopes(report: dict[str, Any], kind: str) -> dict[str, list[str]]:
+    return {
+        scope["comparison_id"]: scope["arms"]
+        for task in report["next_verification_tasks"]
+        if task["kind"] == kind
+        for scope in task["scope"]
+    }
 
 
 def test_pinned_bytes_and_separate_populations(documents: Documents) -> None:
@@ -94,6 +105,86 @@ def test_pinned_bytes_and_separate_populations(documents: Documents) -> None:
         c["difference"]["tool_status_deltas"] == [] and not c["difference"]["outcome_changed"]
         for c in report["comparisons"]
     )
+
+
+def test_default_trajectory_report_keeps_pinned_v1_bytes(documents: Documents) -> None:
+    assert hashlib.sha256(canonical_bytes(analyze(documents))).hexdigest() == (
+        "303c37e3d86e439af3344dc99d9035ad37f75acfd1d26e732875dafc38438980"
+    )
+
+
+def test_outcome_actions_selects_exactly_comparable_observed_changed_pairs(
+    documents: Documents,
+) -> None:
+    from underwrite.instrument.evidence.goppi_trajectory import (
+        OUTCOME_ACTIONS_SCHEMA,
+        analyze_goppi_trajectory_actions,
+    )
+
+    report = analyze_goppi_trajectory_actions(*documents)
+    comparisons = cast(list[dict[str, Any]], report["comparisons"])
+    verification_tasks = cast(list[dict[str, Any]], report["next_verification_tasks"])
+    assert report["schema"] == OUTCOME_ACTIONS_SCHEMA == "goppi_trajectory_outcome_actions.v1"
+    assert report["policy"] == "goppi.descriptive-paired-trajectory-outcome-actions.v1"
+    assert report["authority"] == analyze(documents)["authority"]
+    assert report["trust_scope"] == analyze(documents)["trust_scope"]
+    assert report["interpretation_limits"] == analyze(documents)["interpretation_limits"]
+    tasks = [
+        task for task in verification_tasks
+        if task["kind"] == "inspect_outcome_change_without_tool_status_change"
+    ]
+    assert len(tasks) == 1
+    task = tasks[0]
+    assert task["owner"] == "calling_agent"
+    assert task["execution_authorized"] is False
+    assert "command" not in task
+    expected = {
+        comparison["id"]
+        for comparison in comparisons
+        if comparison["comparability"]["state"] == "comparable"
+        and comparison["difference"]["state"] == "observed"
+        and comparison["difference"]["outcome_changed"] is True
+        and comparison["difference"]["tool_status_deltas"] == []
+    }
+    assert len(expected) == EXPECTED_OUTCOME_ACTION_SCOPES
+    assert {scope["comparison_id"] for scope in task["scope"]} == expected
+    assert all(scope["arms"] == ["baseline", "candidate"] for scope in task["scope"])
+    assert len(task["scope"]) == len(expected)
+    assert any(
+        item["difference"]["outcome_changed"] is True
+        and item["difference"]["tool_status_deltas"]
+        and item["id"] not in expected
+        for item in comparisons
+    )
+    assert any(
+        item["difference"]["outcome_changed"] is False
+        and item["difference"]["tool_status_deltas"] == []
+        and item["id"] not in expected
+        for item in comparisons
+    )
+
+
+def test_outcome_actions_preserves_existing_tasks_and_order_independence(
+    documents: Documents,
+) -> None:
+    from underwrite.instrument.evidence.goppi_trajectory import analyze_goppi_trajectory_actions
+
+    ordinary = analyze(documents)
+    actions = analyze_goppi_trajectory_actions(*documents)
+    verification_tasks = cast(list[dict[str, Any]], actions["next_verification_tasks"])
+    existing = [
+        task for task in verification_tasks
+        if task["kind"] != "inspect_outcome_change_without_tool_status_change"
+    ]
+    assert existing == ordinary["next_verification_tasks"]
+    execution, rows, trajectory, identities = documents
+    trajectory["units"].reverse()
+    for unit in trajectory["units"]:
+        unit["cases"].reverse()
+    reordered = analyze_goppi_trajectory_actions(
+        execution, tuple(reversed(rows)), trajectory, identities
+    )
+    assert reordered["next_verification_tasks"] == actions["next_verification_tasks"]
 
 
 def test_reordering_preserves_aggregates_ids_tasks_and_valid_pointers(documents: Documents) -> None:
@@ -158,6 +249,8 @@ def test_unavailable_coverage_counts_cases_not_units(
     assert item["difference"]["state"] == "unavailable"
     assert item["comparability"]["state"] == "unknown"
     assert "obtain_supported_capture" in {t["kind"] for t in report["next_verification_tasks"]}
+    assert item["id"] not in task_scopes(report, "inspect_tool_status_difference")
+    assert item["id"] not in task_scopes(report, "obtain_call_relationships")
 
 
 def test_retained_zero_is_observed_zero_and_not_observed_is_not_unlinked(
@@ -219,6 +312,61 @@ def test_context_differences_are_not_comparable(documents: Documents, field: str
     assert {"field": "context." + field, "reason": "different_context"} in item["comparability"][
         "reasons"
     ]
+
+
+@pytest.mark.parametrize(
+    "runner_model,expected_state,expected_reason",
+    [
+        ("other-model", "not_comparable", "different_context"),
+        (None, "unknown", "missing_context"),
+    ],
+)
+def test_tool_delta_tasks_respect_comparability(
+    documents: Documents, runner_model: str | None, expected_state: str, expected_reason: str
+) -> None:
+    baseline = analyze(documents)
+    comparable = target(baseline, documents)
+    assert comparable["comparability"]["state"] == "comparable"
+    assert comparable["difference"]["tool_status_deltas"]
+    assert comparable["id"] in task_scopes(baseline, "inspect_tool_status_difference")
+    assert comparable["id"] in task_scopes(baseline, "obtain_call_relationships")
+    assert comparable["id"] not in task_scopes(baseline, "check_outcome_comparability")
+
+    context = documents[2]["units"][0]["context"]
+    if runner_model is None:
+        context.pop("runner_model")
+    else:
+        context["runner_model"] = runner_model
+    report = analyze(documents)
+    item = target(report, documents)
+    assert item["comparability"]["state"] == expected_state
+    assert {"field": "context.runner_model", "reason": expected_reason} in item["comparability"][
+        "reasons"
+    ]
+    assert item["difference"] == comparable["difference"]
+    assert task_scopes(report, "check_outcome_comparability")[item["id"]] == [
+        "baseline",
+        "candidate",
+    ]
+    assert task_scopes(report, "inspect_tool_status_difference")[item["id"]] == [
+        "baseline",
+        "candidate",
+    ]
+    assert item["id"] not in task_scopes(report, "obtain_call_relationships")
+
+
+def test_observed_no_delta_adds_no_tool_tasks(documents: Documents) -> None:
+    report = analyze(documents)
+    item = next(
+        comparison
+        for comparison in report["comparisons"]
+        if comparison["comparability"]["state"] == "comparable"
+        and comparison["difference"]["state"] == "observed"
+        and not comparison["difference"]["tool_status_deltas"]
+    )
+    assert item["id"] not in task_scopes(report, "check_outcome_comparability")
+    assert item["id"] not in task_scopes(report, "inspect_tool_status_difference")
+    assert item["id"] not in task_scopes(report, "obtain_call_relationships")
 
 
 def test_intended_harness_changes_and_weaker_source_scope(documents: Documents) -> None:

@@ -7,21 +7,32 @@ from pathlib import Path
 from typing import cast
 
 from underwrite.cli.evidence import EvidenceError, ReportOutput, run_cli
-from underwrite.instrument.evidence.promptfoo_compat import ACCOUNTING_SCHEMA, ROW_INDEX_SCHEMA
+from underwrite.instrument.evidence.promptfoo_compat import (
+    ACCOUNTING_SCHEMA,
+    ACTIONS_SCHEMA,
+    ROW_INDEX_SCHEMA,
+)
 from underwrite.instrument.ingest.accounting import (
     AccountingCaseError,
+    audit_promptfoo_actions_file,
     audit_promptfoo_file,
     audit_promptfoo_row_index_file,
 )
+
+VIEWS = {
+    "accounting": (audit_promptfoo_file, ACCOUNTING_SCHEMA),
+    "row-index": (audit_promptfoo_row_index_file, ROW_INDEX_SCHEMA),
+    "actions": (audit_promptfoo_actions_file, ACTIONS_SCHEMA),
+}
 
 
 def configure(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("file", type=Path, metavar="FILE", help="Local Promptfoo SummaryV3 export.")
     parser.add_argument(
         "--view",
-        choices=("accounting", "row-index"),
+        choices=tuple(VIEWS),
         default="accounting",
-        help="Select count accounting or a content-minimized ordinal row index.",
+        help="Select count accounting, a content-minimized ordinal row index, or next actions.",
     )
     parser.add_argument("--json", action="store_true", help="Emit the selected view as JSON.")
     parser.description = (
@@ -37,7 +48,7 @@ def configure(parser: argparse.ArgumentParser) -> None:
 
 def produce(args: argparse.Namespace) -> dict[str, object]:
     try:
-        audit = audit_promptfoo_row_index_file if args.view == "row-index" else audit_promptfoo_file
+        audit, _ = VIEWS[args.view]
         return audit(cast(Path, args.file))
     except AccountingCaseError as exc:
         raise EvidenceError(exc.code, exc.reason, exc.location) from None
@@ -49,7 +60,5 @@ def main(argv: list[str]) -> int:
         argv,
         configure,
         produce,
-        ReportOutput(
-            lambda args: ROW_INDEX_SCHEMA if args.view == "row-index" else ACCOUNTING_SCHEMA
-        ),
+        ReportOutput(lambda args: VIEWS[args.view][1]),
     )

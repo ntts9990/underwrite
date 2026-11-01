@@ -1059,7 +1059,7 @@ def _verify_source_and_provenance(
             failed["failed_invocation_digest"],
         ),
     )
-    if any(len(set(values)) != 1 for values in joins):
+    if any(value != values[0] for values in joins for value in values[1:]):
         raise _fail("HANDOFF_IDENTITY_JOIN_MISMATCH", "/paired_input/metadata")
     return original, meta, mapping
 

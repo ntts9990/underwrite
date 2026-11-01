@@ -194,22 +194,27 @@ def _link(value: object) -> dict[str, object]:
         frozenset({"relation", "record_id", "manifest_digest"}),
         frozenset({"relation", "record_id", "manifest_digest"}),
     )
-    if obj["relation"] not in {"input", "related"}:
+    relation = obj["relation"]
+    if type(relation) is not str or relation not in {"input", "related"}:
         raise FormatError("LINK_INVALID")
     return {
-        "relation": obj["relation"],
+        "relation": relation,
         "record_id": record_id(obj["record_id"]),
         "manifest_digest": digest(obj["manifest_digest"]),
     }
 
 
 def _check_names(files: list[dict[str, object]]) -> None:
-    folded = sorted(cast(str, item["name"]).casefold() for item in files)
-    if len(folded) != len(set(folded)):
+    folded = [cast(str, item["name"]).casefold() for item in files]
+    names = set(folded)
+    if len(folded) != len(names):
         raise FormatError("DUPLICATE_LOGICAL_NAME")
-    for index, name in enumerate(folded[:-1]):
-        if folded[index + 1].startswith(name + "/"):
-            raise FormatError("LOGICAL_NAME_PREFIX_CONFLICT")
+    for name in folded:
+        parent = name
+        while "/" in parent:
+            parent = parent.rsplit("/", 1)[0]
+            if parent in names:
+                raise FormatError("LOGICAL_NAME_PREFIX_CONFLICT")
 
 
 def _file_spec(value: object, *, path_required: bool) -> dict[str, object]:
@@ -227,6 +232,8 @@ def _file_spec(value: object, *, path_required: bool) -> dict[str, object]:
     if type(media_type) is not str or _MEDIA_TYPE.fullmatch(media_type) is None:
         raise FormatError("MEDIA_TYPE_INVALID")
     locator_value = obj.get("source_locator")
+    if path_required and "source_locator" in obj and locator_value is None:
+        raise FormatError("STRING_REQUIRED")
     locator = None if locator_value is None else _text(locator_value, 512)
     result: dict[str, object] = {
         "name": logical_name(obj["name"]),
@@ -386,30 +393,31 @@ def _validate_artifact_refs(record: dict[str, object]) -> None:
     record_links = cast(list[dict[str, object]], record["links"])
     files = {cast(str, item["name"]): item for item in record_files}
     links = {cast(str, item["record_id"]): item for item in record_links}
-    refs = [
-        cast(dict[str, object], record["rerun_verification"])["reference"],
-        cast(dict[str, object], record["provenance"])["attestation_ref"],
-    ]
-    for index, reference in enumerate(refs):
-        if reference is None:
-            continue
-        ref = cast(dict[str, object], reference)
-        if ref["scope"] == "this_record":
-            target = files.get(cast(str, ref["name"]))
-        else:
-            link = links.get(cast(str, ref["record_id"]))
-            if link is None or link["manifest_digest"] != ref["manifest_digest"]:
+    for reference, required_role in artifact_reference_roles(record):
+        if reference["scope"] == "linked_record":
+            link = links.get(cast(str, reference["record_id"]))
+            if link is None or link["manifest_digest"] != reference["manifest_digest"]:
                 raise FormatError("ARTIFACT_REF_LINK_INVALID")
-            target = None
-        if ref["scope"] == "this_record" and target is None:
+            continue
+
+        target = files.get(cast(str, reference["name"]))
+        if target is None:
             raise FormatError("ARTIFACT_REF_FILE_INVALID")
-        if (
-            index == 0
-            and ref["scope"] == "this_record"
-            and target is not None
-            and target["role"] != "verification"
-        ):
+        if required_role is not None and target["role"] != required_role:
             raise FormatError("RERUN_ROLE_INVALID")
+
+
+def artifact_reference_roles(
+    record: dict[str, object],
+) -> tuple[tuple[dict[str, object], str | None], ...]:
+    """Pair each declared reference with its required target role, if any."""
+    rerun = cast(dict[str, object], record["rerun_verification"])["reference"]
+    provenance = cast(dict[str, object], record["provenance"])["attestation_ref"]
+    return tuple(
+        (cast(dict[str, object], reference), required_role)
+        for reference, required_role in ((rerun, "verification"), (provenance, None))
+        if reference is not None
+    )
 
 
 def strict_manifest(raw: bytes) -> dict[str, object]:

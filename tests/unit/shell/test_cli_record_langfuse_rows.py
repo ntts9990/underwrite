@@ -219,7 +219,7 @@ def test_missing_contracts_fail_before_read_or_store(
 
     monkeypatch.setattr(command, "packaged_validator", validator)
     monkeypatch.setattr(command, "read_langfuse_file", forbidden)
-    monkeypatch.setattr(command, "store_captured_record", forbidden)
+    monkeypatch.setattr(record_capture, "store_captured_record", forbidden)
     with pytest.raises(SchemaConfigurationError):
         _run((tmp_path / "obs", tmp_path / "scores"), tmp_path / "store")
     assert not (tmp_path / "store").exists()
@@ -232,7 +232,7 @@ def test_invalid_view_rejected_before_effects_through_api_and_cli(
         pytest.fail("invalid view must precede effects")
 
     monkeypatch.setattr(command, "read_langfuse_file", forbidden)
-    monkeypatch.setattr(command, "store_captured_record", forbidden)
+    monkeypatch.setattr(record_capture, "store_captured_record", forbidden)
     paths, store = (tmp_path / "obs", tmp_path / "scores"), tmp_path / "store"
     with pytest.raises(command.EvidenceError) as error:
         command.run_record_langfuse(*paths, store, "sample", view=cast(Any, "unknown"))

@@ -58,11 +58,56 @@ def test_snapshot_is_private_cleaned_and_captured_once(
     monkeypatch.setattr(local_capture, "read_at", observed)
     verifier = StubVerifier()
     report = cast(dict[str, Any], app.audit_goppi_trajectory(exchange, verifier=verifier))
-    assert report["schema"] == "goppi_trajectory_review.v1"
-    assert report["trust_scope"]["native_verification"] == "local_goppi_same_byte_snapshot"
+    assert report["schema"] == "goppi_trajectory_review.v2"
+    assert report["trust_scope"]["verifier_report_state"] == "report_accepted"
+    assert report["trust_scope"]["verifier_source"] == "caller_supplied_python_port"
     assert len(reads) == len(app.MEMBERS) * 2
     assert len(set(reads)) == len(reads)
     assert not verifier.snapshots[0].exists()
+
+
+def test_nonverifying_port_cannot_promote_stale_manifest_to_native_closure(
+    exchange: Path,
+) -> None:
+    execution = exchange / "paired/execution.json"
+    execution.write_bytes(execution.read_bytes() + b"\n")
+    outcome = app.audit_captured_goppi_trajectory(
+        app.capture_goppi_trajectory(exchange), verifier=StubVerifier()
+    )
+
+    assert outcome.error is None and outcome.report is not None
+    assert outcome.report["schema"] == "goppi_trajectory_review.v2"
+    trust = cast(dict[str, Any], outcome.report["trust_scope"])
+    assert trust["verifier_report_state"] == "report_accepted"
+    assert trust["verifier_source"] == "caller_supplied_python_port"
+    assert trust["verifier_identity_verified"] is False
+    assert trust["response_snapshot_binding"] == "selected_fields_matched"
+    assert trust["snapshot_postcheck"] == "unchanged"
+    assert trust["content_closure"] == "verifier_reported_valid"
+    assert "native_verification" not in trust
+    history = outcome.verification_history
+    assert history["verifier_report_state"] == "report_accepted"
+    assert history["verifier_identity_verified"] is False
+
+
+def test_conflicting_verifier_sources_refuse_before_capturing_input(
+    exchange: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def forbidden(_: Path) -> dict[str, local_capture.CapturedBytes]:
+        pytest.fail("ambiguous verifier selection must refuse before file capture")
+
+    monkeypatch.setattr(app, "_capture_complete_exchange", forbidden)
+    verifier = StubVerifier()
+    with pytest.raises(app.TrajectoryInputError) as caught:
+        app.audit_goppi_trajectory(
+            exchange, verifier=verifier, goppi_executable=Path("/unselected/goppi")
+        )
+    assert (caught.value.code, caught.value.reason, caught.value.location) == (
+        "USAGE_ERROR",
+        "TRAJECTORY_VERIFIER_SELECTION_AMBIGUOUS",
+        "/verifier",
+    )
+    assert verifier.snapshots == []
 
 
 @pytest.mark.parametrize(
@@ -230,6 +275,47 @@ def test_schema_configuration_precedes_source_effects(monkeypatch: pytest.Monkey
         app.audit_goppi_trajectory(Path("/missing"), verifier=StubVerifier())
 
 
+def test_invalid_python_view_refused_before_capture_or_verification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    verifier = StubVerifier()
+
+    def forbidden_capture(_: Path) -> None:
+        pytest.fail("invalid view must be rejected before source capture")
+
+    monkeypatch.setattr(app, "_capture", forbidden_capture)
+    with pytest.raises(app.TrajectoryInputError):
+        app.audit_goppi_trajectory(Path("/not-read"), verifier=verifier, view="invented")
+    assert verifier.snapshots == []
+
+
+@pytest.mark.parametrize(
+    "reason", ["MISSING_OUTCOME_ACTIONS_CONTRACT", "INVALID_INSPECTION_SCHEMA"]
+)
+def test_outcome_actions_contract_loaded_before_source_capture(
+    monkeypatch: pytest.MonkeyPatch, reason: str,
+) -> None:
+    original = app.packaged_validator
+    loaded: list[str] = []
+
+    def validator(name: str) -> object:
+        loaded.append(name)
+        if name == "goppi_trajectory_outcome_actions.v2":
+            raise SchemaConfigurationError(reason)
+        return original(name)
+
+    def forbidden_capture(_: Path) -> None:
+        pytest.fail("view contract must be loaded before source capture")
+
+    monkeypatch.setattr(app, "packaged_validator", validator)
+    monkeypatch.setattr(app, "_capture", forbidden_capture)
+    with pytest.raises(SchemaConfigurationError, match=reason):
+        app.audit_goppi_trajectory(
+            Path("/not-read"), verifier=StubVerifier(), view="outcome-actions"
+        )
+    assert "goppi_trajectory_outcome_actions.v2" in loaded
+
+
 def test_final_output_limit_before_return(exchange: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(app, "MAX_REPORT_BYTES", 1)
     with pytest.raises(app.TrajectoryInputError, match="TRAJECTORY_REPORT_LIMIT"):
@@ -395,14 +481,18 @@ def test_captured_analysis_survives_original_removal(exchange: Path) -> None:
     assert {name: item.data for name, item in captured.items()} == originals
     history = outcome.verification_history
     assert history == {
-        "schema": app.HISTORY_SCHEMA,
-        "state": "verified",
+        "schema": app.HISTORY_SCHEMA_V2,
+        "verifier_report_state": "report_accepted",
+        "verifier_source": "caller_supplied_python_port",
+        "verifier_identity_verified": False,
+        "response_snapshot_binding": "selected_fields_matched",
+        "snapshot_postcheck": "unchanged",
+        "content_closure": "verifier_reported_valid",
+        "authenticity": "verifier_reported_content_digest_only",
         "source_members": [
             {"name": name, "raw_hash": captured[name].sha256, "bytes": len(originals[name])}
             for name in app.MEMBERS
         ],
-        "integrity_scope": "self_consistent_content_closure",
-        "authenticity": "content_digest_only",
         "source_authentication_independently_verified": False,
         "producer_projection_independently_verified": False,
     }
@@ -499,20 +589,20 @@ def test_safe_source_diagnostic_has_no_native_verification(
         app.capture_goppi_trajectory(exchange), verifier=verifier
     )
     assert outcome.report is None and outcome.error is not None
-    assert outcome.verification_history["state"] == "not_performed"
-    assert outcome.verification_history["integrity_scope"] is None
-    assert outcome.verification_history["authenticity"] is None
+    assert outcome.verification_history["verifier_report_state"] == "not_performed"
+    assert outcome.verification_history["content_closure"] == "not_checked"
+    assert outcome.verification_history["authenticity"] == "not_checked"
     assert not verifier.snapshots
 
 
-def test_post_native_diagnostic_preserves_verified_history(exchange: Path) -> None:
+def test_post_report_diagnostic_preserves_report_accepted_history(exchange: Path) -> None:
     _edit(exchange, "trajectory/trajectory.json", lambda value: value.update(schema="unsupported"))
     verifier = StubVerifier()
     outcome = app.audit_captured_goppi_trajectory(
         app.capture_goppi_trajectory(exchange), verifier=verifier
     )
     assert outcome.report is None and outcome.error is not None
-    assert outcome.verification_history["state"] == "verified"
+    assert outcome.verification_history["verifier_report_state"] == "report_accepted"
     assert len(verifier.snapshots) == 1
     with pytest.raises(type(outcome.error)) as caught:
         app.audit_goppi_trajectory(exchange, verifier=StubVerifier())
@@ -557,7 +647,7 @@ def test_history_contract_is_loaded_before_source_capture(monkeypatch: pytest.Mo
 
     def validator(name: str) -> object:
         loaded.append(name)
-        if name == app.HISTORY_SCHEMA:
+        if name == app.HISTORY_SCHEMA_V2:
             raise SchemaConfigurationError("MISSING_HISTORY_CONTRACT")
         return original(name)
 
@@ -568,7 +658,7 @@ def test_history_contract_is_loaded_before_source_capture(monkeypatch: pytest.Mo
     monkeypatch.setattr(app, "_capture", forbidden_capture)
     with pytest.raises(SchemaConfigurationError, match="MISSING_HISTORY_CONTRACT"):
         app.capture_goppi_trajectory(Path("/not-read"))
-    assert app.HISTORY_SCHEMA in loaded
+    assert app.HISTORY_SCHEMA_V2 in loaded
 
 
 @pytest.mark.parametrize("limit", ["count", "total", "family"])

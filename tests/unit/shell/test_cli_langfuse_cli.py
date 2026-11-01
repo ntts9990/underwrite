@@ -218,10 +218,13 @@ def test_capabilities_and_current_blob_route(capsys: pytest.CaptureFixture[str])
     catalog = json.loads(capsys.readouterr().out)
     command = next(row for row in catalog["commands"] if row["command"] == "audit-langfuse")
     profiles = {item["name"]: item for item in command["profiles"]}
-    assert set(profiles) == {"auto", "auto|row-index"}
+    assert set(profiles) == {"auto", "auto|row-index", "auto|score-source"}
     assert profiles["auto"]["required_inputs"] == ["observations", "scores"]
     assert profiles["auto"]["output_schemas"] == ["langfuse_accounting.v2"]
     assert profiles["auto|row-index"]["output_schemas"] == ["langfuse_row_index.v2"]
+    assert profiles["auto|score-source"]["output_schemas"] == [
+        "langfuse_score_source_summary.v1"
+    ]
     code, report, _, stderr = _invoke(
         capsys,
         GOLDEN / "observations_v2-2026-09-14T06-40-00.json",

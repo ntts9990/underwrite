@@ -82,6 +82,60 @@ def test_capability_command_validates_and_is_registration_derived(
     assert "package_version" not in report
 
 
+def test_ingest_capabilities_include_body_transport_locator_clause(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main.main(["capabilities", "--json"]) == 0
+    catalog = json.loads(capsys.readouterr().out)
+    ingest = next(item for item in catalog["commands"] if item["command"] == "ingest")
+    required = ingest["profiles"][0]["required_inputs"]
+
+    def satisfies(provided: set[str]) -> bool:
+        return all(
+            any(alternative in provided for alternative in clause.split("|"))
+            for clause in required
+        )
+
+    assert "file|transport_locator" in required
+    assert satisfies({"format", "version", "file"})
+    assert satisfies({"format", "version", "http_body_file", "transport_locator"})
+    assert not satisfies({"format", "version", "http_body_file"})
+    assert all(row["required_inputs"] == required for row in catalog["codecs"])
+
+
+def test_handoff_record_profile_advertises_paired_record_options(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main.main(["capabilities", "--json"]) == 0
+    catalog = json.loads(capsys.readouterr().out)
+    command = next(item for item in catalog["commands"] if item["command"] == "review-handoff")
+    profiles = {item["name"]: item for item in command["profiles"]}
+    base = profiles["goppi.p7_regrade_consumer_handoff.v1"]
+    stored = profiles["goppi.p7_regrade_consumer_handoff.v1|record"]
+    assert base["required_inputs"] == ["handoff"]
+    assert stored["required_inputs"] == ["handoff", "record_root", "record_id"]
+    assert stored["output_schemas"] == base["output_schemas"] == ["paired_handoff_review.v1"]
+
+
+def test_outcome_actions_profile_advertises_direct_view_only(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main.main(["capabilities", "--json"]) == 0
+    catalog = json.loads(capsys.readouterr().out)
+    direct = next(item for item in catalog["commands"] if item["command"] == "audit-trajectory")
+    records = next(item for item in catalog["commands"] if item["command"] == "records")
+    selected = next(
+        profile for profile in direct["profiles"]
+        if profile["name"] == "goppi-paired-trajectory-v1|outcome-actions"
+    )
+    assert selected["required_inputs"] == ["exchange", "view"]
+    assert selected["output_schemas"] == ["goppi_trajectory_outcome_actions.v2"]
+    assert all(
+        "goppi_trajectory_outcome_actions.v2" not in profile["output_schemas"]
+        for profile in records["profiles"]
+    )
+
+
 @pytest.mark.parametrize(
     ("command", "name", "fixture", "version", "schema"),
     [
@@ -327,6 +381,25 @@ def test_langfuse_auto_capabilities_need_no_profile_and_run_both_families(
     _validator(record["output_schemas"][0]).validate(saved)
     assert saved["analysis"]["report"] == report
     assert saved["storage"]["state"] == "saved"
+
+
+def test_langfuse_score_source_capabilities_are_opt_in_and_recordable(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main.main(["capabilities", "--json"]) == 0
+    commands = {row["command"]: row for row in json.loads(capsys.readouterr().out)["commands"]}
+    direct = next(
+        row for row in commands["audit-langfuse"]["profiles"]
+        if row["name"] == "auto|score-source"
+    )
+    record = next(
+        row for row in commands["records"]["profiles"]
+        if row["name"] == "audit-langfuse|score-source"
+    )
+    assert direct["required_inputs"] == ["observations", "scores", "view"]
+    assert direct["output_schemas"] == ["langfuse_score_source_summary.v1"]
+    assert record["required_inputs"] == ["observations", "scores", "view", "root", "id"]
+    assert record["output_schemas"] == ["langfuse_score_source_record.v1"]
 
 
 def test_help_and_dispatch_names_come_from_each_descriptor(

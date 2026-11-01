@@ -1,7 +1,7 @@
 [project]
 name = "underwrite"
 version = "0.2.0"
-description = "Local evidence normalization, measurement, and acceptance checks"
+description = "Review local agent eval files: findings, missing evidence, and next checks"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
@@ -27,11 +27,21 @@ build-backend = "uv_build"
 module-name = "underwrite"
 module-root = "src"
 source-include = [
+    "contracts/cross_artifact_correspondence.v1.schema.json",
+    "contracts/cross_artifact_readiness.v1.schema.json",
+    "contracts/cross_artifact_review.v1.schema.json",
+    "contracts/cross_artifact_record.v1.schema.json",
     "contracts/goppi_trajectory_review.v1.schema.json",
+    "contracts/goppi_trajectory_review.v2.schema.json",
+    "contracts/goppi_trajectory_outcome_actions.v1.schema.json",
+    "contracts/goppi_trajectory_outcome_actions.v2.schema.json",
     "contracts/goppi_trajectory_verifier_response.v1.schema.json",
     "contracts/trajectory_record.v1.schema.json",
+    "contracts/trajectory_record.v2.schema.json",
     "contracts/trajectory_record_read.v1.schema.json",
+    "contracts/trajectory_record_read.v2.schema.json",
     "contracts/trajectory_verification_history.v1.schema.json",
+    "contracts/trajectory_verification_history.v2.schema.json",
     "contracts/evidence_result.v1.schema.json",
     "contracts/metric_definition.v1.schema.json",
     "contracts/deepeval_metric_bindings.v2.schema.json",
@@ -60,6 +70,7 @@ source-include = [
     "contracts/gate_rules.v1.schema.json",
     "contracts/evidence_error.v1.schema.json",
     "contracts/promptfoo_accounting.v2.schema.json",
+    "contracts/promptfoo_accounting_actions.v1.schema.json",
     "contracts/promptfoo_row_index.v2.schema.json",
     "contracts/promptfoo_record.v2.schema.json",
     "contracts/deepeval_accounting.v3.schema.json",
@@ -68,8 +79,10 @@ source-include = [
     "contracts/deepeval_trace_record.v2.schema.json",
     "contracts/langfuse_accounting.v2.schema.json",
     "contracts/langfuse_row_index.v2.schema.json",
+    "contracts/langfuse_score_source_summary.v1.schema.json",
     "contracts/langfuse_record.v2.schema.json",
     "contracts/langfuse_row_record.v2.schema.json",
+    "contracts/langfuse_score_source_record.v1.schema.json",
     "contracts/declared_comparison_case.v1.schema.json",
     "contracts/declared_comparison.v1.schema.json",
     "contracts/paired_binary_input.v1.schema.json",

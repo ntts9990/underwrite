@@ -10,20 +10,28 @@ from pathlib import Path
 from typing import Any
 
 if __package__:
-    from ._schema_compose import embed_contracts, nullable, object_schema, reference, tagged
+    from ._record_schema import storage_definition
+    from ._schema_compose import embed_contracts, object_schema, reference, tagged
 else:
-    from _schema_compose import embed_contracts, nullable, object_schema, reference, tagged
+    from _record_schema import storage_definition
+    from _schema_compose import embed_contracts, object_schema, reference, tagged
 
 from underwrite.cli.record_langfuse import (
     AUTO_RECORD_SCHEMA,
     ROW_RECORD_SCHEMA,
+    SCORE_SOURCE_RECORD_SCHEMA,
 )
-from underwrite.instrument.evidence.langfuse_compat import ACCOUNTING_SCHEMA, ROW_INDEX_SCHEMA
+from underwrite.instrument.evidence.langfuse_compat import (
+    ACCOUNTING_SCHEMA,
+    ROW_INDEX_SCHEMA,
+    SCORE_SOURCE_SCHEMA,
+)
 from underwrite.instrument.ingest.application import DEFAULT_MAX_BYTES
 
 ROOT = Path(__file__).resolve().parents[1]
 AUTO_TARGET = ROOT / f"contracts/{AUTO_RECORD_SCHEMA}.schema.json"
 ROW_TARGET = ROOT / f"contracts/{ROW_RECORD_SCHEMA}.schema.json"
+SCORE_SOURCE_TARGET = ROOT / f"contracts/{SCORE_SOURCE_RECORD_SCHEMA}.schema.json"
 RECORD_OWNERS = ("evidence_error", "record_error", "record_verification")
 
 
@@ -54,12 +62,6 @@ def _build_schema(record_name: str, analysis_schema: str, description: str) -> d
         ROOT,
         (accounting_owner, *RECORD_OWNERS),
         versions={accounting_owner: accounting_version},
-    )
-    identity = object_schema(
-        {
-            "record_id": reference("record_verification__record_id"),
-            "manifest_digest": reference("record_verification__digest"),
-        }
     )
     definitions["source"] = tagged(
         [
@@ -92,36 +94,7 @@ def _build_schema(record_name: str, analysis_schema: str, description: str) -> d
             ),
         ]
     )
-    definitions["storage"] = tagged(
-        [
-            object_schema(
-                {
-                    "state": {"const": "saved"},
-                    **identity["properties"],
-                    "verification": {
-                        "allOf": [
-                            reference("record_verification"),
-                            {
-                                "properties": {
-                                    "valid": {"const": True},
-                                    "findings": {"maxItems": 0},
-                                    "links_checked": {"const": 0},
-                                    "files_checked": {"enum": [2, 3, 4]},
-                                }
-                            },
-                        ]
-                    },
-                }
-            ),
-            object_schema(
-                {
-                    "state": {"const": "error"},
-                    "error": reference("record_error"),
-                    "published_record": nullable(identity),
-                }
-            ),
-        ]
-    )
+    definitions["storage"] = storage_definition({"enum": [2, 3, 4]})
     schema: dict[str, Any] = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": f"urn:underwrite:contract:{record_name}",
@@ -225,6 +198,18 @@ def build_row_schema() -> dict[str, Any]:
     )
 
 
+def build_score_source_schema() -> dict[str, Any]:
+    """Compose score-source capture from the selected aggregate owner."""
+    return _build_schema(
+        SCORE_SOURCE_RECORD_SCHEMA,
+        SCORE_SOURCE_SCHEMA,
+        "Declared Langfuse score-source coverage and whole-file private capture outcomes. "
+        "The complete selected originals are retained, including possible headers and text. "
+        "Stored-byte verification is not producer authentication or approval. "
+        "Null published_record means no returned identity, not proven absence.",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
@@ -232,6 +217,7 @@ def main() -> int:
     targets = (
         (AUTO_TARGET, build_auto_schema()),
         (ROW_TARGET, build_row_schema()),
+        (SCORE_SOURCE_TARGET, build_score_source_schema()),
     )
     for target, schema in targets:
         raw = (json.dumps(schema, ensure_ascii=False, indent=2) + "\n").encode()

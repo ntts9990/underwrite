@@ -7,6 +7,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from underwrite.cli.evidence import run_cli
+from underwrite.cli.instrument import CAPABILITY_REQUIRED_INPUTS
 from underwrite.instrument.ingest.formats import external_codecs, native_codecs, trusted_codecs
 
 Configure = Callable[[argparse.ArgumentParser], None]
@@ -79,7 +80,7 @@ def report(descriptors: Sequence[CommandDescriptor]) -> dict[str, object]:
                 "classification": "native" if selector in native else "external",
                 "commands": ["ingest", "project"],
                 "output_schema": "observation.v1",
-                "required_inputs": ["format", "version", "file|http_body_file"],
+                "required_inputs": list(CAPABILITY_REQUIRED_INPUTS),
             }
             for selector in sorted(trusted)
             for format_name, version in (selector,)

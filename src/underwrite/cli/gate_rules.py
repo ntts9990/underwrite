@@ -1,7 +1,9 @@
 """The one runtime YAML reader: ``load_gate_rules`` turns one local gate-rules file
 into plain ``gate_rules.v1`` data -- dict, list, str, int, bool and None only -- or fails
-with one fixed reason. It loads; it does not decide (ordering, priority meaning,
-restrictiveness and honesty-state routing require a separate evaluator).
+with one fixed reason. It loads structure; rule decisions are uninterpreted
+declarations that grant no approval or deployment authority. It does not decide
+(ordering, priority meaning, restrictiveness and honesty-state routing require
+a separate evaluator).
 
 ``_Strict`` accepts a small YAML subset. ``compose_node`` refuses aliases, anchors, any
 explicit tag and depth before a node is built; ``construct_document`` builds through its

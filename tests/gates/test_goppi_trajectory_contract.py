@@ -6,6 +6,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, cast
@@ -16,7 +17,9 @@ from jsonschema import ValidationError
 from underwrite.cli.local_json import Validator
 from underwrite.instrument.evidence.goppi_trajectory import (
     MEMBERS,
+    OUTCOME_ACTIONS_SCHEMA_V2,
     RESULT_SCHEMA,
+    RESULT_SCHEMA_V2,
     analyze_goppi_trajectory,
 )
 from underwrite.instrument.ingest.schema import packaged_validator
@@ -99,6 +102,20 @@ def test_schema_is_generated_from_policy_vocabulary(monkeypatch: pytest.MonkeyPa
     assert module.build() == json.loads(
         (ROOT / "contracts" / f"{RESULT_SCHEMA}.schema.json").read_bytes()
     )
+    assert module.build(version=2) == json.loads(
+        (ROOT / "contracts" / f"{RESULT_SCHEMA_V2}.schema.json").read_bytes()
+    )
+    assert module.build(outcome_actions=True, version=2) == json.loads(
+        (ROOT / "contracts" / f"{OUTCOME_ACTIONS_SCHEMA_V2}.schema.json").read_bytes()
+    )
+
+
+def test_goppi_trajectory_contracts_are_current() -> None:
+    subprocess.run(
+        [sys.executable, "scripts/build_goppi_trajectory_contract.py", "--check"],
+        cwd=ROOT,
+        check=True,
+    )
 
 
 def test_context_missing_and_unavailable_outcome_variants(report: dict[str, Any]) -> None:
@@ -121,3 +138,194 @@ def test_context_missing_and_unavailable_outcome_variants(report: dict[str, Any]
         variant = copy.deepcopy(report)
         variant["comparisons"][0]["baseline"]["outcome"] = outcome
         validator.validate(variant)
+
+
+def test_v1_schema_bytes_remain_pinned() -> None:
+    raw = (ROOT / "contracts" / f"{RESULT_SCHEMA}.schema.json").read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == (
+        "946bbf749acb448899bca0a5438ffc67c69c835a702cd60d38d79c9ae8a80775"
+    )
+    actions_raw = (
+        ROOT / "contracts" / "goppi_trajectory_outcome_actions.v1.schema.json"
+    ).read_bytes()
+    assert hashlib.sha256(actions_raw).hexdigest() == (
+        "c3ff3787340fc4cc2c8fb1c6709831375431ff1acb3f70ff10618cf50469af5c"
+    )
+
+
+def _v2_report(
+    report: dict[str, Any],
+    *,
+    outcome_actions: bool = False,
+    accepted_source: str | None = None,
+) -> dict[str, Any]:
+    result = copy.deepcopy(report)
+    result["schema"] = OUTCOME_ACTIONS_SCHEMA_V2 if outcome_actions else RESULT_SCHEMA_V2
+    binding = result["trust_scope"]["outcome_harness_binding"]
+    if accepted_source is None:
+        result["trust_scope"] = {
+            "verifier_report_state": "not_performed",
+            "verifier_source": None,
+            "verifier_identity_verified": False,
+            "response_snapshot_binding": "not_checked",
+            "snapshot_postcheck": "not_checked",
+            "content_closure": "not_checked",
+            "authenticity": "not_checked",
+            "source_authentication_independently_verified": False,
+            "producer_projection_independently_verified": False,
+            "outcome_harness_binding": binding,
+        }
+    else:
+        result["trust_scope"] = {
+            "verifier_report_state": "report_accepted",
+            "verifier_source": accepted_source,
+            "verifier_identity_verified": False,
+            "response_snapshot_binding": "selected_fields_matched",
+            "snapshot_postcheck": "unchanged",
+            "content_closure": "verifier_reported_valid",
+            "authenticity": "verifier_reported_content_digest_only",
+            "source_authentication_independently_verified": False,
+            "producer_projection_independently_verified": False,
+            "outcome_harness_binding": binding,
+        }
+    return result
+
+
+@pytest.mark.parametrize(
+    "accepted_source",
+    [None, "caller_supplied_python_port", "operator_configured_executable"],
+)
+def test_v2_review_schema_accepts_only_declared_trust_states(
+    report: dict[str, Any], accepted_source: str | None
+) -> None:
+    cast(Validator, packaged_validator(RESULT_SCHEMA_V2)).validate(
+        _v2_report(report, accepted_source=accepted_source)
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("verifier_source", None),
+        ("verifier_identity_verified", True),
+        ("response_snapshot_binding", "not_checked"),
+        ("snapshot_postcheck", "not_checked"),
+        ("content_closure", "not_checked"),
+        ("authenticity", "not_checked"),
+        ("source_authentication_independently_verified", True),
+        ("producer_projection_independently_verified", True),
+        ("native_verification", "local_goppi_same_byte_snapshot"),
+        ("integrity_scope", "self_consistent_content_closure"),
+    ],
+)
+def test_v2_review_schema_rejects_partial_or_elevated_accepted_trust(
+    report: dict[str, Any], field: str, value: object
+) -> None:
+    result = _v2_report(report, accepted_source="caller_supplied_python_port")
+    result["trust_scope"][field] = value
+    with pytest.raises(ValidationError):
+        cast(Validator, packaged_validator(RESULT_SCHEMA_V2)).validate(result)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("verifier_source", "operator_configured_executable"),
+        ("verifier_identity_verified", True),
+        ("response_snapshot_binding", "selected_fields_matched"),
+        ("snapshot_postcheck", "unchanged"),
+        ("content_closure", "verifier_reported_valid"),
+        ("authenticity", "verifier_reported_content_digest_only"),
+    ],
+)
+def test_v2_review_schema_rejects_claims_when_report_not_performed(
+    report: dict[str, Any], field: str, value: object
+) -> None:
+    result = _v2_report(report)
+    result["trust_scope"][field] = value
+    with pytest.raises(ValidationError):
+        cast(Validator, packaged_validator(RESULT_SCHEMA_V2)).validate(result)
+
+
+@pytest.fixture
+def action_report(report: dict[str, Any]) -> dict[str, Any]:
+    from underwrite.instrument.evidence.goppi_trajectory import analyze_goppi_trajectory_actions
+
+    return analyze_goppi_trajectory_actions(
+        json.loads((FIXTURE / "paired/execution.json").read_bytes()),
+        tuple(
+            json.loads(line) for line in (FIXTURE / "paired/rows.jsonl").read_text().splitlines()
+        ),
+        json.loads((FIXTURE / "trajectory/trajectory.json").read_bytes()),
+        {item["path"]: (item["sha256"], item["bytes"]) for item in report["input_members"]},
+    )
+
+
+def test_outcome_actions_schema_accepts_pure_result_and_matches_packaged_asset(
+    action_report: dict[str, Any],
+) -> None:
+    from underwrite.instrument.evidence.goppi_trajectory import OUTCOME_ACTIONS_SCHEMA
+
+    authored = (ROOT / "contracts" / f"{OUTCOME_ACTIONS_SCHEMA}.schema.json").read_bytes()
+    packaged = (
+        ROOT / "src/underwrite/_contracts" / f"{OUTCOME_ACTIONS_SCHEMA}.schema.json"
+    ).read_bytes()
+    assert authored == packaged
+    validator = cast(Validator, packaged_validator(OUTCOME_ACTIONS_SCHEMA))
+    validator.validate(action_report)
+    action_report["trust_scope"].update(
+        native_verification="local_goppi_same_byte_snapshot",
+        integrity_scope="self_consistent_content_closure",
+        authenticity="content_digest_only",
+    )
+    validator.validate(action_report)
+
+
+@pytest.mark.parametrize(
+    "accepted_source",
+    [None, "caller_supplied_python_port", "operator_configured_executable"],
+)
+def test_v2_outcome_actions_schema_accepts_declared_trust_states(
+    action_report: dict[str, Any], accepted_source: str | None
+) -> None:
+    authored = (ROOT / "contracts" / f"{OUTCOME_ACTIONS_SCHEMA_V2}.schema.json").read_bytes()
+    packaged = (
+        ROOT / "src/underwrite/_contracts" / f"{OUTCOME_ACTIONS_SCHEMA_V2}.schema.json"
+    ).read_bytes()
+    assert authored == packaged
+    cast(Validator, packaged_validator(OUTCOME_ACTIONS_SCHEMA_V2)).validate(
+        _v2_report(
+            action_report,
+            outcome_actions=True,
+            accepted_source=accepted_source,
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["owner", "command", "authorization", "scope_size", "kind", "extra"],
+)
+def test_outcome_actions_schema_refuses_task_masquerades(
+    action_report: dict[str, Any], mutation: str
+) -> None:
+    from underwrite.instrument.evidence.goppi_trajectory import OUTCOME_ACTIONS_SCHEMA
+
+    task = next(
+        item for item in action_report["next_verification_tasks"]
+        if item["kind"] == "inspect_outcome_change_without_tool_status_change"
+    )
+    if mutation == "owner":
+        task["owner"] = "goppi"
+    elif mutation == "command":
+        task["command"] = "rerun"
+    elif mutation == "authorization":
+        task["execution_authorized"] = True
+    elif mutation == "scope_size":
+        task["scope"] = task["scope"] * 157
+    elif mutation == "kind":
+        task["kind"] = "approve_change"
+    else:
+        action_report["fabricated"] = True
+    with pytest.raises(ValidationError):
+        cast(Validator, packaged_validator(OUTCOME_ACTIONS_SCHEMA)).validate(action_report)

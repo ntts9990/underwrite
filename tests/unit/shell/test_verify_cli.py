@@ -241,6 +241,99 @@ def test_unsafe_path_member_is_rejected(tmp_path: Path) -> None:
     assert ["UNSAFE_PATH", "../evil"] in report["reasons"]
 
 
+@pytest.mark.parametrize("member_kind", ["index", "blob"])
+def test_duplicate_tar_member_is_rejected(tmp_path: Path, member_kind: str) -> None:
+    files = _good_bundle_files(_build_chain(2))
+    member_name = (
+        "index.json"
+        if member_kind == "index"
+        else next(name for name in files if name.startswith("blobs/sha256/"))
+    )
+    tar_path = tmp_path / "duplicate.tar"
+    with tarfile.open(tar_path, mode="w:") as tar:
+        for name, data in [(member_name, b"untrusted earlier entry"), *files.items()]:
+            info = tarfile.TarInfo(name=name)
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+
+    result = _run_verify_json(tar_path, *_EXPECTED_ROLES)
+
+    assert result.returncode == 1
+    report = _report_of(result)
+    assert report["integrity"] == "FAIL"
+    assert ["DUPLICATE_MEMBER", member_name] in report["reasons"]
+
+
+@pytest.mark.parametrize(
+    "member_name", ["./index.json", "folder//alias", "folder/./alias", "folder\\alias", "C:/alias"]
+)
+def test_noncanonical_tar_member_is_rejected(tmp_path: Path, member_name: str) -> None:
+    files = plan_layout(
+        [
+            Blob(
+                "receipt",
+                "application/json",
+                _receipt_bytes(raw_included="no", ledger_anchored="not_measured"),
+            )
+        ],
+        extra_files={member_name: b"ambiguous content"},
+    )
+    tar_path = tmp_path / "alias.tar"
+    _write_tar(tar_path, files)
+
+    result = _run_verify_json(tar_path)
+
+    assert result.returncode == 1
+    report = _report_of(result)
+    assert report["integrity"] == "FAIL"
+    assert ["UNSAFE_PATH", member_name] in report["reasons"]
+
+
+def test_symlink_tar_member_is_rejected(tmp_path: Path) -> None:
+    files = _good_bundle_files(_build_chain(2))
+    tar_path = tmp_path / "symlink.tar"
+    with tarfile.open(tar_path, mode="w:") as tar:
+        link = tarfile.TarInfo(name="blobs")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "../outside"
+        tar.addfile(link)
+        for name, data in files.items():
+            info = tarfile.TarInfo(name=name)
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+
+    result = _run_verify_json(tar_path, *_EXPECTED_ROLES)
+
+    assert result.returncode == 1
+    report = _report_of(result)
+    assert report["integrity"] == "FAIL"
+    assert ["UNSAFE_MEMBER_TYPE", "blobs"] in report["reasons"]
+
+
+def test_case_folded_tar_member_alias_is_rejected(tmp_path: Path) -> None:
+    files = plan_layout(
+        [
+            Blob(
+                "receipt",
+                "application/json",
+                _receipt_bytes(raw_included="no", ledger_anchored="not_measured"),
+            )
+        ],
+        extra_files={"INDEX.JSON": b"untrusted index"},
+    )
+    alias = files.pop("INDEX.JSON")
+    files["INDEX.JSON"] = alias
+    tar_path = tmp_path / "case-alias.tar"
+    _write_tar(tar_path, files)
+
+    result = _run_verify_json(tar_path)
+
+    assert result.returncode == 1
+    report = _report_of(result)
+    assert report["integrity"] == "FAIL"
+    assert ["DUPLICATE_MEMBER", "INDEX.JSON"] in report["reasons"]
+
+
 # --- malformed receipt content: RECEIPT_UNPARSEABLE, not a silent PASS -----
 
 

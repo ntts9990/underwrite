@@ -14,6 +14,7 @@ from underwrite.cli.evidence import EvidenceError, output_line_size
 from underwrite.cli.local_json import Validator, validate
 from underwrite.cli.records import record_error_candidates, record_error_payload
 from underwrite.service.records import (
+    CapturedRecordFile,
     CapturedRecordSpec,
     RecordError,
     save_captured_record,
@@ -21,6 +22,34 @@ from underwrite.service.records import (
 )
 
 STORAGE_FAILURE_EXIT = 3
+
+
+def analysis_record_file(
+    analysis: dict[str, Any],
+    *,
+    result_name: str,
+    result_validator: Validator,
+    error_validator: Validator,
+    max_bytes: int,
+) -> CapturedRecordFile:
+    """Capture one validated result or diagnostic with its inclusive byte limit."""
+    result = analysis["state"] == "result"
+    document = analysis["report"] if result else analysis["error"]
+    validate(
+        result_validator if result else error_validator,
+        document,
+        EvidenceError,
+        "INTERNAL_ERROR",
+    )
+    encoded = canonical_bytes(document) + b"\n"
+    if len(encoded) > max_bytes:
+        raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
+    return CapturedRecordFile(
+        result_name if result else "analysis/error.json",
+        "result" if result else "log",
+        encoded,
+        "application/json",
+    )
 
 
 def storage_validator(aggregate: Draft202012Validator) -> Validator:
@@ -129,3 +158,35 @@ def admit_record_response(  # noqa: PLR0913 - explicit producer contracts and ou
             )
     if (maximum if as_json else human_maximum) > max_bytes:
         raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
+
+
+def finalize_captured_record(  # noqa: PLR0913 - explicit validators preserve producer contracts
+    envelope: dict[str, Any],
+    root: Path,
+    spec: CapturedRecordSpec,
+    *,
+    aggregate_validator: Validator,
+    storage_validator: Validator,
+    verification_validator: Validator,
+    record_error_validator: Validator,
+    analysis_text: str,
+    as_json: bool,
+    max_bytes: int,
+) -> dict[str, Any]:
+    """Admit a bounded response before publication, then reflect storage failure."""
+    admit_record_response(
+        envelope,
+        aggregate_validator=aggregate_validator,
+        storage_validator=storage_validator,
+        identifier=spec.record_id,
+        count=len(spec.files),
+        analysis_text=analysis_text,
+        as_json=as_json,
+        max_bytes=max_bytes,
+    )
+    envelope["storage"] = store_captured_record(
+        root, spec, verification_validator, record_error_validator
+    )
+    if envelope["storage"]["state"] == "error":
+        envelope["exit_code"] = STORAGE_FAILURE_EXIT
+    return envelope

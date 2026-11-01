@@ -484,10 +484,16 @@ def _attempt(value: object, location: str) -> dict[str, object]:
     if attempt["cleanup"] not in (None, "complete") or type(authenticated) is not bool:
         raise _fail("INVALID_INPUT", "INVALID_GOPPI_ROW", location)
     duration = _number(attempt["duration_ms"], location, nullable=True)
+    request_digest = _digest(attempt["request_digest"], location, nullable=True)
+    receipt_digest = _digest(attempt["receipt_digest"], location, nullable=True)
+    if (request_digest is None) != (receipt_digest is None) or authenticated != (
+        request_digest is not None
+    ):
+        raise _fail("INVALID_INPUT", "INVALID_GOPPI_ROW", location)
     return {
         "attempt_id": attempt_id,
-        "request_digest": _digest(attempt["request_digest"], location, nullable=True),
-        "receipt_digest": _digest(attempt["receipt_digest"], location, nullable=True),
+        "request_digest": request_digest,
+        "receipt_digest": receipt_digest,
         "authenticated": authenticated,
         "duration": duration,
     }
@@ -587,6 +593,11 @@ def _row(value: object, include_answers: bool, location: str) -> dict[str, objec
     case = _case(data["case"], location)
     attempt = _attempt(data["attempt"], location)
     classification, reason = _outcome(data["outcome"], location)
+    if (
+        classification in ("observed_true", "observed_false")
+        and attempt["authenticated"] is not True
+    ):
+        raise _fail("INVALID_INPUT", "INVALID_GOPPI_ROW", location)
     cost = _usage(data["usage"], location)
     answer_digest = _answer(data["answer"], include_answers, location)
     source_ref = _required_text(data["source_ref"], 9, location)

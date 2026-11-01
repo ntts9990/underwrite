@@ -5,12 +5,16 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import sys
 import tempfile
 from collections import Counter
 from pathlib import Path
 from typing import Any, cast
+from unittest.mock import patch
+
+from jsonschema import Draft202012Validator
 
 if __package__:
     from . import _wheel_smoke as wheel
@@ -20,6 +24,8 @@ else:
 EVIDENCE_ERROR_EXIT = 2
 STORAGE_ERROR_EXIT = 3
 BASELINE_RECORD_FILE_COUNT = 7
+TRAJECTORY_OUTCOME_ACTION_SCOPE_COUNT = 64
+LEGACY_USAGE_CANARY = "PRIVATE_AGENT_TOKEN"
 
 
 def _cli_json(cli: Path, args: list[str], output: Path, cwd: Path) -> dict[str, object]:
@@ -34,6 +40,211 @@ def _cli_json(cli: Path, args: list[str], output: Path, cwd: Path) -> dict[str, 
     return cast(dict[str, object], document)
 
 
+def _pin_cli_pilot(cli: Path, work: Path) -> None:
+    """An installed command must not derive registry roots from its wheel or cwd."""
+    contract = json.loads((wheel.ROOT / "contracts/cli_result.v1.schema.json").read_bytes())
+    validator = Draft202012Validator(contract)
+    pins = work / "contracts/pins"
+    pins.mkdir(parents=True)
+    siblings = work / "siblings"
+    repo = siblings / "smoke-repo"
+    repo.mkdir(parents=True)
+    source = repo / "contract.json"
+    source.write_bytes(b'{"smoke":true}\n')
+    selected = pins / "active/smoke-repo"
+    selected.mkdir(parents=True)
+    (selected / source.name).write_bytes(source.read_bytes())
+    (selected / "PINS.json").write_text(
+        json.dumps(
+            {
+                "schema": "pins.v1",
+                "repo": "smoke-repo",
+                "source_root": "smoke-repo",
+                "source_commit": "fixture",
+                "captured_at": "2026-01-01T00:00:00Z",
+                "files": {
+                    source.name: {
+                        "source_path": source.name,
+                        "sha256": "sha256:" + hashlib.sha256(source.read_bytes()).hexdigest(),
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def invoke(*args: str) -> tuple[int, dict[str, object]]:
+        observed = wheel.command([str(cli), *args, "--json"], work)
+        wheel.require(observed.stderr == "", f"pin CLI emitted stderr: {observed.stderr[:300]}")
+        result = cast(dict[str, object], json.loads(observed.stdout))
+        wheel.require(
+            validator.is_valid(cast(Any, result)),  # pyright: ignore[reportUnknownMemberType]
+            f"installed {' '.join(args[:2])} broke cli_result.v1",
+        )
+        return observed.returncode, result
+
+    with patch.dict(os.environ, {"UNDERWRITE_SIBLINGS_ROOT": str(work / "absent")}, clear=False):
+        code, result = invoke("drift", "check")
+        wheel.require(
+            code == EVIDENCE_ERROR_EXIT
+            and result["details"] == {"reason": "PINS_ROOT_REQUIRED", "location": "/pins"},
+            "installed drift inferred an implicit pin registry",
+        )
+        code, result = invoke("drift", "check", "--pins-root", str(pins))
+        wheel.require(
+            code == EVIDENCE_ERROR_EXIT
+            and result["state"] == "UNCONFIGURED"
+            and cast(dict[str, object], result["details"])["unconfigured_repos"] == ["smoke-repo"],
+            "installed drift ignored the siblings environment override",
+        )
+        code, result = invoke(
+            "drift", "check", "--pins-root", str(pins), "--siblings-root", str(siblings)
+        )
+        wheel.require(
+            code == 0 and result["state"] == "PASS",
+            "installed drift ignored the explicit siblings root",
+        )
+    code, result = invoke(
+        "drift", "check", "--pins-root", str(work / "missing"), "--siblings-root", str(siblings)
+    )
+    wheel.require(
+        code == EVIDENCE_ERROR_EXIT
+        and result["details"] == {"reason": "PIN_READ_FAILED", "location": "/pins"},
+        "installed drift treated a missing explicit registry as an empty population",
+    )
+    empty = work / "empty-pins"
+    empty.mkdir()
+    code, result = invoke(
+        "drift", "check", "--pins-root", str(empty), "--siblings-root", str(siblings)
+    )
+    wheel.require(
+        code == 1 and result["state"] == "EMPTY_POPULATION",
+        "installed drift lost the existing empty-registry outcome",
+    )
+
+    code, result = invoke("pins", "refresh", "--repo", "smoke-repo")
+    wheel.require(
+        code == EVIDENCE_ERROR_EXIT
+        and result["details"]
+        == {"reason": "PINS_ROOT_REQUIRED", "location": "/pins", "publication": "not_started"},
+        "installed refresh did not return JSON for missing configuration",
+    )
+    wheel.success(["git", "-C", str(repo), "init", "-q"], work)
+    wheel.success(["git", "-C", str(repo), "add", "contract.json"], work)
+    wheel.success(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "-c",
+            "user.email=fixture@test.invalid",
+            "-c",
+            "user.name=fixture",
+            "commit",
+            "-q",
+            "-m",
+            "fixture",
+        ],
+        work,
+    )
+    code, result = invoke(
+        "pins",
+        "refresh",
+        "--repo",
+        "smoke-repo",
+        "--pins-root",
+        str(pins),
+        "--siblings-root",
+        str(siblings),
+    )
+    wheel.require(
+        code == 0 and result["state"] == "PASS" and result["schema"] == "cli_result.v1",
+        "installed refresh JSON success changed",
+    )
+    published = json.loads((selected / "PINS.json").read_bytes())
+    actual_commit = wheel.success(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], work
+    ).stdout.strip()
+    details = cast(dict[str, object], result["details"])
+    wheel.require(
+        details == {
+            "repo": published["repo"],
+            "source_commit": published["source_commit"],
+            "captured_at": published["captured_at"],
+            "files": sorted(published["files"]),
+        }
+        and details["source_commit"] == actual_commit,
+        "installed refresh JSON disagrees with published pin manifest or Git commit",
+    )
+    code, result = invoke(
+        "pins",
+        "refresh",
+        "--repo",
+        "../unsafe",
+        "--pins-root",
+        str(pins),
+        "--siblings-root",
+        str(siblings),
+    )
+    wheel.require(
+        code == EVIDENCE_ERROR_EXIT
+        and result["details"] == {"reason": "INVALID_REPO", "publication": "not_started"},
+        "installed refresh JSON refusal lost publication state",
+    )
+    capabilities = _cli_json(cli, ["capabilities"], work / "pins-capabilities.json", work)
+    commands = cast(list[dict[str, object]], capabilities["commands"])
+    for name, required in (
+        ("drift", ["pins_root", "siblings_root"]),
+        ("pins", ["repo", "pins_root", "siblings_root"]),
+    ):
+        descriptor = next(row for row in commands if row["command"] == name)
+        selected_profile = cast(list[dict[str, object]], descriptor["profiles"])[0]
+        wheel.require(
+            selected_profile["required_inputs"] == required
+            and selected_profile["output_schemas"] == ["cli_result.v1"],
+            f"installed {name} capability metadata drifted",
+        )
+
+
+def _legacy_usage_pilot(cli: Path, work: Path) -> None:
+    """Installed root parsing must preserve the typed, content-minimized error boundary."""
+    contract = json.loads((wheel.ROOT / "contracts/evidence_error.v1.schema.json").read_bytes())
+    validator = Draft202012Validator(contract)
+    observed = wheel.command(
+        [
+            str(cli),
+            "boundary",
+            "scan",
+            str(work),
+            "--unexpected",
+            LEGACY_USAGE_CANARY,
+            "--json",
+        ],
+        work,
+    )
+    wheel.require(observed.returncode == EVIDENCE_ERROR_EXIT, "legacy usage exit changed")
+    wheel.require(observed.stdout == "", "legacy usage error wrote stdout")
+    wheel.require(
+        LEGACY_USAGE_CANARY not in observed.stderr,
+        "legacy usage error reflected a private argument",
+    )
+    try:
+        parsed: object = json.loads(observed.stderr)
+    except json.JSONDecodeError as exc:
+        raise wheel.SmokeFailure("legacy usage error did not write JSON stderr") from exc
+    wheel.require(isinstance(parsed, dict), "legacy usage error was not a JSON object")
+    diagnostic = cast(dict[str, object], parsed)
+    wheel.require(
+        validator.is_valid(cast(Any, diagnostic)),  # pyright: ignore[reportUnknownMemberType]
+        "legacy usage error broke evidence_error.v1",
+    )
+    wheel.require(
+        diagnostic.get("code") == "USAGE_ERROR"
+        and diagnostic.get("reason") == "INVALID_ARGUMENTS_SEE_HELP",
+        "legacy usage error changed its stable classification",
+    )
+
+
 def _registry_core_smoke(dist: Path) -> None:
     candidates = sorted(dist.glob("underwrite-*.whl"))
     wheel.require(len(candidates) == 1, "expected one application wheel for registry-core smoke")
@@ -46,6 +257,8 @@ def _registry_core_smoke(dist: Path) -> None:
         venv = work / "venv"
         _, registry = wheel.install_registry_core(work, venv, app)
         cli = venv / "bin/underwrite"
+        _legacy_usage_pilot(cli, work)
+        _pin_cli_pilot(cli, work)
         fixtures = wheel.ROOT / "fixtures/examples"
         _native_measurement_pilot(cli, fixtures, work)
         _baseline_event_pilot(cli, fixtures, work)
@@ -405,6 +618,31 @@ def _promptfoo_auto_pilot(cli: Path, work: Path) -> None:
             directory,
         )
         wheel.require(json.loads(api.stdout) == report, "installed auto API and CLI disagree")
+        actions = _cli_json(
+            cli,
+            ["audit-promptfoo", str(source), "--view", "actions"],
+            directory / "actions.json",
+            directory,
+        )
+        actions_api = wheel.success(
+            [
+                str(cli.with_name("python")),
+                "-c",
+                "import json,sys; from pathlib import Path; "
+                "from underwrite.instrument.ingest.accounting "
+                "import audit_promptfoo_actions_bytes; "
+                "print(json.dumps(audit_promptfoo_actions_bytes(Path(sys.argv[1]).read_bytes())))",
+                str(source),
+            ],
+            directory,
+        )
+        wheel.require(
+            actions["schema"] == "promptfoo_accounting_actions.v1"
+            and actions["next_actions"] == []
+            and actions["raw_hash"] == report["raw_hash"]
+            and json.loads(actions_api.stdout) == actions,
+            "installed Promptfoo action view diverged from accounting or Python API",
+        )
         _promptfoo_record_pilot(cli, source, directory, report)
         verified = _cli_json(
             cli,
@@ -421,6 +659,18 @@ def _promptfoo_auto_pilot(cli: Path, work: Path) -> None:
         )
         wheel.require(verified["valid"] is True, "auto record did not verify after input removal")
         _promptfoo_auto_mutations(cli, source, directory)
+    mismatch = wheel.ROOT / "fixtures/examples/evidence/synthetic-promptfoo-count-mismatch.json"
+    guided = _cli_json(
+        cli,
+        ["audit-promptfoo", str(mismatch), "--view", "actions"],
+        work / "promptfoo-mismatch-actions.json",
+        work,
+    )
+    wheel.require(
+        guided["declared_relation"] == "inconsistent"
+        and guided["next_actions"] == ["RECONCILE_SOURCE_DECLARED_COUNTS"],
+        "installed Promptfoo mismatch did not yield the bounded next action",
+    )
 
 
 def _promptfoo_current_pilot(cli: Path, work: Path) -> None:
@@ -1457,7 +1707,11 @@ def _langfuse_record_pilot(  # noqa: PLR0913 — keep both source roles and view
     *,
     view: str = "accounting",
 ) -> None:
-    record_schema = "langfuse_row_record.v2" if view == "row-index" else "langfuse_record.v2"
+    record_schema = {
+        "accounting": "langfuse_record.v2",
+        "row-index": "langfuse_row_record.v2",
+        "score-source": "langfuse_score_source_record.v1",
+    }[view]
     slug = "langfuse-current"
     if view != "accounting":
         slug += "-" + view
@@ -1483,6 +1737,11 @@ def _langfuse_record_pilot(  # noqa: PLR0913 — keep both source roles and view
     storage = cast(dict[str, object], report["storage"])
     wheel.require(report["schema"] == record_schema, "Langfuse record selected the wrong contract")
     wheel.require(analysis["report"] == expected, "Langfuse capture changed analysis")
+    if view == "score-source":
+        wheel.require(
+            "PRIVATE_SCORE_CANARY" not in json.dumps(report),
+            "Langfuse score-source record exposed private score fields",
+        )
     wheel.require(storage["state"] == "saved", "Langfuse capture failed to save")
     expected_hashes: dict[str, str] = {}
     for source, role in zip(inputs, ("observations", "scores"), strict=True):
@@ -1520,6 +1779,11 @@ def _langfuse_record_pilot(  # noqa: PLR0913 — keep both source roles and view
         recovered["manifest_digest"] == storage["manifest_digest"],
         "Langfuse recovered manifest differs",
     )
+    if view == "score-source":
+        wheel.require(
+            "PRIVATE_SCORE_CANARY" not in json.dumps(recovered),
+            "Langfuse stored score-source analysis exposed private score fields",
+        )
     source_code = (
         "import json,sys; from pathlib import Path; "
         "from underwrite.service.records import read_record_file; "
@@ -1779,6 +2043,33 @@ def _langfuse_auto_pilot(cli: Path, work: Path) -> None:
             and rows["counts"] == report["counts"],
             "automatic Langfuse row projection changed accounting",
         )
+        score_source = _cli_json(
+            cli, [*args, "--view", "score-source"], selected / "score-source.json", selected
+        )
+        source_counts = cast(dict[str, Any], score_source["counts"])
+        known = cast(dict[str, int], source_counts["known"])
+        unknown = cast(dict[str, int], source_counts["unknown"])
+        accounting_counts = cast(dict[str, Any], report["counts"])
+        wheel.require(
+            score_source["schema"] == "langfuse_score_source_summary.v1"
+            and score_source["reader_profile"] == reader
+            and sum(known.values()) + sum(unknown.values()) == accounting_counts["scores"],
+            "automatic Langfuse source projection changed score population",
+        )
+        source_api_code = (
+            "import json,sys; from pathlib import Path; "
+            "from underwrite.instrument.ingest.langfuse_accounting import audit_langfuse_bytes; "
+            "print(json.dumps(audit_langfuse_bytes(Path(sys.argv[1]).read_bytes(),"
+            "Path(sys.argv[2]).read_bytes(),view='score-source'),sort_keys=True))"
+        )
+        source_api = wheel.success(
+            [str(cli.parent / "python"), "-c", source_api_code, str(observed), str(scores)],
+            selected,
+        )
+        wheel.require(
+            json.loads(source_api.stdout) == score_source,
+            "automatic Langfuse score-source API/CLI outcomes differ",
+        )
         api_code = (
             "import json,sys; from pathlib import Path; "
             "from underwrite.instrument.ingest.langfuse_accounting import audit_langfuse_bytes; "
@@ -1806,6 +2097,36 @@ def _langfuse_auto_pilot(cli: Path, work: Path) -> None:
             rows,
             view="row-index",
         )
+        if index in (0, 1):
+            private_scores = selected / "scores-private.json"
+            private_document = json.loads(scores.read_bytes())
+            if isinstance(private_document, list):
+                first_score = cast(dict[str, Any], private_document[0])
+            else:
+                body = private_document.get("body", private_document)
+                first_score = cast(dict[str, Any], body["data"][0])
+            first_score["metadata"] = {"secret": "PRIVATE_SCORE_CANARY"}
+            first_score["evaluatorId"] = "PRIVATE_SCORE_CANARY"
+            private_scores.write_text(json.dumps(private_document), encoding="utf-8")
+            private_args = [
+                "audit-langfuse", "--observations", str(observed), "--scores", str(private_scores),
+                "--view", "score-source",
+            ]
+            private_summary = _cli_json(
+                cli, private_args, selected / "private-score-source.json", selected
+            )
+            wheel.require(
+                "PRIVATE_SCORE_CANARY" not in json.dumps(private_summary),
+                "Langfuse score-source summary exposed private score fields",
+            )
+            private_human = wheel.success([str(cli), *private_args], selected)
+            wheel.require(
+                "PRIVATE_SCORE_CANARY" not in private_human.stdout,
+                "Langfuse score-source human output exposed private score fields",
+            )
+            _langfuse_record_pilot(
+                cli, selected, observed, private_scores, private_summary, view="score-source"
+            )
     _native_refusal(
         cli,
         ["audit-langfuse", "--observations", str(pairs[0][0]), "--scores", str(pairs[1][1])],
@@ -2215,6 +2536,336 @@ def _common_result_inspection_pilot(cli: Path, fixtures: Path, work: Path) -> No
         and str(invalid) not in refused.stderr
         and json.loads(refused.stderr)["reason"] == "INVALID_JSON_INPUT",
         "installed result inspection refusal",
+    )
+
+
+def _cross_artifact_record_pilot(
+    cli: Path, directory: Path, arguments: list[str], mapped: dict[str, object], private: str
+) -> None:
+    correspondence = directory / "correspondence.json"
+    record_root = directory / "record-store"
+    record_id = "cross-artifact.mapped-001"
+    recorded = _cli_json(
+        cli,
+        [
+            "records", "review-artifacts", *arguments[1:],
+            "--correspondence", str(correspondence),
+            "--root", str(record_root), "--id", record_id,
+        ],
+        directory / "mapped-record.json",
+        directory,
+    )
+    record_analysis = cast(dict[str, object], recorded["analysis"])
+    record_storage = cast(dict[str, object], recorded["storage"])
+    private_paths = (
+        directory / "assessment.json",
+        directory / "result.json",
+        directory / "promptfoo.json",
+        correspondence,
+    )
+    serialized = json.dumps(recorded)
+    wheel.require(
+        recorded["schema"] == "cross_artifact_record.v1"
+        and record_analysis["state"] == "result"
+        and record_analysis["report"] == mapped
+        and record_storage["state"] == "saved"
+        and recorded["exit_code"] == 0
+        and private not in serialized
+        and all(str(path) not in serialized for path in private_paths),
+        "installed mapped record changed the review or leaked private sources",
+    )
+    verified_record = _cli_json(
+        cli,
+        ["records", "verify", "--root", str(record_root), "--id", record_id],
+        directory / "mapped-record-verification.json",
+        directory,
+    )
+    read_review = _cli_json(
+        cli,
+        [
+            "records", "read-json", "--root", str(record_root), "--id", record_id,
+            "--name", "analysis/review.json",
+        ],
+        directory / "mapped-record-readback.json",
+        directory,
+    )
+    source = cast(dict[str, object], recorded["source"])
+    members = cast(list[object], source["members"])
+    wheel.require(
+        verified_record["valid"] is True
+        and verified_record["files_checked"] == len(members) + 2
+        and read_review["content"] == mapped
+        and read_review["manifest_digest"] == record_storage["manifest_digest"],
+        "installed mapped record did not verify and read back the same review",
+    )
+
+
+def _cross_artifact_unmapped_prerequisites_pilot(
+    cli: Path,
+    directory: Path,
+    arguments: list[str],
+    promptfoo: Path,
+    case_ids: list[str],
+    private: str,
+) -> None:
+    cases = (
+        (
+            "all-controls",
+            "control",
+            None,
+            0,
+            "missing_subject_rows",
+            "PROVIDE_PROMPTFOO_SUBJECT_ROWS",
+        ),
+        (
+            "disjoint",
+            "subject",
+            "underwrite-no-match-",
+            len(case_ids) + 1,
+            "missing_matching_case_ids",
+            "PROVIDE_MATCHING_SOURCE_CASE_IDS",
+        ),
+    )
+    for name, role, new_id_prefix, subject_count, prerequisite, task_code in cases:
+        payload = json.loads(promptfoo.read_bytes())
+        for index, row in enumerate(payload["results"]["results"]):
+            metadata = row["testCase"]["metadata"]
+            metadata["slot_kind"] = role
+            if new_id_prefix is not None:
+                metadata["case_id"] = f"{new_id_prefix}{index}"
+            elif index == 0:
+                metadata["case_id"] = "PRIVATE_WHEEL_CONTROL_CASE_0"
+        if new_id_prefix is not None:
+            selected_ids = {
+                row["testCase"]["metadata"]["case_id"] for row in payload["results"]["results"]
+            }
+            wheel.require(
+                set(case_ids).isdisjoint(selected_ids), "smoke disjoint IDs accidentally overlap"
+            )
+        selected = directory / f"{name}.json"
+        selected.write_text(json.dumps(payload), encoding="utf-8")
+        selected_args = [*arguments[:-1], str(selected)]
+        strict = cast(
+            dict[str, Any],
+            _cli_json(cli, selected_args, directory / f"{name}-review.json", directory),
+        )
+        readiness = cast(
+            dict[str, Any],
+            _cli_json(
+                cli,
+                [*selected_args, "--view", "readiness"],
+                directory / f"{name}-readiness.json",
+                directory,
+            ),
+        )
+        wheel.require(
+            strict["relation"] == "incomparable_on_supplied_evidence"
+            and strict["populations"]["promptfoo"]["subject_rows"] == subject_count
+            and strict["correspondence"]["pairs"] == []
+            and strict["finding_counts"] == {"equal": 0, "different": 0, "ineligible": 0}
+            and strict["improvement"] == "unknown"
+            and strict["next_verification_tasks"][0]["code"] == task_code
+            and readiness["review_prerequisites"] == prerequisite
+            and readiness["finding_counts"] == {"equal": 0, "different": 0, "ineligible": 0}
+            and readiness["improvement"] == "unknown"
+            and readiness["next_verification_tasks"][0]["code"] == task_code
+            and private not in json.dumps(strict) + json.dumps(readiness),
+            f"installed {name} review requested an impossible case map or leaked source content",
+        )
+        displayed = json.dumps(strict) + json.dumps(readiness)
+        marker = new_id_prefix or "PRIVATE_WHEEL_CONTROL_CASE_0"
+        wheel.require(marker not in displayed, f"installed {name} review leaked case IDs")
+
+
+def _cross_artifact_missing_metadata_pilot(
+    cli: Path, directory: Path, arguments: list[str], assessment: Path, result: Path
+) -> None:
+    ordinary_promptfoo = wheel.ROOT / "fixtures/golden/external/promptfoo-0.124.1/results.json"
+    ordinary_rows = len(json.loads(ordinary_promptfoo.read_bytes())["results"]["results"])
+    readiness_args = [*arguments[:-1], str(ordinary_promptfoo), "--view", "readiness"]
+    readiness = _cli_json(cli, readiness_args, directory / "readiness.json", directory)
+    readiness_metadata = cast(dict[str, object], readiness["metadata"])
+    readiness_population = cast(dict[str, object], readiness["populations"])
+    ordinary_population = cast(dict[str, object], readiness_population["promptfoo"])
+    wheel.require(
+        readiness["schema"] == "cross_artifact_readiness.v1"
+        and readiness["relation"] == "incomparable_on_supplied_evidence"
+        and readiness_metadata["case_ids"] == "incomplete"
+        and readiness_metadata["row_roles"] == "incomplete"
+        and ordinary_population["supplied_rows"] == ordinary_rows
+        and ordinary_population["subject_rows"] is None
+        and ordinary_population["control_rows"] is None
+        and readiness["review_prerequisites"] == "missing_owner_metadata"
+        and readiness["improvement"] == "unknown",
+        "installed readiness invented row roles or case comparison",
+    )
+    readiness_api = wheel.success(
+        [
+            str(cli.parent / "python"),
+            "-I",
+            "-c",
+            "import json,sys; from pathlib import Path; "
+            "from underwrite.instrument.ingest.cross_artifact "
+            "import review_artifact_readiness_files; "
+            "print(json.dumps(review_artifact_readiness_files(*[Path(p) for p in sys.argv[1:]])))",
+            str(assessment),
+            str(result),
+            str(ordinary_promptfoo),
+        ],
+        directory,
+    )
+    wheel.require(
+        json.loads(readiness_api.stdout) == readiness,
+        "installed readiness Python API and CLI disagree",
+    )
+
+
+def _cross_artifact_review_pilot(cli: Path, work: Path) -> None:
+    directory = work / "cross-artifact-review"
+    directory.mkdir()
+    c55 = wheel.ROOT / "fixtures/conformance/goppi-c55-common"
+    assessment = directory / "assessment.json"
+    result = directory / "result.json"
+    promptfoo = directory / "promptfoo.json"
+    correspondence = directory / "correspondence.json"
+    shutil.copyfile(c55 / "assessment.json", assessment)
+    shutil.copyfile(c55 / "evidence-result.json", result)
+    case_ids = [case["case_id"] for case in json.loads(assessment.read_bytes())["cases"]]
+    private = "PRIVATE_WHEEL_REVIEW_CANARY"
+    rows: list[dict[str, Any]] = [
+        {
+            "success": False,
+            "failureReason": 1,
+            "testCase": {"metadata": {"case_id": case_ids[0], "slot_kind": "control"}},
+        }
+    ]
+    rows.extend(
+        {
+            "success": index == 0,
+            "failureReason": 0 if index == 0 else 1,
+            "testCase": {"metadata": {"case_id": case_id, "slot_kind": "subject"}},
+            "response": {"output": private},
+        }
+        for index, case_id in enumerate(case_ids)
+    )
+    promptfoo.write_text(
+        json.dumps(
+            {
+                "results": {
+                    "version": 3,
+                    "results": rows,
+                    "stats": {"successes": 1, "failures": len(rows) - 1, "errors": 0},
+                }
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    arguments = [
+        "review-artifacts",
+        "--goppi-assessment",
+        str(assessment),
+        "--goppi-result",
+        str(result),
+        "--promptfoo",
+        str(promptfoo),
+    ]
+    no_map = _cli_json(cli, arguments, directory / "no-map.json", directory)
+    relation = cast(dict[str, object], no_map["correspondence"])
+    wheel.require(
+        no_map["schema"] == "cross_artifact_review.v1"
+        and no_map["relation"] == "incomparable_on_supplied_evidence"
+        and relation["pairs"] == []
+        and relation["unmatched_case_indices"] == list(range(len(case_ids)))
+        and relation["unmatched_subject_row_indices"] == list(range(1, len(rows)))
+        and no_map["improvement"] == "unknown",
+        "installed review without a declaration asserted comparison",
+    )
+    _cross_artifact_unmapped_prerequisites_pilot(
+        cli, directory, arguments, promptfoo, case_ids, private
+    )
+    _cross_artifact_missing_metadata_pilot(cli, directory, arguments, assessment, result)
+    sources = {
+        key: "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+        for key, path in (
+            ("goppi_assessment_sha256", assessment),
+            ("goppi_result_sha256", result),
+            ("promptfoo_export_sha256", promptfoo),
+        )
+    }
+    declaration: dict[str, Any] = {
+        "schema": "cross_artifact_correspondence.v1",
+        "scope": "owner_declared_case_mapping",
+        "declared_by": private,
+        "coverage": "complete",
+        "sources": sources,
+        "pairs": [
+            {"case_index": index, "row_index": index + 1, "case_id": case_id}
+            for index, case_id in enumerate(case_ids)
+        ],
+    }
+    correspondence.write_text(json.dumps(declaration, sort_keys=True), encoding="utf-8")
+    mapped = _cli_json(
+        cli,
+        [*arguments, "--correspondence", str(correspondence)],
+        directory / "mapped.json",
+        directory,
+    )
+    mapped_relation = cast(dict[str, object], mapped["correspondence"])
+    pairs = cast(list[dict[str, object]], mapped_relation["pairs"])
+    wheel.require(len(pairs) == len(case_ids), "installed review omitted declared cases")
+    missing = pairs[4]
+    wheel.require(
+        mapped["relation"] == "declared_case_mapping_descriptive"
+        and mapped_relation["input_correspondence"] == "declared_unverified"
+        and mapped_relation["semantic_equivalence"] == "unestablished"
+        and missing["goppi_availability"] == "missing"
+        and missing["goppi_value"] is None
+        and missing["promptfoo_source_success"] is False
+        and missing["finding"] == "value_comparison_ineligible"
+        and mapped["improvement"] == "unknown",
+        "installed review turned missing source evidence into Boolean agreement",
+    )
+    api_code = (
+        "import json,sys; from pathlib import Path; "
+        "from underwrite.instrument.ingest.cross_artifact import review_artifact_files; "
+        "args=[Path(p) for p in sys.argv[1:]]; "
+        "print(json.dumps(review_artifact_files(*args),sort_keys=True))"
+    )
+    for selected, expected in ((None, no_map), (correspondence, mapped)):
+        paths = [assessment, result, promptfoo]
+        if selected is not None:
+            paths.append(selected)
+        api = wheel.success(
+            [str(cli.parent / "python"), "-I", "-c", api_code, *(str(path) for path in paths)],
+            directory,
+        )
+        wheel.require(
+            api.stderr == "" and json.loads(api.stdout) == expected,
+            "installed review Python API and CLI disagree",
+        )
+    wheel.require(
+        private not in json.dumps(no_map) + json.dumps(mapped)
+        and all(str(path) not in json.dumps(mapped) for path in (assessment, result, promptfoo)),
+        "installed review leaked selected source content or paths",
+    )
+    _cross_artifact_record_pilot(cli, directory, arguments, mapped, private)
+    declaration["sources"]["promptfoo_export_sha256"] = "sha256:" + "0" * 64
+    correspondence.write_text(json.dumps(declaration, sort_keys=True), encoding="utf-8")
+    refused = wheel.command(
+        [str(cli), *arguments, "--correspondence", str(correspondence), "--json"],
+        directory,
+    )
+    diagnostic = json.loads(refused.stderr)
+    wheel.require(
+        refused.returncode == EVIDENCE_ERROR_EXIT
+        and refused.stdout == ""
+        and diagnostic["schema"] == "evidence_error.v1"
+        and diagnostic["code"] == "INPUT_BINDING_MISMATCH"
+        and diagnostic["reason"] == "SOURCE_HASH_MISMATCH"
+        and private not in refused.stderr
+        and str(correspondence) not in refused.stderr,
+        "installed review accepted malformed source binding or leaked private input",
     )
 
 
@@ -2645,7 +3296,7 @@ def _trajectory_pilot(cli: Path, work: Path) -> None:
     report = _cli_json(cli, args, work / "trajectory-review.json", work)
     populations = cast(dict[str, object], report["populations"])
     manifest = json.loads((exchange / "paired/manifest.json").read_bytes())
-    wheel.require(report["schema"] == "goppi_trajectory_review.v1", "trajectory output contract")
+    wheel.require(report["schema"] == "goppi_trajectory_review.v2", "trajectory output contract")
     wheel.require(populations["paired_rows"] == manifest["row_count"], "trajectory row population")
     tasks = cast(list[dict[str, object]], report["next_verification_tasks"])
     wheel.require(
@@ -2655,14 +3306,112 @@ def _trajectory_pilot(cli: Path, work: Path) -> None:
     code = (
         "import json,sys; from pathlib import Path; "
         "from underwrite.instrument.ingest.goppi_trajectory import audit_goppi_trajectory; "
-        "from underwrite.instrument.ingest.goppi_verifier import GoppiCliVerifier; "
+        "kwargs={} if len(sys.argv)==3 else {'view':sys.argv[3]}; "
         "print(json.dumps(audit_goppi_trajectory(Path(sys.argv[1]),"
-        "verifier=GoppiCliVerifier(Path(sys.argv[2])))))"
+        "goppi_executable=Path(sys.argv[2]),**kwargs)))"
     )
     result = wheel.success(
         [str(cli.parent / "python"), "-c", code, str(exchange), str(verifier)], work
     )
     wheel.require(json.loads(result.stdout) == report, "trajectory installed API/CLI mismatch")
+    actions = _cli_json(
+        cli, [*args, "--view", "outcome-actions"], work / "trajectory-outcome-actions.json", work
+    )
+    wheel.require(
+        actions["schema"] == "goppi_trajectory_outcome_actions.v2",
+        "trajectory outcome-actions output contract",
+    )
+    installed_contract = (
+        "import hashlib,json,sys; from importlib.resources import files; "
+        "from underwrite.instrument.ingest.schema import packaged_validator; "
+        "name='goppi_trajectory_outcome_actions.v2'; "
+        "packaged_validator(name).validate(json.load(open(sys.argv[1],encoding='utf-8'))); "
+        "print(hashlib.sha256(files('underwrite').joinpath('_contracts',"
+        "name+'.schema.json').read_bytes()).hexdigest())"
+    )
+    checked = wheel.success(
+        [str(cli.parent / "python"), "-c", installed_contract,
+         str(work / "trajectory-outcome-actions.json")], work
+    )
+    wheel.require(
+        checked.stdout.strip() == hashlib.sha256(
+            (wheel.ROOT / "contracts/goppi_trajectory_outcome_actions.v2.schema.json").read_bytes()
+        ).hexdigest(),
+        "trajectory installed contract differs from authored contract",
+    )
+    action_result = wheel.success(
+        [
+            str(cli.parent / "python"),
+            "-c",
+            code,
+            str(exchange),
+            str(verifier),
+            "outcome-actions",
+        ],
+        work,
+    )
+    wheel.require(
+        json.loads(action_result.stdout) == actions,
+        "trajectory outcome-actions installed API/CLI mismatch",
+    )
+    action_tasks = [
+        task for task in cast(list[dict[str, object]], actions["next_verification_tasks"])
+        if task["kind"] == "inspect_outcome_change_without_tool_status_change"
+    ]
+    wheel.require(len(action_tasks) == 1, "trajectory outcome-actions task population")
+    action_scope = cast(list[dict[str, object]], action_tasks[0]["scope"])
+    eligible_ids = {
+        item["id"]
+        for item in cast(list[dict[str, object]], actions["comparisons"])
+        if cast(dict[str, object], item["comparability"])["state"] == "comparable"
+        and cast(dict[str, object], item["difference"])["state"] == "observed"
+        and cast(dict[str, object], item["difference"])["outcome_changed"] is True
+        and cast(dict[str, object], item["difference"])["tool_status_deltas"] == []
+    }
+    wheel.require(
+        len(action_scope) == TRAJECTORY_OUTCOME_ACTION_SCOPE_COUNT
+        and {item["comparison_id"] for item in action_scope} == eligible_ids
+        and all(item["arms"] == ["baseline", "candidate"] for item in action_scope)
+        and action_tasks[0]["execution_authorized"] is False,
+        "trajectory outcome-actions scope or authority changed",
+    )
+    trust = cast(dict[str, object], actions["trust_scope"])
+    authority = cast(dict[str, object], actions["authority"])
+    wheel.require(
+        trust == report["trust_scope"]
+        and trust["verifier_report_state"] == "report_accepted"
+        and trust["verifier_source"] == "operator_configured_executable"
+        and trust["verifier_identity_verified"] is False
+        and trust["response_snapshot_binding"] == "selected_fields_matched"
+        and trust["snapshot_postcheck"] == "unchanged"
+        and trust["content_closure"] == "verifier_reported_valid"
+        and trust["authenticity"] == "verifier_reported_content_digest_only"
+        and "native_verification" not in trust
+        and trust["source_authentication_independently_verified"] is False
+        and trust["producer_projection_independently_verified"] is False
+        and authority == report["authority"]
+        and authority["human_review"] == "required"
+        and authority["execution_authorized"] is False,
+        "trajectory outcome-actions widened source trust or decision authority",
+    )
+    stale = work / "trajectory-stale-manifest"
+    shutil.copytree(exchange, stale)
+    execution = stale / "paired/execution.json"
+    execution.write_bytes(execution.read_bytes() + b"\n")
+    reported_only = _cli_json(
+        cli,
+        ["audit-trajectory", "--exchange", str(stale), "--goppi-executable", str(verifier)],
+        work / "trajectory-stale-report.json",
+        work,
+    )
+    stale_trust = cast(dict[str, object], reported_only["trust_scope"])
+    wheel.require(
+        stale_trust["verifier_report_state"] == "report_accepted"
+        and stale_trust["content_closure"] == "verifier_reported_valid"
+        and stale_trust["verifier_identity_verified"] is False
+        and "native_verification" not in stale_trust,
+        "non-verifying stub was promoted to native closure for stale manifest",
+    )
     _native_refusal(
         cli,
         ["audit-trajectory", "--exchange", str(exchange / "paired"),
@@ -2696,7 +3445,7 @@ def _trajectory_record_pilot(
     )
     analysis = cast(dict[str, object], captured["analysis"])
     storage = cast(dict[str, object], captured["storage"])
-    wheel.require(captured["schema"] == "trajectory_record.v1", "trajectory record contract")
+    wheel.require(captured["schema"] == "trajectory_record.v2", "trajectory record contract")
     wheel.require(analysis["report"] == expected, "trajectory retention changed analysis")
     wheel.require(storage["state"] == "saved", "trajectory retention failed")
     hashes = {
@@ -2711,6 +3460,14 @@ def _trajectory_record_pilot(
         work / "trajectory-record-read.json", work,
     )
     wheel.require(reopened["analysis"] == analysis, "trajectory reopen changed historical analysis")
+    interpretation = cast(dict[str, object], reopened["verification_interpretation"])
+    wheel.require(
+        reopened["schema"] == "trajectory_record_read.v2"
+        and interpretation["state"] == "current_report_only"
+        and interpretation["verifier_identity_verified"] is False
+        and interpretation["current_native_verification"] == "not_performed",
+        "trajectory reopen promoted a verifier report to native verification",
+    )
     wheel.require(
         reopened["native_verification_performed_now"] is False,
         "trajectory reopen invented native verification",
@@ -2745,6 +3502,8 @@ def _smoke(dist: Path) -> None:
         wheel.install_wheels(work, venv, wheels)
         wheel.check_wheel_origins(venv, wheels)
         wheel.stale_core_upgrade(work, wheels)
+        _legacy_usage_pilot(cli, work)
+        _pin_cli_pilot(cli, work)
         _evidence_pilots(cli, fixtures, work)
         _record_pilots(cli, fixtures, work)
         _handoff_pilot(cli, work)
@@ -2760,6 +3519,7 @@ def _smoke(dist: Path) -> None:
         _native_measurement_pilot(cli, fixtures, work)
         _baseline_event_pilot(cli, fixtures, work)
         _common_result_inspection_pilot(cli, fixtures, work)
+        _cross_artifact_review_pilot(cli, work)
         _baseline_record_pilot(cli, fixtures, work)
         _measurement_record_pilot(cli, work)
         _measurement_replay_pilot(cli, work)

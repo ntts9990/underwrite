@@ -22,6 +22,8 @@ from underwrite.instrument.evidence.accounting import (
 )
 from underwrite.instrument.evidence.promptfoo_compat import (
     ACCOUNTING_SCHEMA,
+    ACTION_BY_FINDING,
+    ACTIONS_SCHEMA,
     LIMITATIONS,
     MAX_VERSION_LENGTH,
     READER_PROFILE,
@@ -209,6 +211,39 @@ def build_row_index_schema() -> dict[str, Any]:
     )
 
 
+def build_actions_schema() -> dict[str, Any]:
+    """Extend the generated count contract without changing its default v2 bytes."""
+    accounting = build_accounting_schema()
+    properties = deepcopy(cast(dict[str, Any], accounting["properties"]))
+    properties["schema"] = {"const": ACTIONS_SCHEMA}
+    properties["next_actions"] = {
+        "type": "array",
+        "maxItems": len(ACTION_BY_FINDING),
+        "items": {"enum": [action for _, action in ACTION_BY_FINDING]},
+        "uniqueItems": True,
+    }
+    result = _base(
+        ACTIONS_SCHEMA,
+        description=(
+            "Promptfoo count findings with finite next verification actions. "
+            "Actions request source inspection, not execution, cause inference, or approval."
+        ),
+        properties=properties,
+        definitions=deepcopy(cast(dict[str, Any], accounting["$defs"])),
+    )
+    result["allOf"] = [
+        {
+            "if": {
+                "properties": {"findings": {"contains": {"properties": {"code": {"const": code}}}}}
+            },
+            "then": {"properties": {"next_actions": {"contains": {"const": action}}}},
+            "else": {"properties": {"next_actions": {"not": {"contains": {"const": action}}}}},
+        }
+        for code, action in ACTION_BY_FINDING
+    ]
+    return result
+
+
 def build_record_schema_v2() -> dict[str, Any]:
     owner, version = ACCOUNTING_SCHEMA.rsplit(".", 1)
     return build_record_schema(
@@ -232,6 +267,7 @@ def main() -> int:
     for name, builder in (
         (ACCOUNTING_SCHEMA, build_accounting_schema),
         (ROW_INDEX_SCHEMA, build_row_index_schema),
+        (ACTIONS_SCHEMA, build_actions_schema),
         (AUTO_RECORD_SCHEMA, build_record_schema_v2),
     ):
         target = ROOT / f"contracts/{name}.schema.json"

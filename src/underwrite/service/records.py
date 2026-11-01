@@ -11,9 +11,10 @@ from collections.abc import Callable, Generator, Iterable
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import partial
 from itertools import islice
 from pathlib import Path
-from typing import Final, NamedTuple, cast
+from typing import Final, NamedTuple, NoReturn, cast
 
 from underwrite_core.canonical import canonical_bytes, digest_bytes
 
@@ -28,6 +29,7 @@ from underwrite.service._record_format import (
     MAX_SELECTION_EXCLUDED,
     MAX_TOTAL_BYTES,
     FormatError,
+    artifact_reference_roles,
     logical_name,
     record_id,
     strict_manifest,
@@ -322,7 +324,7 @@ def read_record(root: Path, identifier: str) -> RecordSnapshot:
 
 @contextmanager
 def _opened_file_at(
-    directory: int, name: str, *, missing: str = "SOURCE_READ_FAILED"
+    directory: int, name: str, *, missing: str = "RECORD_FILE_INTEGRITY_MISMATCH"
 ) -> Generator[int]:
     """Open and check the declared member through the anchored files directory."""
     with ExitStack() as opened:
@@ -339,13 +341,8 @@ def _opened_file_at(
 
 
 def _selected_bytes_at(directory: int, name: str, limit: int) -> bytes:
-    try:
-        with _opened_file_at(directory, name) as descriptor:
-            return _read_descriptor_bytes(descriptor, limit)
-    except RecordError as exc:
-        if exc.code == "STORE_IO_ERROR":
-            raise RecordError("SOURCE_READ_FAILED", "/record") from None
-        raise
+    with _opened_file_at(directory, name) as descriptor:
+        return _read_descriptor_bytes(descriptor, limit)
 
 
 def _selected_file(snapshot: RecordSnapshot, name: str, limit: int) -> dict[str, object]:
@@ -396,23 +393,18 @@ def _validate_references(root: Path, spec: dict[str, object]) -> None:
         try:
             snapshot = read_record(root, identifier)
         except RecordError as exc:
-            if exc.code == "RECORD_NOT_FOUND":
+            if exc.code in {"RECORD_NOT_FOUND", "RECORD_NOT_PUBLISHED"}:
                 raise RecordError("INVALID_SPEC", "/spec/links") from None
-            raise RecordError("INVALID_SPEC", "/spec/links") from None
+            raise
         if snapshot.digest != item["manifest_digest"]:
             raise RecordError("INVALID_SPEC", "/spec/links")
         linked[identifier] = snapshot
-    references = [
-        cast(dict[str, object], spec["rerun_verification"])["reference"],
-        cast(dict[str, object], spec["provenance"])["attestation_ref"],
-    ]
-    own = {cast(str, item["name"]): item for item in cast(list[dict[str, object]], spec["files"])}
-    for index, value in enumerate(references):
-        if value is None:
-            continue
-        reference = cast(dict[str, object], value)
+    own_files = {
+        cast(str, item["name"]): item for item in cast(list[dict[str, object]], spec["files"])
+    }
+    for reference, required_role in artifact_reference_roles(spec):
         if reference["scope"] == "this_record":
-            target = own.get(cast(str, reference["name"]))
+            target = own_files.get(cast(str, reference["name"]))
         else:
             target_record = linked.get(cast(str, reference["record_id"]))
             if target_record is None or target_record.digest != reference["manifest_digest"]:
@@ -425,7 +417,7 @@ def _validate_references(root: Path, spec: dict[str, object]) -> None:
                 ),
                 None,
             )
-        if target is None or (index == 0 and target["role"] != "verification"):
+        if target is None or (required_role is not None and target["role"] != required_role):
             raise RecordError("INVALID_SPEC", "/spec")
 
 
@@ -456,26 +448,52 @@ def _open_sources(
         yield opened
 
 
-def _reserve(records: Path, identifier: str) -> Path:
-    target = records / identifier
+def _reservation_conflict(target: Path) -> NoReturn:
     try:
-        target.mkdir(mode=_DIR_MODE)
-        target.chmod(_DIR_MODE)
-        _fsync_dir(target)
-        _fsync_dir(records)
-        return target
-    except FileExistsError:
-        try:
-            _validate_control(target, directory=True, missing="RECORD_CAPTURE_INCOMPLETE")
-        except RecordError as exc:
-            if exc.code in {"INVALID_STORE_LAYOUT", "INSECURE_STORE"}:
-                raise
-            raise RecordError("RECORD_CAPTURE_INCOMPLETE", "/record_id") from None
-        if (target / "manifest.json").exists() or (target / "manifest.json").is_symlink():
-            raise RecordError("RECORD_EXISTS", "/record_id") from None
+        _validate_control(target, directory=True, missing="RECORD_CAPTURE_INCOMPLETE")
+    except RecordError as exc:
+        if exc.code in {"INVALID_STORE_LAYOUT", "INSECURE_STORE"}:
+            raise
         raise RecordError("RECORD_CAPTURE_INCOMPLETE", "/record_id") from None
-    except OSError:
-        raise RecordError("STORE_IO_ERROR") from None
+    if (target / "manifest.json").exists() or (target / "manifest.json").is_symlink():
+        raise RecordError("RECORD_EXISTS", "/record_id") from None
+    raise RecordError("RECORD_CAPTURE_INCOMPLETE", "/record_id") from None
+
+
+def _reserve(records: Path, identifier: str) -> Path:
+    try:
+        import fcntl
+    except ImportError:
+        raise RecordError("UNSUPPORTED_PLATFORM") from None
+    target = records / identifier
+    with _private_descriptor(
+        records, directory=True, missing="STORE_NOT_FOUND", location="/catalog"
+    ) as records_fd:
+        try:
+            fcntl.flock(records_fd, fcntl.LOCK_EX)
+            try:
+                target.lstat()
+            except FileNotFoundError:
+                pass
+            else:
+                _reservation_conflict(target)
+            with os.scandir(records_fd) as iterator:
+                population = sum(1 for _ in islice(iterator, MAX_RECORDS))
+            if population >= MAX_RECORDS:
+                raise RecordError("RECORD_LIMIT_EXCEEDED", "/catalog")
+            try:
+                os.mkdir(identifier, mode=_DIR_MODE, dir_fd=records_fd)
+            except FileExistsError:
+                _reservation_conflict(target)
+            with _private_descriptor(
+                identifier, parent=records_fd, directory=True, missing="STORE_IO_ERROR"
+            ) as reserved_fd:
+                os.fchmod(reserved_fd, _DIR_MODE)
+                os.fsync(reserved_fd)
+            os.fsync(records_fd)
+        except OSError:
+            raise RecordError("STORE_IO_ERROR") from None
+    return target
 
 
 def _fsync_dir(path: Path) -> None:
@@ -702,50 +720,21 @@ def _checked_captured_spec(
     return checked, tuple(zip(checked_files, data, strict=True))
 
 
-def _capture_files(
+def _capture_outputs(
     record_dir: Path,
-    sources: list[tuple[dict[str, object], int, int]],
+    files: Iterable[
+        tuple[dict[str, object], Callable[[Path, int], tuple[int, str]]]
+    ],
     owned_files: list[Path],
     owned_dirs: list[Path],
 ) -> list[dict[str, object]]:
     stored: list[dict[str, object]] = []
     total = 0
     files_root = _files_root(record_dir, owned_dirs)
-    for item, descriptor, expected in sources:
+    for item, write_file in files:
         output = _ensure_output_parent(files_root, cast(str, item["name"]), owned_dirs)
         owned_files.append(output)
-        size, checksum = _copy_one(descriptor, expected, output, MAX_TOTAL_BYTES - total)
-        total += size
-        if total > MAX_TOTAL_BYTES:
-            raise RecordError("INPUT_LIMIT_EXCEEDED", "/spec/files")
-        stored.append(
-            {
-                "name": item["name"],
-                "role": item["role"],
-                "sha256": checksum,
-                "bytes": size,
-                "media_type": item["media_type"],
-                "source_locator": item["source_locator"],
-            }
-        )
-    for directory in sorted(owned_dirs, key=lambda item: len(item.parts), reverse=True):
-        _fsync_dir(directory)
-    return stored
-
-
-def _capture_bytes(
-    record_dir: Path,
-    files: tuple[tuple[dict[str, object], bytes], ...],
-    owned_files: list[Path],
-    owned_dirs: list[Path],
-) -> list[dict[str, object]]:
-    stored: list[dict[str, object]] = []
-    total = 0
-    files_root = _files_root(record_dir, owned_dirs)
-    for item, data in files:
-        output = _ensure_output_parent(files_root, cast(str, item["name"]), owned_dirs)
-        owned_files.append(output)
-        size, checksum = _write_bytes(data, output, MAX_TOTAL_BYTES - total)
+        size, checksum = write_file(output, MAX_TOTAL_BYTES - total)
         total += size
         stored.append(
             {
@@ -765,23 +754,32 @@ def _capture_bytes(
 def _write_staging(staging: Path, raw: bytes) -> Path:
     path = staging / f"manifest-{secrets.token_hex(16)}.tmp"
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, _FILE_MODE)
+    write_failed = False
     try:
-        os.fchmod(descriptor, _FILE_MODE)
-        view = memoryview(raw)
-        while view:
-            written = os.write(descriptor, view)
-            if written <= 0:
-                raise OSError(errno.EIO, "write failed")
-            view = view[written:]
-        os.fsync(descriptor)
-    except Exception:
+        try:
+            os.fchmod(descriptor, _FILE_MODE)
+            view = memoryview(raw)
+            while view:
+                written = os.write(descriptor, view)
+                if written <= 0:
+                    raise OSError(errno.EIO, "write failed")
+                view = view[written:]
+            os.fsync(descriptor)
+        except BaseException:
+            write_failed = True
+            raise
+        finally:
+            try:
+                os.close(descriptor)
+            except OSError:
+                if not write_failed:
+                    raise
+    except BaseException:
         try:
             path.unlink()
         except OSError:
             pass
         raise
-    finally:
-        os.close(descriptor)
     return path
 
 
@@ -855,7 +853,15 @@ def save_record(root: Path, spec: object, source_base: Path) -> RecordSnapshot:
         def capture(
             record_dir: Path, owned_files: list[Path], owned_dirs: list[Path]
         ) -> list[dict[str, object]]:
-            return _capture_files(record_dir, sources, owned_files, owned_dirs)
+            return _capture_outputs(
+                record_dir,
+                (
+                    (item, partial(_copy_one, descriptor, expected))
+                    for item, descriptor, expected in sources
+                ),
+                owned_files,
+                owned_dirs,
+            )
 
         return _save_checked(root, checked, capture)
 
@@ -867,7 +873,12 @@ def save_captured_record(root: Path, spec: CapturedRecordSpec) -> RecordSnapshot
     def capture(
         record_dir: Path, owned_files: list[Path], owned_dirs: list[Path]
     ) -> list[dict[str, object]]:
-        return _capture_bytes(record_dir, files, owned_files, owned_dirs)
+        return _capture_outputs(
+            record_dir,
+            ((item, partial(_write_bytes, data)) for item, data in files),
+            owned_files,
+            owned_dirs,
+        )
 
     return _save_checked(root, checked, capture)
 
@@ -942,21 +953,6 @@ def _file_finding_at(directory: int, item: dict[str, object]) -> str | None:
         return mapped
 
 
-def _linked_artifact_refs(
-    manifest: dict[str, object], identifier: str
-) -> list[tuple[dict[str, object], str | None]]:
-    rerun = cast(dict[str, object], manifest["rerun_verification"])["reference"]
-    provenance = cast(dict[str, object], manifest["provenance"])["attestation_ref"]
-    result: list[tuple[dict[str, object], str | None]] = []
-    for reference, required_role in ((rerun, "verification"), (provenance, None)):
-        if reference is None:
-            continue
-        ref = cast(dict[str, object], reference)
-        if ref["scope"] == "linked_record" and ref["record_id"] == identifier:
-            result.append((ref, required_role))
-    return result
-
-
 def _link_finding(
     records_fd: int, item: dict[str, object], manifest: dict[str, object]
 ) -> str | None:
@@ -975,7 +971,9 @@ def _link_finding(
         cast(str, file["name"]): file
         for file in cast(list[dict[str, object]], target.manifest["files"])
     }
-    for reference, required_role in _linked_artifact_refs(manifest, identifier):
+    for reference, required_role in artifact_reference_roles(manifest):
+        if reference["scope"] != "linked_record" or reference["record_id"] != identifier:
+            continue
         target_file = target_files.get(cast(str, reference["name"]))
         if target_file is None or (
             required_role is not None and target_file["role"] != required_role

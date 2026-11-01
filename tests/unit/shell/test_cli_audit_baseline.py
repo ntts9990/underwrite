@@ -8,7 +8,11 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from _baseline_exchange import SyntheticBaselineExchange, build_baseline_exchange
+from _baseline_exchange import (
+    SyntheticBaselineExchange,
+    build_baseline_exchange,
+    build_pi13_v2_exchange,
+)
 
 from underwrite.cli.main import main
 from underwrite.instrument.evidence.goppi_baseline import BaselineProjectionError
@@ -101,6 +105,21 @@ def test_api_and_cli_emit_one_descriptive_result_without_private_source(
     assert items[-1]["next_action"] == "inspect_source"
     assert before == {name: (tmp_path / name).read_bytes() for name in files}
     assert {path.name for path in tmp_path.iterdir()} == set(files)
+
+
+def test_accepted_pi13_v2_exchange_audits_through_cli(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    exchange = build_pi13_v2_exchange()
+    _write(tmp_path, exchange.files())
+    assert main(_args(tmp_path)) == 0
+    streams = capsys.readouterr()
+    assert streams.err == ""
+    report = json.loads(streams.out)
+    packaged_validator("evidence_result.v2").validate(report)  # pyright: ignore[reportUnknownMemberType]
+    assert report["processing"]["state"] == "analyzed"
+    assert report["source"]["producer_version_state"] == "unknown"
+    assert report["verification"] == []
 
 
 def test_capture_once_per_member(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

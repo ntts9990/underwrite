@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from _baseline_exchange import build_baseline_exchange
+from _baseline_exchange import build_baseline_exchange, build_pi13_v2_exchange
 from underwrite_core.canonical import canonical_bytes, digest_bytes
 
 from underwrite.cli import record_baseline
@@ -104,6 +104,49 @@ def test_exact_five_bytes_result_and_readback_after_exchange_removal(
         ]
     ) == 0
     assert json.loads(capsys.readouterr().out)["content"] == result
+
+
+def test_accepted_pi13_v2_exchange_records_result_and_exact_source_bytes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    exchange, store = tmp_path / "exchange", tmp_path / "store"
+    files = build_pi13_v2_exchange().files()
+    exchange.mkdir()
+    for name, raw in files.items():
+        (exchange / name).write_bytes(raw)
+
+    code, report, stdout, stderr = _invoke(exchange, store, capsys, "pi13-baseline")
+    assert code == report["exit_code"] == 0 and stderr == ""
+    assert str(exchange) not in stdout and str(store) not in stdout
+    assert report["analysis"]["state"] == "result"
+    assert report["analysis"]["report"]["processing"]["state"] == "analyzed"
+    for name, raw in files.items():
+        assert records.read_record_file(store, "pi13-baseline", "source/" + name).data == raw
+
+
+def test_pi13_with_historical_v1_result_records_finite_diagnostic(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    exchange, store = tmp_path / "exchange", tmp_path / "store"
+    fixture = build_baseline_exchange()
+    runner = {
+        **fixture.export["source"]["runner"],
+        "profile": "pi_1_3_0",
+        "support_scope": "existing_pi",
+    }
+    fixture.export["source"]["runner"] = runner
+    for row in fixture.rows:
+        row["runner"] = dict(runner)
+    exchange.mkdir()
+    for name, raw in fixture.files().items():
+        (exchange / name).write_bytes(raw)
+
+    code, report, stdout, stderr = _invoke(exchange, store, capsys, "invalid-pi13-v1")
+    assert code == report["exit_code"] == DIAGNOSTIC_EXIT and stderr == ""
+    assert str(exchange) not in stdout and str(store) not in stdout
+    assert report["analysis"]["state"] == "error"
+    assert report["analysis"]["error"]["reason"] == "BASELINE_PROFILE_INVALID"
+    assert report["storage"]["verification"]["valid"] is True
 
 
 def test_complete_invalid_input_saves_error_and_collision_preserves_it(

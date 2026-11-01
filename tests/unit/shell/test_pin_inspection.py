@@ -16,7 +16,7 @@ from jsonschema import Draft202012Validator
 from underwrite.cli import commands, render
 from underwrite.cli.main import main
 from underwrite.fleet import pins
-from underwrite.fleet.pins import PinState, refresh_pins, verify_pins
+from underwrite.fleet.pins import PinReadError, PinState, refresh_pins, verify_pins
 from underwrite.instrument.ingest.schema import packaged_validator
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -184,12 +184,43 @@ def test_unknown_stale_hash_is_a_repairable_drift(
     assert next(iter(refreshed.files.values())).sha256.startswith("sha256:")
 
 
-def test_missing_registry_keeps_empty_population_semantics(tmp_path: Path) -> None:
-    result = _cli(tmp_path / "missing-pins", tmp_path)
-    assert result.returncode == 1 and result.stderr == ""
-    payload = json.loads(result.stdout)
-    assert payload["state"] == "EMPTY_POPULATION"
-    assert payload["details"]["active_population"] == 0
+def test_missing_registry_is_unconfigured_even_with_empty_pins_exemption(tmp_path: Path) -> None:
+    exemptions = tmp_path / "exemptions.json"
+    exemptions.write_text(
+        json.dumps(
+            {
+                "schema": "exemptions.v1",
+                "exemptions": {"empty-pins": {"reason": "fixture", "expiry": "2099-01-01"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "underwrite.cli.main",
+            "drift",
+            "check",
+            "--pins-root",
+            str(tmp_path / "missing-pins"),
+            "--siblings-root",
+            str(tmp_path),
+            "--exemptions",
+            str(exemptions),
+            "--now",
+            "2026-10-31",
+            "--json",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    payload = _refusal(result)
+    assert payload["details"] == {"reason": "PIN_READ_FAILED", "location": "/pins"}
+    with pytest.raises(PinReadError, match="PIN_READ_FAILED"):
+        verify_pins(tmp_path / "missing-pins", tmp_path)
 
 
 def test_missing_and_nonregular_copy_or_source_is_drift(

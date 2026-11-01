@@ -1,4 +1,4 @@
-"""Bounded offline process port for the operator's trusted Goppi installation."""
+"""Bounded offline process port for an operator-selected Goppi executable."""
 
 from __future__ import annotations
 
@@ -26,16 +26,16 @@ class VerifierError(ValueError):
 
 
 class TrajectoryVerifier(Protocol):
-    """Verify only the caller-owned private snapshot, returning bounded raw JSON."""
+    """Return a bounded raw report about the caller-owned private snapshot."""
 
     def verify(self, snapshot: Path) -> bytes: ...
 
 
 class GoppiCliVerifier:
-    """Run the installed producer's offline verifier, without shell or providers.
+    """Run an operator-selected verifier command without a shell.
 
-    Executable selection is trusted operator configuration. This adapter is not
-    an executable sandbox or a guarantee of network isolation.
+    Executable selection is operator configuration, not identity proof. This
+    adapter is not a sandbox or a guarantee of network isolation.
     """
 
     def __init__(self, executable: Path | None = None) -> None:

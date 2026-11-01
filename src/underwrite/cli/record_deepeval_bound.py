@@ -11,13 +11,14 @@ from underwrite_core.canonical import CanonicalizationError, canonical_bytes, di
 
 from underwrite.cli.audit_deepeval import AUTO_BOUND_HUMAN_LIMIT
 from underwrite.cli.evidence import EvidenceError
-from underwrite.cli.local_json import Validator, validate
+from underwrite.cli.local_json import Validator
 from underwrite.cli.record_capture import (
     STORAGE_FAILURE_EXIT,
     admit_record_response,
+    analysis_record_file,
+    finalize_captured_record,
     render_record_response,
     storage_validator,
-    store_captured_record,
 )
 from underwrite.cli.records import OUTPUT_MAX_BYTES, record_error_payload
 from underwrite.instrument.evidence.deepeval_binding import (
@@ -70,10 +71,6 @@ def _contracts() -> _Contracts:
         cast(Validator, packaged_validator("record_error.v1")),
         cast(Validator, packaged_validator("record_verification.v1")),
     )
-
-
-def _check(validator: Validator, value: object) -> None:
-    validate(validator, value, EvidenceError, "INTERNAL_ERROR")
 
 
 def _acquire(
@@ -148,11 +145,13 @@ def _files(
 ) -> tuple[CapturedRecordFile, ...]:
     analysis = cast(dict[str, Any], envelope["analysis"])
     result = analysis["state"] == "result"
-    document = analysis["report"] if result else analysis["error"]
-    _check(contracts.result if result else contracts.evidence_error, document)
-    encoded = canonical_bytes(document) + b"\n"
-    if len(encoded) > RECORD_READ_MAX_BYTES:
-        raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
+    analysis_file = analysis_record_file(
+        analysis,
+        result_name="analysis/evidence_result.json",
+        result_validator=contracts.result,
+        error_validator=contracts.evidence_error,
+        max_bytes=RECORD_READ_MAX_BYTES,
+    )
     arguments = {
         "source_path_display": unicodedata.normalize("NFC", str(paths["deepeval"])),
         "bindings_path_display": unicodedata.normalize("NFC", str(paths["bindings"])),
@@ -161,7 +160,7 @@ def _files(
         "selection_mode": "auto",
     }
     if result:
-        arguments["reader_profile"] = document["source"]["reader_profile"]
+        arguments["reader_profile"] = analysis["report"]["source"]["reader_profile"]
     invocation = {
         "command": COMMAND,
         "execution_mode": "in_process",
@@ -173,12 +172,7 @@ def _files(
         "aggregate_outcome_location": "command_output",
     }
     files = [
-        CapturedRecordFile(
-            "analysis/evidence_result.json" if result else "analysis/error.json",
-            "result" if result else "log",
-            encoded,
-            "application/json",
-        ),
+        analysis_file,
         CapturedRecordFile(
             "invocation.json", "log", canonical_bytes(invocation) + b"\n", "application/json"
         ),
@@ -249,16 +243,6 @@ def run_record_bound_deepeval(
             max_bytes=OUTPUT_MAX_BYTES,
         )
         return envelope
-    admit_record_response(
-        envelope,
-        aggregate_validator=contracts.aggregate,
-        storage_validator=contracts.storage,
-        identifier=identifier,
-        count=len(files),
-        analysis_text=_analysis_text(analysis),
-        as_json=as_json,
-        max_bytes=OUTPUT_MAX_BYTES,
-    )
     metadata = {
         "format": SOURCE_FORMAT,
         "analysis_state": analysis["state"],
@@ -277,9 +261,15 @@ def run_record_bound_deepeval(
         provenance={"verified": False, "attestation_ref": None},
         files=files,
     )
-    envelope["storage"] = store_captured_record(
-        root, spec, contracts.verification, contracts.record_error
+    return finalize_captured_record(
+        envelope,
+        root,
+        spec,
+        aggregate_validator=contracts.aggregate,
+        storage_validator=contracts.storage,
+        verification_validator=contracts.verification,
+        record_error_validator=contracts.record_error,
+        analysis_text=_analysis_text(analysis),
+        as_json=as_json,
+        max_bytes=OUTPUT_MAX_BYTES,
     )
-    if envelope["storage"]["state"] == "error":
-        envelope["exit_code"] = STORAGE_FAILURE_EXIT
-    return envelope

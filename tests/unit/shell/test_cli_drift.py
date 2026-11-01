@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import shutil
@@ -11,8 +12,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import pytest
 from conftest import SAMPLE_PINS_ROOT
 
+from underwrite.cli import commands
 from underwrite.fleet.pins import load_manifests
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -40,10 +43,29 @@ def _active_repo_names(pins_root: Path) -> list[str]:
     return sorted(_active_repo_pins(pins_root))
 
 
-def _run_cli(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+def _add_empty_active_manifest(pins_root: Path, repo: str = "empty") -> None:
+    selected = pins_root / "active" / repo
+    selected.mkdir()
+    (selected / "PINS.json").write_text(
+        json.dumps(
+            {
+                "schema": "pins.v1",
+                "repo": repo,
+                "source_root": repo,
+                "source_commit": "local-fixture",
+                "captured_at": "2026-01-01T00:00:00Z",
+                "files": {},
+            }
+        )
+    )
+
+
+def _run_cli(
+    *args: str, env: dict[str, str] | None = None, cwd: Path = REPO_ROOT
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-m", "underwrite.cli.main", "drift", "check", *args],
-        cwd=REPO_ROOT,
+        cwd=cwd,
         capture_output=True,
         text=True,
         env=env,
@@ -77,6 +99,113 @@ def test_hermetic_pinned_bytes_pass_exit_0(
         row = details["repos"][repo]
         assert row["state"] == "PASS"
         assert row["pins"] == expected_pins
+
+
+def test_empty_active_missing_sibling_does_not_hide_behind_other_passing_pins(
+    pins_tree: Path, hermetic_siblings: Callable[..., Path]
+) -> None:
+    _add_empty_active_manifest(pins_tree)
+    siblings_root = hermetic_siblings()
+
+    result = _run_cli(
+        "--pins-root", str(pins_tree), "--siblings-root", str(siblings_root), "--json"
+    )
+
+    assert result.returncode == _UNCONFIGURED_EXIT
+    payload = _payload(result)
+    assert payload["state"] == "UNCONFIGURED"
+    assert payload["details"]["unconfigured_repos"] == ["empty"]
+    assert payload["details"]["repos"]["empty"]["state"] == "UNCONFIGURED"
+    assert payload["details"]["repos"]["empty"]["pins"] == 0
+    assert payload["details"]["repos"]["sample-tool"]["state"] == "PASS"
+
+
+def test_empty_active_present_sibling_is_visible_without_fabricated_pins(
+    pins_tree: Path, hermetic_siblings: Callable[..., Path]
+) -> None:
+    _add_empty_active_manifest(pins_tree)
+    siblings_root = hermetic_siblings()
+    (siblings_root / "empty").mkdir()
+
+    result = _run_cli(
+        "--pins-root", str(pins_tree), "--siblings-root", str(siblings_root), "--json"
+    )
+
+    assert result.returncode == 0
+    payload = _payload(result)
+    assert payload["state"] == "PASS"
+    assert payload["details"]["repos"]["empty"]["state"] == "PASS"
+    assert payload["details"]["repos"]["empty"]["pins"] == 0
+
+
+def test_all_active_manifests_empty_still_uses_empty_population(tmp_path: Path) -> None:
+    pins_root = tmp_path / "pins"
+    (pins_root / "active").mkdir(parents=True)
+    _add_empty_active_manifest(pins_root)
+    siblings_root = tmp_path / "siblings"
+    siblings_root.mkdir()
+
+    result = _run_cli(
+        "--pins-root", str(pins_root), "--siblings-root", str(siblings_root), "--json"
+    )
+
+    assert result.returncode == 1
+    payload = _payload(result)
+    assert payload["state"] == "EMPTY_POPULATION"
+    assert payload["details"]["repos"]["empty"]["state"] == "UNCONFIGURED"
+
+
+def test_empty_present_checkout_does_not_defeat_no_pinned_siblings_exemption(
+    pins_tree: Path, empty_siblings: Path, tmp_path: Path
+) -> None:
+    _add_empty_active_manifest(pins_tree)
+    (empty_siblings / "empty").mkdir()
+    exemptions = tmp_path / "exemptions.json"
+    exemptions.write_text(
+        json.dumps(
+            {
+                "schema": "exemptions.v1",
+                "exemptions": {
+                    "ci-no-siblings": {
+                        "reason": "fixture",
+                        "expiry": "2099-01-01",
+                        "adr": "fixture",
+                    }
+                },
+            }
+        )
+    )
+
+    result = _run_cli(
+        "--pins-root", str(pins_tree), "--siblings-root", str(empty_siblings),
+        "--exemptions", str(exemptions), "--now", "2026-09-04", "--json",
+    )
+
+    assert result.returncode == 0
+    payload = _payload(result)
+    assert payload["state"] == "SKIPPED_WITH_REASON"
+    assert sorted(payload["details"]["unconfigured_repos"]) == [
+        "sample-metrics", "sample-tool"
+    ]
+    assert payload["details"]["repos"]["empty"]["state"] == "PASS"
+
+
+def test_pin_drift_keeps_precedence_over_empty_missing_checkout(
+    pins_tree: Path, hermetic_siblings: Callable[..., Path]
+) -> None:
+    _add_empty_active_manifest(pins_tree)
+    siblings_root = hermetic_siblings()
+    (siblings_root / "sample-tool/contracts/sample.schema.json").write_bytes(b"changed")
+
+    result = _run_cli(
+        "--pins-root", str(pins_tree), "--siblings-root", str(siblings_root), "--json"
+    )
+
+    assert result.returncode == 1
+    payload = _payload(result)
+    assert payload["state"] == "DRIFT"
+    assert payload["details"]["repos"]["sample-tool"]["state"] == "DRIFT"
+    assert payload["details"]["repos"]["empty"]["state"] == "UNCONFIGURED"
 
 
 # --- every sibling missing, no exemptions: UNCONFIGURED exit 2 -------------
@@ -219,8 +348,78 @@ def test_json_payload_has_cli_result_v1_shape() -> None:
     assert payload["schema"] == "cli_result.v1"
     assert payload["command"] == "drift check"
     assert set(payload) == {"schema", "command", "state", "exit_code", "details"}
-    assert "repos" in payload["details"]
-    assert "retired" in payload["details"]
+    assert result.returncode == _UNCONFIGURED_EXIT
+    assert payload["state"] == "UNCONFIGURED"
+    assert payload["details"] == {"reason": "PINS_ROOT_REQUIRED", "location": "/pins"}
+
+
+def test_unrelated_cwd_does_not_supply_implicit_registry(tmp_path: Path) -> None:
+    (tmp_path / "contracts/pins").mkdir(parents=True)
+    result = _run_cli(
+        "--json",
+        cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")},
+    )
+    assert result.returncode == _UNCONFIGURED_EXIT
+    assert _payload(result)["details"] == {"reason": "PINS_ROOT_REQUIRED", "location": "/pins"}
+
+
+def test_missing_siblings_default_is_typed_refusal(pins_tree: Path) -> None:
+    result = _run_cli(
+        "--pins-root",
+        str(pins_tree),
+        "--json",
+        env={key: value for key, value in os.environ.items() if key != "UNDERWRITE_SIBLINGS_ROOT"},
+    )
+    assert result.returncode == _UNCONFIGURED_EXIT
+    assert _payload(result)["details"] == {
+        "reason": "SIBLINGS_ROOT_REQUIRED",
+        "location": "/siblings",
+    }
+
+
+def test_explicit_siblings_root_precedes_environment(
+    pins_tree: Path, hermetic_siblings: Callable[..., Path], tmp_path: Path
+) -> None:
+    sibling_root = hermetic_siblings("sample-metrics", "sample-tool")
+    result = _run_cli(
+        "--pins-root",
+        str(pins_tree),
+        "--siblings-root",
+        str(sibling_root),
+        "--json",
+        env={**os.environ, "UNDERWRITE_SIBLINGS_ROOT": str(tmp_path / "missing")},
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _payload(result)["state"] == "PASS"
+
+
+def test_verified_source_checkout_can_supply_defaults(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkout = tmp_path / "underwrite"
+    source = checkout / "src/underwrite/cli/commands.py"
+    source.parent.mkdir(parents=True)
+    source.touch()
+    pins = checkout / "contracts/pins"
+    pins.mkdir(parents=True)
+    (checkout / "pyproject.toml").write_text('[project]\nname = "underwrite"\n')
+    monkeypatch.setattr(commands, "_REPO_ROOT", checkout)
+    monkeypatch.setattr(commands, "__file__", str(source))
+    monkeypatch.delenv("UNDERWRITE_SIBLINGS_ROOT", raising=False)
+    assert commands._selected_roots(  # pyright: ignore[reportPrivateUsage]
+        argparse.Namespace(pins_root=None, siblings_root=None)
+    ) == (
+        pins,
+        checkout.parent,
+    )
+    (checkout / "pyproject.toml").write_text('[project]\nname = "other"\n')
+    assert commands._selected_roots(  # pyright: ignore[reportPrivateUsage]
+        argparse.Namespace(pins_root=None, siblings_root=None)
+    ) == (
+        None,
+        None,
+    )
 
 
 # --- rules/exemptions.json validates against contracts/exemptions.v1.schema.json

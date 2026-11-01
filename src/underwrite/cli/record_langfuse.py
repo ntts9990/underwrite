@@ -18,16 +18,17 @@ from underwrite.cli.evidence import (
     ReportOutput,
     run_cli,
 )
-from underwrite.cli.local_json import Validator, validate
+from underwrite.cli.local_json import Validator
 from underwrite.cli.record_capture import (
     STORAGE_FAILURE_EXIT,
     admit_record_response,
+    analysis_record_file,
+    finalize_captured_record,
     render_record_response,
     storage_validator,
-    store_captured_record,
 )
 from underwrite.cli.records import OUTPUT_MAX_BYTES, record_error_payload
-from underwrite.instrument.evidence.langfuse_compat import AUTO_PROFILE
+from underwrite.instrument.evidence.langfuse_compat import AUTO_PROFILE, SCORE_SOURCE_SCHEMA
 from underwrite.instrument.ingest.langfuse_accounting import (
     LangfuseFileError,
     audit_langfuse_bytes,
@@ -45,7 +46,8 @@ from underwrite.service.records import (
 
 AUTO_RECORD_SCHEMA = "langfuse_record.v2"
 ROW_RECORD_SCHEMA = "langfuse_row_record.v2"
-type View = Literal["accounting", "row-index"]
+SCORE_SOURCE_RECORD_SCHEMA = "langfuse_score_source_record.v1"
+type View = Literal["accounting", "row-index", "score-source"]
 COMMAND = "records audit-langfuse"
 
 
@@ -55,6 +57,8 @@ def record_schema(view: str = "accounting") -> str:
         return AUTO_RECORD_SCHEMA
     if view == "row-index":
         return ROW_RECORD_SCHEMA
+    if view == "score-source":
+        return SCORE_SOURCE_RECORD_SCHEMA
     raise EvidenceError("UNSUPPORTED_FORMAT", "LANGFUSE_RECORD_VIEW_UNSUPPORTED", "/view")
 
 
@@ -85,10 +89,6 @@ def _contracts(view: View = "accounting") -> _Contracts:
     )
 
 
-def _check(validator: Validator, value: object) -> None:
-    validate(validator, value, EvidenceError, "INTERNAL_ERROR")
-
-
 def _applied_reader(analysis: dict[str, Any]) -> dict[str, str]:
     """Only successful auto analysis has an applied reader family."""
     if analysis["state"] != "result":
@@ -113,11 +113,11 @@ def configure(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--view",
-        choices=("accounting", "row-index"),
+        choices=("accounting", "row-index", "score-source"),
         default="accounting",
         help=(
-            "Accounting (default) or a content-minimized row index; "
-            "both retain whole private sources."
+            "Accounting (default), a content-minimized row index, or declared "
+            "score-source coverage; all retain whole private sources."
         ),
     )
     parser.add_argument("--root", type=Path, required=True, help="Explicit private record root.")
@@ -132,8 +132,8 @@ def configure(parser: argparse.ArgumentParser) -> None:
         "result or diagnostic, and effective invocation. Malformed complete input is retained "
         "in full; a diagnostic record consumes the ID. No producer or subprocess is run. "
         "Reader family is selected from both captured files; release "
-        "identity remains unknown. Both views retain whole private files, including possible "
-        "headers and text. Row-index minimizes analysis only, not the retained originals. "
+        "identity remains unknown. All views retain whole private files, including possible "
+        "headers and text. Row-index and score-source minimize analysis only. "
         "Exit 0 means result saved, 2 analysis failed but diagnostic saved, and 3 storage failed."
     )
 
@@ -202,11 +202,13 @@ def _files(
 ) -> tuple[CapturedRecordFile, ...]:
     analysis = envelope["analysis"]
     result = analysis["state"] == "result"
-    document = analysis["report"] if result else analysis["error"]
-    _check(contracts.analysis if result else contracts.evidence_error, document)
-    encoded = canonical_bytes(document) + b"\n"
-    if len(encoded) > RECORD_READ_MAX_BYTES:
-        raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
+    analysis_file = analysis_record_file(
+        analysis,
+        result_name=f"analysis/{contracts.view}.json",
+        result_validator=contracts.analysis,
+        error_validator=contracts.evidence_error,
+        max_bytes=RECORD_READ_MAX_BYTES,
+    )
     invocation: dict[str, Any] = {
         "command": COMMAND,
         "execution_mode": "in_process",
@@ -224,15 +226,10 @@ def _files(
         "selection_mode": AUTO_PROFILE,
         **_applied_reader(analysis),
     }
-    if contracts.view == "row-index":
+    if contracts.view != "accounting":
         invocation["arguments"]["view"] = contracts.view
     files = [
-        CapturedRecordFile(
-            f"analysis/{contracts.view}.json" if result else "analysis/error.json",
-            "result" if result else "log",
-            encoded,
-            "application/json",
-        ),
+        analysis_file,
         CapturedRecordFile(
             "invocation.json", "log", canonical_bytes(invocation) + b"\n", "application/json"
         ),
@@ -248,7 +245,16 @@ def _analysis_text(analysis: dict[str, Any]) -> str:
         error = analysis["error"]
         return f"Analysis failed during {analysis['phase']}: {error['code']} ({error['reason']})."
     counts = analysis["report"]["counts"]
-    label = "Row-index" if "row_index" in analysis["report"]["schema"] else "Accounting"
+    schema = analysis["report"]["schema"]
+    if schema == SCORE_SOURCE_SCHEMA:
+        known = sum(counts["known"].values())
+        unknown = sum(counts["unknown"].values())
+        return (
+            f"Score-source result: {known + unknown} supplied scores; "
+            f"{known} declared source known; {unknown} unknown. "
+            "Source claims and export completeness remain unverified; no approval."
+        )
+    label = "Row-index" if "row_index" in schema else "Accounting"
     return (
         f"{label} result: {counts['observations']} observations; {counts['scores']} scores. "
         "Planned evaluations and export completeness unknown; counts do not establish approval."
@@ -264,6 +270,8 @@ def render_human(report: dict[str, object]) -> str:
 def _record_description(view: View) -> tuple[str, str]:
     if view == "row-index":
         return "langfuse.row-index", "Langfuse row-index capture"
+    if view == "score-source":
+        return "langfuse.score-source", "Langfuse score-source capture"
     return "langfuse.local-accounting", "Langfuse local accounting capture"
 
 
@@ -311,22 +319,12 @@ def run_record_langfuse(
             max_bytes=OUTPUT_MAX_BYTES,
         )
         return envelope
-    admit_record_response(
-        envelope,
-        aggregate_validator=contracts.aggregate,
-        storage_validator=contracts.storage,
-        identifier=identifier,
-        count=len(files),
-        analysis_text=_analysis_text(analysis),
-        as_json=as_json,
-        max_bytes=OUTPUT_MAX_BYTES,
-    )
     metadata = {
         "analysis_state": analysis["state"],
         "selection_mode": AUTO_PROFILE,
         **_applied_reader(analysis),
     }
-    if view == "row-index":
+    if view != "accounting":
         metadata["view"] = view
     kind, label = _record_description(view)
     spec = CapturedRecordSpec(
@@ -340,15 +338,18 @@ def run_record_langfuse(
         provenance={"verified": False, "attestation_ref": None},
         files=files,
     )
-    envelope["storage"] = store_captured_record(
+    return finalize_captured_record(
+        envelope,
         root,
         spec,
+        aggregate_validator=contracts.aggregate,
+        storage_validator=contracts.storage,
         verification_validator=contracts.verification,
         record_error_validator=contracts.record_error,
+        analysis_text=_analysis_text(analysis),
+        as_json=as_json,
+        max_bytes=OUTPUT_MAX_BYTES,
     )
-    if envelope["storage"]["state"] == "error":
-        envelope["exit_code"] = STORAGE_FAILURE_EXIT
-    return envelope
 
 
 def produce(args: argparse.Namespace) -> dict[str, object]:

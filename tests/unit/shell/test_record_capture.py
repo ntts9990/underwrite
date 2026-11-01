@@ -113,6 +113,69 @@ def test_path_and_bytes_apis_produce_the_same_manifest_facts(tmp_path: Path) -> 
     assert path_manifest == byte_manifest
 
 
+@pytest.mark.parametrize("api", ("source", "captured"))
+def test_nested_file_directories_are_synced_before_manifest_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, api: str
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    first, second = b'{"first":1}', b'{"second":2}'
+    (source / "first.json").write_bytes(first)
+    (source / "second.json").write_bytes(second)
+    root = tmp_path / "store"
+    record_dir = root / "records/captured.001"
+    files_root = record_dir / "files"
+    synced: list[Path] = []
+    original_sync = records._fsync_dir  # pyright: ignore[reportPrivateUsage]
+    original_publish = records._publish  # pyright: ignore[reportPrivateUsage]
+
+    def observe_sync(path: Path) -> None:
+        synced.append(path)
+        original_sync(path)
+
+    def publish_after_capture(directory: Path, staging: Path, raw: bytes) -> None:
+        assert directory == record_dir
+        assert not (record_dir / "manifest.json").exists()
+        for leaf in ("first", "second"):
+            child = files_root / f"result/{leaf}"
+            assert synced.index(child) < synced.index(files_root / "result")
+        assert synced.index(files_root / "result") < synced.index(files_root)
+        assert synced.index(files_root) < synced.index(record_dir)
+        original_publish(directory, staging, raw)
+
+    monkeypatch.setattr(records, "_fsync_dir", observe_sync)
+    monkeypatch.setattr(records, "_publish", publish_after_capture)
+    names = ("result/first/data.json", "result/second/data.json")
+    if api == "source":
+        spec = {
+            "schema": "record_spec.v1",
+            "record_id": "captured.001",
+            "kind": "handoff.capture",
+            "label": "Captured bytes",
+            "metadata": {"scope": "test"},
+            "selection": {"scope": "explicit_files", "excluded": ["private material"]},
+            "rerun_verification": {"status": "not_performed", "reference": None},
+            "provenance": {"verified": False, "attestation_ref": None},
+            "links": [],
+            "files": [
+                {"name": name, "role": "result", "path": path, "media_type": "application/json"}
+                for name, path in zip(names, ("first.json", "second.json"), strict=True)
+            ],
+        }
+        records.save_record(root, spec, source)
+    else:
+        save_captured_record(
+            root,
+            captured_spec(
+                files=tuple(
+                    CapturedRecordFile(name, "result", data, "application/json")
+                    for name, data in zip(names, (first, second), strict=True)
+                )
+            ),
+        )
+    assert records.verify_record(root, "captured.001")["valid"] is True
+
+
 def test_public_file_count_limit_has_one_format_owner() -> None:
     assert records.RECORD_MAX_FILES == _record_format.MAX_FILES
 
@@ -226,6 +289,22 @@ def test_captured_collision_and_unpublished_reservation_match_existing_contract(
         "RECORD_CAPTURE_INCOMPLETE",
         lambda: save_captured_record(root, captured_spec("pending.001")),
     )
+
+
+def test_captured_record_shares_catalog_capacity_guard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "store"
+    monkeypatch.setattr(records, "MAX_RECORDS", 1)
+    save_captured_record(root, captured_spec("slot.001"))
+
+    error = assert_error(
+        "RECORD_LIMIT_EXCEEDED",
+        lambda: save_captured_record(root, captured_spec("slot.002")),
+    )
+    assert error.location == "/catalog"
+    assert not (root / "records/slot.002").exists()
+    assert records.list_records(root)["record_count"] == 1
 
 
 def test_captured_partial_write_failure_cleans_only_owned_record(

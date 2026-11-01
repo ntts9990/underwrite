@@ -296,6 +296,63 @@ def test_answer_null_is_accepted_when_answers_were_excluded(tmp_path: Path) -> N
     assert answer == {"kind": "answer", "ref": "not_included", "digest": None}
 
 
+def test_partial_native_receipt_binding_is_rejected_by_library_and_cli(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    folder = _exchange(tmp_path, classifications=("observed_true",), include_answers=False)
+
+    def remove_receipt(rows: list[dict[str, Any]]) -> None:
+        rows[0]["attempt"]["receipt_digest"] = None
+
+    _rewrite_rows(folder, remove_receipt)
+
+    with pytest.raises(GoppiPilotError) as exc:
+        load_inventory(folder)
+    assert (exc.value.code, exc.value.reason) == ("INVALID_INPUT", "INVALID_GOPPI_ROW")
+    assert audit_run.main(["--goppi-grounded-pilot-exchange", str(folder), "--json"]) == ERROR_EXIT
+    streams = capsys.readouterr()
+    assert streams.out == ""
+    error = json.loads(streams.err)
+    _contract_validator("evidence_error.v1").validate(error)
+    assert (error["code"], error["reason"]) == ("INVALID_INPUT", "INVALID_GOPPI_ROW")
+
+
+def test_observed_outcome_cannot_be_claimed_without_native_attempt(tmp_path: Path) -> None:
+    folder = _exchange(tmp_path, classifications=("observed_true",), include_answers=False)
+
+    def remove_native_attempt(rows: list[dict[str, Any]]) -> None:
+        attempt = rows[0]["attempt"]
+        for key in (
+            "request_digest",
+            "receipt_digest",
+            "termination_reason",
+            "cleanup",
+            "duration_ms",
+        ):
+            attempt[key] = None
+        attempt["authenticated_local_receipt"] = False
+        rows[0]["usage"]["pi_reported_cost_usd"] = None
+
+    _rewrite_rows(folder, remove_native_attempt)
+    execution = json.loads((folder / "execution.json").read_bytes())
+    accounting = execution["accounting"]
+    accounting.update(
+        durable_attempts=0,
+        authenticated_native_receipts=0,
+        rows_without_native_receipt=1,
+        observed_duration_count=0,
+        total_observed_duration_ms=None,
+        observed_cost_count=0,
+        total_pi_reported_cost_usd=None,
+    )
+    _write_json(folder / "execution.json", execution)
+    _refresh_manifest(folder)
+
+    with pytest.raises(GoppiPilotError) as exc:
+        load_inventory(folder)
+    assert (exc.value.code, exc.value.reason) == ("INVALID_INPUT", "INVALID_GOPPI_ROW")
+
+
 @pytest.mark.parametrize("raw_answer", ["", "e\u0301"])
 def test_raw_answer_bytes_need_not_be_nonblank_or_nfc_and_are_never_echoed(
     raw_answer: str, tmp_path: Path

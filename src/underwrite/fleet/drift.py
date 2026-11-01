@@ -99,10 +99,16 @@ def _classify(
             report, exemptions.get("empty-pins"), now, DriftOutcome.EMPTY_POPULATION
         )
 
-    active_results = [r for r in report.results if r.state is not PinState.RETIRED]
-    present_repos = {r.repo for r in active_results if r.state is not PinState.UNCONFIGURED}
-    unconfigured_repos = {r.repo for r in active_results if r.state is PinState.UNCONFIGURED}
-    any_drift = any(r.state is PinState.DRIFT for r in active_results)
+    active_repos = [r for r in report.repositories if r.state is not PinState.RETIRED]
+    # A zero-pin checkout has no verified file result and does not defeat the
+    # existing ci-no-siblings exemption for all declared pinned files.
+    present_repos = {
+        r.repo
+        for r in report.results
+        if r.state not in (PinState.UNCONFIGURED, PinState.RETIRED)
+    }
+    unconfigured_repos = {r.repo for r in active_repos if r.state is PinState.UNCONFIGURED}
+    any_drift = any(r.state is PinState.DRIFT for r in active_repos)
 
     if not present_repos:
         return _population_verdict(

@@ -4,15 +4,20 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Protocol, cast
 
 import pytest
 from _repo_paths import repo_root
 from jsonschema import Draft202012Validator
+from underwrite_core.canonical import canonical_bytes, digest_bytes
 
 from underwrite.cli import records
 from underwrite.instrument.ingest.schema import SchemaConfigurationError
+from underwrite.service import records as record_service
 from underwrite.service.records import RecordError
 
 ROOT = repo_root(Path(__file__).resolve())
@@ -106,6 +111,58 @@ def test_save_io_failures_provide_owner_specific_private_recovery(
     assert not (root / "records/synthetic.capture-001").exists()
 
 
+def test_nonadjacent_logical_name_conflict_refuses_before_store_creation(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    spec = _spec()
+    files = cast(list[dict[str, object]], spec["files"])
+    files[0]["name"] = "a"
+    files.extend(({**files[0], "name": "a-b"}, {**files[0], "name": "a/b"}))
+    root, spec_path, source = _inputs(tmp_path, spec)
+
+    error = _error(capsys, _save_args(root, spec_path), "INVALID_SPEC")
+
+    assert error["reason"] == "INVALID_RECORD_SPEC"
+    assert str(source) not in json.dumps(error)
+    assert not root.exists()
+
+
+@pytest.mark.parametrize("source_path", ["absolute", "parent_relative"])
+def test_manual_save_captures_explicit_external_source_without_persisting_path(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], source_path: str
+) -> None:
+    external = tmp_path / "outside.txt"
+    data = b"operator-selected bytes"
+    external.write_bytes(data)
+    spec = _spec()
+    file_spec = cast(list[dict[str, object]], spec["files"])[0]
+    file_spec["path"] = str(external) if source_path == "absolute" else "../outside.txt"
+    file_spec.pop("source_locator")
+    root, spec_path, _ = _inputs(tmp_path, spec)
+
+    code, payload, other = _invoke(capsys, _save_args(root, spec_path))
+
+    assert code == 0 and other == ""
+    selected = payload["record"]["files"][0]
+    assert selected["sha256"] == digest_bytes(data)
+    assert selected["bytes"] == len(data)
+    assert "path" not in selected
+    assert (root / "records/synthetic.capture-001/files/source/note.txt").read_bytes() == data
+
+
+def test_manual_save_rejects_non_nfc_label_before_store_creation(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    spec = _spec()
+    spec["label"] = "Cafe\u0301"
+    root, spec_path, _ = _inputs(tmp_path, spec)
+
+    error = _error(capsys, _save_args(root, spec_path), "INVALID_SPEC")
+
+    assert error["reason"] == "INVALID_RECORD_SPEC"
+    assert not root.exists()
+
+
 def test_save_show_list_and_verify_emit_their_exact_contracts(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -138,6 +195,57 @@ def test_save_show_list_and_verify_emit_their_exact_contracts(
     assert code == 0 and other == ""
     _validator("record_verification.v1").validate(verification)
     assert verification["valid"] is True and verification["findings"] == []
+
+
+def test_cli_save_capacity_refusal_preserves_usable_catalog(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root, spec_path, _ = _inputs(tmp_path)
+    monkeypatch.setattr(record_service, "MAX_RECORDS", 1)
+    code, _, other = _invoke(capsys, _save_args(root, spec_path))
+    assert code == 0 and other == ""
+    new_spec = _spec("synthetic.capture-002")
+    spec_path.write_text(json.dumps(new_spec))
+
+    error = _error(capsys, _save_args(root, spec_path), "RECORD_LIMIT_EXCEEDED")
+    assert error["location"] == "/catalog"
+    assert not (root / "records/synthetic.capture-002").exists()
+    code, catalog, other = _invoke(capsys, ["list", "--root", str(root), "--json"])
+    assert code == 0 and other == "" and catalog["record_count"] == 1
+
+
+def test_distinct_cli_processes_share_record_capacity_lock(tmp_path: Path) -> None:
+    root, first_spec, _ = _inputs(tmp_path, _spec("parallel.001"))
+    second_spec = first_spec.with_name("parallel-second.json")
+    second_spec.write_text(json.dumps(_spec("parallel.002")))
+    records_dir = root / "records"
+    records_dir.mkdir(parents=True, mode=0o700)
+    root.chmod(0o700)
+    for index in range(record_service.MAX_RECORDS - 1):
+        (records_dir / f"seed.{index:04d}").mkdir(mode=0o700)
+
+    def save(spec: Path) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, "-m", "underwrite.cli.main", "records", *_save_args(root, spec)],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(save, spec) for spec in (first_spec, second_spec)]
+        results = [future.result() for future in futures]
+
+    assert sorted(result.returncode for result in results) == [0, ERROR_EXIT]
+    refused = next(result for result in results if result.returncode == ERROR_EXIT)
+    assert refused.stdout == ""
+    assert json.loads(refused.stderr)["code"] == "RECORD_LIMIT_EXCEEDED"
+    assert len(list(records_dir.iterdir())) == record_service.MAX_RECORDS
+    catalog = record_service.list_records(root)
+    assert catalog["record_count"] == record_service.MAX_RECORDS
 
 
 def test_catalog_distinguishes_unpublished_and_show_verify_refuse_it(
@@ -353,6 +461,25 @@ def _manifest_read_args(command: str, selected_args: list[str]) -> list[str]:
     return [command, *selected_args[1 : 3 if command == "list" else 5], "--json"]
 
 
+def test_non_string_manifest_link_relation_is_invalid_record(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args, root = _read_json_args(tmp_path, b"{}")
+    path = root / "records/synthetic.capture-001/manifest.json"
+    manifest = json.loads(path.read_bytes())
+    manifest["links"] = [
+        {
+            "relation": [],
+            "record_id": "input.001",
+            "manifest_digest": "sha256:" + "0" * 64,
+        }
+    ]
+    path.write_bytes(canonical_bytes(manifest))
+
+    error = _error(capsys, _manifest_read_args("show", args), "INVALID_RECORD")
+    assert error["location"] == "/record"
+
+
 @pytest.mark.parametrize("command", ["show", "list", "verify", "read-json"])
 def test_manifest_integer_limit_is_invalid_record(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], command: str
@@ -408,8 +535,6 @@ def test_manifest_validator_bug_remains_internal_error(
 def test_read_json_accepts_all_admitted_values_and_always_emits_json(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], raw: bytes, value: object
 ) -> None:
-    from underwrite_core.canonical import canonical_bytes, digest_bytes
-
     from underwrite.service.records import read_record
 
     args, root = _read_json_args(tmp_path, raw)
@@ -489,6 +614,44 @@ def test_read_json_checks_integrity_before_content_and_distinguishes_unknown_nam
     _error(capsys, args, "RECORD_FILE_INTEGRITY_MISMATCH")
     _error(capsys, [*args[:-1], "unknown.json"], "RECORD_FILE_NOT_FOUND")
     _error(capsys, [*args[:-1], "../escape"], "INVALID_SPEC")
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected", "action"),
+    [
+        ("missing", "RECORD_FILE_INTEGRITY_MISMATCH", "SELECT_VALID_RECORD"),
+        ("io", "STORE_IO_ERROR", "CHECK_STORE_IO"),
+    ],
+)
+def test_read_json_retained_member_failure_has_owner_specific_recovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    failure: str,
+    expected: str,
+    action: str,
+) -> None:
+    args, root = _read_json_args(tmp_path, b'{"ok":true}')
+    selected = root / "records/synthetic.capture-001/files" / args[-1]
+    if failure == "missing":
+        selected.unlink()
+    else:
+        identity = (selected.stat().st_dev, selected.stat().st_ino)
+        original_read = os.read
+
+        def refuse_retained_member(descriptor: int, size: int) -> bytes:
+            info = os.fstat(descriptor)
+            if (info.st_dev, info.st_ino) == identity:
+                raise OSError("private-retained-member-error")
+            return original_read(descriptor, size)
+
+        monkeypatch.setattr(os, "read", refuse_retained_member)
+
+    error = _error(capsys, args, expected)
+    assert error["next_action"] == action
+    assert error["location"] == "/record"
+    assert "private-retained-member-error" not in json.dumps(error)
+    assert str(root) not in json.dumps(error)
 
 
 @pytest.mark.parametrize("extra", [[], ["--json"]])

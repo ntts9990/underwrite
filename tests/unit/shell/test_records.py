@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import errno
+import fcntl
 import json
 import os
 import stat
@@ -162,6 +163,46 @@ def test_invalid_or_conflicting_logical_names_are_rejected_before_store_creation
     assert not (tmp_path / "store").exists()
 
 
+def test_nonadjacent_logical_name_prefix_conflict_rejected_before_store_creation(
+    tmp_path: Path,
+) -> None:
+    source = _source(tmp_path)
+    (source / "second.json").write_text("{}", encoding="utf-8")
+    (source / "third.json").write_text("{}", encoding="utf-8")
+    spec = _spec()
+    files = cast(list[dict[str, object]], spec["files"])
+    files[0]["name"] = "a"
+    files.append({**files[0], "name": "a-b", "path": "second.json"})
+    files.append({**files[0], "name": "a/b", "path": "third.json"})
+
+    _assert_error("INVALID_SPEC", lambda: records.save_record(tmp_path / "store", spec, source))
+    assert not (tmp_path / "store").exists()
+
+
+def test_explicit_null_source_locator_is_rejected_before_store_creation(tmp_path: Path) -> None:
+    source = _source(tmp_path)
+    spec = _spec()
+    cast(list[dict[str, object]], spec["files"])[0]["source_locator"] = None
+
+    _assert_error("INVALID_SPEC", lambda: records.save_record(tmp_path / "store", spec, source))
+    assert not (tmp_path / "store").exists()
+
+
+def test_non_string_link_relation_is_invalid_spec_before_store_creation(tmp_path: Path) -> None:
+    source = _source(tmp_path)
+    spec = _spec()
+    cast(list[object], spec["links"]).append(
+        {
+            "relation": [],
+            "record_id": "input.001",
+            "manifest_digest": "sha256:" + "0" * 64,
+        }
+    )
+
+    _assert_error("INVALID_SPEC", lambda: records.save_record(tmp_path / "store", spec, source))
+    assert not (tmp_path / "store").exists()
+
+
 def test_source_is_opened_once_and_later_path_replacement_does_not_change_capture(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -252,6 +293,92 @@ def test_two_writers_for_one_id_have_one_winner_and_do_not_mix_bytes(tmp_path: P
     assert records.verify_record(root, "capture.001")["valid"] is True
     stored_path = root / "records/capture.001/files/source/result.json"
     assert stored_path.read_bytes() == b"winner bytes"
+
+
+def test_save_refuses_first_record_beyond_catalog_capacity_before_reservation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source(tmp_path)
+    root = tmp_path / "store"
+    limit = 2
+    monkeypatch.setattr(records, "MAX_RECORDS", limit)
+
+    records.save_record(root, _spec("slot.001"), source)
+    records.save_record(root, _spec("slot.002"), source)
+    error = _assert_error(
+        "RECORD_LIMIT_EXCEEDED", lambda: records.save_record(root, _spec("slot.003"), source)
+    )
+
+    assert error.location == "/catalog"
+    assert not (root / "records/slot.003").exists()
+    assert records.list_records(root)["record_count"] == limit
+    _assert_error("RECORD_EXISTS", lambda: records.save_record(root, _spec("slot.001"), source))
+
+
+def test_unpublished_reservation_consumes_catalog_capacity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source(tmp_path)
+    root = tmp_path / "store"
+    limit = 2
+    monkeypatch.setattr(records, "MAX_RECORDS", limit)
+    records.save_record(root, _spec("slot.001"), source)
+    (root / "records/slot.002").mkdir(mode=PRIVATE_DIR_MODE)
+
+    _assert_error(
+        "RECORD_LIMIT_EXCEEDED", lambda: records.save_record(root, _spec("slot.003"), source)
+    )
+    _assert_error(
+        "RECORD_CAPTURE_INCOMPLETE", lambda: records.save_record(root, _spec("slot.002"), source)
+    )
+    assert records.list_records(root)["record_count"] == limit
+    assert not (root / "records/slot.003").exists()
+
+
+@pytest.mark.parametrize("operation", ["lock", "scan"])
+def test_reservation_gate_io_failure_leaves_no_record_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str
+) -> None:
+    source = _source(tmp_path)
+    root = tmp_path / "store"
+    before = (source / "result.json").read_bytes()
+
+    def refuse(*args: object, **kwargs: object) -> None:
+        raise OSError("private storage failure")
+
+    if operation == "lock":
+        monkeypatch.setattr(fcntl, "flock", refuse)
+    else:
+        monkeypatch.setattr(records.os, "scandir", refuse)
+
+    error = _assert_error("STORE_IO_ERROR", lambda: records.save_record(root, _spec(), source))
+    assert "private storage failure" not in str(error)
+    assert not (root / "records/capture.001").exists()
+    assert (source / "result.json").read_bytes() == before
+
+
+def test_distinct_concurrent_writers_cannot_exceed_catalog_capacity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source(tmp_path)
+    root = tmp_path / "store"
+    limit = 2
+    monkeypatch.setattr(records, "MAX_RECORDS", limit)
+    records.save_record(root, _spec("slot.001"), source)
+
+    def capture(identifier: str) -> str:
+        try:
+            records.save_record(root, _spec(identifier), source)
+        except RecordError as error:
+            return error.code
+        return "OK"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(capture, identifier) for identifier in ("slot.002", "slot.003")]
+        outcomes = sorted(future.result() for future in futures)
+
+    assert outcomes == ["OK", "RECORD_LIMIT_EXCEEDED"]
+    assert records.list_records(root)["record_count"] == limit
 
 
 def test_unpublished_capture_is_listed_but_cannot_be_read_or_reused(tmp_path: Path) -> None:
@@ -355,6 +482,55 @@ def test_links_are_bound_before_mutation_and_checked_directly(tmp_path: Path) ->
     assert not (root / "records/analysis.002").exists()
 
 
+@pytest.mark.parametrize(
+    ("failure", "expected"),
+    [
+        ("RECORD_NOT_FOUND", "INVALID_SPEC"),
+        ("RECORD_NOT_PUBLISHED", "INVALID_SPEC"),
+        ("INVALID_RECORD", "INVALID_RECORD"),
+        ("INSECURE_STORE", "INSECURE_STORE"),
+        ("INVALID_STORE_LAYOUT", "INVALID_STORE_LAYOUT"),
+        ("STORE_IO_ERROR", "STORE_IO_ERROR"),
+    ],
+)
+def test_link_validation_preserves_target_failure_ownership(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str, expected: str
+) -> None:
+    source = _source(tmp_path)
+    root = tmp_path / "store"
+    spec = _spec("analysis.001")
+    spec["links"] = [
+        {
+            "relation": "input",
+            "record_id": "input.001",
+            "manifest_digest": "sha256:" + "0" * 64,
+        }
+    ]
+
+    def fail_read(_root: Path, _identifier: str) -> records.RecordSnapshot:
+        raise RecordError(failure, "/record")
+
+    monkeypatch.setattr(records, "read_record", fail_read)
+    error = _assert_error(expected, lambda: records.save_record(root, spec, source))
+    assert error.location == ("/spec/links" if expected == "INVALID_SPEC" else "/record")
+    assert not root.exists()
+
+
+def test_link_validation_reports_corrupt_target_manifest(tmp_path: Path) -> None:
+    source = _source(tmp_path)
+    root = tmp_path / "store"
+    target = records.save_record(root, _spec("input.001"), source)
+    spec = _spec("analysis.001")
+    spec["links"] = [
+        {"relation": "input", "record_id": "input.001", "manifest_digest": target.digest}
+    ]
+    (root / "records/input.001/manifest.json").write_bytes(b"invalid manifest")
+
+    error = _assert_error("INVALID_RECORD", lambda: records.save_record(root, spec, source))
+    assert error.location == "/record"
+    assert not (root / "records/analysis.001").exists()
+
+
 def test_truth_axes_and_artifact_roles_are_validated_independently(tmp_path: Path) -> None:
     source = _source(tmp_path)
     spec = _spec()
@@ -388,6 +564,26 @@ def test_linked_rerun_reference_requires_a_verification_artifact(tmp_path: Path)
     }
     _assert_error("INVALID_SPEC", lambda: records.save_record(root, spec, source))
     assert not (root / "records/analysis.001").exists()
+
+
+def test_linked_provenance_reference_does_not_inherit_rerun_role_rule(tmp_path: Path) -> None:
+    source = _source(tmp_path)
+    root = tmp_path / "store"
+    target = records.save_record(root, _spec("input.001"), source)
+    reference = {
+        "scope": "linked_record",
+        "record_id": "input.001",
+        "manifest_digest": target.digest,
+        "name": "source/result.json",
+    }
+    spec = _spec("analysis.001")
+    spec["links"] = [
+        {"relation": "input", "record_id": "input.001", "manifest_digest": target.digest}
+    ]
+    spec["provenance"] = {"verified": False, "attestation_ref": reference}
+    saved = records.save_record(root, spec, source)
+    assert saved.manifest["provenance"] == spec["provenance"]
+    assert records.verify_record(root, "analysis.001")["valid"] is True
 
 
 @pytest.mark.parametrize("fault", ["missing", "wrong_role"])
@@ -550,6 +746,99 @@ def _interrupt_after_publication(
         raise interruption
 
     monkeypatch.setattr(records, "_publish", publish)
+
+
+@pytest.mark.parametrize("error_type", [KeyboardInterrupt, SystemExit])
+@pytest.mark.parametrize("close_error", [False, True])
+def test_staging_write_interruption_cleans_unpublished_temp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    error_type: type[BaseException],
+    close_error: bool,
+) -> None:
+    source = _source(tmp_path)
+    root = tmp_path / "store"
+    original_open, original_write, original_close = os.open, os.write, os.close
+    staging_descriptors: list[int] = []
+    interruption = error_type("staging write interrupted")
+    close_failed = False
+
+    def track_open(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        descriptor = original_open(path, flags, mode, dir_fd=dir_fd)
+        if isinstance(path, Path) and path.parent == root / ".staging":
+            staging_descriptors.append(descriptor)
+        return descriptor
+
+    def interrupt_write(descriptor: int, data: bytes | memoryview) -> int:
+        if descriptor in staging_descriptors:
+            raise interruption
+        return original_write(descriptor, data)
+
+    def close_with_failure(descriptor: int) -> None:
+        nonlocal close_failed
+        original_close(descriptor)
+        if close_error and not close_failed and descriptor in staging_descriptors:
+            close_failed = True
+            raise OSError("staging close failed")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "open", track_open)
+        patch.setattr(os, "write", interrupt_write)
+        patch.setattr(os, "close", close_with_failure)
+        with pytest.raises(error_type) as caught:
+            records.save_record(root, _spec(), source)
+
+    assert caught.value is interruption
+    assert len(staging_descriptors) == 1
+    with pytest.raises(OSError):
+        os.fstat(staging_descriptors[0])
+    assert not (root / "records/capture.001").exists()
+    assert not list((root / ".staging").iterdir())
+    assert (source / "result.json").read_bytes() == b'{"ok":true}\n'
+
+
+def test_staging_close_failure_after_write_cleans_unpublished_temp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source(tmp_path)
+    root = tmp_path / "store"
+    original_open, original_close = os.open, os.close
+    staging_descriptors: list[int] = []
+    close_failed = False
+
+    def track_open(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        descriptor = original_open(path, flags, mode, dir_fd=dir_fd)
+        if isinstance(path, Path) and path.parent == root / ".staging":
+            staging_descriptors.append(descriptor)
+        return descriptor
+
+    def close_with_failure(descriptor: int) -> None:
+        nonlocal close_failed
+        original_close(descriptor)
+        if not close_failed and descriptor in staging_descriptors:
+            close_failed = True
+            raise OSError("staging close failed")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "open", track_open)
+        patch.setattr(os, "close", close_with_failure)
+        _assert_error("STORE_IO_ERROR", lambda: records.save_record(root, _spec(), source))
+
+    assert close_failed
+    assert not (root / "records/capture.001").exists()
+    assert not list((root / ".staging").iterdir())
 
 
 @pytest.mark.parametrize("api", ["source", "captured"])
@@ -970,16 +1259,25 @@ def test_selected_read_refuses_symlinks_at_every_control_node(
     )
 
 
-@pytest.mark.parametrize("kind", ["missing", "fifo", "directory"])
+@pytest.mark.parametrize("kind", ["missing", "missing_parent", "fifo", "directory"])
 def test_selected_read_missing_and_wrong_type(tmp_path: Path, kind: str) -> None:
     root, _ = _save(tmp_path)
     path = root / "records/capture.001/files/source/result.json"
-    path.unlink()
+    if kind == "missing_parent":
+        path = path.parent
+        (path / "result.json").unlink()
+        path.rmdir()
+    else:
+        path.unlink()
     if kind == "fifo":
         os.mkfifo(path, 0o600)
     elif kind == "directory":
         path.mkdir(mode=0o700)
-    code = "SOURCE_READ_FAILED" if kind == "missing" else "INVALID_STORE_LAYOUT"
+    code = (
+        "RECORD_FILE_INTEGRITY_MISMATCH"
+        if kind in {"missing", "missing_parent"}
+        else "INVALID_STORE_LAYOUT"
+    )
     _assert_error(code, lambda: records.read_record_file(root, "capture.001", "source/result.json"))
 
 
@@ -1141,7 +1439,7 @@ def test_legacy_manifest_transport_refusal_keeps_invalid_record_location(
         (
             node,
             facade,
-            "FILE_READ_FAILED" if facade == "verify" else "SOURCE_READ_FAILED",
+            "FILE_READ_FAILED" if facade == "verify" else "STORE_IO_ERROR",
             "/record",
         )
         for node in ("files", "leaf")
@@ -1589,7 +1887,7 @@ def test_selected_read_allows_ancestor_symlink_but_anchors_root(
     )
 
 
-def test_selected_read_checks_opened_size_and_source_io_failure(
+def test_selected_read_checks_opened_size_and_store_io_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root, _ = _save(tmp_path, b"1234")
@@ -1609,7 +1907,7 @@ def test_selected_read_checks_opened_size_and_source_io_failure(
 
     monkeypatch.setattr(records, "read_descriptor", unreadable)
     error = _assert_error(
-        "SOURCE_READ_FAILED",
+        "STORE_IO_ERROR",
         lambda: records.read_record_file(root, "capture.001", "source/result.json"),
     )
     assert "private-path" not in str(error)

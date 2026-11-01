@@ -1,5 +1,10 @@
 # Using underwrite from a coding agent
 
+The eval finished. What can you actually claim? Use underwrite when a summary
+does not match supplied rows, when supported artifacts may or may not describe
+the same cases, or when a source's `pass` leaves evidence gaps. The result names
+what was checked and what remains to verify; it does not approve a change.
+
 underwrite reads local artifacts. An agent can run its CLI, keep the JSON outputs,
 and report what each output establishes. It does not need a server or credentials.
 Install the versioned CLI with `uv tool install 'underwrite==0.2.0'`, then run
@@ -22,6 +27,12 @@ of inferring support from the package version alone. Published `0.1.0` has
 `capabilities`, producer audits, records, and handoff commands; older `0.0.1`
 does not. Use help-based discovery with any installed version. Capability
 availability is not evidence that an arbitrary export satisfies a profile.
+
+In `required_inputs`, each array entry is required and `|` means alternatives
+within that entry. For registered `ingest`/`project` codecs, `--file` satisfies
+both input-mode clauses; `--http-body-file` additionally requires
+`--transport-locator`. A transport locator is refused with `--file`. The body
+file is an already captured local input; Underwrite does not fetch its URL.
 
 For released changes and current checkout differences, see [migration](MIGRATION.md).
 Published 0.2.0 retains historical selectors alongside automatic input. The
@@ -104,6 +115,117 @@ The [producer checks](EVIDENCE_REVIEW.md) distinguish fresh tool-generated
 synthetic evaluations, archived captures, and constructed examples. They test
 these narrow boundaries, not every export or real-user value. No SDK score is
 implicitly a calibrated probability or a permission to merge.
+
+## Review selected Goppi and Promptfoo artifacts
+
+The development checkout offers `review-artifacts` for an existing Goppi C55
+operator-answer `assessment.json` and its `evidence_result.v1`, alongside a
+Promptfoo SummaryV3 eval output. Use `underwrite review-artifacts --help` on the
+selected executable before calling it; published versions may lack this route.
+Every Promptfoo row must carry owner-authored `testCase.metadata.case_id` and
+`testCase.metadata.slot_kind` (`subject` or `control`) plus Boolean `success`.
+The subject/control roles are source declarations, not independently verified
+roles or proof that the two producers ran the same task. The public
+[C55 fixture](fixtures/conformance/goppi-c55-common/SOURCE.md)
+shows the selected Goppi file shape; supply your own completed Promptfoo export
+with the required metadata.
+
+```sh
+underwrite review-artifacts \
+  --goppi-assessment /absolute/path/to/assessment.json \
+  --goppi-result /absolute/path/to/evidence-result.json \
+  --promptfoo /absolute/path/to/promptfoo-results.json --json
+```
+
+An ordinary completed Promptfoo export may lack the owner-authored case IDs
+and subject/control roles needed for the strict review. If the installed
+`capabilities --json` advertises `goppi-c55|promptfoo-summary-v3|readiness`, use
+the same three files with `--view readiness --json` **without** a correspondence
+file. `cross_artifact_readiness.v1` checks the selected Goppi assessment/result
+binding and Promptfoo row accounting once, returns the three exact raw hashes,
+and lists row-indexed metadata blockers. When roles are absent, `subject_rows`
+and `control_rows` are `null`, not zero. Its relation is always incomparable;
+an empty blocker list means only that the row metadata is present, not that
+the tasks or metrics match. `next_verification_tasks` requests a new
+owner-authored export with the required metadata or, once that metadata and
+subject rows are present with at least one literal C55 case ID in common, a
+source-bound correspondence declaration. An all-control or empty export needs
+actual owner-authored subject rows. If no subject case ID matches the selected
+C55 cases, the owner must select the correct sources or provide a new export
+with matching IDs before a declaration is possible. Literal ID overlap does not
+prove the tasks or metrics are equivalent. Do not edit the original
+captured export to make it pass; a new export has a new source hash. The
+readiness view never accepts `--correspondence`; use the default strict view
+after the owner supplies one. The Python entry point is
+`underwrite.instrument.ingest.cross_artifact.review_artifact_readiness_files`.
+Older packages without this capability retain their existing typed refusal.
+
+Without `--correspondence`, `relation` is
+`incomparable_on_supplied_evidence`; `next_verification_tasks` asks for the
+first applicable prerequisite: subject rows, matching literal source case IDs,
+or a source-bound case map. If the owner can declare a map,
+write a [`cross_artifact_correspondence.v1`](contracts/cross_artifact_correspondence.v1.schema.json)
+file and pass `--correspondence /absolute/path/to/correspondence.json` to the
+same command. The declaration names its owner, `complete` or `partial` coverage,
+the `sha256:` digests of the **exact three selected file byte streams**, and
+one-to-one `pairs` of zero-based Goppi `case_index`, Promptfoo `row_index`, and
+matching `case_id`. Only Promptfoo `subject` rows can be mapped; `control` rows
+remain outside the pairs. A complete map covers every Goppi case and subject
+row; a partial map reports both unmatched sets. Changed source bytes invalidate
+the map's hash binding.
+
+The [`cross_artifact_review.v1`](contracts/cross_artifact_review.v1.schema.json)
+JSON reports source identities, applied `readers` (Goppi selected-field profile
+and Promptfoo reader profile with a declared or unknown producer version),
+separate case/row populations, coverage, `finding_counts`, and concrete
+`next_verification_tasks`. Promptfoo `category_counts` covers every supplied
+row, including controls; mapped pairs cover subject rows only. Disagreement
+between Promptfoo's declared stats and
+supplied result rows is a typed refusal. With a map, equal and different
+findings describe co-occurrence of two **source Boolean fields**.
+Goppi `missing`, `error`, or `abstained` cases and Promptfoo error rows are
+`value_comparison_ineligible`; they are never counted as agreement. The
+selected Goppi assessment/result fields are checked for consistency. Goppi C55
+terminal/control admission and portable bundle closure are not reperformed;
+`checks.goppi_terminal_controls` and `checks.goppi_portable_closure` report this
+explicitly. The source reviewer must perform the reported
+`VERIFY_GOPPI_PORTABLE_CLOSURE` task. Producer provenance is not independently
+verified. Input and metric equivalence, comparator conditions, improvement, and
+approval remain unknown.
+Follow the reported tasks to inspect ineligible cases and have the evaluation
+owner verify input/metric meaning and comparator conditions; have the source
+reviewer verify provenance. A successful exit means a descriptive report was
+produced, not that those tasks passed.
+
+Python callers can use the same read-once entry point:
+
+```python
+from pathlib import Path
+from underwrite.instrument.ingest.cross_artifact import review_artifact_files
+
+report = review_artifact_files(
+    Path("/absolute/path/to/assessment.json"),
+    Path("/absolute/path/to/evidence-result.json"),
+    Path("/absolute/path/to/promptfoo-results.json"),
+    correspondence=Path("/absolute/path/to/correspondence.json"),  # optional
+)
+```
+
+The command does not create a record; retaining output or source bytes is an
+explicit choice. Its JSON omits raw case IDs, answers, and prompts, but hashes
+and coordinates can still identify or correlate private work. Keep any retained
+JSON and records private.
+
+When the owner supplies a source-bound correspondence declaration **and** asks
+to retain the review, use the capabilities-listed `records review-artifacts`
+route with the same four files plus `--root PRIVATE_STORE --id NEW_ID --json`.
+It analyzes and stores the same captured bytes, returns analysis and storage
+outcomes separately, and verifies the new record. It is stricter than a generic
+`records save` of separately reopened paths. Missing or malformed inputs may
+produce a saved diagnostic only after all four files were captured; an
+incomplete read has no new record. The no-map and readiness views stay
+analysis-only. See [local record details](STORAGE.md) before selecting a
+private store; byte integrity is not producer authentication or approval.
 
 ## Complete native workflow
 
@@ -289,6 +411,17 @@ kind is a source claim, not a task verdict. Full accounting can include selected
 score names, IDs and values; use the row index when those contents are unnecessary.
 No custom query or producer execution is required.
 
+When the question is how supplied scores were **source-labeled**, select the
+capabilities-listed `--view score-source` on `audit-langfuse`. Its
+`langfuse_score_source_summary.v1` counts producer-declared `API`, `ANNOTATION`
+and `EVAL` scores and reports missing, null or unfamiliar strings as unknown.
+The summary withholds score IDs, names, values, comments, metadata and optional
+provenance identifiers; selected-file hashes remain linkable. A source label is
+not proof of the actor, annotation review, evaluator execution or score truth.
+Langfuse's optional `score_metadata` and `score_provenance` field groups are not
+interpreted by this view. Use the default accounting or row index for their
+different questions; neither is silently replaced by the source summary.
+
 For blob arrays, an exact `(project_id, trace_id, observation_id)` match identifies
 a supplied observation. A null observation ID is trace-level only when no
 contradictory session/dataset-run target is declared; such contradictory rows
@@ -324,6 +457,11 @@ underwrite records audit-langfuse --observations observations_v2.json --scores s
 underwrite records read-json --root /private/review-store --id langfuse.review-001 \
   --name analysis/accounting.json
 ```
+
+For an explicitly requested private `score-source` result, pass the same view
+to `records audit-langfuse` and read `analysis/score-source.json`. Its analysis
+is aggregate-only, but the private record still retains both entire originals,
+including any metadata and provenance identifiers they contain.
 
 This retains the entire selected files, including source content omitted from the
 accounting report. Analysis and storage use the same captured bytes; the two exports
@@ -735,6 +873,36 @@ select the ordinal row index:
 underwrite audit-promptfoo results.json --view row-index --json
 ```
 
+To let an agent triage an inconsistency without searching this guide, select the
+bounded actions view:
+
+```sh
+underwrite audit-promptfoo results.json --view actions --json
+```
+
+This view is in the current development checkout; use `capabilities --json` to
+check whether an installed package advertises it.
+
+`promptfoo_accounting_actions.v1` retains the same selected-byte hash, counts,
+findings and limitations as the default accounting result. Its `next_actions`
+contains only actions supported by observed findings:
+
+- `RECONCILE_SOURCE_DECLARED_COUNTS`: compare declared counters and selected
+  rows with the original producer run/export. It does not identify which side
+  is wrong or prove a missing run. A planned case inventory is needed before
+  making a missingness claim.
+- `INSPECT_SOURCE_FLAG_DISAGREEMENTS`: inspect the `SOURCE_FLAGS_DISAGREE`
+  finding locations in the original export. A source flag disagreement does not
+  prove an error cause.
+
+An empty action list means no such discrepancy was observed in the supplied
+rows, not that the export is complete or independently verified. This purpose
+view is available through `audit_promptfoo_actions_file` and
+`audit_promptfoo_actions_bytes` in `underwrite.instrument.ingest.accounting`.
+The default `promptfoo_accounting.v2`, the row index and saved records keep
+their existing contracts; choosing this view does not authorize execution or
+approval.
+
 `promptfoo_accounting.v2` and `promptfoo_row_index.v2` distinguish SummaryV3 from
 the producer's declared release. A missing version declaration stays unknown.
 The reader validates the fields used for count accounting; additional unconsumed
@@ -1071,6 +1239,26 @@ dependency.
 
 ## Compare a Goppi paired trajectory
 
+This is the **development-checkout** first-party companion path for a
+Goppi-produced export. The public Goppi npm `0.0.1` does not contain the
+required exporter or portable verifier; the accepted Goppi source build used
+for local integration has not been publicly released as an installable package.
+Goppi owns the run and native verifier; Underwrite owns consumer interpretation.
+They remain separate CLI packages, and the same Underwrite installation can
+inspect other supported producers. For an eligible terminal native paired run
+with stored lifecycle `completed` or `stopped`, Goppi's documented
+`goppi run export-paired --run RUN --output DIR --json` creates the input
+directory; the command below consumes it. Baseline-only, Docker, active, paused,
+and unsupported restored/imported sources do not qualify. First-party
+maintenance does not independently authenticate the producer.
+
+With that compatible local Goppi build and an eligible run, the two CLI steps are:
+
+```sh
+goppi run export-paired --run YOUR_RUN --output /absolute/path/to/export --json
+underwrite audit-trajectory --exchange /absolute/path/to/export --json
+```
+
 Underwrite 0.2.0 builds advertising `audit-trajectory` can review an existing Goppi
 paired+trajectory export. Published `underwrite==0.1.1` predates this command.
 Use the complete outer directory containing `paired/` and `trajectory/`; a bare
@@ -1088,17 +1276,22 @@ underwrite capabilities --json
 underwrite audit-trajectory --exchange /absolute/path/to/export --json
 ```
 
-The command discovers `goppi` on PATH. If needed, select an existing trusted
+The command discovers `goppi` on PATH. If needed, select an existing operator-chosen
 installation with `--goppi-executable /absolute/path/to/goppi`. This is executable
 configuration, not an input field or producer-version selector. Underwrite copies
 the exact bounded input bytes to a private temporary directory, invokes only
-`goppi run verify-paired`, and analyzes those same bytes. Temporary files are
-removed afterward. A missing or incompatible verifier is a typed refusal, not a
-fallback to weaker validation. Source-supplied schemas and strings are data.
-For `GOPPI_VERIFIER_UNAVAILABLE`, check the existing trusted executable and pass
+`goppi run verify-paired`, and analyzes those same bytes. It checks selected
+response fields against selected snapshot facts and confirms the snapshot bytes
+did not change after the process. It cannot independently establish the
+executable's identity or prove which bytes the process read or validated. The
+v2 result labels content closure and authenticity as **verifier-reported**.
+Temporary files are removed afterward. A missing or incompatible verifier is
+a typed refusal, not a fallback to weaker validation. Source-supplied schemas
+and strings are data.
+For `GOPPI_VERIFIER_UNAVAILABLE`, check the existing configured executable and pass
 its path with `--goppi-executable`; changing the export cannot supply a verifier.
 
-`goppi_trajectory_review.v1` separates `populations`, `comparisons`, `trust_scope`
+`goppi_trajectory_review.v2` separates `populations`, `comparisons`, `trust_scope`
 and `next_verification_tasks`. Compare within the complete case/stage/repeat key;
 stages can reuse run IDs and cases. Paired rows, repeated observations and tool
 spans do not increase the independent-case population. Unavailable capture has
@@ -1111,11 +1304,32 @@ report cannot establish call correspondence, retry benefit or causality. The
 structured tasks identify what evidence to inspect or obtain next; they do not
 execute commands, generate patches or authorize changes. Source metadata such as
 case and tool names can remain identifying even when payload text is omitted.
+An observed tool-status difference can still be inspected descriptively when
+declared conditions are not comparable. Resolve `check_outcome_comparability`
+before requesting call relationships for a retry or causal investigation;
+`obtain_call_relationships` only scopes comparable pairs with tool-status changes.
+
+To find comparable source-outcome changes with **no recorded tool-status count
+change**, request the direct-only action view:
+
+```sh
+underwrite audit-trajectory --exchange /absolute/path/to/export \
+  --view outcome-actions --json
+```
+
+It returns `goppi_trajectory_outcome_actions.v2` with one grouped
+`inspect_outcome_change_without_tool_status_change` task for eligible comparisons.
+The task asks the calling agent to inspect the selected source outcomes and
+retained comparison context. Unchanged outcomes, missing capture, incomparable
+conditions, and comparisons already showing tool-status deltas are excluded.
+Equal projected tool-status counts do not establish identical calls, trace content,
+cause, improvement or approval. The default review and new retained records
+use v2; the action view does not create or read a retained record.
 
 Exit 0 means analysis completed, including partial capture or unfavorable results.
-Portable verification checks content consistency; it does not authenticate the
-producer or independently verify its private projection. Privacy checks on the
-temporary copy say nothing about the original directory. The standalone command
+The configured verifier **reports** content consistency; Underwrite does not
+authenticate that executable, the producer or its private projection. Privacy
+checks on the temporary copy say nothing about the original directory. The standalone command
 does not save a record. To keep the exact source bytes and analysis together, use
 the advertised `records audit-trajectory` route:
 
@@ -1129,36 +1343,43 @@ underwrite records read-trajectory --root /private/review-store \
 Recording uses the same already-installed offline verifier and accepts the same
 `--goppi-executable` option. All seven source files are retained in full: choose a
 private store, as source metadata may identify cases and tools. The record also
-contains the analysis or a safely classified diagnostic, invocation, and native
-verification history. The source files saved are the buffers analyzed, even if
+contains the analysis or a safely classified diagnostic, invocation, and
+configured-verifier report history. The source files saved are the buffers analyzed, even if
 the original paths later change.
 
-`trajectory_record.v1` separates analysis, native verification history, and
+`trajectory_record.v2` separates analysis, verifier-report history, and
 storage: exit 0 is a saved result, exit 2 a retained diagnostic or a pre-store
 refusal, and exit 3 a storage/verification failure. Inspect the typed envelope;
 an error does not imply a record was created. Missing/incompatible verifiers and
 all verifier execution failures publish no record. Existing IDs are not replaced.
 
-`trajectory_record_read.v1` returns the original analysis and verification history
-after checking the whole retained record. It needs neither the original export
-nor Goppi, and explicitly reports `native_verification_performed_now: false`.
+`trajectory_record_read.v2` returns new analysis and verifier-report history
+after checking the whole retained record. For a v1 record it keeps the original
+report and history only under historical fields, with an effective
+`legacy_unattributed_report` or `legacy_not_performed` interpretation. It needs
+neither the original export nor Goppi and reports
+`native_verification_performed_now: false`.
 It supports the trajectory report's 8 MiB bound; generic `records read-json`
 keeps its 1 MiB selected-file limit. See [storage and recovery](STORAGE.md#retain-a-goppi-paired-trajectory)
 for diagnostic states and raw-source recovery.
 
 The Python entry point also discovers `goppi` on PATH. To select an existing
-trusted installation explicitly:
+installation explicitly:
 
 ```python
 from pathlib import Path
 from underwrite.instrument.ingest.goppi_trajectory import audit_goppi_trajectory
-from underwrite.instrument.ingest.goppi_verifier import GoppiCliVerifier
 
 report = audit_goppi_trajectory(
     Path("/absolute/path/to/export"),
-    verifier=GoppiCliVerifier(Path("/absolute/path/to/goppi")),
+    goppi_executable=Path("/absolute/path/to/goppi"),
 )
 ```
+
+Pass `view="outcome-actions"` to this Python function for the same direct-only
+action view. Leave the argument unset for the default v2 review. Supplying a
+custom Python `verifier=` port is supported for composition but is identified
+as `caller_supplied_python_port`; it cannot confer native verification.
 
 ## Audit a completed goppi baseline as common evidence
 
@@ -1173,6 +1394,11 @@ Published 0.2.0 emits baseline result v1. The current v2 result identifies its
 applied Underwrite reader, keeps the Goppi software version unknown and sets
 `declaration_source:null`: the original scope file is not a separate neutral
 metric-meaning pack. The exchange wire version v2 is not a software version.
+Current Goppi baseline result v2 may declare the `pi_1_3_0` runner with
+`support_scope: existing_pi`; this checkout accepts that pair without treating
+it as provider authentication or billing proof. Historical result v1 and
+result v2 have distinct runner sets, so an unknown or mismatched profile is
+still refused rather than retried under a different reader.
 
 The result lists the raw SHA-256 identity of `manifest.json` and each of the
 five fixed exchange files, plus planned and parsed source-record counts. Each
@@ -1383,8 +1609,10 @@ cannot escape the root or traverse symlinks. This profile reads completed local
 artifacts; it never runs goppi, a model, the supplied verifier, or a producer schema.
 
 Add `--record-root /path/to/private-store --record-id review-001` to save the same
-captured bytes and generated results. The store parent must exist. No handwritten
-record specification is needed. Without those options, no store is created.
+captured bytes and generated results. The installed `|record` capability profile
+lists `handoff`, `record_root`, and `record_id` as required inputs. The store
+parent must exist. No handwritten record specification is needed. Without those
+options, no store is created.
 An existing ID is a conflict; it is never overwritten or treated as a new success.
 Analysis and storage have separate resource limits. A valid analysis can exceed
 the record file budget: requested storage then returns `INPUT_LIMIT_EXCEEDED`
@@ -1518,6 +1746,22 @@ it does not create an atomic filesystem snapshot or a hostile-path containment
 guarantee. Missing or nonregular selected copies are reported as DRIFT; malformed,
 unreadable, or excessive registry input returns a typed `UNCONFIGURED` result
 without fabricated population counts.
+An active manifest with `files: {}` remains visible with `pins: 0`: a missing
+sibling is `UNCONFIGURED` even when other repositories pass. If that sibling
+exists, its `PASS` row records checkout availability only, not verified pin
+coverage; it does not defeat `ci-no-siblings` when every declared pinned file's
+checkout is missing.
+
+`drift check` and `pins refresh` need an actual pin registry and sibling checkout
+root. Supply `--pins-root` and `--siblings-root` for a portable installed CLI;
+`UNDERWRITE_SIBLINGS_ROOT` can supply the latter. A source checkout uses defaults
+only when its own `contracts/pins` registry exists. The wheel does not select a
+registry from its installation directory or the current working directory.
+Unresolved roots return typed `UNCONFIGURED` with `PINS_ROOT_REQUIRED` or
+`SIBLINGS_ROOT_REQUIRED`. For `drift check`, an explicitly nonexistent registry
+returns `PIN_READ_FAILED` and a readable but empty registry remains
+`EMPTY_POPULATION`. `pins refresh` rejects a missing target as `PIN_TARGET_UNSAFE`.
+These states identify configuration and population separately.
 
 `pins refresh` selects one registry repository and copies committed Git blobs.
 Refresh paths must be normalized relative `/`-separated components; empty, dot,
@@ -1530,6 +1774,9 @@ unchanged. A later filesystem failure reports `publication: may_be_partial`;
 refresh is not an all-files transaction or a durability guarantee.
 Refresh captures each committed Git blob within 4 MiB and the 32 MiB aggregate
 budget, and checks the fully serialized 1 MiB manifest before its first write.
+`pins refresh --json` returns `cli_result.v1` with the published file list on
+success or a reason and `publication` state on refusal. Exit 0 records a
+completed pin refresh, not producer provenance or an agent-evaluation verdict.
 
 ## Task prompt for a coding agent
 

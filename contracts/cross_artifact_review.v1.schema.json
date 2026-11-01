@@ -1,0 +1,316 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:cross_artifact_review.v1",
+  "title": "cross_artifact_review.v1",
+  "description": "Descriptive source-claim alignment under optional owner-declared case mapping; never a metric-equivalence, improvement, provenance, or approval decision.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "relation",
+    "source_identity",
+    "readers",
+    "populations",
+    "correspondence",
+    "finding_counts",
+    "improvement",
+    "checks",
+    "next_verification_tasks",
+    "limitations"
+  ],
+  "properties": {
+    "schema": {"const": "cross_artifact_review.v1"},
+    "relation": {
+      "enum": ["incomparable_on_supplied_evidence", "declared_case_mapping_descriptive"]
+    },
+    "source_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["goppi_assessment_sha256", "goppi_result_sha256", "promptfoo_export_sha256"],
+      "properties": {
+        "goppi_assessment_sha256": {"$ref": "#/$defs/hash"},
+        "goppi_result_sha256": {"$ref": "#/$defs/hash"},
+        "promptfoo_export_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "readers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["goppi", "promptfoo"],
+      "properties": {
+        "goppi": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["profile", "assessment_schema", "result_schema"],
+          "properties": {
+            "profile": {"const": "goppi.c55-selected-fields.v1"},
+            "assessment_schema": {"const": "goppi.operator_answer_exchange_assessment.v1"},
+            "result_schema": {"const": "evidence_result.v1"}
+          }
+        },
+        "promptfoo": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["profile", "producer_version", "producer_version_state"],
+          "properties": {
+            "profile": {"const": "promptfoo.summary-v3.selected-fields.v1"},
+            "producer_version": {"type": ["string", "null"], "maxLength": 128},
+            "producer_version_state": {"enum": ["unknown", "declared"]}
+          }
+        }
+      }
+    },
+    "populations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["goppi", "promptfoo"],
+      "properties": {
+        "goppi": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["unit", "planned_count", "item_count", "availability"],
+          "properties": {
+            "unit": {"const": "case"},
+            "planned_count": {"type": "integer", "minimum": 0},
+            "item_count": {"type": "integer", "minimum": 0},
+            "availability": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["observed", "missing", "error", "abstained"],
+              "properties": {
+                "observed": {"type": "integer", "minimum": 0},
+                "missing": {"type": "integer", "minimum": 0},
+                "error": {"type": "integer", "minimum": 0},
+                "abstained": {"type": "integer", "minimum": 0}
+              }
+            }
+          }
+        },
+        "promptfoo": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["unit", "supplied_rows", "subject_rows", "control_rows", "planned_count", "category_counts"],
+          "properties": {
+            "unit": {"const": "row"},
+            "supplied_rows": {"type": "integer", "minimum": 0},
+            "subject_rows": {"type": "integer", "minimum": 0},
+            "control_rows": {"type": "integer", "minimum": 0},
+            "planned_count": {"type": "null"},
+            "category_counts": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["successes", "failures", "errors"],
+              "properties": {
+                "successes": {"type": "integer", "minimum": 0},
+                "failures": {"type": "integer", "minimum": 0},
+                "errors": {"type": "integer", "minimum": 0}
+              }
+            }
+          }
+        }
+      }
+    },
+    "correspondence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "declaration_sha256",
+        "coverage",
+        "input_correspondence",
+        "semantic_equivalence",
+        "condition_alignment",
+        "pairs",
+        "unmatched_case_indices",
+        "unmatched_subject_row_indices"
+      ],
+      "properties": {
+        "declaration_sha256": {
+          "oneOf": [{"type": "null"}, {"$ref": "#/$defs/hash"}]
+        },
+        "coverage": {"enum": ["none", "complete", "partial"]},
+        "input_correspondence": {"enum": ["not_declared", "declared_unverified"]},
+        "semantic_equivalence": {"const": "unestablished"},
+        "condition_alignment": {"const": "not_established"},
+        "pairs": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "case_index",
+              "row_index",
+              "goppi_availability",
+              "goppi_value",
+              "promptfoo_source_success",
+              "promptfoo_category",
+              "finding"
+            ],
+            "properties": {
+              "case_index": {"type": "integer", "minimum": 0},
+              "row_index": {"type": "integer", "minimum": 0},
+              "goppi_availability": {"enum": ["observed", "missing", "error", "abstained"]},
+              "goppi_value": {"type": ["boolean", "null"]},
+              "promptfoo_source_success": {"type": "boolean"},
+              "promptfoo_category": {"enum": ["successes", "failures", "errors"]},
+              "finding": {
+                "enum": [
+                  "source_boolean_values_equal",
+                  "source_boolean_values_different",
+                  "value_comparison_ineligible"
+                ]
+              }
+            }
+          }
+        },
+        "unmatched_case_indices": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {"type": "integer", "minimum": 0},
+          "uniqueItems": true
+        },
+        "unmatched_subject_row_indices": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {"type": "integer", "minimum": 0},
+          "uniqueItems": true
+        }
+      }
+    },
+    "finding_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["equal", "different", "ineligible"],
+      "properties": {
+        "equal": {"type": "integer", "minimum": 0},
+        "different": {"type": "integer", "minimum": 0},
+        "ineligible": {"type": "integer", "minimum": 0}
+      }
+    },
+    "improvement": {"const": "unknown"},
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "declaration_source_hashes",
+        "goppi_assessment_result_binding",
+        "goppi_terminal_controls",
+        "goppi_portable_closure",
+        "source_authentication"
+      ],
+      "properties": {
+        "declaration_source_hashes": {"enum": ["matched", "not_supplied"]},
+        "goppi_assessment_result_binding": {"const": "checked_selected_fields"},
+        "goppi_terminal_controls": {"const": "not_reperformed"},
+        "goppi_portable_closure": {"const": "not_reperformed"},
+        "source_authentication": {"const": "not_independently_verified"}
+      }
+    },
+    "next_verification_tasks": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "owner", "case_index", "row_index"],
+        "properties": {
+          "code": {
+            "enum": [
+              "PROVIDE_SOURCE_BOUND_CASE_CORRESPONDENCE",
+              "PROVIDE_PROMPTFOO_SUBJECT_ROWS",
+              "PROVIDE_MATCHING_SOURCE_CASE_IDS",
+              "DECLARE_REMAINING_CASE_CORRESPONDENCE",
+              "VERIFY_INPUT_AND_METRIC_SEMANTICS",
+              "VERIFY_GOPPI_PORTABLE_CLOSURE",
+              "VERIFY_SOURCE_PROVENANCE",
+              "PROVIDE_COMPARATOR_CONDITIONS",
+              "INSPECT_INELIGIBLE_CASE_EVIDENCE"
+            ]
+          },
+          "owner": {"enum": ["evaluation_owner", "source_reviewer", "calling_agent"]},
+          "case_index": {"type": ["integer", "null"], "minimum": 0},
+          "row_index": {"type": ["integer", "null"], "minimum": 0}
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "items": {
+        "enum": [
+          "SOURCE_CLAIMS_UNVERIFIED",
+          "GOPPI_PORTABLE_CLOSURE_NOT_REPERFORMED",
+          "GOPPI_TERMINAL_CONTROLS_NOT_REPERFORMED",
+          "INPUT_CORRESPONDENCE_NOT_INDEPENDENTLY_VERIFIED",
+          "SEMANTIC_EQUIVALENCE_UNESTABLISHED",
+          "PROMPTFOO_PLANNED_POPULATION_UNKNOWN",
+          "PROMPTFOO_ROW_ROLES_SOURCE_DECLARED",
+          "HASHES_AND_COORDINATES_MAY_IDENTIFY_SOURCES",
+          "NO_IMPROVEMENT_OR_APPROVAL"
+        ]
+      },
+      "uniqueItems": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"relation": {"const": "incomparable_on_supplied_evidence"}}},
+      "then": {
+        "properties": {
+          "correspondence": {
+            "properties": {
+              "declaration_sha256": {"type": "null"},
+              "coverage": {"const": "none"},
+              "input_correspondence": {"const": "not_declared"},
+              "pairs": {"maxItems": 0}
+            }
+          },
+          "checks": {"properties": {"declaration_source_hashes": {"const": "not_supplied"}}}
+        }
+      },
+      "else": {
+        "properties": {
+          "correspondence": {
+            "properties": {
+              "declaration_sha256": {"$ref": "#/$defs/hash"},
+              "coverage": {"enum": ["complete", "partial"]},
+              "input_correspondence": {"const": "declared_unverified"}
+            }
+          },
+          "checks": {"properties": {"declaration_source_hashes": {"const": "matched"}}}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "relation": {"const": "incomparable_on_supplied_evidence"},
+          "populations": {
+            "properties": {
+              "promptfoo": {"properties": {"subject_rows": {"const": 0}}}
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "next_verification_tasks": {
+            "prefixItems": [
+              {
+                "properties": {
+                  "code": {"const": "PROVIDE_PROMPTFOO_SUBJECT_ROWS"},
+                  "owner": {"const": "evaluation_owner"}
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+  }
+}

@@ -50,6 +50,9 @@ from underwrite.service.records import (
     verify_record,
 )
 
+RESULT_SCHEMA = "paired_handoff_review.v1"
+RECORD_CAPABILITY_REQUIRED_INPUTS = ("handoff", "record_root", "record_id")
+
 
 @dataclass(frozen=True)
 class HandoffRequest:
@@ -75,7 +78,7 @@ def configure(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--source-root", type=Path, help="Explicit root for all external pointers.")
     parser.add_argument("--record-root", type=Path, help="Optional private immutable record store.")
     parser.add_argument("--record-id", help="New record ID; requires --record-root.")
-    parser.add_argument("--json", action="store_true", help="Emit paired_handoff_review.v1.")
+    parser.add_argument("--json", action="store_true", help=f"Emit {RESULT_SCHEMA}.")
 
 
 def _validate(name: str, document: object) -> None:
@@ -259,7 +262,7 @@ def _store(
 
 def _empty_envelope() -> dict[str, Any]:
     return {
-        "schema": "paired_handoff_review.v1",
+        "schema": RESULT_SCHEMA,
         "profile": PROFILE,
         "exit_code": 2,
         "scope": None,
@@ -309,7 +312,7 @@ def run_goppi_p7_handoff(request: HandoffRequest) -> HandoffRun:
     envelope["exit_code"] = 0 if envelope["analysis"]["state"] == "result" else 2
     storage_reserve = 2048 if request.record_root is not None else 0
     try:
-        _validate("paired_handoff_review.v1", envelope)
+        _validate(RESULT_SCHEMA, envelope)
         envelope["next_actions"] = _next_actions(envelope["analysis"])
         # Allow room for the bounded storage identity/diagnostic before any store mutation.
         if output_line_size(canonical_bytes(envelope)) > MAX_OUTPUT_BYTES - storage_reserve:
@@ -322,7 +325,7 @@ def run_goppi_p7_handoff(request: HandoffRequest) -> HandoffRun:
         envelope = _empty_envelope()
         envelope["analysis"] = {"state": "error", "phase": "analysis", "error": _diagnostic(exc)}
         envelope["next_actions"] = _next_actions(envelope["analysis"])
-        _validate("paired_handoff_review.v1", envelope)
+        _validate(RESULT_SCHEMA, envelope)
     if output_line_size(canonical_bytes(envelope)) + storage_reserve > MAX_OUTPUT_BYTES:
         # A configured limit smaller than the truthful diagnostic cannot admit a store mutation.
         raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
@@ -332,7 +335,7 @@ def run_goppi_p7_handoff(request: HandoffRequest) -> HandoffRun:
         action = cast(dict[str, Any], envelope["storage"])["error"]["next_action"]
         if action not in envelope["next_actions"]:
             envelope["next_actions"].append(action)
-    _validate("paired_handoff_review.v1", envelope)
+    _validate(RESULT_SCHEMA, envelope)
     return HandoffRun(envelope, cast(int, envelope["exit_code"]))
 
 
@@ -391,7 +394,7 @@ def main(argv: list[str]) -> int:
         configure,
         produce,
         ReportOutput(
-            "paired_handoff_review.v1",
+            RESULT_SCHEMA,
             MAX_OUTPUT_BYTES,
             exit_status=lambda report: cast(int, report["exit_code"]),
             human=render_human,

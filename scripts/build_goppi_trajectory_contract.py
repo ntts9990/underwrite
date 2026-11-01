@@ -17,9 +17,14 @@ from underwrite.instrument.evidence.goppi_trajectory import (
     MAX_ROWS,
     MAX_SPANS_PER_UNIT,
     MEMBERS,
+    OUTCOME_ACTION_TASK_EVIDENCE,
+    OUTCOME_ACTIONS_POLICY,
+    OUTCOME_ACTIONS_SCHEMA,
+    OUTCOME_ACTIONS_SCHEMA_V2,
     OUTCOME_HARNESS_BINDINGS,
     OUTCOME_REASONS,
     RESULT_SCHEMA,
+    RESULT_SCHEMA_V2,
     REVIEW_POLICY,
     STAGES,
     TASK_EVIDENCE,
@@ -28,6 +33,7 @@ from underwrite.instrument.evidence.goppi_trajectory import (
 
 JSON = dict[str, Any]
 ROOT = Path(__file__).resolve().parents[1]
+V2 = 2
 
 
 def array(items: JSON, maximum: int = MAX_ROWS) -> JSON:
@@ -50,7 +56,18 @@ def integer(maximum: int = MAX_ROWS) -> JSON:
     return {"type": "integer", "minimum": 0, "maximum": maximum}
 
 
-def build() -> JSON:
+def build(*, outcome_actions: bool = False, version: int = 1) -> JSON:
+    if version not in (1, V2):
+        raise ValueError("UNSUPPORTED_GOPPI_TRAJECTORY_CONTRACT_VERSION")
+    schema = (
+        OUTCOME_ACTIONS_SCHEMA_V2 if outcome_actions else RESULT_SCHEMA_V2
+    ) if version == V2 else (
+        OUTCOME_ACTIONS_SCHEMA if outcome_actions else RESULT_SCHEMA
+    )
+    policy = OUTCOME_ACTIONS_POLICY if outcome_actions else REVIEW_POLICY
+    task_evidence = (
+        {**TASK_EVIDENCE, **OUTCOME_ACTION_TASK_EVIDENCE} if outcome_actions else TASK_EVIDENCE
+    )
     digest = {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
     boolean = {"type": "boolean"}
     null = {"type": "null"}
@@ -273,15 +290,15 @@ def build() -> JSON:
                     "required_evidence": const(evidence),
                 }
             )
-            for kind, (owner, evidence) in TASK_EVIDENCE.items()
+            for kind, (owner, evidence) in task_evidence.items()
         ],
         field="kind",
     )
     result = object_schema(
         {
-            "schema": const(RESULT_SCHEMA),
+            "schema": const(schema),
             "state": const("analyzed"),
-            "policy": const(REVIEW_POLICY),
+            "policy": const(policy),
             "input_members": array(
                 object_schema(
                     {"path": enum(MEMBERS), "sha256": digest, "bytes": integer(128 * 1024 * 1024)}
@@ -291,28 +308,71 @@ def build() -> JSON:
             "source_context": object_schema(
                 {k: digest for k in ("cycle_run_id", "plan_digest", "execution_identity_digest")}
             ),
-            "trust_scope": tagged(
-                [
-                    object_schema(
-                        {
-                            "native_verification": const(state),
-                            "integrity_scope": const(integrity),
-                            "authenticity": const(authenticity),
-                            "source_authentication_independently_verified": const(False),
-                            "producer_projection_independently_verified": const(False),
-                            "outcome_harness_binding": enum(OUTCOME_HARNESS_BINDINGS),
-                        }
-                    )
-                    for state, integrity, authenticity in (
-                        ("not_performed", "not_checked", "not_checked"),
-                        (
-                            "local_goppi_same_byte_snapshot",
-                            "self_consistent_content_closure",
-                            "content_digest_only",
+            "trust_scope": (
+                tagged(
+                    [
+                        object_schema(
+                            {
+                                "verifier_report_state": const("not_performed"),
+                                "verifier_source": const(None),
+                                "verifier_identity_verified": const(False),
+                                "response_snapshot_binding": const("not_checked"),
+                                "snapshot_postcheck": const("not_checked"),
+                                "content_closure": const("not_checked"),
+                                "authenticity": const("not_checked"),
+                                "source_authentication_independently_verified": const(False),
+                                "producer_projection_independently_verified": const(False),
+                                "outcome_harness_binding": enum(OUTCOME_HARNESS_BINDINGS),
+                            }
                         ),
-                    )
-                ],
-                field="native_verification",
+                        object_schema(
+                            {
+                                "verifier_report_state": const("report_accepted"),
+                                "verifier_source": enum(
+                                    (
+                                        "caller_supplied_python_port",
+                                        "operator_configured_executable",
+                                    )
+                                ),
+                                "verifier_identity_verified": const(False),
+                                "response_snapshot_binding": const("selected_fields_matched"),
+                                "snapshot_postcheck": const("unchanged"),
+                                "content_closure": const("verifier_reported_valid"),
+                                "authenticity": const(
+                                    "verifier_reported_content_digest_only"
+                                ),
+                                "source_authentication_independently_verified": const(False),
+                                "producer_projection_independently_verified": const(False),
+                                "outcome_harness_binding": enum(OUTCOME_HARNESS_BINDINGS),
+                            }
+                        ),
+                    ],
+                    field="verifier_report_state",
+                )
+                if version == V2
+                else tagged(
+                    [
+                        object_schema(
+                            {
+                                "native_verification": const(state),
+                                "integrity_scope": const(integrity),
+                                "authenticity": const(authenticity),
+                                "source_authentication_independently_verified": const(False),
+                                "producer_projection_independently_verified": const(False),
+                                "outcome_harness_binding": enum(OUTCOME_HARNESS_BINDINGS),
+                            }
+                        )
+                        for state, integrity, authenticity in (
+                            ("not_performed", "not_checked", "not_checked"),
+                            (
+                                "local_goppi_same_byte_snapshot",
+                                "self_consistent_content_closure",
+                                "content_digest_only",
+                            ),
+                        )
+                    ],
+                    field="native_verification",
+                )
             ),
             "populations": object_schema(
                 {
@@ -329,7 +389,7 @@ def build() -> JSON:
             "capture_counts": reference("coverage"),
             "stages": array(reference("stage"), len(STAGES)),
             "comparisons": array(reference("comparison")),
-            "next_verification_tasks": array(reference("task"), len(TASK_EVIDENCE)),
+            "next_verification_tasks": array(reference("task"), len(task_evidence)),
             "interpretation_limits": const(list(INTERPRETATION_LIMITS)),
             "authority": object_schema(
                 {
@@ -343,7 +403,7 @@ def build() -> JSON:
     )
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": f"urn:underwrite:contract:{RESULT_SCHEMA}",
+        "$id": f"urn:underwrite:contract:{schema}",
         **result,
         "$defs": definitions,
     }
@@ -353,13 +413,27 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
-    path = ROOT / "contracts" / f"{RESULT_SCHEMA}.schema.json"
-    rendered = json.dumps(build(), indent=2, ensure_ascii=False) + "\n"
-    if args.check:
-        if path.read_text() != rendered:
-            raise SystemExit("STALE_GOPPI_TRAJECTORY_CONTRACT")
-    else:
-        path.write_text(rendered)
+    contracts = (
+        (RESULT_SCHEMA, False, 1),
+        (OUTCOME_ACTIONS_SCHEMA, True, 1),
+        (RESULT_SCHEMA_V2, False, V2),
+        (OUTCOME_ACTIONS_SCHEMA_V2, True, V2),
+    )
+    for schema, outcome_actions, version in contracts:
+        path = ROOT / "contracts" / f"{schema}.schema.json"
+        rendered = (
+            json.dumps(
+                build(outcome_actions=outcome_actions, version=version),
+                indent=2,
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
+        if args.check:
+            if not path.exists() or path.read_text() != rendered:
+                raise SystemExit(f"STALE_GOPPI_TRAJECTORY_CONTRACT: {schema}")
+        else:
+            path.write_text(rendered)
 
 
 if __name__ == "__main__":
