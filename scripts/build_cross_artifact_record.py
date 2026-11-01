@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from _record_schema import schema_main
-from _schema_compose import embed_contracts, nullable, object_schema, reference, tagged
+from _record_schema import schema_main, storage_definition
+from _schema_compose import embed_contracts, object_schema, reference, tagged
 
 from underwrite.instrument.ingest.application import DEFAULT_MAX_BYTES
 from underwrite.instrument.ingest.cross_artifact import CORRESPONDENCE_MAX_BYTES
@@ -86,42 +86,7 @@ def build_schema() -> dict[str, Any]:
             object_schema({"state": {"const": "error"}, "error": reference("evidence_error")}),
         ]
     )
-    identity = object_schema(
-        {
-            "record_id": reference("record_verification__record_id"),
-            "manifest_digest": reference("record_verification__digest"),
-        }
-    )
-    definitions["storage"] = tagged(
-        [
-            object_schema(
-                {
-                    "state": {"const": "saved"},
-                    **identity["properties"],
-                    "verification": {
-                        "allOf": [
-                            reference("record_verification"),
-                            {
-                                "properties": {
-                                    "valid": {"const": True},
-                                    "findings": {"maxItems": 0},
-                                    "links_checked": {"const": 0},
-                                    "files_checked": {"const": 6},
-                                }
-                            },
-                        ]
-                    },
-                }
-            ),
-            object_schema(
-                {
-                    "state": {"const": "error"},
-                    "error": reference("record_error"),
-                    "published_record": nullable(identity),
-                }
-            ),
-        ]
-    )
+    definitions["storage"] = storage_definition({"const": 6})
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "urn:underwrite:contract:" + SCHEMA,

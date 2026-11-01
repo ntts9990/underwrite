@@ -6,6 +6,7 @@ Compose single-source capture envelopes from their accounting and storage owners
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,46 @@ def _state(field: str, state: str) -> dict[str, Any]:
     return {"properties": {field: {"properties": {"state": {"const": state}}}}}
 
 
+def storage_definition(files_checked: dict[str, Any]) -> dict[str, Any]:
+    """Compose the common saved/error record state with a caller-owned file count."""
+    identity = object_schema(
+        {
+            "record_id": reference("record_verification__record_id"),
+            "manifest_digest": reference("record_verification__digest"),
+        }
+    )
+    return tagged(
+        [
+            object_schema(
+                {
+                    "state": {"const": "saved"},
+                    **identity["properties"],
+                    "verification": {
+                        "allOf": [
+                            reference("record_verification"),
+                            {
+                                "properties": {
+                                    "valid": {"const": True},
+                                    "findings": {"maxItems": 0},
+                                    "links_checked": {"const": 0},
+                                    "files_checked": copy.deepcopy(files_checked),
+                                }
+                            },
+                        ]
+                    },
+                }
+            ),
+            object_schema(
+                {
+                    "state": {"const": "error"},
+                    "error": reference("record_error"),
+                    "published_record": nullable(identity),
+                }
+            ),
+        ]
+    )
+
+
 def build_record_schema(
     root: Path,
     *,
@@ -33,12 +74,6 @@ def build_record_schema(
 ) -> dict[str, Any]:
     owners = (accounting_owner, "evidence_error", "record_error", "record_verification")
     definitions, _ = embed_contracts(root, owners, versions={accounting_owner: accounting_version})
-    identity = object_schema(
-        {
-            "record_id": reference("record_verification__record_id"),
-            "manifest_digest": reference("record_verification__digest"),
-        }
-    )
     definitions["source"] = tagged(
         [
             object_schema(
@@ -63,36 +98,7 @@ def build_record_schema(
             ),
         ]
     )
-    definitions["storage"] = tagged(
-        [
-            object_schema(
-                {
-                    "state": {"const": "saved"},
-                    **identity["properties"],
-                    "verification": {
-                        "allOf": [
-                            reference("record_verification"),
-                            {
-                                "properties": {
-                                    "valid": {"const": True},
-                                    "findings": {"maxItems": 0},
-                                    "links_checked": {"const": 0},
-                                    "files_checked": {"enum": [2, 3]},
-                                }
-                            },
-                        ]
-                    },
-                }
-            ),
-            object_schema(
-                {
-                    "state": {"const": "error"},
-                    "error": reference("record_error"),
-                    "published_record": nullable(identity),
-                }
-            ),
-        ]
-    )
+    definitions["storage"] = storage_definition({"enum": [2, 3]})
     schema: dict[str, Any] = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "urn:underwrite:contract:" + schema_name,

@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from _record_schema import schema_main
-from _schema_compose import embed_contracts, nullable, object_schema, reference, tagged
+from _record_schema import schema_main, storage_definition
+from _schema_compose import embed_contracts, object_schema, reference, tagged
 
 from underwrite.cli.measure import OBSERVATION_MAX_BYTES, POLICY_MAX_BYTES
 
@@ -57,42 +57,7 @@ def build_schema() -> dict[str, Any]:
             ),
         ]
     )
-    identity = object_schema(
-        {
-            "record_id": reference("record_verification__record_id"),
-            "manifest_digest": reference("record_verification__digest"),
-        }
-    )
-    definitions["storage"] = tagged(
-        [
-            object_schema(
-                {
-                    "state": {"const": "saved"},
-                    **identity["properties"],
-                    "verification": {
-                        "allOf": [
-                            reference("record_verification"),
-                            {
-                                "properties": {
-                                    "valid": {"const": True},
-                                    "findings": {"maxItems": 0},
-                                    "links_checked": {"const": 0},
-                                    "files_checked": {"enum": [2, 3, 4]},
-                                }
-                            },
-                        ]
-                    },
-                }
-            ),
-            object_schema(
-                {
-                    "state": {"const": "error"},
-                    "error": reference("record_error"),
-                    "published_record": nullable(identity),
-                }
-            ),
-        ]
-    )
+    definitions["storage"] = storage_definition({"enum": [2, 3, 4]})
     rules: list[dict[str, Any]] = [
         {
             "if": _state("storage", "error"),

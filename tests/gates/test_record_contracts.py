@@ -16,6 +16,7 @@ from _repo_paths import repo_root
 from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 from underwrite_core.canonical import content_digest
 
+from scripts._record_schema import storage_definition
 from underwrite.service import _record_format
 
 ROOT = repo_root(Path(__file__).resolve())
@@ -40,6 +41,22 @@ ROLES = {
     "log",
     "environment",
 }
+
+
+def test_composed_storage_fragments_own_mutable_file_count_constraints() -> None:
+    count = {"enum": [2, 3]}
+    first = storage_definition(count)
+    second = storage_definition(count)
+    count["enum"].append(4)
+    first_count = first["allOf"][0]["then"]["properties"]["verification"]["allOf"][1]["properties"][
+        "files_checked"
+    ]
+    second_count = second["allOf"][0]["then"]["properties"]["verification"]["allOf"][1][
+        "properties"
+    ]["files_checked"]
+    assert first_count == second_count == {"enum": [2, 3]}
+    first_count["enum"].append(5)
+    assert second_count == {"enum": [2, 3]}
 
 
 class Validator(Protocol):

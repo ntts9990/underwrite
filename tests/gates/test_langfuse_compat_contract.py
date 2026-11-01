@@ -184,6 +184,7 @@ def test_current_generation_needs_no_legacy_or_existing_target_files(tmp_path: P
         "build_langfuse_cli_accounting.py",
         "build_langfuse_compat.py",
         "build_langfuse_record.py",
+        "_record_schema.py",
         "_schema_compose.py",
     ):
         shutil.copyfile(ROOT / "scripts" / name, scripts / name)
