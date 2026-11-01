@@ -1239,8 +1239,8 @@ dependency.
 
 ## Compare a Goppi paired trajectory
 
-This is the **development-checkout** first-party companion path for a
-Goppi-produced export. The public Goppi npm `0.0.1` does not contain the
+This is the first-party companion path for an export from a compatible
+**Goppi source build**. The public Goppi npm `0.0.1` does not contain the
 required exporter or portable verifier; the accepted Goppi source build used
 for local integration has not been publicly released as an installable package.
 Goppi owns the run and native verifier; Underwrite owns consumer interpretation.
@@ -1259,8 +1259,14 @@ goppi run export-paired --run YOUR_RUN --output /absolute/path/to/export --json
 underwrite audit-trajectory --exchange /absolute/path/to/export --json
 ```
 
-Underwrite 0.2.0 builds advertising `audit-trajectory` can review an existing Goppi
-paired+trajectory export. Published `underwrite==0.1.1` predates this command.
+Published `underwrite==0.2.0` and the current checkout can both review an existing
+Goppi paired+trajectory export; published `0.1.1` predates this command. Their
+**result contracts differ**: the published 0.2.0 `audit-trajectory` returns
+`goppi_trajectory_review.v1`, and its record/read commands return
+`trajectory_record.v1` / `trajectory_record_read.v1`. The current checkout returns
+the corresponding v2 contracts and offers `--view outcome-actions`; the published
+0.2.0 does not. Inspect the selected executable's `capabilities --json` before
+using the v2 interpretation or action view described below.
 Use the complete outer directory containing `paired/` and `trajectory/`; a bare
 paired export is not evidence of zero tool calls. Goppi must already be installed
 with offline trajectory verification support. Underwrite does not install it or

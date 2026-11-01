@@ -235,6 +235,13 @@ Claude Code에서 재사용할 수 있는 지침을 제공합니다.
 | **OpenInference** | `openinference.traces` / `0.1.38` | `ingest` |
 | **OTLP JSON** | `otlp-json.traces` / `0.160.0` | `ingest` |
 
+링크된 궤적 안내에는 개발 체크아웃의 계약도 포함됩니다. 공개
+`underwrite==0.2.0`은 `goppi_trajectory_review.v1`을 반환하고
+`trajectory_record.v1`로 보관합니다. 현재 개발 체크아웃은 v2를 반환하며
+`--view outcome-actions`도 제공합니다. 보기 선택과 검증기 상태 해석 전에는
+사용 중인 실행 파일의 `capabilities --json`을 확인하세요. 두 경로 모두
+paired 내보내기와 오프라인 검증에 호환되는 Goppi 소스 빌드가 필요합니다.
+
 ### 0.2.0에 포함된 작업 흐름
 
 - **자동 입력:** 호환되는 Promptfoo SummaryV3, DeepEval TestRun, Langfuse blob
