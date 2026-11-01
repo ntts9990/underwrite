@@ -24,9 +24,9 @@ from underwrite.cli.local_json import Validator, validate
 from underwrite.cli.record_capture import (
     STORAGE_FAILURE_EXIT,
     admit_record_response,
+    finalize_captured_record,
     render_record_response,
     storage_validator,
-    store_captured_record,
 )
 from underwrite.cli.records import OUTPUT_MAX_BYTES, record_error_payload
 from underwrite.instrument.evidence.deepeval_compat import (
@@ -307,16 +307,6 @@ def run_record_deepeval(
             max_bytes=OUTPUT_MAX_BYTES,
         )
         return envelope
-    admit_record_response(
-        envelope,
-        aggregate_validator=contracts.aggregate,
-        storage_validator=contracts.storage,
-        identifier=identifier,
-        count=len(files),
-        analysis_text=_analysis_text(analysis, trace=selection.view == TRACE_VIEW),
-        as_json=as_json,
-        max_bytes=OUTPUT_MAX_BYTES,
-    )
     metadata = {
         "format": SOURCE_FORMAT,
         "analysis_state": analysis["state"],
@@ -337,12 +327,18 @@ def run_record_deepeval(
         provenance={"verified": False, "attestation_ref": None},
         files=files,
     )
-    envelope["storage"] = store_captured_record(
-        root, spec, contracts.verification, contracts.record_error
+    return finalize_captured_record(
+        envelope,
+        root,
+        spec,
+        aggregate_validator=contracts.aggregate,
+        storage_validator=contracts.storage,
+        verification_validator=contracts.verification,
+        record_error_validator=contracts.record_error,
+        analysis_text=_analysis_text(analysis, trace=selection.view == TRACE_VIEW),
+        as_json=as_json,
+        max_bytes=OUTPUT_MAX_BYTES,
     )
-    if envelope["storage"]["state"] == "error":
-        envelope["exit_code"] = STORAGE_FAILURE_EXIT
-    return envelope
 
 
 def produce(args: argparse.Namespace) -> dict[str, object]:

@@ -17,12 +17,10 @@ from underwrite.cli.audit_trajectory import trajectory_cli_error
 from underwrite.cli.evidence import EvidenceError, ReportOutput, output_line_size, run_cli
 from underwrite.cli.local_json import Validator, decode_document, validate
 from underwrite.cli.record_capture import (
-    STORAGE_FAILURE_EXIT,
-    admit_record_response,
+    finalize_captured_record,
     render_record_response,
     saved_record,
     storage_validator,
-    store_captured_record,
 )
 from underwrite.instrument.evidence.goppi_trajectory import (
     MAX_REPORT_BYTES,
@@ -242,16 +240,6 @@ def run_record_trajectory(
         "verifier_report_history": history,
         "exit_code": 0 if outcome.error is None else 2,
     }
-    admit_record_response(
-        envelope,
-        aggregate_validator=contracts.aggregate,
-        storage_validator=contracts.storage,
-        identifier=identifier,
-        count=len(files),
-        analysis_text=_analysis_text(analysis),
-        as_json=as_json,
-        max_bytes=OUTPUT_MAX_BYTES,
-    )
     spec = CapturedRecordSpec(
         identifier,
         KIND,
@@ -263,12 +251,18 @@ def run_record_trajectory(
         {"verified": False, "attestation_ref": None},
         files,
     )
-    envelope["storage"] = store_captured_record(
-        root, spec, contracts.verification, contracts.record_error
+    return finalize_captured_record(
+        envelope,
+        root,
+        spec,
+        aggregate_validator=contracts.aggregate,
+        storage_validator=contracts.storage,
+        verification_validator=contracts.verification,
+        record_error_validator=contracts.record_error,
+        analysis_text=_analysis_text(analysis),
+        as_json=as_json,
+        max_bytes=OUTPUT_MAX_BYTES,
     )
-    if envelope["storage"]["state"] == "error":
-        envelope["exit_code"] = STORAGE_FAILURE_EXIT
-    return envelope
 
 
 def _require(condition: bool) -> None:

@@ -359,7 +359,7 @@ def test_bound_record_version_and_output_admission_precede_input_or_store(
         pytest.fail("storage called before output admission")
 
     monkeypatch.setattr(record_deepeval_bound, "OUTPUT_MAX_BYTES", 1)
-    monkeypatch.setattr(record_deepeval_bound, "store_captured_record", forbidden)
+    monkeypatch.setattr(record_capture, "store_captured_record", forbidden)
     with pytest.raises(EvidenceError) as output:
         record_deepeval_bound.run_record_bound_deepeval(source, bindings, store, "sample")
     assert output.value.payload["code"] == "OUTPUT_LIMIT_EXCEEDED"

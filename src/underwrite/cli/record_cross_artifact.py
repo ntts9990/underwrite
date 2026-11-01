@@ -11,11 +11,9 @@ from underwrite_core.canonical import CanonicalizationError, canonical_bytes, di
 from underwrite.cli.evidence import EvidenceError, ReportOutput, run_cli
 from underwrite.cli.local_json import Validator, validate
 from underwrite.cli.record_capture import (
-    STORAGE_FAILURE_EXIT,
-    admit_record_response,
+    finalize_captured_record,
     render_record_response,
     storage_validator,
-    store_captured_record,
 )
 from underwrite.instrument.ingest.cross_artifact import (
     RESULT_SCHEMA,
@@ -203,16 +201,6 @@ def run_record_review(  # noqa: PLR0913 - four explicit source paths and record 
         "analysis": analysis,
         "exit_code": 0 if analysis["state"] == "result" else 2,
     }
-    admit_record_response(
-        envelope,
-        aggregate_validator=aggregate,
-        storage_validator=storage_validator(aggregate),
-        identifier=identifier,
-        count=len(files),
-        analysis_text=_analysis_text(analysis),
-        as_json=as_json,
-        max_bytes=OUTPUT_MAX_BYTES,
-    )
     spec = CapturedRecordSpec(
         record_id=identifier,
         kind="cross-artifact.mapped-review",
@@ -224,12 +212,18 @@ def run_record_review(  # noqa: PLR0913 - four explicit source paths and record 
         provenance={"verified": False, "attestation_ref": None},
         files=files,
     )
-    envelope["storage"] = store_captured_record(
-        root, spec, verification_validator, record_error_validator
+    return finalize_captured_record(
+        envelope,
+        root,
+        spec,
+        aggregate_validator=aggregate,
+        storage_validator=storage_validator(aggregate),
+        verification_validator=verification_validator,
+        record_error_validator=record_error_validator,
+        analysis_text=_analysis_text(analysis),
+        as_json=as_json,
+        max_bytes=OUTPUT_MAX_BYTES,
     )
-    if envelope["storage"]["state"] == "error":
-        envelope["exit_code"] = STORAGE_FAILURE_EXIT
-    return envelope
 
 
 def produce(args: argparse.Namespace) -> dict[str, object]:
