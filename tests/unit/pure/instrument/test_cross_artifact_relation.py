@@ -9,8 +9,11 @@ import pytest
 from underwrite.instrument.evidence.cross_artifact_relation import (
     CASE_ID_MAX_LENGTH,
     RelationError,
+    declared_case_verification_tasks,
     inspect_promptfoo_source_case_metadata,
     review_declared_cases,
+    review_source_case_readiness,
+    unmapped_case_verification_tasks,
 )
 
 
@@ -36,9 +39,67 @@ def test_source_metadata_inspector_keeps_valid_role_without_oversized_case_id() 
     inspected = inspect_promptfoo_source_case_metadata(source, 0)
     assert inspected["case_id"] is None
     assert inspected["slot_kind"] == "subject"
-    assert [item["code"] for item in inspected["blockers"]] == [
-        "PROMPTFOO_CASE_ID_REQUIRED"
+    assert [item["code"] for item in inspected["blockers"]] == ["PROMPTFOO_CASE_ID_REQUIRED"]
+
+
+def test_readiness_owner_keeps_metadata_and_empty_subject_prerequisites_distinct() -> None:
+    rows: list[object] = [
+        {"testCase": {"metadata": {"slot_kind": "control"}}},
+        {"testCase": {"metadata": {"slot_kind": "control"}}},
     ]
+    result = review_source_case_readiness(["case-a"], rows)
+    assert result["metadata"]["case_ids"] == "incomplete"
+    assert result["metadata"]["row_roles"] == "source_declared"
+    assert result["subject_rows"] == 0
+    assert result["review_prerequisites"] == "missing_owner_metadata"
+    assert [task["code"] for task in result["next_verification_tasks"]] == [
+        "PROVIDE_PROMPTFOO_CASE_METADATA",
+        "PROVIDE_PROMPTFOO_SUBJECT_ROWS",
+        "VERIFY_GOPPI_PORTABLE_CLOSURE",
+        "VERIFY_SOURCE_PROVENANCE",
+    ]
+
+
+def test_readiness_owner_distinguishes_no_subjects_from_disjoint_ids() -> None:
+    controls: list[object] = [
+        {"testCase": {"metadata": {"case_id": "control", "slot_kind": "control"}}}
+    ]
+    subjects: list[object] = [
+        {"testCase": {"metadata": {"case_id": "other", "slot_kind": "subject"}}}
+    ]
+    no_subjects = review_source_case_readiness(["case-a"], controls)
+    disjoint = review_source_case_readiness(["case-a"], subjects)
+    assert no_subjects["review_prerequisites"] == "missing_subject_rows"
+    assert no_subjects["next_verification_tasks"][0]["code"] == ("PROVIDE_PROMPTFOO_SUBJECT_ROWS")
+    assert disjoint["review_prerequisites"] == "missing_matching_case_ids"
+    assert disjoint["next_verification_tasks"][0]["code"] == ("PROVIDE_MATCHING_SOURCE_CASE_IDS")
+
+
+def test_pure_review_tasks_keep_source_review_and_actual_relation_codes() -> None:
+    unmapped = unmapped_case_verification_tasks(["case-a"], [])
+    assert [(task["code"], task["owner"]) for task in unmapped] == [
+        ("PROVIDE_PROMPTFOO_SUBJECT_ROWS", "evaluation_owner"),
+        ("VERIFY_GOPPI_PORTABLE_CLOSURE", "source_reviewer"),
+        ("VERIFY_SOURCE_PROVENANCE", "source_reviewer"),
+    ]
+    declared = declared_case_verification_tasks(
+        [{"case_index": 2, "row_index": 4, "finding": "value_comparison_ineligible"}],
+        ["DECLARE_REMAINING_CASE_CORRESPONDENCE"],
+    )
+    assert [task["code"] for task in declared] == [
+        "VERIFY_INPUT_AND_METRIC_SEMANTICS",
+        "PROVIDE_COMPARATOR_CONDITIONS",
+        "DECLARE_REMAINING_CASE_CORRESPONDENCE",
+        "INSPECT_INELIGIBLE_CASE_EVIDENCE",
+        "VERIFY_GOPPI_PORTABLE_CLOSURE",
+        "VERIFY_SOURCE_PROVENANCE",
+    ]
+    assert declared[3] == {
+        "code": "INSPECT_INELIGIBLE_CASE_EVIDENCE",
+        "owner": "calling_agent",
+        "case_index": 2,
+        "row_index": 4,
+    }
 
 
 def _items() -> list[dict[str, object]]:
@@ -151,9 +212,7 @@ def test_nonempty_whitespace_case_id_is_compared_exactly_without_echo() -> None:
     pairs = _pairs()
     pairs[0]["case_id"] = " "
 
-    result = review_declared_cases(
-        _items(), [" ", "case-b", "case-c"], rows, pairs, "complete"
-    )
+    result = review_declared_cases(_items(), [" ", "case-b", "case-c"], rows, pairs, "complete")
 
     assert result["finding_counts"] == {"equal": 1, "different": 1, "ineligible": 1}
     assert "case-b" not in str(result)

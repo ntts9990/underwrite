@@ -36,6 +36,13 @@ class SourceCaseMetadata(TypedDict):
     blockers: list[dict[str, object]]
 
 
+class SourceCaseReadiness(TypedDict):
+    metadata: dict[str, object]
+    subject_rows: int | None
+    review_prerequisites: str
+    next_verification_tasks: list[dict[str, object]]
+
+
 def inspect_promptfoo_source_case_metadata(row: object, index: int) -> SourceCaseMetadata:
     """Inspect only owner-authored case roles, without copying source values."""
     location = f"/promptfoo/results/results/{index}"
@@ -94,6 +101,92 @@ def inspect_promptfoo_source_case_metadata(row: object, index: int) -> SourceCas
         "case_id": cast(str, case_id) if valid_case_id else None,
         "slot_kind": slot_kind if valid_slot_kind else None,
         "blockers": blockers,
+    }
+
+
+def _task(
+    code: str, owner: str, case_index: int | None = None, row_index: int | None = None
+) -> dict[str, object]:
+    return {
+        "code": code,
+        "owner": owner,
+        "case_index": case_index,
+        "row_index": row_index,
+    }
+
+
+def _source_review_tasks() -> list[dict[str, object]]:
+    return [
+        _task("VERIFY_GOPPI_PORTABLE_CLOSURE", "source_reviewer"),
+        _task("VERIFY_SOURCE_PROVENANCE", "source_reviewer"),
+    ]
+
+
+def unmapped_case_verification_tasks(
+    goppi_case_ids: list[str], subject_case_ids: list[str]
+) -> list[dict[str, object]]:
+    """Keep owner mapping prerequisites separate from source-review checks."""
+    _, next_owner_action = case_mapping_prerequisite(goppi_case_ids, subject_case_ids)
+    return [_task(next_owner_action, "evaluation_owner"), *_source_review_tasks()]
+
+
+def declared_case_verification_tasks(
+    pairs: list[dict[str, object]], remaining_tasks: list[str]
+) -> list[dict[str, object]]:
+    """Plan checks for declared source claims, preserving the relation's task codes."""
+    tasks = [
+        _task("VERIFY_INPUT_AND_METRIC_SEMANTICS", "evaluation_owner"),
+        _task("PROVIDE_COMPARATOR_CONDITIONS", "evaluation_owner"),
+    ]
+    tasks.extend(_task(code, "evaluation_owner") for code in remaining_tasks)
+    tasks.extend(
+        _task(
+            "INSPECT_INELIGIBLE_CASE_EVIDENCE",
+            "calling_agent",
+            cast(int, pair["case_index"]),
+            cast(int, pair["row_index"]),
+        )
+        for pair in pairs
+        if pair["finding"] == "value_comparison_ineligible"
+    )
+    return [*tasks, *_source_review_tasks()]
+
+
+def review_source_case_readiness(
+    goppi_case_ids: list[str], source_rows: list[object]
+) -> SourceCaseReadiness:
+    """Summarize owner metadata and the first safe task without joining cases."""
+    inspected = [
+        inspect_promptfoo_source_case_metadata(row, index) for index, row in enumerate(source_rows)
+    ]
+    blockers = [blocker for row in inspected for blocker in row["blockers"]]
+    case_ids_complete = all(row["case_id"] is not None for row in inspected)
+    roles_complete = all(row["slot_kind"] is not None for row in inspected)
+    subject_rows = (
+        sum(row["slot_kind"] == "subject" for row in inspected) if roles_complete else None
+    )
+    if blockers:
+        prerequisite = "missing_owner_metadata"
+        owner_tasks = [_task("PROVIDE_PROMPTFOO_CASE_METADATA", "evaluation_owner")]
+    else:
+        subject_case_ids = [
+            cast(str, row["case_id"]) for row in inspected if row["slot_kind"] == "subject"
+        ]
+        prerequisite, next_owner_action = case_mapping_prerequisite(
+            goppi_case_ids, subject_case_ids
+        )
+        owner_tasks = [_task(next_owner_action, "evaluation_owner")]
+    if blockers and roles_complete and subject_rows == 0:
+        owner_tasks.append(_task("PROVIDE_PROMPTFOO_SUBJECT_ROWS", "evaluation_owner"))
+    return {
+        "metadata": {
+            "case_ids": "complete" if case_ids_complete else "incomplete",
+            "row_roles": "source_declared" if roles_complete else "incomplete",
+            "blockers": blockers,
+        },
+        "subject_rows": subject_rows,
+        "review_prerequisites": prerequisite,
+        "next_verification_tasks": [*owner_tasks, *_source_review_tasks()],
     }
 
 

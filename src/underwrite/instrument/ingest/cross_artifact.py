@@ -20,9 +20,11 @@ from underwrite.instrument.evidence.common_result import (
 )
 from underwrite.instrument.evidence.cross_artifact_relation import (
     RelationError,
-    case_mapping_prerequisite,
+    declared_case_verification_tasks,
     inspect_promptfoo_source_case_metadata,
     review_declared_cases,
+    review_source_case_readiness,
+    unmapped_case_verification_tasks,
 )
 from underwrite.instrument.evidence.promptfoo_compat import (
     PromptfooCompatibilityError,
@@ -284,7 +286,7 @@ def _correspondence(
     items: list[dict[str, object]],
     case_ids: list[str],
     rows: list[dict[str, object]],
-) -> tuple[str, dict[str, object], dict[str, object], list[str]]:
+) -> tuple[str, dict[str, object], dict[str, object], list[dict[str, object]]]:
     if declaration is None:
         subject_indices = [
             cast(int, row["row_index"]) for row in rows if row["slot_kind"] == "subject"
@@ -304,7 +306,10 @@ def _correspondence(
             "incomparable_on_supplied_evidence",
             relation,
             counts,
-            [],
+            unmapped_case_verification_tasks(
+                case_ids,
+                [cast(str, row["case_id"]) for row in rows if row["slot_kind"] == "subject"],
+            ),
         )
     _validate_schema(declaration, CORRESPONDENCE_SCHEMA, "/correspondence")
     declared = cast(dict[str, object], declaration["sources"])
@@ -340,19 +345,11 @@ def _correspondence(
         "declared_case_mapping_descriptive",
         relation,
         cast(dict[str, object], reviewed["finding_counts"]),
-        cast(list[str], reviewed["next_verification_tasks"]),
+        declared_case_verification_tasks(
+            cast(list[dict[str, object]], reviewed["pairs"]),
+            cast(list[str], reviewed["next_verification_tasks"]),
+        ),
     )
-
-
-def _task(
-    code: str, owner: str, case_index: int | None = None, row_index: int | None = None
-) -> dict[str, object]:
-    return {
-        "code": code,
-        "owner": owner,
-        "case_index": case_index,
-        "row_index": row_index,
-    }
 
 
 def _readers(accounting: dict[str, object]) -> dict[str, object]:
@@ -409,9 +406,7 @@ def review_artifact_files(
     correspondence: Path | None = None,
 ) -> dict[str, object]:
     """Read each selected file once; compare only source claims under an optional owner map."""
-    sources = _capture_selected_sources(
-        goppi_assessment, goppi_result, promptfoo_export
-    )
+    sources = _capture_selected_sources(goppi_assessment, goppi_result, promptfoo_export)
     declaration: dict[str, Any] | None = None
     declaration_raw: bytes | None = None
     if correspondence is not None:
@@ -443,38 +438,10 @@ def _review_selected_sources(
         assessment, result, hashes["goppi_assessment_sha256"]
     )
     rows, accounting = _promptfoo_rows(promptfoo)
-    relation_state, relation, findings, relation_tasks = _correspondence(
+    relation_state, relation, findings, tasks = _correspondence(
         declaration, declaration_raw, hashes, items, case_ids, rows
     )
-    subject_case_ids = [
-        cast(str, row["case_id"]) for row in rows if row["slot_kind"] == "subject"
-    ]
-    subject_rows = len(subject_case_ids)
-    tasks: list[dict[str, object]] = []
-    if relation_state == "incomparable_on_supplied_evidence":
-        _, next_owner_action = case_mapping_prerequisite(case_ids, subject_case_ids)
-        tasks.append(_task(next_owner_action, "evaluation_owner"))
-    else:
-        tasks.extend(
-            (
-                _task("VERIFY_INPUT_AND_METRIC_SEMANTICS", "evaluation_owner"),
-                _task("PROVIDE_COMPARATOR_CONDITIONS", "evaluation_owner"),
-            )
-        )
-        if relation_tasks:
-            tasks.append(_task("DECLARE_REMAINING_CASE_CORRESPONDENCE", "evaluation_owner"))
-        for pair in cast(list[dict[str, object]], relation["pairs"]):
-            if pair["finding"] == "value_comparison_ineligible":
-                tasks.append(
-                    _task(
-                        "INSPECT_INELIGIBLE_CASE_EVIDENCE",
-                        "calling_agent",
-                        cast(int, pair["case_index"]),
-                        cast(int, pair["row_index"]),
-                    )
-                )
-    tasks.append(_task("VERIFY_GOPPI_PORTABLE_CLOSURE", "source_reviewer"))
-    tasks.append(_task("VERIFY_SOURCE_PROVENANCE", "source_reviewer"))
+    subject_rows = sum(row["slot_kind"] == "subject" for row in rows)
     report: dict[str, object] = {
         "schema": RESULT_SCHEMA,
         "relation": relation_state,
@@ -505,9 +472,7 @@ def review_artifact_readiness_files(
     goppi_assessment: Path, goppi_result: Path, promptfoo_export: Path
 ) -> dict[str, object]:
     """Report source-bound prerequisites without inferring cross-producer case meaning."""
-    sources = _capture_selected_sources(
-        goppi_assessment, goppi_result, promptfoo_export
-    )
+    sources = _capture_selected_sources(goppi_assessment, goppi_result, promptfoo_export)
     assessment, result, promptfoo, hashes = (
         sources.assessment,
         sources.result,
@@ -518,53 +483,17 @@ def review_artifact_readiness_files(
         assessment, result, hashes["goppi_assessment_sha256"]
     )
     accounting, source_rows, _ = _promptfoo_accounting(promptfoo)
-    metadata = [
-        inspect_promptfoo_source_case_metadata(row, index)
-        for index, row in enumerate(source_rows)
-    ]
-    blockers = [blocker for row in metadata for blocker in row["blockers"]]
-    case_ids_complete = all(row["case_id"] is not None for row in metadata)
-    roles_complete = all(row["slot_kind"] is not None for row in metadata)
-    subject_rows = (
-        sum(row["slot_kind"] == "subject" for row in metadata) if roles_complete else None
-    )
-    if blockers:
-        prerequisite, next_owner_action = (
-            "missing_owner_metadata",
-            "PROVIDE_PROMPTFOO_CASE_METADATA",
-        )
-    else:
-        prerequisite, next_owner_action = case_mapping_prerequisite(
-            case_ids,
-            [
-                cast(str, row["case_id"])
-                for row in metadata
-                if row["slot_kind"] == "subject"
-            ],
-        )
-    tasks = [_task(next_owner_action, "evaluation_owner")]
-    if blockers and roles_complete and subject_rows == 0:
-        tasks.append(_task("PROVIDE_PROMPTFOO_SUBJECT_ROWS", "evaluation_owner"))
-    tasks.extend(
-        (
-            _task("VERIFY_GOPPI_PORTABLE_CLOSURE", "source_reviewer"),
-            _task("VERIFY_SOURCE_PROVENANCE", "source_reviewer"),
-        )
-    )
+    readiness = review_source_case_readiness(case_ids, source_rows)
     report: dict[str, object] = {
         "schema": READINESS_SCHEMA,
         "relation": "incomparable_on_supplied_evidence",
         "source_identity": hashes,
         "readers": _readers(accounting),
         "populations": _populations(
-            result, availability, accounting, len(source_rows), subject_rows
+            result, availability, accounting, len(source_rows), readiness["subject_rows"]
         ),
-        "metadata": {
-            "case_ids": "complete" if case_ids_complete else "incomplete",
-            "row_roles": "source_declared" if roles_complete else "incomplete",
-            "blockers": blockers,
-        },
-        "review_prerequisites": prerequisite,
+        "metadata": readiness["metadata"],
+        "review_prerequisites": readiness["review_prerequisites"],
         "finding_counts": {"equal": 0, "different": 0, "ineligible": 0},
         "improvement": "unknown",
         "checks": {
@@ -575,7 +504,7 @@ def review_artifact_readiness_files(
             "source_authentication": "not_independently_verified",
             "promptfoo_accounting": "consistent",
         },
-        "next_verification_tasks": tasks,
+        "next_verification_tasks": readiness["next_verification_tasks"],
         "limitations": READINESS_LIMITATIONS.copy(),
     }
     _validate_result_schema(report, READINESS_SCHEMA)
