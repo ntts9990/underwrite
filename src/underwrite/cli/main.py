@@ -137,7 +137,7 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
         (
             profile(
                 "registered-codecs",
-                ("format", "version", "file|http_body_file"),
+                instrument.CAPABILITY_REQUIRED_INPUTS,
                 (),
                 ("observation.v1",),
             ),

@@ -23,6 +23,12 @@ from underwrite.instrument.ingest.project import Source
 
 COMMANDS = ("ingest", "project")
 DISPLAY_LIMIT = 160
+CAPABILITY_REQUIRED_INPUTS = (
+    "format",
+    "version",
+    "file|http_body_file",
+    "file|transport_locator",
+)
 
 
 class _Parser(argparse.ArgumentParser):

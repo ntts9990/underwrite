@@ -28,6 +28,12 @@ of inferring support from the package version alone. Published `0.1.0` has
 does not. Use help-based discovery with any installed version. Capability
 availability is not evidence that an arbitrary export satisfies a profile.
 
+In `required_inputs`, each array entry is required and `|` means alternatives
+within that entry. For registered `ingest`/`project` codecs, `--file` satisfies
+both input-mode clauses; `--http-body-file` additionally requires
+`--transport-locator`. A transport locator is refused with `--file`. The body
+file is an already captured local input; Underwrite does not fetch its URL.
+
 For released changes and current checkout differences, see [migration](MIGRATION.md).
 Published 0.2.0 retains historical selectors alongside automatic input. The
 unreleased checkout removes producer-version/profile audit/capture selectors

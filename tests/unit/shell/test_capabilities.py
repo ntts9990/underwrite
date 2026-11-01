@@ -82,6 +82,27 @@ def test_capability_command_validates_and_is_registration_derived(
     assert "package_version" not in report
 
 
+def test_ingest_capabilities_include_body_transport_locator_clause(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main.main(["capabilities", "--json"]) == 0
+    catalog = json.loads(capsys.readouterr().out)
+    ingest = next(item for item in catalog["commands"] if item["command"] == "ingest")
+    required = ingest["profiles"][0]["required_inputs"]
+
+    def satisfies(provided: set[str]) -> bool:
+        return all(
+            any(alternative in provided for alternative in clause.split("|"))
+            for clause in required
+        )
+
+    assert "file|transport_locator" in required
+    assert satisfies({"format", "version", "file"})
+    assert satisfies({"format", "version", "http_body_file", "transport_locator"})
+    assert not satisfies({"format", "version", "http_body_file"})
+    assert all(row["required_inputs"] == required for row in catalog["codecs"])
+
+
 def test_outcome_actions_profile_advertises_direct_view_only(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
