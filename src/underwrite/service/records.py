@@ -29,6 +29,7 @@ from underwrite.service._record_format import (
     MAX_SELECTION_EXCLUDED,
     MAX_TOTAL_BYTES,
     FormatError,
+    artifact_reference_roles,
     logical_name,
     record_id,
     strict_manifest,
@@ -398,17 +399,12 @@ def _validate_references(root: Path, spec: dict[str, object]) -> None:
         if snapshot.digest != item["manifest_digest"]:
             raise RecordError("INVALID_SPEC", "/spec/links")
         linked[identifier] = snapshot
-    references = [
-        cast(dict[str, object], spec["rerun_verification"])["reference"],
-        cast(dict[str, object], spec["provenance"])["attestation_ref"],
-    ]
-    own = {cast(str, item["name"]): item for item in cast(list[dict[str, object]], spec["files"])}
-    for index, value in enumerate(references):
-        if value is None:
-            continue
-        reference = cast(dict[str, object], value)
+    own_files = {
+        cast(str, item["name"]): item for item in cast(list[dict[str, object]], spec["files"])
+    }
+    for reference, required_role in artifact_reference_roles(spec):
         if reference["scope"] == "this_record":
-            target = own.get(cast(str, reference["name"]))
+            target = own_files.get(cast(str, reference["name"]))
         else:
             target_record = linked.get(cast(str, reference["record_id"]))
             if target_record is None or target_record.digest != reference["manifest_digest"]:
@@ -421,7 +417,7 @@ def _validate_references(root: Path, spec: dict[str, object]) -> None:
                 ),
                 None,
             )
-        if target is None or (index == 0 and target["role"] != "verification"):
+        if target is None or (required_role is not None and target["role"] != required_role):
             raise RecordError("INVALID_SPEC", "/spec")
 
 
@@ -957,21 +953,6 @@ def _file_finding_at(directory: int, item: dict[str, object]) -> str | None:
         return mapped
 
 
-def _linked_artifact_refs(
-    manifest: dict[str, object], identifier: str
-) -> list[tuple[dict[str, object], str | None]]:
-    rerun = cast(dict[str, object], manifest["rerun_verification"])["reference"]
-    provenance = cast(dict[str, object], manifest["provenance"])["attestation_ref"]
-    result: list[tuple[dict[str, object], str | None]] = []
-    for reference, required_role in ((rerun, "verification"), (provenance, None)):
-        if reference is None:
-            continue
-        ref = cast(dict[str, object], reference)
-        if ref["scope"] == "linked_record" and ref["record_id"] == identifier:
-            result.append((ref, required_role))
-    return result
-
-
 def _link_finding(
     records_fd: int, item: dict[str, object], manifest: dict[str, object]
 ) -> str | None:
@@ -990,7 +971,9 @@ def _link_finding(
         cast(str, file["name"]): file
         for file in cast(list[dict[str, object]], target.manifest["files"])
     }
-    for reference, required_role in _linked_artifact_refs(manifest, identifier):
+    for reference, required_role in artifact_reference_roles(manifest):
+        if reference["scope"] != "linked_record" or reference["record_id"] != identifier:
+            continue
         target_file = target_files.get(cast(str, reference["name"]))
         if target_file is None or (
             required_role is not None and target_file["role"] != required_role

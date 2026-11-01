@@ -566,6 +566,26 @@ def test_linked_rerun_reference_requires_a_verification_artifact(tmp_path: Path)
     assert not (root / "records/analysis.001").exists()
 
 
+def test_linked_provenance_reference_does_not_inherit_rerun_role_rule(tmp_path: Path) -> None:
+    source = _source(tmp_path)
+    root = tmp_path / "store"
+    target = records.save_record(root, _spec("input.001"), source)
+    reference = {
+        "scope": "linked_record",
+        "record_id": "input.001",
+        "manifest_digest": target.digest,
+        "name": "source/result.json",
+    }
+    spec = _spec("analysis.001")
+    spec["links"] = [
+        {"relation": "input", "record_id": "input.001", "manifest_digest": target.digest}
+    ]
+    spec["provenance"] = {"verified": False, "attestation_ref": reference}
+    saved = records.save_record(root, spec, source)
+    assert saved.manifest["provenance"] == spec["provenance"]
+    assert records.verify_record(root, "analysis.001")["valid"] is True
+
+
 @pytest.mark.parametrize("fault", ["missing", "wrong_role"])
 def test_verify_rechecks_linked_artifact_name_and_rerun_role(tmp_path: Path, fault: str) -> None:
     source = _source(tmp_path)
