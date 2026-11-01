@@ -238,6 +238,13 @@ for exact input requirements.
 | **OpenInference** | `openinference.traces` / `0.1.38` | `ingest` |
 | **OTLP JSON** | `otlp-json.traces` / `0.160.0` | `ingest` |
 
+The linked trajectory guide also covers development-checkout contracts. Published
+`underwrite==0.2.0` returns `goppi_trajectory_review.v1` and retains
+`trajectory_record.v1`; the current checkout returns v2 and adds
+`--view outcome-actions`. Check `capabilities --json` on the executable you use
+before selecting a view or interpreting a verifier label. Both paths still need
+a compatible Goppi source build for the paired export and offline verifier.
+
 ### Included in 0.2.0
 
 - **Automatic intake:** compatible Promptfoo SummaryV3, DeepEval TestRun, and
