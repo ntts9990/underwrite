@@ -19,10 +19,11 @@ from underwrite.cli.evidence import (
     ReportOutput,
     run_cli,
 )
-from underwrite.cli.local_json import Validator, decode_document, read_source, validate
+from underwrite.cli.local_json import Validator, decode_document, read_source
 from underwrite.cli.record_capture import (
     STORAGE_FAILURE_EXIT,
     admit_record_response,
+    analysis_record_file,
     finalize_captured_record,
     render_record_response,
     storage_validator,
@@ -64,10 +65,6 @@ def _contracts() -> _Contracts:
         cast(Validator, packaged_validator("record_error.v1")),
         cast(Validator, packaged_validator("record_verification.v1")),
     )
-
-
-def _check(validator: Validator, value: object) -> None:
-    validate(validator, value, EvidenceError, "INTERNAL_ERROR")
 
 
 def _identifier(value: str) -> str:
@@ -166,11 +163,13 @@ def _files(
 ) -> tuple[CapturedRecordFile, ...]:
     analysis = envelope["analysis"]
     result = analysis["state"] == "result"
-    document = analysis["report"] if result else analysis["error"]
-    _check(contracts.read if result else contracts.measurement_error, document)
-    encoded = canonical_bytes(document) + b"\n"
-    if len(encoded) > min(RECORD_READ_MAX_BYTES, measurement_flow.OUTPUT_MAX_BYTES):
-        raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
+    analysis_file = analysis_record_file(
+        analysis,
+        result_name="analysis/read.json",
+        result_validator=contracts.read,
+        error_validator=contracts.measurement_error,
+        max_bytes=min(RECORD_READ_MAX_BYTES, measurement_flow.OUTPUT_MAX_BYTES),
+    )
     invocation = {
         "command": COMMAND,
         "execution_mode": "in_process",
@@ -187,12 +186,7 @@ def _files(
         "aggregate_outcome_location": "command_output",
     }
     files = [
-        CapturedRecordFile(
-            "analysis/read.json" if result else "analysis/error.json",
-            "result" if result else "log",
-            encoded,
-            "application/json",
-        ),
+        analysis_file,
         CapturedRecordFile(
             "invocation.json", "log", canonical_bytes(invocation) + b"\n", "application/json"
         ),

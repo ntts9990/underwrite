@@ -14,6 +14,7 @@ from underwrite.cli.evidence import EvidenceError, output_line_size
 from underwrite.cli.local_json import Validator, validate
 from underwrite.cli.records import record_error_candidates, record_error_payload
 from underwrite.service.records import (
+    CapturedRecordFile,
     CapturedRecordSpec,
     RecordError,
     save_captured_record,
@@ -21,6 +22,34 @@ from underwrite.service.records import (
 )
 
 STORAGE_FAILURE_EXIT = 3
+
+
+def analysis_record_file(
+    analysis: dict[str, Any],
+    *,
+    result_name: str,
+    result_validator: Validator,
+    error_validator: Validator,
+    max_bytes: int,
+) -> CapturedRecordFile:
+    """Capture one validated result or diagnostic with its inclusive byte limit."""
+    result = analysis["state"] == "result"
+    document = analysis["report"] if result else analysis["error"]
+    validate(
+        result_validator if result else error_validator,
+        document,
+        EvidenceError,
+        "INTERNAL_ERROR",
+    )
+    encoded = canonical_bytes(document) + b"\n"
+    if len(encoded) > max_bytes:
+        raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
+    return CapturedRecordFile(
+        result_name if result else "analysis/error.json",
+        "result" if result else "log",
+        encoded,
+        "application/json",
+    )
 
 
 def storage_validator(aggregate: Draft202012Validator) -> Validator:
