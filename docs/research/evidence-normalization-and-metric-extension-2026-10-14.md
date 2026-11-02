@@ -235,3 +235,49 @@ project-baseline→observation.v1→read.v2 경로로 소비했다. 원본 경�
 정본이며, 현재 새 공통 결과를 생성·수용하는 CLI나 라이브러리 경로는 없다. goppi의
 계약 채택이나 안정 판정도 완료됐다고 주장하지 않는다. UME-2 이후의 CLI/확장
 구현은 반복되는 사용자 오류와 대조 실험의 결과에 따라 따로 결정한다.
+
+## 2026-10-26 보정: Tracekit 기록 검증과 평가 근거는 별개다
+
+[Tracekit 정본 `218f2bf`](https://github.com/Cygnux-Labs/Tracekit/tree/218f2bf0c4628e8621d984a167136d2e779217d2)는
+도구 호출의 사전 정책 판정과 서명된 실행 기록을 맡는다. Underwrite는 이를 다시
+구현할 이유가 없다. [Tracekit의 보장 범위](https://github.com/Cygnux-Labs/Tracekit/blob/218f2bf0c4628e8621d984a167136d2e779217d2/docs/guarantees.md)도
+검증된 기록이 모든 행동의 포착, 도구 결과의 진실성, 과제 성공을 증명하지는
+않는다고 구분한다. 같은 사용자로 실행한 signer와 독립 witness의 보증도 다르다.
+이는 위 고정 근거 항목의 **바이트·기록 무결성, 포착 범위, 출처 독립성, 평가
+결과 결속**을 한 `verified` 상태나 공통 점수로 접지 말아야 한다는 실제 사례다.
+
+공개된 합성 번들을 Tracekit CLI 1.4.2로 오프라인 검증했다. 신뢰 설정은 번들
+밖의 파일로 전달했지만, 이 실험의 golden trust와 witness는 상류 테스트 자료이므로
+현실의 독립 신뢰 주체를 확보했다는 뜻은 아니다. 사용한 공개 fixture의 URL·
+SHA-256과 네 검증 결과는 [실험 요약 JSON](tracekit-pilot-summary-2026-10-26.json)에
+보존했다. 원본 CLI 출력은 로컬 `output/tracekit-pilot-20261026/`에만 있으며
+공개 요약은 원본 출력이나 독립 재현을 대신하지 않는다.
+
+| 상류 fixture | CLI 결과 | 이 결과만으로 말할 수 없는 것 |
+| --- | --- | --- |
+| `tests/golden/v2/closed.tkb` | `VERIFIED`, exit 0 | 과제 성공·모든 행동 포착 |
+| `tests/golden/v2/open.tkb` | `VERIFIED TO HEAD … (open)`, exit 0 | 실행 완료 |
+| `tests/golden/negative/record-edited.tkb` | `FAILED`, exit 1 | 기록 내용의 활용 가능성 |
+| `docs/demos/completeness/run.tkb` (`--strict`) | `VERIFIED`, 포착 누락 경고, exit 3 | 누락된 호출의 결과 |
+
+[Tracekit OTLP 내보내기](https://github.com/Cygnux-Labs/Tracekit/blob/218f2bf0c4628e8621d984a167136d2e779217d2/docs/otel.md#exporting-spans)는
+`tracekit.entry_hash`·`run_seq`·정책 판정을 span 속성으로 싣는다. 파일 형식
+시험에서는 상류의 내부 `_otel_v2` 함수를 사용했다. 이것은 제품 통합 API로
+채택하지 않는다. 현재 Underwrite의 일반 `otlp-json.traces` 수집은 이 OTLP를
+읽었고, 서명 기록의 `allow`를 OTLP에서 `deny`로 바꿔도 원천 주장으로 수집했다.
+`entry_hash`는 그대로였다. 일반 수집기가 서명을 검증한다고 약속하지 않았으므로
+이는 기존 계약 위반이 아니다. **해시 연결 한 필드만 비교해서도 나머지 OTLP
+속성이 서명 기록과 일치한다고 결론낼 수 없다.** Tracekit의
+[기록별 salt를 쓰는 commitment](https://github.com/Cygnux-Labs/Tracekit/blob/218f2bf0c4628e8621d984a167136d2e779217d2/docs/format-v2.md#2-hashes-over-agent-content)끼리
+같다는 이유로 서로 다른 실행의 인자 동일성도 추론하지 않는다.
+
+따라서 Tracekit 전용 지표·signer·정책 엔진·어댑터는 지금 추가하지 않는다.
+연동을 다시 검토할 조건은 (1) 별도로 신뢰한 설정으로 **같은 캡처 바이트**를
+상류 검증기가 확인하고, (2) 서명된 실행·호출과 평가 사례·시도·지표 조건을
+생산자가 확인 가능한 참조로 연결하며, (3) 실제 검토 작업에서 기존 Tracekit
+검증과 현행 Underwrite를 따로 쓰는 방식보다 잘못된 결론이나 검토 시간을 줄이는
+것이다. 열린 실행·포착 누락·변조·속성만 위조한 OTLP를 부정 사례로 둔다.
+충분한 연결 근거가 없다면 결과는 계속 비교 불가이고 다음 필요한 입력을
+제시한다. 서명된
+[Tracekit finding](https://github.com/Cygnux-Labs/Tracekit/blob/218f2bf0c4628e8621d984a167136d2e779217d2/docs/findings.md#signed-findings)도
+인용 기록의 무결성과 판단 내용의 타당성을 분리해 읽는다.

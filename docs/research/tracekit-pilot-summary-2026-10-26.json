@@ -1,0 +1,76 @@
+{
+  "schema": "underwrite.tracekit_pilot.v1",
+  "created_at": "2026-10-26T06:15:11.692357+00:00",
+  "tracekit_commit": "218f2bf0c4628e8621d984a167136d2e779217d2",
+  "tracekit_cli_version": "1.4.2",
+  "underwrite_head": "4f6467bad3781466c14253620f3b70c213ba43dd",
+  "scope": "offline public synthetic fixtures only; no providers, real user study, or independent witness trust",
+  "native_verification": {
+    "closed": {
+      "bundle": "https://github.com/Cygnux-Labs/Tracekit/blob/218f2bf0c4628e8621d984a167136d2e779217d2/tests/golden/v2/closed.tkb",
+      "bundle_sha256": "fb9c9169bc24a82e81a5e7526b3ffd7ec5453454f0330100fd123971bea6b790",
+      "trust_sha256": "dd13dfc84f8d3f13b70efa4ccd9e479c43e0e5078464cbd252c2c282e6bff699",
+      "exit_code": 0,
+      "integrity": "VERIFIED",
+      "assurance_text": "witnessed; records ed25519; checkpoint Ed25519 only (tracekit.example.org/log/golden); cosigned ed25519 by witness.example.org/fake (customer) at 2026-10-10T00:19:23Z; earliest independent anchor 2026-10-10T00:19:23Z; key retirements not proven complete",
+      "warnings": [
+        "fail-open classes"
+      ],
+      "failures": []
+    },
+    "open": {
+      "bundle": "https://github.com/Cygnux-Labs/Tracekit/blob/218f2bf0c4628e8621d984a167136d2e779217d2/tests/golden/v2/open.tkb",
+      "bundle_sha256": "9f428387c61b0a5ea5dfdb991a6b7c4ede6cb722fb781a451a6c136dc1013218",
+      "trust_sha256": "dd13dfc84f8d3f13b70efa4ccd9e479c43e0e5078464cbd252c2c282e6bff699",
+      "exit_code": 0,
+      "integrity": "VERIFIED TO HEAD 2 (open)",
+      "assurance_text": "witnessed; records ed25519; checkpoint Ed25519 only (tracekit.example.org/log/golden); cosigned ed25519 by witness.example.org/fake (customer) at 2026-10-10T00:19:23Z; earliest independent anchor 2026-10-10T00:19:23Z; key retirements not proven complete",
+      "warnings": [
+        "fail-open classes"
+      ],
+      "failures": []
+    },
+    "edited": {
+      "bundle": "https://github.com/Cygnux-Labs/Tracekit/blob/218f2bf0c4628e8621d984a167136d2e779217d2/tests/golden/negative/record-edited.tkb",
+      "bundle_sha256": "8c3626014dd8c409510d585ea30a25aa80d886bf3ade7bd565ece024b5a9f9da",
+      "trust_sha256": "090951d638b56562abb560215bbf164f4d6cc7630227b97d7cf036050c012883",
+      "exit_code": 1,
+      "integrity": "FAILED",
+      "assurance_text": "witnessed; records ed25519; checkpoint Ed25519 only (tracekit.example.org/log/test); cosigned ed25519 by witness.example.org/w1 (customer) at 2025-10-09T08:53:20Z; earliest independent anchor 2025-10-09T08:53:20Z; key retirements not proven complete",
+      "warnings": [],
+      "failures": [
+        "signatures"
+      ]
+    },
+    "gap_strict": {
+      "bundle": "https://github.com/Cygnux-Labs/Tracekit/blob/218f2bf0c4628e8621d984a167136d2e779217d2/docs/demos/completeness/run.tkb",
+      "bundle_sha256": "1d9d032fe68221a9a9f5ae5d6bc2a374bf87696c8814715a88b49e5e3d36aac3",
+      "trust_sha256": "d0dd4bc5639831234ca842e172cdf0459fa878564d5efeadd1f8c8042a8288f8",
+      "exit_code": 3,
+      "integrity": "VERIFIED",
+      "assurance_text": "dev; records ed25519; checkpoint Ed25519 only (tracekit.local/6826710591a55c91cf18ed6d68d0087a); no witness cosignature; key retirements not proven complete",
+      "warnings": [
+        "gaps"
+      ],
+      "failures": []
+    }
+  },
+  "generic_otlp_intake": {
+    "normal": {
+      "exit_code": 0,
+      "source_format": "otlp-json.traces",
+      "raw_hash": "sha256:3feeed33aea727604ae992fcf978403d2527b8033e3aa6e77039ab78e44a5ef0"
+    },
+    "forged": {
+      "exit_code": 0,
+      "source_format": "otlp-json.traces",
+      "raw_hash": "sha256:9eebd284d7b6740ca9815c53ab09b7e83bb5e5490d513313cf7a14cbbb09718f"
+    }
+  },
+  "signed_policy_decision": "allow",
+  "forged_otlp_policy_decision": "deny",
+  "forged_otlp_entry_hash_unchanged": true,
+  "finding": "Existing generic OTLP intake preserves supplied tracekit.* attributes as source claims. A matching entry_hash alone does not bind a mutable OTLP policy decision to the signed record.",
+  "product_decision": "No Tracekit-specific adapter yet: no real evaluation result with an authenticated run/case/attempt correspondence or measured reviewer benefit.",
+  "next_evidence": "Use a real paired evaluation plus a Tracekit bundle with owner-authored run/case/attempt mapping, then measure wrong conclusions and review time against native Tracekit verification plus current Underwrite."
+}
