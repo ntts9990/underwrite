@@ -66,6 +66,27 @@ def test_snapshot_is_private_cleaned_and_captured_once(
     assert not verifier.snapshots[0].exists()
 
 
+def test_configured_verifier_report_accepts_pi15_capture_profile(exchange: Path) -> None:
+    """The stub tests protocol wiring; native closure is checked separately."""
+    execution_path = exchange / "paired/execution.json"
+    execution = json.loads(execution_path.read_bytes())
+    execution["source"]["runner"]["profile"] = "pi_1_5_0"
+    execution_path.write_text(json.dumps(execution))
+    trajectory_path = exchange / "trajectory/trajectory.json"
+    trajectory = json.loads(trajectory_path.read_bytes())
+    trajectory["profile"] = "native_pi_1_5_lifecycle.v1"
+    for unit in trajectory["units"]:
+        if unit["source_availability"] == "retained":
+            unit["capture_profile"] = trajectory["profile"]
+            unit["context"]["runner_profile"] = "pi_1_5_0"
+    trajectory_path.write_text(json.dumps(trajectory))
+
+    report = cast(dict[str, Any], app.audit_goppi_trajectory(exchange, verifier=StubVerifier()))
+    assert report["state"] == "analyzed"
+    assert report["trust_scope"]["verifier_source"] == "caller_supplied_python_port"
+    assert report["authority"]["execution_authorized"] is False
+
+
 def test_nonverifying_port_cannot_promote_stale_manifest_to_native_closure(
     exchange: Path,
 ) -> None:
@@ -293,7 +314,8 @@ def test_invalid_python_view_refused_before_capture_or_verification(
     "reason", ["MISSING_OUTCOME_ACTIONS_CONTRACT", "INVALID_INSPECTION_SCHEMA"]
 )
 def test_outcome_actions_contract_loaded_before_source_capture(
-    monkeypatch: pytest.MonkeyPatch, reason: str,
+    monkeypatch: pytest.MonkeyPatch,
+    reason: str,
 ) -> None:
     original = app.packaged_validator
     loaded: list[str] = []
@@ -417,16 +439,28 @@ def test_snapshot_extra_file_is_refused_and_cleanup(exchange: Path) -> None:
     assert not snapshots[0].exists()
 
 
-@pytest.mark.parametrize("field", ["output", "manifest_digest", "availability_counts"])
+@pytest.mark.parametrize(
+    "field", ["output", "manifest_digest", "availability_counts", "capture_profile"]
+)
 def test_companion_response_binding(exchange: Path, field: str) -> None:
     def mutate(response: dict[str, Any]) -> None:
         companion = response["data"]["trajectory"]
         if field == "availability_counts":
             companion[field]["retained"] = 0
+        elif field == "capture_profile":
+            companion[field] = "native_pi_1_5_lifecycle.v1"
         else:
             companion[field] = "sha256:" + "0" * 64 if field == "manifest_digest" else "/wrong"
 
     with pytest.raises(app.TrajectoryInputError, match="GOPPI_VERIFIER_BINDING_MISMATCH"):
+        app.audit_goppi_trajectory(exchange, verifier=StubVerifier(mutate))
+
+
+def test_future_capture_profile_requires_new_contract(exchange: Path) -> None:
+    def mutate(response: dict[str, Any]) -> None:
+        response["data"]["trajectory"]["capture_profile"] = "native_pi_1_6_lifecycle.v1"
+
+    with pytest.raises(app.TrajectoryInputError, match="GOPPI_VERIFIER_RESPONSE_UNSUPPORTED"):
         app.audit_goppi_trajectory(exchange, verifier=StubVerifier(mutate))
 
 

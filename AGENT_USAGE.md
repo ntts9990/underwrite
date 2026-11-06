@@ -1268,8 +1268,9 @@ Goppi paired+trajectory export; published `0.1.1` predates this command. Their
 **result contracts differ**: the published 0.2.0 `audit-trajectory` returns
 `goppi_trajectory_review.v1`, and its record/read commands return
 `trajectory_record.v1` / `trajectory_record_read.v1`. The current checkout returns
-the corresponding v2 contracts and offers `--view outcome-actions`; the published
-0.2.0 does not. Inspect the selected executable's `capabilities --json` before
+the corresponding v2 contracts, accepts the Goppi Pi 1.5 native capture profile,
+and offers `--view outcome-actions`; the published 0.2.0 does not include those
+checkout changes. Inspect the selected executable's `capabilities --json` before
 using the v2 interpretation or action view described below.
 Use the complete outer directory containing `paired/` and `trajectory/`; a bare
 paired export is not evidence of zero tool calls. Goppi must already be installed
