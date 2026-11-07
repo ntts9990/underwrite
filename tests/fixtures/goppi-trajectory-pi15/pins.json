@@ -1,0 +1,66 @@
+{
+  "schema": "underwrite.goppi_pi15_fixture_pins.v1",
+  "source_commit": "f88cf07c84ec6f1bcbc36fe8f5474d64acf8906c",
+  "source_generator": "tests/application/live-execution/paired-trajectory-fixture.ts",
+  "source_generator_sha256": "sha256:10d40514edf1b6677b6fea071b1a588919875541b51f27658719a6a6755ec617",
+  "generation_environment": {
+    "node": "v24.20.0",
+    "kind": "controlled_native_executor_real_adapter_binder_cycle",
+    "paid_provider_calls": 0
+  },
+  "installed_pair_artifacts": {
+    "goppi_tarball_sha256": "sha256:dc185fdfed8d2e575cd0c30fc3233bd3ddd94e3f328cadd07815321d1f140b7d",
+    "underwrite_wheel_sha256": "sha256:ce54c9dc4ed6421f68f7340e5b82e75b9b4b9c5904219164da198ea40466e56c",
+    "underwrite_core_wheel_sha256": "sha256:e1f1e7be590356e1618a762bf886b65d9bdac1ca458ff568209b456507149ab0"
+  },
+  "archive": {
+    "name": "exchange.tar.gz",
+    "bytes": 43823,
+    "sha256": "sha256:91a87b103d5de4d974a2646f929ed0f7deda7bc0650a55360e140b8657253a87",
+    "format": "ustar_gzip_mtime_zero"
+  },
+  "members": {
+    "paired/execution.json": {
+      "bytes": 4595,
+      "sha256": "sha256:fa52879ab76dcb843a0adf1ad16444e7b96f3d9dd2e82bd46d4ce2d4c6e37116"
+    },
+    "paired/manifest.json": {
+      "bytes": 798,
+      "sha256": "sha256:1e5efc698d2c8389ab9ee8332a62da8ab794e841363bf5a75fc53f05736bbe2d"
+    },
+    "paired/rows.jsonl": {
+      "bytes": 187384,
+      "sha256": "sha256:f3f08177f91c571322a6c9f0085973d9cce3f97f6e222a488ad026295c243c33"
+    },
+    "paired/schema.json": {
+      "bytes": 12317,
+      "sha256": "sha256:e083e91c53652c9f5b7f0847123f147fd4a62bb09a8bf6aaa6d625b7e5f1242c"
+    },
+    "trajectory/manifest.json": {
+      "bytes": 622,
+      "sha256": "sha256:71c8935f1c114c120f6739df6437e9d88e678fec5b6a21a7576bf2480b4ab088"
+    },
+    "trajectory/schema.json": {
+      "bytes": 11365,
+      "sha256": "sha256:0dbde3bae61f2ff15f1df420f9ea09cb2b39f4141c11606f6ef97eacba10ca23"
+    },
+    "trajectory/trajectory.json": {
+      "bytes": 234824,
+      "sha256": "sha256:58246ee1dba9e5ce09fca07edbbcd5a3a8bb0196087125b4f368fe9f6a1e59e4"
+    }
+  },
+  "native_portable_verification": {
+    "status": "valid",
+    "authenticity": "content_digest_only",
+    "capture_profile": "native_pi_1_5_lifecycle.v1",
+    "paired_rows": 144
+  },
+  "underwrite_installed_wheel_observation": {
+    "schema": "goppi_trajectory_review.v2",
+    "state": "analyzed",
+    "paired_rows": 144,
+    "capture_retained_rows": 144
+  },
+  "independent_provenance_established": false,
+  "real_provider_effect_measured": false
+}
