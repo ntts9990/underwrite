@@ -33,7 +33,15 @@ OUTCOME_HARNESS_BINDINGS = (
     "v2_verified_against_patch_manifest",
     "not_applicable_no_evaluated_stages",
 )
-PROFILE = "native_pi_1_3_lifecycle.v1"
+PI_1_3_PROFILE = "native_pi_1_3_lifecycle.v1"
+PI_1_5_PROFILE = "native_pi_1_5_lifecycle.v1"
+CAPTURE_PROFILE_BY_RUNNER = {
+    "deterministic_node_conformance": PI_1_3_PROFILE,
+    "pi_0_84_4": PI_1_3_PROFILE,
+    "pi_1_3_0": PI_1_3_PROFILE,
+    "pi_1_5_0": PI_1_5_PROFILE,
+}
+SUPPORTED_CAPTURE_PROFILES = (PI_1_3_PROFILE, PI_1_5_PROFILE)
 MAX_REPORT_BYTES = 8 * 1024 * 1024
 MAX_ROWS = 10_000
 MAX_UNITS = 600
@@ -350,7 +358,10 @@ def _row_index(rows: tuple[dict[str, Any], ...]) -> dict[Key, dict[str, Any]]:
 
 
 def _join(
-    rows: dict[Key, dict[str, Any]], trajectory: dict[str, Any]
+    rows: dict[Key, dict[str, Any]],
+    trajectory: dict[str, Any],
+    capture_profile: str,
+    runner_profile: str,
 ) -> tuple[dict[Key, dict[str, Any]], dict[str, int]]:
     joined: dict[Key, dict[str, Any]] = {}
     coverage: dict[str, int] = dict.fromkeys(AVAILABILITIES, 0)
@@ -366,11 +377,23 @@ def _join(
         completeness = _enum(unit.get("capture_completeness"), ("complete", "incomplete"))
         _require(completeness == ("complete" if retained else "incomplete"))
         reason = unit.get("unavailable_reason")
+        raw_context = unit.get("context")
+        if raw_context is None:
+            _require(unit.get("capture_profile") is None, "TRAJECTORY_BINDING_MISMATCH")
+        else:
+            _require(unit.get("capture_profile") == capture_profile, "TRAJECTORY_BINDING_MISMATCH")
         if retained:
-            _require(reason is None and unit.get("capture_profile") == PROFILE)
+            _require(
+                reason is None
+                and raw_context is not None
+                and runner_profile in ("pi_1_3_0", "pi_1_5_0"),
+                "TRAJECTORY_BINDING_MISMATCH",
+            )
         else:
             reason = _enum(reason, UNAVAILABLE_REASONS)
-        context = _context(unit.get("context"))
+        context = _context(raw_context)
+        if raw_context is not None:
+            _require(context["runner_profile"] == runner_profile, "TRAJECTORY_BINDING_MISMATCH")
         seen_spans: set[str] = set()
         cases = _array(unit.get("cases"), MAX_ROWS)
         _require(len(cases) + len(joined) <= MAX_ROWS, "TRAJECTORY_LIMIT_EXCEEDED")
@@ -622,11 +645,16 @@ def analyze_goppi_trajectory(
         _object(trajectory).get("schema") == "goppi.paired_trajectory_exchange.document.v1",
         "TRAJECTORY_UNSUPPORTED_VALUE",
     )
-    _require(
-        trajectory.get("profile") == PROFILE
-        and trajectory.get("call_relationships") == "not_captured",
-        "TRAJECTORY_UNSUPPORTED_VALUE",
+    runner_profile = _enum(
+        _object(_object(execution.get("source")).get("runner")).get("profile"),
+        tuple(CAPTURE_PROFILE_BY_RUNNER),
     )
+    capture_profile = _enum(trajectory.get("profile"), SUPPORTED_CAPTURE_PROFILES)
+    _require(
+        capture_profile == CAPTURE_PROFILE_BY_RUNNER[runner_profile],
+        "TRAJECTORY_BINDING_MISMATCH",
+    )
+    _require(trajectory.get("call_relationships") == "not_captured", "TRAJECTORY_UNSUPPORTED_VALUE")
     _require(set(identities) == set(MEMBERS), "TRAJECTORY_COVERAGE_MISMATCH")
     for identity in identities.values():
         _require(
@@ -655,7 +683,7 @@ def analyze_goppi_trajectory(
         all(key[0] == source_context["cycle_run_id"] for key in index),
         "TRAJECTORY_BINDING_MISMATCH",
     )
-    joined, coverage = _join(index, trajectory)
+    joined, coverage = _join(index, trajectory, capture_profile, runner_profile)
     comparisons = _comparisons(joined)
     stages = _stages(execution, comparisons)
     closed = [

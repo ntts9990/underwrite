@@ -50,6 +50,17 @@ def analyze(documents: Documents) -> dict[str, Any]:
     return analyze_goppi_trajectory(*documents)
 
 
+def pi15_documents(documents: Documents) -> Documents:
+    execution, _, trajectory, _ = documents
+    execution["source"]["runner"]["profile"] = "pi_1_5_0"
+    trajectory["profile"] = "native_pi_1_5_lifecycle.v1"
+    for unit in trajectory["units"]:
+        if unit["source_availability"] == "retained":
+            unit["capture_profile"] = trajectory["profile"]
+            unit["context"]["runner_profile"] = "pi_1_5_0"
+    return documents
+
+
 def first_case(documents: Documents) -> dict[str, Any]:
     return documents[2]["units"][0]["cases"][0]
 
@@ -113,6 +124,58 @@ def test_default_trajectory_report_keeps_pinned_v1_bytes(documents: Documents) -
     )
 
 
+def test_pi15_trajectory_keeps_descriptive_and_authority_boundaries(documents: Documents) -> None:
+    report = analyze(pi15_documents(documents))
+    assert report["state"] == "analyzed"
+    assert report["populations"]["paired_rows"] == len(documents[1])
+    assert report["authority"]["execution_authorized"] is False
+    assert "call_relationships_not_captured" in report["interpretation_limits"]
+
+
+@pytest.mark.parametrize("mismatch", ["runner", "capture", "context"])
+def test_pi15_profile_binding_refuses_mismatch(documents: Documents, mismatch: str) -> None:
+    execution, _, trajectory, _ = pi15_documents(documents)
+    if mismatch == "runner":
+        execution["source"]["runner"]["profile"] = "pi_1_3_0"
+    elif mismatch == "capture":
+        trajectory["units"][0]["capture_profile"] = "native_pi_1_3_lifecycle.v1"
+    else:
+        trajectory["units"][0]["context"]["runner_profile"] = "pi_1_3_0"
+    with pytest.raises(TrajectoryError, match="TRAJECTORY_BINDING_MISMATCH"):
+        analyze(documents)
+
+
+def test_unrecognized_new_runner_profile_is_unsupported(documents: Documents) -> None:
+    documents[0]["source"]["runner"]["profile"] = "pi_1_6_0"
+    with pytest.raises(TrajectoryError, match="TRAJECTORY_UNSUPPORTED_VALUE"):
+        analyze(documents)
+
+
+@pytest.mark.parametrize("mismatch", ["capture", "null_context"])
+def test_pi15_unavailable_unit_still_binds_capture_profile(
+    documents: Documents, mismatch: str
+) -> None:
+    _, _, trajectory, _ = pi15_documents(documents)
+    unit = trajectory["units"][0]
+    unit.update(
+        source_availability="interrupted",
+        unavailable_reason="pi_lifecycle_interrupted",
+        capture_completeness="incomplete",
+    )
+    for case in unit["cases"]:
+        case.update(spans=[], verifier_observation=None)
+    count = len(unit["cases"])
+    trajectory["availability_counts"]["retained"] -= count
+    trajectory["availability_counts"]["interrupted"] += count
+    assert analyze(documents)["capture_counts"]["interrupted"] == count
+    if mismatch == "capture":
+        unit["capture_profile"] = "native_pi_1_3_lifecycle.v1"
+    else:
+        unit["context"] = None
+    with pytest.raises(TrajectoryError, match="TRAJECTORY_BINDING_MISMATCH"):
+        analyze(documents)
+
+
 def test_outcome_actions_selects_exactly_comparable_observed_changed_pairs(
     documents: Documents,
 ) -> None:
@@ -130,7 +193,8 @@ def test_outcome_actions_selects_exactly_comparable_observed_changed_pairs(
     assert report["trust_scope"] == analyze(documents)["trust_scope"]
     assert report["interpretation_limits"] == analyze(documents)["interpretation_limits"]
     tasks = [
-        task for task in verification_tasks
+        task
+        for task in verification_tasks
         if task["kind"] == "inspect_outcome_change_without_tool_status_change"
     ]
     assert len(tasks) == 1
@@ -173,7 +237,8 @@ def test_outcome_actions_preserves_existing_tasks_and_order_independence(
     actions = analyze_goppi_trajectory_actions(*documents)
     verification_tasks = cast(list[dict[str, Any]], actions["next_verification_tasks"])
     existing = [
-        task for task in verification_tasks
+        task
+        for task in verification_tasks
         if task["kind"] != "inspect_outcome_change_without_tool_status_change"
     ]
     assert existing == ordinary["next_verification_tasks"]
