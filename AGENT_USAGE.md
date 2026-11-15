@@ -1612,6 +1612,11 @@ underwrite review-handoff \
   --source-root /path/to/goppi --json
 ```
 
+Goppi does not maintain a producer for this profile. It describes completed
+research-study artifacts, and future Goppi builds are not committed to emitting
+them; use [trajectory review](#compare-a-goppi-paired-trajectory) for current
+Goppi paired exports.
+
 The handoff directory contains `consumer-handoff.json` and `manifest.json`.
 The explicit source root must contain that directory and every referenced file.
 Without `--source-root`, only files inside the handoff directory are allowed;

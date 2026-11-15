@@ -6,13 +6,16 @@ commit `0da07b7a2b032a345b0bd9aa3ec526f3c4d15663`, directory
 identical at accepted Goppi main commit
 [`ff037e517830dec3a311ac652a52cd3ca3ad0140`](https://github.com/ntts9990/goppi/commit/ff037e517830dec3a311ac652a52cd3ca3ad0140),
 recorded in `pins.json`. [PR #21](https://github.com/ntts9990/goppi/pull/21)
-merged that source and [main CI](https://github.com/ntts9990/goppi/actions/runs/39090275261)
-passed its automatic Linux quality job; manual packed and Docker jobs were
-skipped. `pins.json` records each member's SHA-256 and byte length. The files
-are public synthetic examples; no live answer, integrity key, or private
-verifier material is included. The copied `ume1-schema.json` is an Apache-2.0
-Underwrite schema already present in this repository. The Goppi source README
-describes its attribution and test scope.
+merged that source and
+[main CI](https://github.com/ntts9990/goppi/actions/runs/39090275261) passed its
+automatic Linux quality job; manual packed and Docker jobs were skipped. The
+source repository is currently private, so anonymous readers cannot open these
+upstream links or independently rebuild this fixture; the pinned bytes are
+self-contained for consumer regression. `pins.json` records each member's
+SHA-256 and byte length. The files are public synthetic examples; no live
+answer, integrity key, or private verifier material is included. The copied
+`ume1-schema.json` is an Apache-2.0 Underwrite schema already present in this
+repository. The Goppi source README describes its attribution and test scope.
 
 Underwrite's gate checks the selected common-result file against its installed
 schema and item invariants, the source assessment byte hash, and the seven ordered

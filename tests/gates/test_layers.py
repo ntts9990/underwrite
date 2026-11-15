@@ -27,14 +27,15 @@ _PURE_APP_DIRS = {
     "underwrite.instrument.evidence": REPO_ROOT / "src/underwrite/instrument/evidence",
     "underwrite.measurement": REPO_ROOT / "src/underwrite/measurement",
     "underwrite.acceptance": REPO_ROOT / "src/underwrite/acceptance",
+    "underwrite.adjudication": REPO_ROOT / "src/underwrite/adjudication",
     "underwrite.measurement_contract": REPO_ROOT / "src/underwrite/measurement_contract",
 }
 _PURE_APP_PREFIXES = tuple(_PURE_APP_DIRS.keys())
 _PURE_APP_ALLOWED_PREFIXES = ("underwrite_core", *_PURE_APP_PREFIXES)
 
 _CORE_PURITY_TEST_PATH = REPO_ROOT / "packages" / "underwrite-core" / "tests" / "test_purity.py"
-# Attribute access: datetime.now/.today, date.today, time.time/.monotonic,
-# os.environ. Bare names: open(...), socket, subprocess, random. Identical to
+# Attribute access: clock/env. Bare names: open(...), socket, subprocess,
+# random. Identical to
 # packages/underwrite-core/tests/test_purity.py's sets of the same name --
 # test_purity_forbidden_sets_match_core_purity_gate below binds the two.
 _FORBIDDEN_ATTRS = {"now", "today", "time", "monotonic", "environ"}
@@ -50,6 +51,12 @@ def _count_real_modules(directory: Path) -> int:
 
 def _population_gate(count: int, *, now: str) -> None:
     assert count > 0
+
+
+def _assert_pure_package_population(prefix: str, directory: Path) -> None:
+    assert directory.is_dir(), f"{prefix} package directory is missing"
+    if prefix != "underwrite.adjudication":
+        _population_gate(_count_real_modules(directory), now=date.today().isoformat())
 
 
 def _module_is_allowed(module_name: str, allowed_prefixes: tuple[str, ...]) -> bool:
@@ -94,6 +101,10 @@ def test_importlinter_config_declares_no_import_exceptions() -> None:
     assert "ignore_imports" not in text
 
 
+def test_adjudication_is_in_ast_purity_gate_population() -> None:
+    assert "underwrite.adjudication" in _PURE_APP_DIRS
+
+
 def test_core_package_has_no_third_party_imports() -> None:
     violations = find_disallowed_imports(_CORE_DIR, allowed_prefixes=("underwrite_core",))
     assert violations == []
@@ -102,9 +113,22 @@ def test_core_package_has_no_third_party_imports() -> None:
 @pytest.mark.parametrize("prefix", sorted(_PURE_APP_PREFIXES))
 def test_pure_app_package_has_no_third_party_imports(prefix: str) -> None:
     directory = _PURE_APP_DIRS[prefix]
-    _population_gate(_count_real_modules(directory), now=date.today().isoformat())
+    _assert_pure_package_population(prefix, directory)
     violations = find_disallowed_imports(directory, _PURE_APP_ALLOWED_PREFIXES)
     assert violations == []
+
+
+def _is_path_constructor(
+    node: ast.expr, path_aliases: set[str], pathlib_aliases: set[str]
+) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in path_aliases
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "Path"
+        and isinstance(node.value, ast.Name)
+        and node.value.id in pathlib_aliases
+    )
 
 
 def find_forbidden_wallclock_io_usage(directory: Path) -> list[str]:
@@ -113,11 +137,35 @@ def find_forbidden_wallclock_io_usage(directory: Path) -> list[str]:
     for source_path in sorted(directory.rglob("*.py")):
         source = source_path.read_text(encoding="utf-8")
         tree = ast.parse(source, filename=str(source_path))
+        path_aliases = {
+            alias.asname or alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module == "pathlib"
+            for alias in node.names
+            if alias.name == "Path"
+        }
+        pathlib_aliases = {
+            alias.asname or alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+            if alias.name == "pathlib"
+        }
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and node.attr in _FORBIDDEN_ATTRS:
                 violations.append(f"{source_path}: found .{node.attr}")
             elif isinstance(node, ast.Name) and node.id in _FORBIDDEN_NAMES - {"random"}:
                 violations.append(f"{source_path}: found name {node.id}")
+            elif (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "read_bytes"
+                and isinstance(node.func.value, ast.Call)
+                and _is_path_constructor(
+                    node.func.value.func, path_aliases, pathlib_aliases
+                )
+            ):
+                violations.append(f"{source_path}: found pathlib .read_bytes")
         violations.extend(
             f"{source_path}:{line}: invalid RNG/seed policy" for line in seed_violations(source)
         )
@@ -127,7 +175,7 @@ def find_forbidden_wallclock_io_usage(directory: Path) -> list[str]:
 @pytest.mark.parametrize("prefix", sorted(_PURE_APP_PREFIXES))
 def test_pure_app_package_avoids_wallclock_and_io(prefix: str) -> None:
     directory = _PURE_APP_DIRS[prefix]
-    _population_gate(_count_real_modules(directory), now=date.today().isoformat())
+    _assert_pure_package_population(prefix, directory)
     violations = find_forbidden_wallclock_io_usage(directory)
     assert violations == []
 
@@ -172,6 +220,51 @@ def test_forbidden_wallclock_usage_is_detected_in_temp_tree(tmp_path: Path) -> N
 
     assert any("_clock_offender.py" in message and ".now" in message for message in violations)
     assert any("_io_offender.py" in message and "name open" in message for message in violations)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from pathlib import Path\ndef f():\n return Path('x').read_bytes()\n",
+        "from pathlib import Path as P\ndef f():\n return P('x').read_bytes()\n",
+        "import pathlib as pl\ndef f():\n return pl.Path('x').read_bytes()\n",
+    ],
+)
+def test_pathlib_file_reads_are_detected_in_temp_tree(tmp_path: Path, source: str) -> None:
+    (tmp_path / "_path_io_offender.py").write_text(
+        source,
+        encoding="utf-8",
+    )
+    violations = find_forbidden_wallclock_io_usage(tmp_path)
+    assert any(
+        "_path_io_offender.py" in message and ".read_bytes" in message for message in violations
+    )
+
+
+def test_non_pathlib_read_method_is_not_file_io(tmp_path: Path) -> None:
+    (tmp_path / "pure_token.py").write_text(
+        "class Token:\n    def read_bytes(self) -> bytes:\n        return b'x'\n\n"
+        "def f(token: Token) -> bytes:\n    return token.read_bytes()\n",
+        encoding="utf-8",
+    )
+    assert find_forbidden_wallclock_io_usage(tmp_path) == []
+
+
+def test_future_adjudication_module_is_scanned(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    directory = tmp_path / "adjudication"
+    directory.mkdir()
+    (directory / "decision.py").write_text(
+        "import psycopg\nfrom pathlib import Path as P\n\n"
+        "def decide() -> bytes:\n    return P('secret').read_bytes()\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setitem(_PURE_APP_DIRS, "underwrite.adjudication", directory)
+    with pytest.raises(AssertionError, match="psycopg"):
+        test_pure_app_package_has_no_third_party_imports("underwrite.adjudication")
+    with pytest.raises(AssertionError, match="read_bytes"):
+        test_pure_app_package_avoids_wallclock_and_io("underwrite.adjudication")
 
 
 @pytest.mark.parametrize(
