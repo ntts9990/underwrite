@@ -230,9 +230,10 @@ gate, or CI job.
    PR record does.
 7. **Verify and record.** Run preflight after the final edit and cite its lane,
    outcome, and the commit it covered. The report remains local diagnostics.
-   Maintainer commits may end with optional `Track:` (program or plan item),
-   `Plan:` (plan section), and `Not-tested:` (what was not verified) lines; they
-   are not checked. Write the PR body in this order: What changed, Why, Evidence,
+   Maintainer commits end with a `Not-tested:` line naming what was not verified
+   (or `none`), and may add `Track:` (program or plan item) and `Plan:` (plan
+   section). These lines are not machine-checked and do not apply to external
+   contributions. Write the PR body in this order: What changed, Why, Evidence,
    Scope and limits, then a checklist of the quality criteria that apply.
 8. **Integrate within authority.** Batch small documentation changes so one PR
    uses one `checks` run. Merging to `main`, publication, releases, and version
