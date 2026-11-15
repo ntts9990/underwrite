@@ -27,7 +27,7 @@
 | `capabilities --json` | 12,310 B. `capabilities.v1`, 명령 26개, profile 57개, codec 10개 | `underwrite capabilities --json \| wc -c` |
 | JSON 계약 | `contracts/` 아래 스키마 82개 | `find contracts -name '*.schema.json' \| wc -l` |
 | 공통 결과 봉투 | 없음. `next_action(s)`는 스키마 35개, `exit_code`는 26개, `interpretation_limits` 계열은 goppi trajectory 계약 8개에만 있음 | `grep -lE '"next_actions?"' contracts/*.schema.json` 등 |
-| 오류 코드 | 중앙 registry 없음. 오류 생성 호출의 첫 인자로 쓰인 고유 코드는 정규식 추정으로 약 380–410개, 모듈 약 97개 | 정규식 집계(방식에 따라 값이 다름). 기준값은 A0 스크립트가 정함 |
+| 오류 코드 | 중앙 registry 없음. 오류 생성 호출의 첫 인자로 쓰인 고유 코드 하한 444개, 104모듈. 둘째 이후 인자와 `require` 호출의 코드는 빠짐 | `scripts/structure_metrics.py`의 `error_code_estimate` |
 | 권한 상수 | `acceptance/decision.py:287`의 `"human_review": "required"`, `:226`의 `AUTHORITY_FIELD_REFUSED` | 코드 확인 |
 | 신뢰할 수 없는 문자열 | 전용 이스케이프 없음. `cli/evidence.py:24-26`의 `display()`가 `ensure_ascii=True`로 비 ASCII를 부수적으로 이스케이프하고 값마다 1,024자에서 자름 | 코드 확인 |
 | 출력 상한 | 모듈마다 따로 있음. 256 KiB(`cli/release.py:16`)부터 8 MiB(`instrument/evidence/run_audit.py:13`)까지. `cli/records.py:30` 2 MiB, `cli/evidence.py:19` 1 MiB. 거부 코드는 `INPUT_LIMIT_EXCEEDED`, `OUTPUT_LIMIT_EXCEEDED` | 코드 확인 |
@@ -42,7 +42,7 @@
   두 번째 진실이 된다.
 - **결과 의미는 명령마다 맞지만 봉투가 없다.** 상태, 사유, 한계, 다음 행동, 종료 코드가 계약마다
   다른 이름과 위치에 있다. 에이전트는 명령마다 해석법을 따로 배워야 한다.
-- **오류 코드가 흩어져 있다.** 약 380–410개 코드가 약 97개 모듈의 문자열 literal이다. 같은 실패 의미가
+- **오류 코드가 흩어져 있다.** 적어도 444개 코드가 104개 모듈의 문자열 literal이다. 같은 실패 의미가
   여러 이름을 갖는지, 한 이름이 여러 의미를 갖는지 기계로 확인할 수 없다.
 - **모델이 보는 문장에 대한 보호가 부수적이다.** 이스케이프와 자르기가 표시 helper의 부수 효과다.
   MCP의 text와 structuredContent 두 채널을 맡는 별도 owner가 필요하다.
@@ -86,7 +86,7 @@
 
 | 조각 | 내용 | 성공 기준 | 하지 않는 것 |
 | --- | --- | --- | --- |
-| **A0 측정** | 1절 표를 다시 만드는 측정 스크립트. 도구 후보 목록(명령 descriptor에서 파생)과 설명 초안의 모델 노출 바이트. 설명마다 "언제 쓰는가/언제 쓰지 않는가" 슬롯 | 같은 커밋에서 같은 숫자. 오류 코드 수의 기준값 확정 | 관문은 아직 두지 않는다. 예산과 줄어들기만 하는 래칫 관문은 A2에서 첫 도구와 함께 preflight 선택기 안에 둔다 |
+| **A0 측정** | 1절 표를 다시 만드는 측정 스크립트. 도구 후보 목록(명령 descriptor에서 파생)과 설명 초안의 모델 노출 바이트. 설명마다 "언제 쓰는가/언제 쓰지 않는가" 슬롯 | 같은 커밋에서 같은 숫자. 오류 코드는 `scripts/structure_metrics.py`의 측정을 모든 인자 위치로 넓혀 A1 기준값을 정한다 | 관문은 아직 두지 않는다. 예산과 줄어들기만 하는 래칫 관문은 A2에서 첫 도구와 함께 preflight 선택기 안에 둔다 |
 | **A1 결과 계약과 오류 registry** | 오류 코드 registry 하나(코드, 실패 종류, 종료 코드, 다음 행동 종류). 기존 결과 계약에 공통 투영 규칙(상태, 사유, 한계, 다음 행동, 권한 상수)을 정의. 상한 초과 때의 작은 결과 모양. 흩어진 literal을 registry로 옮기는 래칫 | registry 밖 literal이 줄어들기만 함(관문). 같은 의미의 다른 코드는 registry 안의 별칭 표로 묶어 출력 코드는 그대로 둠(owner는 registry 하나). 별칭을 걷어 내는 조건(계약 버전을 올릴 때)을 registry에 적음. 다른 의미의 같은 코드는 0. 기존 CLI stdout/stderr/종료 코드 바이트 불변(회귀 시험). 행동 필드 가운데 이미 입력 문자열을 담는 곳을 목록으로 만들고, 그 이동은 이행 계획을 가진 별도 기능 조각으로 넘김 | 기존 스키마 필드 이름이나 출력 코드를 바꾸지 않는다. 새 봉투로 기존 출력을 감싸지 않는다 |
 | **A2 읽기 전용 stdio 서버** | `underwrite_` 도구. 첫 범위는 `capabilities`, `audit-*`, `inspect`, `inspect-result`, `review-artifacts`, `review-pair`, `records list/show/read-json/verify`. 실험 프로필 `review-handoff`(P7)는 넣지 않는다. 이스케이프 owner와 크기 상한 owner 하나씩. 예산 관문, 줄어들기만 하는 래칫, "언제 쓰는가/언제 쓰지 않는가" 슬롯 규칙을 첫 도구와 **같은 커밋**에 넣는다. 처음 상한은 A2에서 잰 값 그대로(여유 0)이고, 올릴 때는 이유를 기록한다. README와 `AGENT_USAGE.md`의 해당 문장 갱신 | 도구마다 structuredContent가 같은 입력의 CLI stdout을 parse한 값과 같음. text를 parse한 값과 structuredContent의 일치, text의 원문 Cc·Cf·Zl·Zp 부재, 행동 필드에 입력 문자열이 들어가지 않음, 상한 초과 시험, 잘못된 입력의 `isError` 시험이 실제 stdio 진입점으로 통과. 보안 검토 통과 | 파일 쓰기, 네트워크, 모델 호출, 상주 프로세스 |
 | **A3 도구 선택 평가** | 의도 묶음을 개발용과 held-out으로 나눔. 첫 호출 정확도, 호출 수, 금지 행동, 결과 해석 충실도. 같은 의도를 다시 쓰지 않음 | 사전에 정한 채택 규칙(구간이 겹치지 않는 개선, 금지 행동 증가 없음). 측정하지 않은 개선은 주장하지 않음 | 유료 모델 실행은 소유자 승인 뒤에만 |
