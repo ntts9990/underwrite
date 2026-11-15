@@ -13,9 +13,6 @@ from _random_policy import seed_violations
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 IMPORTLINTER_CONFIG = REPO_ROOT / ".importlinter"
-INIT_CHECK_SCRIPT = REPO_ROOT / "scripts" / "init_check.py"
-EXEMPTIONS_PATH = REPO_ROOT / "rules" / "exemptions.json"
-PURE_LAYER_EXEMPTION_KEY = "pure-layer-not-populated"
 
 _STDLIB = set(sys.stdlib_module_names)
 
