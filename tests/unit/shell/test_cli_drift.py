@@ -21,8 +21,6 @@ from underwrite.fleet.pins import load_manifests
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 REAL_PINS_ROOT = SAMPLE_PINS_ROOT
-EXEMPTIONS_PATH = REPO_ROOT / "rules" / "exemptions.json"
-SCHEMA_PATH = REPO_ROOT / "contracts" / "exemptions.v1.schema.json"
 _UNCONFIGURED_EXIT = 2
 
 
@@ -421,5 +419,3 @@ def test_verified_source_checkout_can_supply_defaults(
         None,
     )
 
-
-# --- rules/exemptions.json validates against contracts/exemptions.v1.schema.json
