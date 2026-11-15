@@ -111,7 +111,9 @@ It records artifact hashes and the observed npm/Python dependency-resolution
 identities. Registry access is allowed for installation; the runtime is not a
 network sandbox. It does not claim reproducible transitive resolution, producer
 authentication, real-provider performance, or permission to merge. Run it for Goppi integration changes and
-release preparation, not as a scheduled or everyday CI dependency. The normal
+release preparation, not as a scheduled or everyday CI dependency. Before changing
+how a Goppi contract, fixture pin, or verifier output is consumed, tell the Goppi
+maintainers and agree on the integration order. The normal
 Underwrite preflight remains mandatory for changed code and documentation.
 
 ## Implementation owners
@@ -182,6 +184,59 @@ Include the observed user result, relevant regression/entry-point evidence,
 refactoring rationale (including when no change is justified), independent review
 for material boundaries, and remaining gaps in the PR. Test counts alone do not
 establish maintainability, human time savings, or superiority over another tool.
+
+## Maintainer delivery loop
+
+External contributors need only the guidance above. Maintainers and coding agents
+working on a planned slice also follow this loop. It applies the workspace
+delivery loop and implementation rules to this repository; it adds no command,
+gate, or CI job.
+
+1. **Specify the slice.** Record facts with `file:line` evidence, scope and
+   exclusions, constraints, success and failure examples, and how each will be
+   verified. One slice delivers one outcome; record discovered follow-ups as the
+   next slice instead of widening this one.
+2. **Record the owner before editing.** For a defect or review finding, write the
+   failed invariant, its owner from [Implementation owners](#implementation-owners),
+   and the adjacent entry points that share the cause in the plan or PR, then fix
+   there and test each variant.
+3. **Keep parallel lanes from duplicating work.** When slices run in parallel,
+   each uses its own branch, worktree, and agent, and the primary checkout stays
+   free for integration. Before starting, add a row to the lane impact table in
+   the active plan (or the PR description when there is no plan):
+
+   | Lane | Files to change | Overlaps with open lanes | Integration order | Cross-effects |
+   | --- | --- | --- | --- | --- |
+
+   Tell an affected lane as soon as an overlap appears. The later integrator
+   rebases; a lane that deletes code also removes its remains and moves surviving
+   invariant tests with the code.
+4. **Implement RED, GREEN, then refactor.** Pin changed behavior with a failing
+   regression first, then implement. In the refactoring pass decide owners and
+   boundaries before local simplification, and remove duplicated decisions, dead
+   paths, extra layers, and inconsistent names or errors. Known unnecessary code
+   left behind means the slice is not done. Larger moves follow the
+   [structure program](docs/plan/STRUCTURE_PROGRAM.ko.md).
+5. **Show that new tests can fail.** For a new or changed gate or invariant test,
+   deliberately break the guarded code once, confirm the test fails, restore it,
+   and record that in the PR. This is a manual check, not a new dependency.
+6. **Review independently, then fix in one round.** A different agent or person
+   reviews code quality and architecture fit. Changes to trust boundaries, paths,
+   subprocesses, stored records, or the agent surface also get a security review.
+   Fix all findings that share a file or cause in one round, including low ones
+   that would otherwise reopen the same code. A confirmation review checks only
+   that fix. "Approve after changes" is not approval, and the writer never
+   approves their own fix. Branch protection does not enforce this review; the
+   PR record does.
+7. **Verify and record.** Run preflight after the final edit and cite its lane,
+   outcome, and the commit it covered. The report remains local diagnostics.
+   Maintainer commits may end with optional `Track:` (program or plan item),
+   `Plan:` (plan section), and `Not-tested:` (what was not verified) lines; they
+   are not checked. Write the PR body in this order: What changed, Why, Evidence,
+   Scope and limits, then a checklist of the quality criteria that apply.
+8. **Integrate within authority.** Batch small documentation changes so one PR
+   uses one `checks` run. Merging to `main`, publication, releases, and version
+   changes remain the owner's decisions; a passing slice does not grant them.
 
 ## Releasing the application and core
 
