@@ -432,11 +432,12 @@ def test_schema_configuration_failure_is_typed(
 
 
 def test_cli_error_mapping_matches_every_contract_branch() -> None:
+    from underwrite.error_contract.registry import RECORD_PROJECTIONS
+
     compiled = _validator("record_error.v1")
     contract = json.loads((ROOT / "contracts/record_error.v1.schema.json").read_bytes())
-    error_map = records._ERRORS  # pyright: ignore[reportPrivateUsage]
-    assert set(error_map) == set(contract["$defs"])
-    for code in error_map:
+    assert set(RECORD_PROJECTIONS) == set(contract["$defs"])
+    for code in RECORD_PROJECTIONS:
         error = records._CliError(code)  # pyright: ignore[reportPrivateUsage]
         compiled.validate(error.payload)
 

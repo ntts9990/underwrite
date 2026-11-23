@@ -10,6 +10,7 @@ from typing import cast
 from jsonschema.exceptions import ValidationError
 from underwrite_core.canonical import digest_bytes
 
+from underwrite.error_contract.registry import release_projection
 from underwrite.instrument.ingest import inspection
 from underwrite.instrument.ingest.application import (
     DEFAULT_MAX_BYTES,
@@ -45,56 +46,58 @@ Row = dict[str, object]
 class ReleaseError(ValueError):
     """Adapter-owned safe failure, never arbitrary received exception text."""
 
-    def __init__(self, code: str, reason: str, location: str, action: str) -> None:
+    def __init__(self, code: str, reason: str, location: str, context: str = "default") -> None:
         super().__init__(code)
+        projection = release_projection(code, context)
         self.payload: Row = dict(
             schema="release_inspection_error.v1",
             code=code,
             reason=reason,
             location=location,
-            next_action=action,
+            next_action=projection.next_action,
             retryable=False,
-            exit_code=2,
+            exit_code=projection.exit_code,
         )
 
 
 def release_error(error: Exception, location: str = "") -> ReleaseError:
     if isinstance(error, inspection.InspectionError):
         value = error.payload
+        context = (
+            "artifact"
+            if value["code"] == "INPUT_LIMIT_EXCEEDED" and value["location"] == "/artifact/path"
+            else "default"
+        )
         return ReleaseError(
             str(value["code"]),
             str(value["reason"]),
             location + str(value["location"]),
-            str(value["next_action"]),
+            context,
         )
     if isinstance(error, SchemaConfigurationError):
         return ReleaseError(
             "SCHEMA_CONFIGURATION_ERROR",
             "INVALID_INSPECTION_SCHEMA",
             "",
-            NEXT_ACTIONS["SCHEMA_CONFIGURATION_ERROR"],
         )
     detail = instrument_diagnostic(error, "check")
     code, reason = str(detail["code"]), str(detail["reason"])
-    action = "REDUCE_BATCH_SIZE" if reason == "BYTE_LIMIT_EXCEEDED" else "CORRECT_MANIFEST"
-    if code == "SOURCE_READ_FAILED":
-        action = NEXT_ACTIONS[code]
+    context = "batch" if reason == "BYTE_LIMIT_EXCEEDED" else "default"
     if isinstance(error, DecodeError) and code != "INPUT_LIMIT_EXCEEDED":
         code = "INVALID_MANIFEST"
-    return ReleaseError(code, reason, location, action)
+    return ReleaseError(code, reason, location, context)
 
 
 def validate_schema(value: object, name: str) -> None:
     try:
         packaged_validator(name).validate(value)  # pyright: ignore[reportUnknownMemberType]
     except ValidationError as exc:
-        raise ReleaseError("INVALID_MANIFEST", "INVALID_MANIFEST", "", "CORRECT_MANIFEST") from exc
+        raise ReleaseError("INVALID_MANIFEST", "INVALID_MANIFEST", "") from exc
     except Exception as exc:
         raise ReleaseError(
             "SCHEMA_CONFIGURATION_ERROR",
             "INVALID_INSPECTION_SCHEMA",
             "",
-            NEXT_ACTIONS["SCHEMA_CONFIGURATION_ERROR"],
         ) from exc
 
 
@@ -118,14 +121,13 @@ def _identities(manifest: Row, evidence: list[Row]) -> None:
                     "INVALID_MANIFEST",
                     "INVALID_MANIFEST",
                     location + "/" + field,
-                    "CORRECT_MANIFEST",
                 )
 
 
 def validate_release_case(raw: bytes) -> Row:
     """The complete input validation boundary, before any artifact is opened."""
     if len(raw) > inspection.MANIFEST_MAX_BYTES:
-        raise ReleaseError("INPUT_LIMIT_EXCEEDED", "BYTE_LIMIT_EXCEEDED", "", "REDUCE_BATCH_SIZE")
+        raise ReleaseError("INPUT_LIMIT_EXCEEDED", "BYTE_LIMIT_EXCEEDED", "", "batch")
     try:
         value = decode_json(raw, inspection.MANIFEST_MAX_DEPTH)
         validate_schema(value, "release_case.v1")
@@ -145,9 +147,7 @@ def validate_release_case(raw: bytes) -> Row:
         for key in ("requirements", "evidence"):
             entries = as_rows(manifest[key])
             if len({entry["id"] for entry in entries}) != len(entries):
-                raise ReleaseError(
-                    "INVALID_MANIFEST", "INVALID_MANIFEST", "/" + key, "CORRECT_MANIFEST"
-                )
+                raise ReleaseError("INVALID_MANIFEST", "INVALID_MANIFEST", "/" + key)
         return manifest
     except tuple(DIAGNOSTICS) as exc:
         raise release_error(exc) from exc

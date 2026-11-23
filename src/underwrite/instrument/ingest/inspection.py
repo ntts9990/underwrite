@@ -11,11 +11,11 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 from underwrite_core.canonical import content_digest, digest_bytes
 
+from underwrite.error_contract.registry import INSPECTION_EXIT_CODE, inspection_projection
 from underwrite.instrument.ingest.application import (
     DEFAULT_MAX_BYTES,
     DEFAULT_MAX_DEPTH,
     DIAGNOSTICS,
-    NEXT_ACTIONS,
     instrument_diagnostic,
     packaged_ingestor,
 )
@@ -32,7 +32,7 @@ from underwrite.instrument.ingest.transport import (
 
 MANIFEST_MAX_BYTES = 64 * 1024
 MANIFEST_MAX_DEPTH = 16
-CONFIGURATION_EXIT = 2
+CONFIGURATION_EXIT = INSPECTION_EXIT_CODE
 LIMITATIONS = (
     "SOURCE_CLAIMS_UNVERIFIED",
     "RELEASE_BINDING_NOT_CHECKED",
@@ -44,12 +44,13 @@ LIMITATIONS = (
 class InspectionError(ValueError):
     """Safe structured invocation failure; no received text is exposed."""
 
-    def __init__(self, code: str, reason: str, location: str, action: str) -> None:
+    def __init__(self, code: str, reason: str, location: str) -> None:
         super().__init__(code)
+        projection = inspection_projection(code, location)
         self.payload: dict[str, object] = {
             "schema": "artifact_inspection_error.v1",
-            **diagnostic(code, reason, location, action),
-            "exit_code": 2,
+            **diagnostic(code, reason, location, projection.next_action),
+            "exit_code": projection.exit_code,
         }
 
 
@@ -73,18 +74,10 @@ def invocation_error(error: Exception, location: str) -> InspectionError:
             "SCHEMA_CONFIGURATION_ERROR",
             str(error.args[0]),
             "",
-            NEXT_ACTIONS["SCHEMA_CONFIGURATION_ERROR"],
         )
     detail = instrument_diagnostic(error, "inspect")
     code, reason = str(detail["code"]), str(detail["reason"])
-    action = "CORRECT_MANIFEST"
-    if code == "UNSUPPORTED_FORMAT":
-        action = "SELECT_SUPPORTED_PROFILE"
-    elif code in {"SCHEMA_CONFIGURATION_ERROR", "SOURCE_READ_FAILED"}:
-        action = NEXT_ACTIONS[code]
-    elif code == "INPUT_LIMIT_EXCEEDED" and location == "/artifact/path":
-        action = "CORRECT_ARTIFACT"
-    return InspectionError(code, reason, location, action)
+    return InspectionError(code, reason, location)
 
 
 def constrained_flags() -> tuple[int, int]:
@@ -96,7 +89,6 @@ def constrained_flags() -> tuple[int, int]:
             "UNSUPPORTED_PLATFORM",
             "UNSUPPORTED_PLATFORM",
             "",
-            NEXT_ACTIONS["UNSUPPORTED_PLATFORM"],
         )
     directory, nofollow, nonblock, noctty = cast(list[int], required)
     return os.O_RDONLY | directory | nofollow, os.O_RDONLY | nofollow | nonblock | noctty
@@ -148,7 +140,7 @@ def _manifest(raw: bytes) -> dict[str, object]:
             if detail["code"] == "INPUT_LIMIT_EXCEEDED"
             else "INVALID_MANIFEST"
         )
-        raise InspectionError(code, str(detail["reason"]), "", "CORRECT_MANIFEST") from exc
+        raise InspectionError(code, str(detail["reason"]), "") from exc
     except Exception as exc:
         raise SchemaConfigurationError("INSPECTION_SCHEMA_EVALUATION_FAILED") from exc
     return _validate_artifact_case(value, validator)
@@ -168,11 +160,8 @@ def _validate_artifact_case(value: object, validator: Draft202012Validator) -> d
                 "INVALID_ARTIFACT_PATH",
                 "INVALID_ARTIFACT_PATH",
                 "/artifact/path",
-                "CORRECT_MANIFEST",
             ) from exc
-        raise InspectionError(
-            "INVALID_MANIFEST", "INVALID_MANIFEST", "", "CORRECT_MANIFEST"
-        ) from exc
+        raise InspectionError("INVALID_MANIFEST", "INVALID_MANIFEST", "") from exc
     except Exception as exc:
         raise SchemaConfigurationError("INSPECTION_SCHEMA_EVALUATION_FAILED") from exc
     return cast(dict[str, object], value)
@@ -262,9 +251,7 @@ def _read_case(
     """Read the manifest and artifact once under one caller-trusted directory anchor."""
     flags = constrained_flags()
     if "\x00" in str(path):
-        raise InspectionError(
-            "SOURCE_READ_FAILED", "SOURCE_READ_FAILED", "", NEXT_ACTIONS["SOURCE_READ_FAILED"]
-        )
+        raise InspectionError("SOURCE_READ_FAILED", "SOURCE_READ_FAILED", "")
     location = ""
     try:
         # Parent ancestors are caller-trusted. Only the manifest leaf is untrusted.
@@ -302,7 +289,6 @@ def _read_case(
             "SOURCE_READ_FAILED",
             "SOURCE_READ_FAILED",
             location,
-            NEXT_ACTIONS["SOURCE_READ_FAILED"],
         ) from exc
 
 

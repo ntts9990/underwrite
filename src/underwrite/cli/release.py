@@ -10,7 +10,7 @@ from typing import NoReturn, cast
 
 from underwrite_core.canonical import canonical_bytes
 
-from underwrite.instrument.ingest.application import NEXT_ACTIONS
+from underwrite.error_contract.registry import RELEASE_EXIT_CODE
 from underwrite.instrument.ingest.release import ReleaseError, inspect_release
 
 OUTPUT_MAX_BYTES = 256 * 1024
@@ -19,7 +19,7 @@ ERROR_MAX_BYTES = 4096
 
 class _Parser(argparse.ArgumentParser):
     def error(self, message: str) -> NoReturn:
-        raise ReleaseError("USAGE_ERROR", "INVALID_ARGUMENTS_SEE_HELP", "", "CORRECT_MANIFEST")
+        raise ReleaseError("USAGE_ERROR", "INVALID_ARGUMENTS_SEE_HELP", "")
 
 
 def configure(parser: argparse.ArgumentParser) -> None:
@@ -76,18 +76,14 @@ def main(argv: list[str]) -> int:
         report = inspect_release(args.release)
         output = (canonical_bytes(report) if args.json else _human(report).encode("utf-8")) + b"\n"
         if len(output) > OUTPUT_MAX_BYTES:
-            raise ReleaseError(
-                "OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED", "", "REDUCE_BATCH_SIZE"
-            )
+            raise ReleaseError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED", "")
     except Exception as exc:
-        internal = ReleaseError(
-            "INTERNAL_ERROR", "INTERNAL_ERROR", "", NEXT_ACTIONS["INTERNAL_ERROR"]
-        )
+        internal = ReleaseError("INTERNAL_ERROR", "INTERNAL_ERROR", "")
         error = exc if isinstance(exc, ReleaseError) else internal
         encoded = canonical_bytes(error.payload) + b"\n"
         if len(encoded) > ERROR_MAX_BYTES:
             encoded = canonical_bytes(internal.payload) + b"\n"
         sys.stderr.write(encoded.decode("utf-8"))
-        return 2
+        return RELEASE_EXIT_CODE
     sys.stdout.write(output.decode("utf-8"))
     return 0 if report["result"] == "requirements_matched" else 1

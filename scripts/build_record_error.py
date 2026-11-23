@@ -10,8 +10,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from underwrite.instrument.ingest.application import NEXT_ACTIONS
-from underwrite.service._record_errors import ERROR_SPECS
+from underwrite.error_contract.registry import RECORD_EXIT_CODE, RECORD_PROJECTIONS
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / "contracts/record_error.v1.schema.json"
@@ -49,19 +48,19 @@ def build_schema() -> dict[str, Any]:
             },
             "next_action": {"type": "string"},
             "retryable": {"const": False},
-            "exit_code": {"const": 2},
+            "exit_code": {"const": RECORD_EXIT_CODE},
         },
     }
-    schema["oneOf"] = [{"$ref": "#/$defs/" + code} for code in ERROR_SPECS]
+    schema["oneOf"] = [{"$ref": "#/$defs/" + code} for code in RECORD_PROJECTIONS]
     schema["$defs"] = {
         code: {
             "properties": {
                 "code": {"const": code},
-                "reason": {"const": reason},
-                "next_action": {"const": NEXT_ACTIONS[code] if action is None else action},
+                "reason": {"const": projection.reason},
+                "next_action": {"const": projection.next_action},
             }
         }
-        for code, (reason, action) in ERROR_SPECS.items()
+        for code, projection in RECORD_PROJECTIONS.items()
     }
     return schema
 

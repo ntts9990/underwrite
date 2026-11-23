@@ -26,6 +26,7 @@ from underwrite.service.records import RECORD_MAX_FILES, RecordError, read_recor
 
 ANALYSIS_ERROR_EXIT = 2
 STORAGE_ERROR_EXIT = 3
+FALLBACK_EXIT_PROJECTIONS = 2
 
 
 def invoke(tmp_path: Path, capsys: pytest.CaptureFixture[str], *extra: str) -> tuple[int, Any]:
@@ -226,12 +227,23 @@ def test_payload_schema_refusal_returns_compact_aggregate(
     def malformed_summary(*args: object) -> dict[str, str]:
         return {"unexpected": "value"}
 
+    real_exit = handoff_review.analysis_exit_code
+    exit_calls = 0
+
+    def tracked_exit(analysis: dict[str, Any]) -> int:
+        nonlocal exit_calls
+        exit_calls += 1
+        return real_exit(analysis)
+
     monkeypatch.setattr(handoff_review, "_summary", malformed_summary)
+    monkeypatch.setattr(handoff_review, "analysis_exit_code", tracked_exit)
     code, report = invoke(tmp_path, capsys)
     assert code == ANALYSIS_ERROR_EXIT
     assert report["analysis"]["error"]["reason"] == "SCHEMA_VALIDATION_FAILED"
     assert report["analysis"]["phase"] == "analysis"
     assert report["source"] is report["context_provenance"] is None
+    assert report["exit_code"] == report["analysis"]["error"]["exit_code"]
+    assert exit_calls == FALLBACK_EXIT_PROJECTIONS
 
 
 def test_output_budget_includes_emitter_newline_before_publication(

@@ -4,6 +4,7 @@ Shared response admission, rendering, and storage of captured producer evidence.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
 
@@ -22,6 +23,23 @@ from underwrite.service.records import (
 )
 
 STORAGE_FAILURE_EXIT = 3
+
+
+def analysis_exit_code(analysis: Mapping[str, object]) -> int:
+    """Project a completed component error exit without inventing another status."""
+    state = analysis.get("state")
+    if state == "result":
+        if "error" in analysis:
+            raise EvidenceError("INTERNAL_ERROR", "INTERNAL_ERROR")
+        return 0
+    error = analysis.get("error")
+    if state != "error" or not isinstance(error, Mapping):
+        raise EvidenceError("INTERNAL_ERROR", "INTERNAL_ERROR")
+    error = cast(Mapping[str, object], error)
+    exit_code = error.get("exit_code")
+    if type(exit_code) is not int or exit_code <= 0:
+        raise EvidenceError("INTERNAL_ERROR", "INTERNAL_ERROR")
+    return exit_code
 
 
 def analysis_record_file(

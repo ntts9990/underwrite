@@ -25,6 +25,7 @@ from underwrite.cli.handoff_limits import (
 )
 from underwrite.cli.local_json import validate
 from underwrite.cli.pair_binary import computation_error
+from underwrite.cli.record_capture import analysis_exit_code
 from underwrite.cli.records import record_error_payload
 from underwrite.instrument.evidence.goppi_p7_handoff import (
     MAPPING_HANDOFF,
@@ -171,7 +172,7 @@ def _generated_documents(
             {
                 "entry_point": "underwrite review-handoff",
                 "arguments": list(request.arguments) if request.arguments is not None else None,
-                "analysis_exit_code": 0 if analysis["state"] == "result" else 2,
+                "analysis_exit_code": analysis_exit_code(analysis),
                 "scope": "analysis_phase",
                 "storage_outcome_location": "outer_cli_envelope",
             },
@@ -264,7 +265,7 @@ def _empty_envelope() -> dict[str, Any]:
     return {
         "schema": RESULT_SCHEMA,
         "profile": PROFILE,
-        "exit_code": 2,
+        "exit_code": None,
         "scope": None,
         "source": None,
         "context_provenance": None,
@@ -309,7 +310,7 @@ def run_goppi_p7_handoff(request: HandoffRequest) -> HandoffRun:
         diagnostic = _diagnostic(exc)
         _validate("evidence_error.v1", diagnostic)
         envelope["analysis"] = {"state": "error", "phase": phase, "error": diagnostic}
-    envelope["exit_code"] = 0 if envelope["analysis"]["state"] == "result" else 2
+    envelope["exit_code"] = analysis_exit_code(envelope["analysis"])
     storage_reserve = 2048 if request.record_root is not None else 0
     try:
         _validate(RESULT_SCHEMA, envelope)
@@ -324,6 +325,7 @@ def run_goppi_p7_handoff(request: HandoffRequest) -> HandoffRun:
         capture, verified = None, None
         envelope = _empty_envelope()
         envelope["analysis"] = {"state": "error", "phase": "analysis", "error": _diagnostic(exc)}
+        envelope["exit_code"] = analysis_exit_code(envelope["analysis"])
         envelope["next_actions"] = _next_actions(envelope["analysis"])
         _validate(RESULT_SCHEMA, envelope)
     if output_line_size(canonical_bytes(envelope)) + storage_reserve > MAX_OUTPUT_BYTES:
@@ -336,7 +338,7 @@ def run_goppi_p7_handoff(request: HandoffRequest) -> HandoffRun:
         if action not in envelope["next_actions"]:
             envelope["next_actions"].append(action)
     _validate(RESULT_SCHEMA, envelope)
-    return HandoffRun(envelope, cast(int, envelope["exit_code"]))
+    return HandoffRun(envelope, envelope["exit_code"])
 
 
 def render_human(report: dict[str, object]) -> str:

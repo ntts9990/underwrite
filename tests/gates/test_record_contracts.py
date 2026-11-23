@@ -616,12 +616,12 @@ def test_generated_record_read_contracts_are_current(name: str) -> None:
 
 def test_record_error_vocabulary_matches_its_runtime_owner() -> None:
     from underwrite.cli.records import record_error_payload
-    from underwrite.service._record_errors import ERROR_SPECS
+    from underwrite.error_contract.registry import RECORD_PROJECTIONS
     from underwrite.service.records import ERROR_CODES, RecordError
 
     document = schema("record_error.v1")
-    assert set(document["$defs"]) == set(ERROR_SPECS) == set(ERROR_CODES)
-    for code in ERROR_SPECS:
+    assert set(document["$defs"]) == set(RECORD_PROJECTIONS) == set(ERROR_CODES)
+    for code in RECORD_PROJECTIONS:
         payload = record_error_payload(RecordError(code))
         validator("record_error.v1").validate(payload)
         fields = document["$defs"][code]["properties"]

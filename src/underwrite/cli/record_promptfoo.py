@@ -20,6 +20,7 @@ from underwrite.cli.local_json import Validator
 from underwrite.cli.record_capture import (
     STORAGE_FAILURE_EXIT,
     admit_record_response,
+    analysis_exit_code,
     analysis_record_file,
     finalize_captured_record,
     render_record_response,
@@ -151,7 +152,6 @@ def _files(
     analysis: dict[str, Any],
     contracts: _Contracts,
 ) -> tuple[CapturedRecordFile, ...]:
-    result = analysis["state"] == "result"
     analysis_file = analysis_record_file(
         analysis,
         result_name="analysis/accounting.json",
@@ -171,7 +171,7 @@ def _files(
         "execution_mode": "in_process",
         "arguments": arguments,
         "analysis_state": analysis["state"],
-        "analysis_exit_code": 0 if result else 2,
+        "analysis_exit_code": analysis_exit_code(analysis),
         "analysis_exit_code_scope": "component_contract_not_os_process",
         "aggregate_outcome_location": "command_output",
     }
@@ -218,7 +218,7 @@ def run_record_promptfoo(
         "command": COMMAND,
         "source": source,
         "analysis": analysis,
-        "exit_code": 0 if analysis["state"] == "result" else 2,
+        "exit_code": analysis_exit_code(analysis),
     }
     try:
         files = _files(path, root, identifier, raw, analysis, contracts)

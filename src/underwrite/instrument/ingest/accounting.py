@@ -9,6 +9,7 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 from underwrite_core.canonical import digest_bytes
 
+from underwrite.error_contract.registry import instrument_exit_code
 from underwrite.instrument.evidence.promptfoo_compat import (
     ACCOUNTING_SCHEMA,
     ACTIONS_SCHEMA,
@@ -97,13 +98,15 @@ def _trusted_artifact_diagnostic(report: dict[str, object]) -> tuple[str, str] |
     ):
         return None
     known_codes = {
-        registered for registered, exit_code, _ in DIAGNOSTICS.values() if exit_code == 1
+        registered
+        for registered, _ in DIAGNOSTICS.values()
+        if instrument_exit_code(registered) == 1
     }
     known_codes.add("INPUT_LIMIT_EXCEEDED")  # The registry maps bounded-input reasons to this code.
     known_reasons = {
         item
-        for _, exit_code, reasons in DIAGNOSTICS.values()
-        if exit_code == 1
+        for registered, reasons in DIAGNOSTICS.values()
+        if instrument_exit_code(registered) == 1
         for item in (reasons.values() if isinstance(reasons, dict) else (reasons,))
     }
     return (reason, location) if code in known_codes and reason in known_reasons else None
