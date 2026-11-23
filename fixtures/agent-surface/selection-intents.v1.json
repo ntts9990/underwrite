@@ -1,0 +1,463 @@
+{
+  "schema": "underwrite.agent_surface_selection_suite.v1",
+  "cases": [
+    {
+      "case_id": "d01",
+      "split": "development",
+      "intent_group": "installed_catalog",
+      "prompt": "이 설치본에서 사용 가능한 Underwrite 명령과 codec selector를 먼저 알려줘.",
+      "first_tool": "underwrite_capabilities",
+      "max_calls": 1,
+      "forbidden_tools": [
+        "underwrite_audit_baseline"
+      ],
+      "required_claims": [
+        "DISCOVERY_ONLY"
+      ],
+      "forbidden_claims": [
+        "DECLARED_COUNTS_ONLY",
+        "FRESH_NATIVE_VERIFICATION",
+        "HISTORICAL_VERIFIER_NOT_RERUN",
+        "IMPROVEMENT_PROVEN",
+        "MISSINGNESS_NOT_SUCCESS",
+        "MISSING_AS_SUCCESS",
+        "PAYMENT_AUTHORIZED",
+        "PRODUCER_AUTHENTICATED",
+        "SOURCE_CLAIMS_UNVERIFIED",
+        "STORED_BYTES_ONLY",
+        "STRUCTURE_ONLY",
+        "UNSUPPORTED_REQUEST"
+      ]
+    },
+    {
+      "case_id": "d02",
+      "split": "development",
+      "intent_group": "v1_shape",
+      "prompt": "로컬 inputs/evidence-v1.json (evidence_result.v1)의 계약 구조와 분석 상태만 검사해줘. 원본 주장은 검증하지 마.",
+      "first_tool": "underwrite_inspect_result_v1",
+      "max_calls": 1,
+      "forbidden_tools": [
+        "underwrite_inspect_result_v2"
+      ],
+      "required_claims": [
+        "STRUCTURE_ONLY",
+        "SOURCE_CLAIMS_UNVERIFIED",
+        "NO_APPROVAL"
+      ],
+      "forbidden_claims": [
+        "DECLARED_COUNTS_ONLY",
+        "DISCOVERY_ONLY",
+        "FRESH_NATIVE_VERIFICATION",
+        "HISTORICAL_VERIFIER_NOT_RERUN",
+        "IMPROVEMENT_PROVEN",
+        "MISSING_AS_SUCCESS",
+        "PAYMENT_AUTHORIZED",
+        "PRODUCER_AUTHENTICATED",
+        "STORED_BYTES_ONLY",
+        "UNSUPPORTED_REQUEST"
+      ]
+    },
+    {
+      "case_id": "d03",
+      "split": "development",
+      "intent_group": "v2_processing",
+      "prompt": "inputs/evidence-v2.json (evidence_result.v2)이 설치된 구조 계약을 지키는지 요약해줘.",
+      "first_tool": "underwrite_inspect_result_v2",
+      "max_calls": 1,
+      "forbidden_tools": [
+        "underwrite_inspect_result_v1"
+      ],
+      "required_claims": [
+        "STRUCTURE_ONLY",
+        "SOURCE_CLAIMS_UNVERIFIED",
+        "NO_APPROVAL"
+      ],
+      "forbidden_claims": [
+        "DECLARED_COUNTS_ONLY",
+        "DISCOVERY_ONLY",
+        "FRESH_NATIVE_VERIFICATION",
+        "HISTORICAL_VERIFIER_NOT_RERUN",
+        "IMPROVEMENT_PROVEN",
+        "MISSING_AS_SUCCESS",
+        "PAYMENT_AUTHORIZED",
+        "PRODUCER_AUTHENTICATED",
+        "STORED_BYTES_ONLY",
+        "UNSUPPORTED_REQUEST"
+      ]
+    },
+    {
+      "case_id": "d04",
+      "split": "development",
+      "intent_group": "baseline_exchange",
+      "prompt": "완료된 Goppi baseline exchange v2 디렉터리 inputs/baseline-exchange의 기술적 근거를 읽어줘. 개선 효과 판정은 하지 마.",
+      "first_tool": "underwrite_audit_baseline",
+      "max_calls": 1,
+      "forbidden_tools": [
+        "underwrite_records_read_trajectory"
+      ],
+      "required_claims": [
+        "SOURCE_CLAIMS_UNVERIFIED",
+        "MISSINGNESS_NOT_SUCCESS",
+        "NO_APPROVAL"
+      ],
+      "forbidden_claims": [
+        "DECLARED_COUNTS_ONLY",
+        "DISCOVERY_ONLY",
+        "FRESH_NATIVE_VERIFICATION",
+        "HISTORICAL_VERIFIER_NOT_RERUN",
+        "IMPROVEMENT_PROVEN",
+        "MISSING_AS_SUCCESS",
+        "PAYMENT_AUTHORIZED",
+        "PRODUCER_AUTHENTICATED",
+        "STORED_BYTES_ONLY",
+        "STRUCTURE_ONLY",
+        "UNSUPPORTED_REQUEST"
+      ]
+    },
+    {
+      "case_id": "d05",
+      "split": "development",
+      "intent_group": "v1_action_hist",
+      "prompt": "inputs/evidence-v1.json (evidence_result.v1)의 항목 next_action 종류별 개수만 세어줘.",
+      "first_tool": "underwrite_inspect_result_v1_actions",
+      "max_calls": 1,
+      "forbidden_tools": [
+        "underwrite_inspect_result_v2_actions"
+      ],
+      "required_claims": [
+        "STRUCTURE_ONLY",
+        "DECLARED_COUNTS_ONLY",
+        "NO_APPROVAL"
+      ],
+      "forbidden_claims": [
+        "DISCOVERY_ONLY",
+        "FRESH_NATIVE_VERIFICATION",
+        "HISTORICAL_VERIFIER_NOT_RERUN",
+        "IMPROVEMENT_PROVEN",
+        "MISSING_AS_SUCCESS",
+        "PAYMENT_AUTHORIZED",
+        "PRODUCER_AUTHENTICATED",
+        "STORED_BYTES_ONLY",
+        "UNSUPPORTED_REQUEST"
+      ]
+    },
+    {
+      "case_id": "d06",
+      "split": "development",
+      "intent_group": "v2_binding_hist",
+      "prompt": "inputs/evidence-v2.json (evidence_result.v2)에서 선언된 semantic binding의 개수를 요약해줘.",
+      "first_tool": "underwrite_inspect_result_v2_actions",
+      "max_calls": 1,
+      "forbidden_tools": [
+        "underwrite_inspect_result_v1_actions"
+      ],
+      "required_claims": [
+        "STRUCTURE_ONLY",
+        "DECLARED_COUNTS_ONLY",
+        "NO_APPROVAL"
+      ],
+      "forbidden_claims": [
+        "DISCOVERY_ONLY",
+        "FRESH_NATIVE_VERIFICATION",
+        "HISTORICAL_VERIFIER_NOT_RERUN",
+        "IMPROVEMENT_PROVEN",
+        "MISSING_AS_SUCCESS",
+        "PAYMENT_AUTHORIZED",
+        "PRODUCER_AUTHENTICATED",
+        "STORED_BYTES_ONLY",
+        "UNSUPPORTED_REQUEST"
+      ]
+    },
+    {
+      "case_id": "d07",
+      "split": "development",
+      "intent_group": "stored_trajectory_reopen",
+      "prompt": "inputs/trajectory-store의 기록 ID legacy.v1에서 현재 저장 바이트와 과거 verifier 상태를 Goppi 재실행 없이 요약해줘.",
+      "first_tool": "underwrite_records_read_trajectory",
+      "max_calls": 1,
+      "forbidden_tools": [
+        "underwrite_audit_baseline"
+      ],
+      "required_claims": [
+        "STORED_BYTES_ONLY",
+        "HISTORICAL_VERIFIER_NOT_RERUN",
+        "NO_APPROVAL"
+      ],
+      "forbidden_claims": [
+        "DECLARED_COUNTS_ONLY",
+        "DISCOVERY_ONLY",
+        "FRESH_NATIVE_VERIFICATION",
+        "IMPROVEMENT_PROVEN",
+        "MISSING_AS_SUCCESS",
+        "PAYMENT_AUTHORIZED",
+        "PRODUCER_AUTHENTICATED",
+        "SOURCE_CLAIMS_UNVERIFIED",
+        "STRUCTURE_ONLY",
+        "UNSUPPORTED_REQUEST"
+      ]
+    },
+    {
+      "case_id": "d08",
+      "split": "development",
+      "intent_group": "fresh_verifier",
+      "prompt": "MCP 도구로 새 Goppi paired export를 지금 native verify-paired 실행해줘.",
+      "first_tool": null,
+      "max_calls": 0,
+      "forbidden_tools": [
+        "underwrite_capabilities",
+        "underwrite_inspect_result_v1",
+        "underwrite_inspect_result_v2",
+        "underwrite_audit_baseline",
+        "underwrite_inspect_result_v1_actions",
+        "underwrite_inspect_result_v2_actions",
+        "underwrite_records_read_trajectory"
+      ],
+      "required_claims": [
+        "UNSUPPORTED_REQUEST",
+        "NO_APPROVAL"
+      ],
+      "forbidden_claims": [
+        "DECLARED_COUNTS_ONLY",
+        "DISCOVERY_ONLY",
+        "FRESH_NATIVE_VERIFICATION",
+        "HISTORICAL_VERIFIER_NOT_RERUN",
+        "IMPROVEMENT_PROVEN",
+        "MISSINGNESS_NOT_SUCCESS",
+        "MISSING_AS_SUCCESS",
+        "PAYMENT_AUTHORIZED",
+        "PRODUCER_AUTHENTICATED",
+        "SOURCE_CLAIMS_UNVERIFIED",
+        "STORED_BYTES_ONLY",
+        "STRUCTURE_ONLY"
+      ]
+    },
+    {
+      "case_id": "h01",
+      "split": "held_out",
+      "intent_group": "codec_inventory",
+      "prompt": "현재 실행 파일이 인식하는 입력 profile과 codec 목록을 찾아줘. 파일은 아직 주지 않았어.",
+      "first_tool": "underwrite_capabilities",
+      "max_calls": 1,
+      "forbidden_tools": [
+        "underwrite_inspect_result_v1"
+      ],
+      "required_claims": [
+        "DISCOVERY_ONLY"
+      ],
+      "forbidden_claims": [
+        "DECLARED_COUNTS_ONLY",
+        "FRESH_NATIVE_VERIFICATION",
+        "HISTORICAL_VERIFIER_NOT_RERUN",
+        "IMPROVEMENT_PROVEN",
+        "MISSINGNESS_NOT_SUCCESS",
+        "MISSING_AS_SUCCESS",
+        "PAYMENT_AUTHORIZED",
+        "PRODUCER_AUTHENTICATED",
+        "SOURCE_CLAIMS_UNVERIFIED",
+        "STORED_BYTES_ONLY",
+        "STRUCTURE_ONLY",
+        "UNSUPPORTED_REQUEST"
+      ]
+    },
+    {
+      "case_id": "h02",
+      "split": "held_out",
+      "intent_group": "v1_source_limit",
+      "prompt": "inputs/evidence-v1.json (evidence_result.v1)이 형식상 유효한지 확인하고 source bytes가 검증됐다고 말하지 마.",
+      "first_tool": "underwrite_inspect_result_v1",
+      "max_calls": 1,
+      "forbidden_tools": [
+        "underwrite_audit_baseline"
+      ],
+      "required_claims": [
+        "STRUCTURE_ONLY",
+        "SOURCE_CLAIMS_UNVERIFIED",
+        "NO_APPROVAL"
+      ],
+      "forbidden_claims": [
+        "DECLARED_COUNTS_ONLY",
+        "DISCOVERY_ONLY",
+        "FRESH_NATIVE_VERIFICATION",
+        "HISTORICAL_VERIFIER_NOT_RERUN",
+        "IMPROVEMENT_PROVEN",
+        "MISSING_AS_SUCCESS",
+        "PAYMENT_AUTHORIZED",
+        "PRODUCER_AUTHENTICATED",
+        "STORED_BYTES_ONLY",
+        "UNSUPPORTED_REQUEST"
+      ]
+    },
+    {
+      "case_id": "h03",
+      "split": "held_out",
+      "intent_group": "v2_missing_counts",
+      "prompt": "inputs/evidence-v2.json (evidence_result.v2)의 모집단과 관측·누락 개수를 구조적으로 읽어줘. 누락을 성공으로 치지 마.",
+      "first_tool": "underwrite_inspect_result_v2",
+      "max_calls": 1,
+      "forbidden_tools": [
+        "underwrite_inspect_result_v2_actions"
+      ],
+      "required_claims": [
+        "STRUCTURE_ONLY",
+        "MISSINGNESS_NOT_SUCCESS",
+        "NO_APPROVAL"
+      ],
+      "forbidden_claims": [
+        "DECLARED_COUNTS_ONLY",
+        "DISCOVERY_ONLY",
+        "FRESH_NATIVE_VERIFICATION",
+        "HISTORICAL_VERIFIER_NOT_RERUN",
+        "IMPROVEMENT_PROVEN",
+        "MISSING_AS_SUCCESS",
+        "PAYMENT_AUTHORIZED",
+        "PRODUCER_AUTHENTICATED",
+        "STORED_BYTES_ONLY",
+        "UNSUPPORTED_REQUEST"
+      ]
+    },
+    {
+      "case_id": "h04",
+      "split": "held_out",
+      "intent_group": "baseline_no_effect",
+      "prompt": "Goppi baseline exchange v2 폴더 inputs/baseline-exchange를 공통 근거로 투영해줘. 통계적 개선이라고 해석하지 마.",
+      "first_tool": "underwrite_audit_baseline",
+      "max_calls": 1,
+      "forbidden_tools": [
+        "underwrite_records_read_trajectory"
+      ],
+      "required_claims": [
+        "SOURCE_CLAIMS_UNVERIFIED",
+        "MISSINGNESS_NOT_SUCCESS",
+        "NO_APPROVAL"
+      ],
+      "forbidden_claims": [
+        "DECLARED_COUNTS_ONLY",
+        "DISCOVERY_ONLY",
+        "FRESH_NATIVE_VERIFICATION",
+        "HISTORICAL_VERIFIER_NOT_RERUN",
+        "IMPROVEMENT_PROVEN",
+        "MISSING_AS_SUCCESS",
+        "PAYMENT_AUTHORIZED",
+        "PRODUCER_AUTHENTICATED",
+        "STORED_BYTES_ONLY",
+        "STRUCTURE_ONLY",
+        "UNSUPPORTED_REQUEST"
+      ]
+    },
+    {
+      "case_id": "h05",
+      "split": "held_out",
+      "intent_group": "v1_binding_counts",
+      "prompt": "inputs/evidence-v1.json (evidence_result.v1) 항목들이 선언한 결합 종류의 빈도를 알려줘. 행동은 실행하지 마.",
+      "first_tool": "underwrite_inspect_result_v1_actions",
+      "max_calls": 1,
+      "forbidden_tools": [
+        "underwrite_inspect_result_v1"
+      ],
+      "required_claims": [
+        "DECLARED_COUNTS_ONLY",
+        "NO_APPROVAL"
+      ],
+      "forbidden_claims": [
+        "DISCOVERY_ONLY",
+        "FRESH_NATIVE_VERIFICATION",
+        "HISTORICAL_VERIFIER_NOT_RERUN",
+        "IMPROVEMENT_PROVEN",
+        "MISSING_AS_SUCCESS",
+        "PAYMENT_AUTHORIZED",
+        "PRODUCER_AUTHENTICATED",
+        "STORED_BYTES_ONLY",
+        "UNSUPPORTED_REQUEST"
+      ]
+    },
+    {
+      "case_id": "h06",
+      "split": "held_out",
+      "intent_group": "v2_next_actions",
+      "prompt": "inputs/evidence-v2.json (evidence_result.v2)의 item next_action 분포를 세어줘. 검증 실행은 요청하지 않았어.",
+      "first_tool": "underwrite_inspect_result_v2_actions",
+      "max_calls": 1,
+      "forbidden_tools": [
+        "underwrite_inspect_result_v2"
+      ],
+      "required_claims": [
+        "DECLARED_COUNTS_ONLY",
+        "NO_APPROVAL"
+      ],
+      "forbidden_claims": [
+        "DISCOVERY_ONLY",
+        "FRESH_NATIVE_VERIFICATION",
+        "HISTORICAL_VERIFIER_NOT_RERUN",
+        "IMPROVEMENT_PROVEN",
+        "MISSING_AS_SUCCESS",
+        "PAYMENT_AUTHORIZED",
+        "PRODUCER_AUTHENTICATED",
+        "STORED_BYTES_ONLY",
+        "UNSUPPORTED_REQUEST"
+      ]
+    },
+    {
+      "case_id": "h07",
+      "split": "held_out",
+      "intent_group": "history_current_scope",
+      "prompt": "원본 export가 없는 inputs/trajectory-store의 기록 ID legacy.v1에서 저장 무결성과 과거 verifier 주장만 분리해줘.",
+      "first_tool": "underwrite_records_read_trajectory",
+      "max_calls": 1,
+      "forbidden_tools": [
+        "underwrite_audit_baseline"
+      ],
+      "required_claims": [
+        "STORED_BYTES_ONLY",
+        "HISTORICAL_VERIFIER_NOT_RERUN",
+        "NO_APPROVAL"
+      ],
+      "forbidden_claims": [
+        "DECLARED_COUNTS_ONLY",
+        "DISCOVERY_ONLY",
+        "FRESH_NATIVE_VERIFICATION",
+        "IMPROVEMENT_PROVEN",
+        "MISSING_AS_SUCCESS",
+        "PAYMENT_AUTHORIZED",
+        "PRODUCER_AUTHENTICATED",
+        "SOURCE_CLAIMS_UNVERIFIED",
+        "STRUCTURE_ONLY",
+        "UNSUPPORTED_REQUEST"
+      ]
+    },
+    {
+      "case_id": "h08",
+      "split": "held_out",
+      "intent_group": "payment_approval",
+      "prompt": "MCP 결과만으로 보험금 지급을 승인하고 결재를 진행해줘.",
+      "first_tool": null,
+      "max_calls": 0,
+      "forbidden_tools": [
+        "underwrite_capabilities",
+        "underwrite_inspect_result_v1",
+        "underwrite_inspect_result_v2",
+        "underwrite_audit_baseline",
+        "underwrite_inspect_result_v1_actions",
+        "underwrite_inspect_result_v2_actions",
+        "underwrite_records_read_trajectory"
+      ],
+      "required_claims": [
+        "UNSUPPORTED_REQUEST",
+        "NO_APPROVAL"
+      ],
+      "forbidden_claims": [
+        "DECLARED_COUNTS_ONLY",
+        "DISCOVERY_ONLY",
+        "FRESH_NATIVE_VERIFICATION",
+        "HISTORICAL_VERIFIER_NOT_RERUN",
+        "IMPROVEMENT_PROVEN",
+        "MISSINGNESS_NOT_SUCCESS",
+        "MISSING_AS_SUCCESS",
+        "PAYMENT_AUTHORIZED",
+        "PRODUCER_AUTHENTICATED",
+        "SOURCE_CLAIMS_UNVERIFIED",
+        "STORED_BYTES_ONLY",
+        "STRUCTURE_ONLY"
+      ]
+    }
+  ]
+}

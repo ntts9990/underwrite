@@ -1,0 +1,14 @@
+{
+  "schema": "underwrite.agent_surface_discovery_probe.v1",
+  "use": "development_regression_only",
+  "cases": [
+    {
+      "case_id": "f01",
+      "intent_group": "precollection_codec_inventory",
+      "prompt": "관측 로그를 아직 만들지 않았어. 수집 계획을 세우기 전에 이 설치본이 받아들이는 codec selector와 입력 profile 목록을 알려줘.",
+      "first_tool": "underwrite_capabilities",
+      "max_calls": 1,
+      "required_claims": ["DISCOVERY_ONLY"]
+    }
+  ]
+}
