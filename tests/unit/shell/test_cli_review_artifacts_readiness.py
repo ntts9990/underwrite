@@ -11,6 +11,7 @@ import pytest
 from jsonschema import Draft202012Validator, ValidationError
 from underwrite_core.canonical import digest_bytes
 
+from underwrite.cli import review_artifacts as command
 from underwrite.cli.main import main
 from underwrite.instrument.ingest.cross_artifact import (
     MAX_PROMPTFOO_ROWS,
@@ -41,6 +42,13 @@ def _arguments(promptfoo: Path = PROMPTFOO) -> list[str]:
 
 def _readiness(promptfoo: Path, capsys: pytest.CaptureFixture[str]) -> dict[str, Any]:
     assert main([*_arguments(promptfoo), "--view", "readiness", "--json"]) == 0
+    streams = capsys.readouterr()
+    assert streams.err == ""
+    return cast(dict[str, Any], json.loads(streams.out))
+
+
+def _readiness_summary(promptfoo: Path, capsys: pytest.CaptureFixture[str]) -> dict[str, Any]:
+    assert main([*_arguments(promptfoo), "--view", "readiness-summary", "--json"]) == 0
     streams = capsys.readouterr()
     assert streams.err == ""
     return cast(dict[str, Any], json.loads(streams.out))
@@ -142,6 +150,82 @@ def test_native_export_returns_bound_readiness_without_invented_roles(
     assert "missing_owner_metadata" in human.out
     assert "No case comparison" in human.out
     assert str(PROMPTFOO) not in human.out + human.err
+
+
+def test_readiness_summary_aggregates_blockers_without_coordinates(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = tmp_path / "PRIVATE_CANARY-source.json"
+    _source(source, canary="PRIVATE_CANARY_\u202e")
+    full = _readiness(source, capsys)
+    summary = _readiness_summary(source, capsys)
+    assert summary["schema"] == "cross_artifact_readiness_summary.v1"
+    for key in (
+        "source_identity", "populations", "review_prerequisites", "finding_counts",
+        "improvement", "checks",
+    ):
+        assert summary[key] == full[key]
+    assert summary["readers"]["goppi"] == full["readers"]["goppi"]
+    assert summary["readers"]["promptfoo"] == {
+        "profile": full["readers"]["promptfoo"]["profile"],
+        "producer_version_state": full["readers"]["promptfoo"]["producer_version_state"],
+    }
+    assert sum(item["count"] for item in summary["metadata"]["blockers"]) == len(
+        full["metadata"]["blockers"]
+    )
+    assert sum(item["count"] for item in summary["next_verification_tasks"]) == len(
+        full["next_verification_tasks"]
+    )
+    assert summary["metadata"]["case_ids"] == "incomplete"
+    assert summary["metadata"]["row_roles"] == "incomplete"
+    assert all(
+        "row_index" not in item and "location" not in item
+        for item in summary["metadata"]["blockers"]
+    )
+    encoded = json.dumps(summary, ensure_ascii=False)
+    assert len(encoded.encode()) <= command.SUMMARY_OUTPUT_MAX_BYTES
+    assert "PRIVATE_CANARY" not in encoded
+    packaged_validator(command.READINESS_SUMMARY_SCHEMA).validate(summary)  # pyright: ignore[reportUnknownMemberType]
+    _assert_readiness_summary_rejects_contradictions(summary)
+
+
+def _assert_readiness_summary_rejects_contradictions(summary: dict[str, Any]) -> None:
+    validator = packaged_validator(command.READINESS_SUMMARY_SCHEMA)
+    no_authority = deepcopy(summary)
+    no_authority["limitations"].remove("NO_IMPROVEMENT_OR_APPROVAL")
+    duplicate_blocker = deepcopy(summary)
+    duplicate_blocker["metadata"]["blockers"].append(
+        {"code": duplicate_blocker["metadata"]["blockers"][0]["code"], "count": 1}
+    )
+    wrong_owner = deepcopy(summary)
+    for task in wrong_owner["next_verification_tasks"]:
+        if task["code"] == "VERIFY_SOURCE_PROVENANCE":
+            task["owner"] = "calling_agent"
+    wrong_version = deepcopy(summary)
+    wrong_version["detail_state"]["producer_version"] = "not_applicable"
+    false_metadata = deepcopy(summary)
+    false_metadata["metadata"]["case_ids"] = "complete"
+    for mutation in (no_authority, duplicate_blocker, wrong_owner, wrong_version, false_metadata):
+        with pytest.raises(ValidationError):
+            validator.validate(mutation)  # pyright: ignore[reportUnknownMemberType]
+
+
+def test_readiness_summary_refuses_correspondence_and_overflow(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert main([
+        *_arguments(), "--view", "readiness-summary",
+        "--correspondence", str(tmp_path / "PRIVATE_CANARY-map.json"), "--json",
+    ]) == ERROR_EXIT
+    streams = capsys.readouterr()
+    assert streams.out == ""
+    assert json.loads(streams.err)["reason"] == "CORRESPONDENCE_NOT_SUPPORTED_FOR_READINESS"
+    assert "PRIVATE_CANARY" not in streams.err
+    monkeypatch.setattr(command, "SUMMARY_OUTPUT_MAX_BYTES", 1)
+    assert main([*_arguments(), "--view", "readiness-summary", "--json"]) == ERROR_EXIT
+    streams = capsys.readouterr()
+    assert streams.out == ""
+    assert json.loads(streams.err)["code"] == "OUTPUT_LIMIT_EXCEEDED"
 
 
 def test_declared_roles_without_case_ids_are_counted_but_not_joined(

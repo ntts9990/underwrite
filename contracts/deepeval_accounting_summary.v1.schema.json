@@ -1,0 +1,700 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:deepeval_accounting_summary.v1",
+  "title": "deepeval_accounting_summary.v1",
+  "description": "Content-minimized supplied DeepEval metric accounting. Case names, metric names and evaluator error text are omitted; planned and expectation populations remain unknown.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "rule_profile",
+    "source",
+    "raw_hash",
+    "scope",
+    "counts",
+    "declared_case_counts",
+    "limitations",
+    "next_actions",
+    "reader_profile",
+    "view",
+    "detail_state"
+  ],
+  "properties": {
+    "schema": {
+      "const": "deepeval_accounting_summary.v1"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "producer_version",
+        "producer_version_state",
+        "claims_verified"
+      ],
+      "properties": {
+        "format": {
+          "const": "deepeval.test-run"
+        },
+        "producer_version": {
+          "type": "null"
+        },
+        "producer_version_state": {
+          "const": "unknown"
+        },
+        "claims_verified": {
+          "const": false
+        }
+      }
+    },
+    "raw_hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}(?![\\s\\S])"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unit",
+        "test_cases",
+        "conversational",
+        "trace",
+        "metric_aggregates",
+        "planned_inventory",
+        "selected_fields_only",
+        "serialized_metric_population",
+        "expectation_population",
+        "dataset_version"
+      ],
+      "properties": {
+        "unit": {
+          "const": "metric_occurrence_within_test_case"
+        },
+        "test_cases": {
+          "const": "included"
+        },
+        "conversational": {
+          "const": "absent_or_empty"
+        },
+        "trace": {
+          "enum": [
+            "absent_or_empty",
+            "present_unanalyzed"
+          ]
+        },
+        "metric_aggregates": {
+          "const": "not_checked"
+        },
+        "planned_inventory": {
+          "const": "unknown"
+        },
+        "selected_fields_only": {
+          "const": true
+        },
+        "serialized_metric_population": {
+          "const": "supplied_rows_only"
+        },
+        "expectation_population": {
+          "const": "unknown"
+        },
+        "dataset_version": {
+          "const": "not_analyzed"
+        }
+      }
+    },
+    "declared_case_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "passed",
+        "failed",
+        "comparison"
+      ],
+      "properties": {
+        "passed": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "present"
+              ],
+              "properties": {
+                "present": {
+                  "const": false
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "present",
+                "value"
+              ],
+              "properties": {
+                "present": {
+                  "const": true
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740992
+                }
+              }
+            }
+          ]
+        },
+        "failed": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "present"
+              ],
+              "properties": {
+                "present": {
+                  "const": false
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "present",
+                "value"
+              ],
+              "properties": {
+                "present": {
+                  "const": true
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740992
+                }
+              }
+            }
+          ]
+        },
+        "comparison": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "passed",
+            "failed"
+          ],
+          "properties": {
+            "passed": {
+              "enum": [
+                "matches",
+                "differs",
+                "not_declared",
+                "not_comparable"
+              ]
+            },
+            "failed": {
+              "enum": [
+                "matches",
+                "differs",
+                "not_declared",
+                "not_comparable"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "next_actions": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "string",
+        "enum": [
+          "INSPECT_EVALUATOR_ERRORS",
+          "SUPPLY_PLANNED_INVENTORY_FOR_MISSINGNESS",
+          "CHECK_PRODUCER_CASE_COUNTS",
+          "INSPECT_TRACE_INDEX"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "rule_profile": {},
+    "counts": {},
+    "limitations": {},
+    "reader_profile": {},
+    "view": {
+      "const": "summary"
+    },
+    "detail_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cases",
+        "metric_names",
+        "evaluator_errors",
+        "full_view"
+      ],
+      "properties": {
+        "cases": {
+          "const": "intentionally_omitted"
+        },
+        "metric_names": {
+          "const": "intentionally_omitted"
+        },
+        "evaluator_errors": {
+          "const": "intentionally_omitted"
+        },
+        "full_view": {
+          "const": "audit-deepeval --view accounting"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "reader_profile": {
+            "const": "deepeval.metric-no-flaky.selected-fields.v1"
+          }
+        },
+        "required": [
+          "reader_profile"
+        ]
+      },
+      "then": {
+        "properties": {
+          "rule_profile": {
+            "const": "deepeval.metric-accounting.v1"
+          },
+          "counts": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "cases",
+              "metrics"
+            ],
+            "properties": {
+              "cases": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "total",
+                  "source_true",
+                  "source_false",
+                  "source_success_absent"
+                ],
+                "properties": {
+                  "total": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 512
+                  },
+                  "source_true": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 512
+                  },
+                  "source_false": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 512
+                  },
+                  "source_success_absent": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 512
+                  }
+                }
+              },
+              "metrics": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "total",
+                  "scored",
+                  "error",
+                  "unscored",
+                  "observed_zero",
+                  "scored_source_true",
+                  "scored_source_false"
+                ],
+                "properties": {
+                  "total": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2048
+                  },
+                  "scored": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2048
+                  },
+                  "error": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2048
+                  },
+                  "unscored": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2048
+                  },
+                  "observed_zero": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2048
+                  },
+                  "scored_source_true": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2048
+                  },
+                  "scored_source_false": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2048
+                  }
+                }
+              }
+            }
+          },
+          "limitations": {
+            "type": "array",
+            "maxItems": 11,
+            "items": {
+              "enum": [
+                "SOURCE_CLAIMS_UNVERIFIED",
+                "PLANNED_INVENTORY_UNKNOWN",
+                "METRIC_AGGREGATES_NOT_CHECKED",
+                "NO_CAUSAL_FAILURE_ATTRIBUTION",
+                "NO_STATISTICAL_OR_APPROVAL_AUTHORITY",
+                "SOURCE_VERSION_UNKNOWN",
+                "SERIALIZED_METRICS_ONLY",
+                "EXPECTATION_POPULATION_UNKNOWN",
+                "READER_PROFILE_NOT_PRODUCER_VERSION",
+                "DATASET_VERSION_NOT_ANALYZED",
+                "EMPTY_POPULATION_NO_FORMAT_EVIDENCE"
+              ]
+            }
+          },
+          "reader_profile": {
+            "const": "deepeval.metric-no-flaky.selected-fields.v1"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "scope": {
+                  "properties": {
+                    "trace": {
+                      "const": "present_unanalyzed"
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "next_actions": {
+                  "contains": {
+                    "const": "INSPECT_TRACE_INDEX"
+                  }
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "next_actions": {
+                  "not": {
+                    "contains": {
+                      "const": "INSPECT_TRACE_INDEX"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "counts": {
+                  "properties": {
+                    "cases": {
+                      "properties": {
+                        "total": {
+                          "const": 0
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "limitations": {
+                  "type": "array",
+                  "const": [
+                    "SOURCE_CLAIMS_UNVERIFIED",
+                    "PLANNED_INVENTORY_UNKNOWN",
+                    "METRIC_AGGREGATES_NOT_CHECKED",
+                    "NO_CAUSAL_FAILURE_ATTRIBUTION",
+                    "NO_STATISTICAL_OR_APPROVAL_AUTHORITY",
+                    "SOURCE_VERSION_UNKNOWN",
+                    "SERIALIZED_METRICS_ONLY",
+                    "EXPECTATION_POPULATION_UNKNOWN",
+                    "READER_PROFILE_NOT_PRODUCER_VERSION",
+                    "DATASET_VERSION_NOT_ANALYZED",
+                    "EMPTY_POPULATION_NO_FORMAT_EVIDENCE"
+                  ],
+                  "maxItems": 11,
+                  "items": {
+                    "enum": [
+                      "SOURCE_CLAIMS_UNVERIFIED",
+                      "PLANNED_INVENTORY_UNKNOWN",
+                      "METRIC_AGGREGATES_NOT_CHECKED",
+                      "NO_CAUSAL_FAILURE_ATTRIBUTION",
+                      "NO_STATISTICAL_OR_APPROVAL_AUTHORITY",
+                      "SOURCE_VERSION_UNKNOWN",
+                      "SERIALIZED_METRICS_ONLY",
+                      "EXPECTATION_POPULATION_UNKNOWN",
+                      "READER_PROFILE_NOT_PRODUCER_VERSION",
+                      "DATASET_VERSION_NOT_ANALYZED",
+                      "EMPTY_POPULATION_NO_FORMAT_EVIDENCE"
+                    ]
+                  }
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "limitations": {
+                  "type": "array",
+                  "const": [
+                    "SOURCE_CLAIMS_UNVERIFIED",
+                    "PLANNED_INVENTORY_UNKNOWN",
+                    "METRIC_AGGREGATES_NOT_CHECKED",
+                    "NO_CAUSAL_FAILURE_ATTRIBUTION",
+                    "NO_STATISTICAL_OR_APPROVAL_AUTHORITY",
+                    "SOURCE_VERSION_UNKNOWN",
+                    "SERIALIZED_METRICS_ONLY",
+                    "EXPECTATION_POPULATION_UNKNOWN",
+                    "READER_PROFILE_NOT_PRODUCER_VERSION",
+                    "DATASET_VERSION_NOT_ANALYZED"
+                  ],
+                  "maxItems": 10,
+                  "items": {
+                    "enum": [
+                      "SOURCE_CLAIMS_UNVERIFIED",
+                      "PLANNED_INVENTORY_UNKNOWN",
+                      "METRIC_AGGREGATES_NOT_CHECKED",
+                      "NO_CAUSAL_FAILURE_ATTRIBUTION",
+                      "NO_STATISTICAL_OR_APPROVAL_AUTHORITY",
+                      "SOURCE_VERSION_UNKNOWN",
+                      "SERIALIZED_METRICS_ONLY",
+                      "EXPECTATION_POPULATION_UNKNOWN",
+                      "READER_PROFILE_NOT_PRODUCER_VERSION",
+                      "DATASET_VERSION_NOT_ANALYZED"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "else": {
+        "properties": {
+          "rule_profile": {
+            "const": "deepeval.metric-accounting.v2"
+          },
+          "counts": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "cases",
+              "metrics"
+            ],
+            "properties": {
+              "cases": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "total",
+                  "source_true",
+                  "source_false",
+                  "source_success_absent",
+                  "source_flaky_true"
+                ],
+                "properties": {
+                  "total": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 512
+                  },
+                  "source_true": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 512
+                  },
+                  "source_false": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 512
+                  },
+                  "source_success_absent": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 512
+                  },
+                  "source_flaky_true": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 512
+                  }
+                }
+              },
+              "metrics": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "total",
+                  "scored",
+                  "error",
+                  "unscored",
+                  "observed_zero",
+                  "scored_source_true",
+                  "scored_source_false",
+                  "scored_source_success_absent",
+                  "source_flaky_true"
+                ],
+                "properties": {
+                  "total": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2048
+                  },
+                  "scored": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2048
+                  },
+                  "error": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2048
+                  },
+                  "unscored": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2048
+                  },
+                  "observed_zero": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2048
+                  },
+                  "scored_source_true": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2048
+                  },
+                  "scored_source_false": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2048
+                  },
+                  "scored_source_success_absent": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2048
+                  },
+                  "source_flaky_true": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2048
+                  }
+                }
+              }
+            }
+          },
+          "limitations": {
+            "type": "array",
+            "const": [
+              "SOURCE_CLAIMS_UNVERIFIED",
+              "PLANNED_INVENTORY_UNKNOWN",
+              "METRIC_AGGREGATES_NOT_CHECKED",
+              "NO_CAUSAL_FAILURE_ATTRIBUTION",
+              "NO_STATISTICAL_OR_APPROVAL_AUTHORITY",
+              "FLAKY_DECLARATIONS_NOT_CI_OUTCOMES",
+              "SOURCE_VERSION_UNKNOWN",
+              "SERIALIZED_METRICS_ONLY",
+              "EXPECTATION_POPULATION_UNKNOWN",
+              "READER_PROFILE_NOT_PRODUCER_VERSION",
+              "DATASET_VERSION_NOT_ANALYZED"
+            ],
+            "maxItems": 11,
+            "items": {
+              "enum": [
+                "SOURCE_CLAIMS_UNVERIFIED",
+                "PLANNED_INVENTORY_UNKNOWN",
+                "METRIC_AGGREGATES_NOT_CHECKED",
+                "NO_CAUSAL_FAILURE_ATTRIBUTION",
+                "NO_STATISTICAL_OR_APPROVAL_AUTHORITY",
+                "FLAKY_DECLARATIONS_NOT_CI_OUTCOMES",
+                "SOURCE_VERSION_UNKNOWN",
+                "SERIALIZED_METRICS_ONLY",
+                "EXPECTATION_POPULATION_UNKNOWN",
+                "READER_PROFILE_NOT_PRODUCER_VERSION",
+                "DATASET_VERSION_NOT_ANALYZED"
+              ]
+            }
+          },
+          "reader_profile": {
+            "const": "deepeval.metric-flaky.selected-fields.v1"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "scope": {
+                  "properties": {
+                    "trace": {
+                      "const": "present_unanalyzed"
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "next_actions": {
+                  "contains": {
+                    "const": "INSPECT_TRACE_INDEX"
+                  }
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "next_actions": {
+                  "not": {
+                    "contains": {
+                      "const": "INSPECT_TRACE_INDEX"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

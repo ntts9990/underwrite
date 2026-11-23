@@ -114,7 +114,20 @@ def _trusted_artifact_diagnostic(report: dict[str, object]) -> tuple[str, str] |
 
 def audit_case(path: Path) -> dict[str, object]:
     """Audit the original captured projection after manifest path and hash admission."""
-    validator = _compatible_validator(ACCOUNTING_SCHEMA)
+    return _audit_case_with_inspection(path, ACCOUNTING_SCHEMA)[0]
+
+
+def audit_case_actions_with_inspection(
+    path: Path,
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Return action accounting and same-read manifest/hash check state."""
+    return _audit_case_with_inspection(path, ACTIONS_SCHEMA)
+
+
+def _audit_case_with_inspection(
+    path: Path, schema: str
+) -> tuple[dict[str, object], dict[str, object]]:
+    validator = _compatible_validator(schema)
     try:
         report, projection = inspect_artifact_with_projection(
             path,
@@ -132,8 +145,11 @@ def audit_case(path: Path) -> dict[str, object]:
             reason, location = trusted
             raise AccountingCaseError("INVALID_INPUT", reason, location)
         raise AccountingCaseError("INVALID_INPUT", "INVALID_ARTIFACT", "/artifact")
-    return _account_current_payload(
-        projection.payload, report["raw_hash"], schema=ACCOUNTING_SCHEMA, validator=validator
+    return (
+        _account_current_payload(
+            projection.payload, report["raw_hash"], schema=schema, validator=validator
+        ),
+        report,
     )
 
 
@@ -169,9 +185,7 @@ def _compatible_bytes(
             cast(str, diagnostic["reason"]),
             "/file",
         ) from None
-    return _account_current_payload(
-        payload, digest_bytes(raw), schema=schema, validator=validator
-    )
+    return _account_current_payload(payload, digest_bytes(raw), schema=schema, validator=validator)
 
 
 def _account_current_payload(

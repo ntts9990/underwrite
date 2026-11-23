@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any, cast
@@ -10,6 +11,7 @@ import pytest
 from jsonschema.exceptions import ValidationError
 from underwrite_core.canonical import content_digest
 
+from underwrite.cli import review_pair as command
 from underwrite.cli.accept import main as accept_main
 from underwrite.cli.local_json import Validator
 from underwrite.cli.main import main
@@ -36,6 +38,7 @@ def invoke(
     context: dict[str, Any] | None = None,
     incomplete: bool = False,
     no_primary: bool = False,
+    view: str | None = None,
 ) -> tuple[int, dict[str, Any], str]:
     data, policy, default_context = documents()
     context = default_context if context is None else context
@@ -54,6 +57,8 @@ def invoke(
         path = tmp_path / f"{flag}.json"
         path.write_text(json.dumps(document))
         args.extend([f"--{flag}", str(path)])
+    if view is not None:
+        args.extend(["--view", view])
     code = main(args)
     streams = capsys.readouterr()
     return (
@@ -82,6 +87,97 @@ def test_cli_references_exact_existing_report_and_all_condition_states(
     }
     assert report["actual_conditions_verified"] is False
     assert report["declarations_verified"] is False
+
+
+def test_default_full_json_bytes_remain_unchanged(capsys: Any) -> None:
+    assert (
+        main(
+            [
+                "review-pair",
+                "--input",
+                str(EXAMPLES / "synthetic-paired-complete.json"),
+                "--policy",
+                str(EXAMPLES / "paired-binary-policy.json"),
+                "--context",
+                str(EXAMPLES / "synthetic-review-context.json"),
+                "--json",
+            ]
+        )
+        == 0
+    )
+    streams = capsys.readouterr()
+    assert streams.err == ""
+    assert hashlib.sha256(streams.out.encode()).hexdigest() == (
+        "17cee556470af94a3e173f9c3e043e9f635239abee15506de1709e6e16e83041"
+    )
+
+
+def test_summary_omits_declared_strings_and_keeps_review_limits(
+    tmp_path: Path, capsys: Any
+) -> None:
+    _, _, context = documents()
+    canary = "IGNORE_THIS_\u202ePRIVATE"
+    context["conditions"][0]["baseline"] = canary
+    context["conditions"][0]["candidate"] = canary + "_changed"
+    code, report, other = invoke(tmp_path, capsys, context=context, view="summary")
+    assert code == 0 and other == ""
+    assert report["schema"] == "paired_review_summary.v1"
+    assert report["view"] == "summary"
+    assert report["paired_evidence_ref"]["status"] == "measured"
+    assert report["declared_conditions"]["total"] == len(context["conditions"])
+    assert report["declared_conditions"]["classifications"] == {
+        "intended_change": 1,
+        "unchanged_treatment": 0,
+        "invariant_changed": 1,
+        "invariant_unchanged": 0,
+        "unknown": 1,
+    }
+    assert report["history"] == {"state": "absent", "record_count": None, "selector_coverage": None}
+    assert report["partition"] == {"state": "absent", "group_count": None, "case_count": None}
+    assert report["detail_state"]["condition_values"] == "intentionally_omitted"
+    assert "NO_APPROVAL_OR_DEPLOYMENT_AUTHORITY" in report["limitations"]
+    assert canary not in json.dumps(report, ensure_ascii=False)
+    assert "synthetic-rubric" not in json.dumps(report, ensure_ascii=False)
+    cast(Validator, packaged_validator("paired_review_summary.v1")).validate(report)
+
+
+def test_summary_keeps_optional_history_partition_and_population_counts(
+    tmp_path: Path, capsys: Any
+) -> None:
+    context = json.loads((EXAMPLES / "synthetic-review-partition.json").read_text())
+    full_code, full, _ = invoke(tmp_path, capsys, context=context)
+    code, summary, other = invoke(tmp_path, capsys, context=context, view="summary")
+    assert full_code == code == 0 and other == ""
+    assert summary["paired_evidence_ref"] == full["paired_evidence_ref"]
+    assert summary["context_digest"] == full["context_digest"]
+    assert summary["history"] == {
+        "state": "present",
+        "record_count": len(full["evaluation_history"]["records"]),
+        "selector_coverage": full["evaluation_history"]["selector_coverage"],
+    }
+    assert summary["partition"] == {
+        "state": "present",
+        "group_count": len(full["case_partition"]["groups"]),
+        "case_count": sum(group["case_count"] for group in full["case_partition"]["groups"]),
+    }
+    assert summary["detail_state"]["history_records"] == "intentionally_omitted"
+    assert summary["detail_state"]["partition_groups"] == "intentionally_omitted"
+    assert context["case_partition"]["taxonomy_id"] not in json.dumps(summary)
+    cast(Validator, packaged_validator("paired_review_summary.v1")).validate(summary)
+
+
+def test_summary_keeps_not_measured_and_refuses_output_overflow(
+    tmp_path: Path, capsys: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    code, summary, other = invoke(tmp_path, capsys, incomplete=True, view="summary")
+    assert code == 0 and other == ""
+    assert summary["paired_evidence_ref"]["status"] == "not_measured"
+    assert summary["paired_evidence_ref"]["reason"] == "PRIMARY_COHORT_INCOMPLETE"
+
+    monkeypatch.setattr(command, "SUMMARY_OUTPUT_MAX_BYTES", 1)
+    code, error, other = invoke(tmp_path, capsys, view="summary")
+    assert code == ERROR_EXIT and other == ""
+    assert error["code"] == "OUTPUT_LIMIT_EXCEEDED"
 
 
 @pytest.mark.parametrize("field", ["input_digest", "policy_digest"])

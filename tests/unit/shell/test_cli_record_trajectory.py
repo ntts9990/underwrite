@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import shutil
 import sys
+import tarfile
 from collections.abc import Callable
 from copy import deepcopy
 from pathlib import Path
@@ -330,6 +331,145 @@ def test_same_buffer_capture_survives_source_removal_and_no_native_on_reopen(
     raw_record = canonical_bytes(result)
     assert str(exchange).encode() not in raw_record
     assert b"underwrite-trajectory-" not in raw_record
+
+
+def test_summary_separates_current_storage_from_historical_verifier_claim(
+    exchange: Path, tmp_path: Path
+) -> None:
+    root = tmp_path / "store"
+    retained = _run(exchange, root)
+    summary = cast(dict[str, Any], command.run_read_trajectory_summary(root, "sample"))
+    _assert_schema(summary)
+    assert summary["schema"] == command.SUMMARY_SCHEMA
+    assert summary["analysis_state"] == "result"
+    assert summary["current_storage_verification"] == {
+        "status": "verified",
+        "scope": "stored_bytes_and_direct_links",
+        "files_checked": 10,
+        "links_checked": 0,
+        "findings_count": 0,
+    }
+    assert summary["historical_verifier_claim"] == {
+        "state": "report_accepted",
+        "reported_scope": "report_only_content_closure",
+        "verifier_identity_verified": False,
+        "source_authentication_independently_verified": False,
+        "producer_projection_independently_verified": False,
+    }
+    assert summary["populations"] == retained["analysis"]["report"]["populations"]
+    assert summary["missingness"] == {
+        "population_state": "available",
+        "missing_population_fields": [],
+    }
+    assert summary["detail_state"] == {
+        "outcome_details": "intentionally_omitted",
+        "comparison_details": "intentionally_omitted",
+        "outcome_missingness_state": "intentionally_omitted",
+        "analysis_diagnostic": "not_applicable",
+        "full_view": "records read-trajectory --view full",
+    }
+    assert summary["native_verification_performed_now"] is False
+    assert summary["authority"] == {
+        "human_review": "required",
+        "execution_authorized": False,
+        "merge_authorized": False,
+        "revert_authorized": False,
+    }
+    assert command.output_line_size(canonical_bytes(summary)) <= command.SUMMARY_OUTPUT_MAX_BYTES
+    assert "analysis" not in summary
+    assert "verifier_report_history" not in summary
+
+
+def test_summary_marks_populations_missing_when_retained_analysis_is_diagnostic(
+    exchange: Path, tmp_path: Path
+) -> None:
+    (exchange / "paired/rows.jsonl").write_bytes(b"private malformed payload")
+    root = tmp_path / "store"
+    retained = _run(exchange, root)
+    assert retained["analysis"]["state"] == "error"
+    summary = cast(dict[str, Any], command.run_read_trajectory_summary(root, "sample"))
+    _assert_schema(summary)
+    assert summary["analysis_state"] == "error"
+    assert summary["populations"] == {
+        "paired_rows": None,
+        "case_stage_repeat_pairs": None,
+        "unique_source_case_ids": None,
+        "stage_case_slots": None,
+        "primary_repeat_pairs": None,
+    }
+    assert summary["missingness"] == {
+        "population_state": "not_available_analysis_error",
+        "missing_population_fields": [
+            "paired_rows",
+            "case_stage_repeat_pairs",
+            "unique_source_case_ids",
+            "stage_case_slots",
+            "primary_repeat_pairs",
+        ],
+    }
+    assert summary["detail_state"]["analysis_diagnostic"] == (
+        "intentionally_omitted_use_full_view"
+    )
+    assert b"private malformed payload" not in canonical_bytes(summary)
+
+
+def test_summary_maps_frozen_legacy_result_and_error_populations(tmp_path: Path) -> None:
+    fixture = Path(__file__).parents[2] / "fixtures/trajectory-record-v1"
+    ledger = json.loads((fixture / "byte-ledger.json").read_bytes())
+    with tarfile.open(fixture / ledger["archive"]["name"], "r:gz") as archive:
+        members = archive.getmembers()
+        archive.extractall(tmp_path, members=members, filter="data")
+        for member in members:
+            (tmp_path / member.name).chmod(member.mode)
+    states: set[str] = set()
+    for identifier, record in ledger["records"].items():
+        summary = cast(dict[str, Any], command.run_read_trajectory_summary(tmp_path, identifier))
+        _assert_schema(summary)
+        assert summary["record_layout"] == command.LAYOUT
+        assert summary["analysis_state"] == record["analysis_state"]
+        states.add(cast(str, summary["analysis_state"]))
+        if summary["analysis_state"] == "result":
+            assert all(value is not None for value in summary["populations"].values())
+        else:
+            assert all(value is None for value in summary["populations"].values())
+    assert states == {"result", "error"}
+
+
+def test_read_cli_default_full_bytes_match_explicit_full_and_summary_is_typed(
+    exchange: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = tmp_path / "store"
+    _run(exchange, root)
+    base = ["--root", str(root), "--id", "sample", "--json"]
+    assert command.main_read(base) == 0
+    implicit = capsys.readouterr().out
+    assert command.main_read([*base, "--view", "full"]) == 0
+    explicit = capsys.readouterr().out
+    assert explicit == implicit
+    assert command.main_read([*base, "--view", "summary"]) == 0
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["schema"] == command.SUMMARY_SCHEMA
+
+
+def test_summary_output_limit_is_independent_from_full_view(
+    exchange: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "store"
+    _run(exchange, root)
+    monkeypatch.setattr(command, "SUMMARY_OUTPUT_MAX_BYTES", 1)
+    assert (
+        command.main_read(["--root", str(root), "--id", "sample", "--view", "summary", "--json"])
+        == DIAGNOSTIC_EXIT
+    )
+    streams = capsys.readouterr()
+    assert streams.out == ""
+    error = json.loads(streams.err)
+    assert error["code"] == "OUTPUT_LIMIT_EXCEEDED"
+    assert error["reason"] == "OUTPUT_LIMIT_EXCEEDED"
+    assert command.run_read_trajectory(root, "sample")["schema"] == command.READ_SCHEMA_V2
 
 
 @pytest.mark.parametrize("stage", ["before_native", "after_native"])
@@ -660,12 +800,12 @@ def _validate_scaled_source(
 def test_actual_large_analysis_retains_and_reopens_without_generic_limit_change(
     exchange: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _large_exchange(exchange)
+    _large_exchange(exchange, factor=31)
     root = tmp_path / "store"
     result = _run(exchange, root)
     assert result["exit_code"] == 0, result["analysis"]
     raw = canonical_bytes(result["analysis"]["report"])
-    assert 2 * 1024 * 1024 < len(raw) < command.MAX_REPORT_BYTES
+    assert 5 * 1024 * 1024 < len(raw) < command.MAX_REPORT_BYTES
     _assert_schema(result)
     shutil.rmtree(exchange)
     reopened = cast(dict[str, Any], command.run_read_trajectory(root, "sample"))
@@ -673,6 +813,14 @@ def test_actual_large_analysis_retains_and_reopens_without_generic_limit_change(
     assert command.main_read(["--root", str(root), "--id", "sample", "--json"]) == 0
     emitted = json.loads(capsys.readouterr().out)
     assert emitted["analysis"] == result["analysis"]
+    summary = cast(dict[str, Any], command.run_read_trajectory_summary(root, "sample"))
+    assert summary["populations"] == result["analysis"]["report"]["populations"]
+    assert command.output_line_size(canonical_bytes(summary)) <= command.SUMMARY_OUTPUT_MAX_BYTES
+    assert (
+        command.main_read(["--root", str(root), "--id", "sample", "--view", "summary", "--json"])
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out) == summary
     with pytest.raises(RecordError, match="INPUT_LIMIT_EXCEEDED"):
         read_record_file(root, "sample", command.RESULT_NAME)
     assert (

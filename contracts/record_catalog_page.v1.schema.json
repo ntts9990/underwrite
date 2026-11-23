@@ -1,0 +1,881 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:record_catalog_page.v1",
+  "title": "record_catalog_page.v1",
+  "description": "One bounded observation of a local record catalog. Continuations bind to the observed digest; this is neither a transactional snapshot nor file verification.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "view",
+    "catalog_state",
+    "catalog_digest",
+    "record_count",
+    "offset",
+    "page_size",
+    "records",
+    "next_page",
+    "restart_offset",
+    "next_action",
+    "verification_scope",
+    "limitations",
+    "detail_state"
+  ],
+  "properties": {
+    "schema": {
+      "const": "record_catalog_page.v1"
+    },
+    "view": {
+      "const": "page"
+    },
+    "catalog_state": {
+      "enum": [
+        "observed",
+        "changed"
+      ]
+    },
+    "catalog_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "record_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000
+    },
+    "offset": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000,
+      "multipleOf": 50
+    },
+    "page_size": {
+      "const": 50
+    },
+    "records": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/complete"
+          },
+          {
+            "$ref": "#/$defs/unpublished"
+          }
+        ]
+      },
+      "uniqueItems": true
+    },
+    "next_page": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "offset"
+          ],
+          "properties": {
+            "offset": {
+              "type": "integer",
+              "minimum": 50,
+              "maximum": 1000,
+              "multipleOf": 50
+            }
+          }
+        }
+      ]
+    },
+    "restart_offset": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "const": 0
+        }
+      ]
+    },
+    "next_action": {
+      "enum": [
+        "FOLLOW_NEXT_PAGE_OR_SELECT_ID",
+        "SELECT_ID_OR_FINISH",
+        "NO_RECORDS",
+        "RESTART_FROM_FIRST_PAGE"
+      ]
+    },
+    "verification_scope": {
+      "const": "catalog_metadata_only"
+    },
+    "limitations": {
+      "const": [
+        "FILES_NOT_VERIFIED",
+        "SOURCE_PROVENANCE_NOT_ESTABLISHED",
+        "CATALOG_NOT_ATOMIC_SNAPSHOT"
+      ]
+    },
+    "detail_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "labels",
+        "captured_at",
+        "full_view"
+      ],
+      "properties": {
+        "labels": {
+          "const": "intentionally_omitted"
+        },
+        "captured_at": {
+          "const": "intentionally_omitted"
+        },
+        "full_view": {
+          "const": "records list --view full"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "catalog_state": {
+            "const": "changed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "records": {
+            "maxItems": 0
+          },
+          "next_page": {
+            "type": "null"
+          },
+          "restart_offset": {
+            "const": 0
+          },
+          "next_action": {
+            "const": "RESTART_FROM_FIRST_PAGE"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "restart_offset": {
+            "type": "null"
+          },
+          "next_action": {
+            "enum": [
+              "FOLLOW_NEXT_PAGE_OR_SELECT_ID",
+              "SELECT_ID_OR_FINISH",
+              "NO_RECORDS"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "next_action": {
+            "const": "FOLLOW_NEXT_PAGE_OR_SELECT_ID"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "records": {
+            "minItems": 50
+          },
+          "next_page": {
+            "type": "object"
+          }
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "offset": {
+                "const": 0
+              },
+              "record_count": {
+                "minimum": 51
+              },
+              "next_page": {
+                "properties": {
+                  "offset": {
+                    "const": 50
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 50
+              },
+              "record_count": {
+                "minimum": 101
+              },
+              "next_page": {
+                "properties": {
+                  "offset": {
+                    "const": 100
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 100
+              },
+              "record_count": {
+                "minimum": 151
+              },
+              "next_page": {
+                "properties": {
+                  "offset": {
+                    "const": 150
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 150
+              },
+              "record_count": {
+                "minimum": 201
+              },
+              "next_page": {
+                "properties": {
+                  "offset": {
+                    "const": 200
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 200
+              },
+              "record_count": {
+                "minimum": 251
+              },
+              "next_page": {
+                "properties": {
+                  "offset": {
+                    "const": 250
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 250
+              },
+              "record_count": {
+                "minimum": 301
+              },
+              "next_page": {
+                "properties": {
+                  "offset": {
+                    "const": 300
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 300
+              },
+              "record_count": {
+                "minimum": 351
+              },
+              "next_page": {
+                "properties": {
+                  "offset": {
+                    "const": 350
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 350
+              },
+              "record_count": {
+                "minimum": 401
+              },
+              "next_page": {
+                "properties": {
+                  "offset": {
+                    "const": 400
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 400
+              },
+              "record_count": {
+                "minimum": 451
+              },
+              "next_page": {
+                "properties": {
+                  "offset": {
+                    "const": 450
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 450
+              },
+              "record_count": {
+                "minimum": 501
+              },
+              "next_page": {
+                "properties": {
+                  "offset": {
+                    "const": 500
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 500
+              },
+              "record_count": {
+                "minimum": 551
+              },
+              "next_page": {
+                "properties": {
+                  "offset": {
+                    "const": 550
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 550
+              },
+              "record_count": {
+                "minimum": 601
+              },
+              "next_page": {
+                "properties": {
+                  "offset": {
+                    "const": 600
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 600
+              },
+              "record_count": {
+                "minimum": 651
+              },
+              "next_page": {
+                "properties": {
+                  "offset": {
+                    "const": 650
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 650
+              },
+              "record_count": {
+                "minimum": 701
+              },
+              "next_page": {
+                "properties": {
+                  "offset": {
+                    "const": 700
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 700
+              },
+              "record_count": {
+                "minimum": 751
+              },
+              "next_page": {
+                "properties": {
+                  "offset": {
+                    "const": 750
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 750
+              },
+              "record_count": {
+                "minimum": 801
+              },
+              "next_page": {
+                "properties": {
+                  "offset": {
+                    "const": 800
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 800
+              },
+              "record_count": {
+                "minimum": 851
+              },
+              "next_page": {
+                "properties": {
+                  "offset": {
+                    "const": 850
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 850
+              },
+              "record_count": {
+                "minimum": 901
+              },
+              "next_page": {
+                "properties": {
+                  "offset": {
+                    "const": 900
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 900
+              },
+              "record_count": {
+                "minimum": 951
+              },
+              "next_page": {
+                "properties": {
+                  "offset": {
+                    "const": 950
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "else": {
+        "if": {
+          "properties": {
+            "next_action": {
+              "enum": [
+                "SELECT_ID_OR_FINISH",
+                "NO_RECORDS"
+              ]
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "next_page": {
+              "type": "null"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "next_action": {
+            "const": "SELECT_ID_OR_FINISH"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "records": {
+            "minItems": 1
+          }
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "offset": {
+                "const": 0
+              },
+              "record_count": {
+                "minimum": 1,
+                "maximum": 50
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 50
+              },
+              "record_count": {
+                "minimum": 51,
+                "maximum": 100
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 100
+              },
+              "record_count": {
+                "minimum": 101,
+                "maximum": 150
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 150
+              },
+              "record_count": {
+                "minimum": 151,
+                "maximum": 200
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 200
+              },
+              "record_count": {
+                "minimum": 201,
+                "maximum": 250
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 250
+              },
+              "record_count": {
+                "minimum": 251,
+                "maximum": 300
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 300
+              },
+              "record_count": {
+                "minimum": 301,
+                "maximum": 350
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 350
+              },
+              "record_count": {
+                "minimum": 351,
+                "maximum": 400
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 400
+              },
+              "record_count": {
+                "minimum": 401,
+                "maximum": 450
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 450
+              },
+              "record_count": {
+                "minimum": 451,
+                "maximum": 500
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 500
+              },
+              "record_count": {
+                "minimum": 501,
+                "maximum": 550
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 550
+              },
+              "record_count": {
+                "minimum": 551,
+                "maximum": 600
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 600
+              },
+              "record_count": {
+                "minimum": 601,
+                "maximum": 650
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 650
+              },
+              "record_count": {
+                "minimum": 651,
+                "maximum": 700
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 700
+              },
+              "record_count": {
+                "minimum": 701,
+                "maximum": 750
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 750
+              },
+              "record_count": {
+                "minimum": 751,
+                "maximum": 800
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 800
+              },
+              "record_count": {
+                "minimum": 801,
+                "maximum": 850
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 850
+              },
+              "record_count": {
+                "minimum": 851,
+                "maximum": 900
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 900
+              },
+              "record_count": {
+                "minimum": 901,
+                "maximum": 950
+              }
+            }
+          },
+          {
+            "properties": {
+              "offset": {
+                "const": 950
+              },
+              "record_count": {
+                "minimum": 951,
+                "maximum": 1000
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "next_action": {
+            "const": "NO_RECORDS"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "record_count": {
+            "const": 0
+          },
+          "offset": {
+            "const": 0
+          },
+          "records": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "catalog_state": {
+            "const": "observed"
+          },
+          "record_count": {
+            "const": 0
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "next_action": {
+            "const": "NO_RECORDS"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "record_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 96,
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,95}(?![\\s\\S])"
+    },
+    "kind": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}(?![\\s\\S])"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}(?![\\s\\S])"
+    },
+    "complete": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "record_id",
+        "state",
+        "manifest_digest",
+        "kind"
+      ],
+      "properties": {
+        "record_id": {
+          "$ref": "#/$defs/record_id"
+        },
+        "state": {
+          "const": "complete"
+        },
+        "manifest_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "kind": {
+          "$ref": "#/$defs/kind"
+        }
+      }
+    },
+    "unpublished": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "record_id",
+        "state"
+      ],
+      "properties": {
+        "record_id": {
+          "$ref": "#/$defs/record_id"
+        },
+        "state": {
+          "const": "unpublished"
+        }
+      }
+    }
+  }
+}

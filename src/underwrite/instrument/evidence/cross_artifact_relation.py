@@ -17,6 +17,18 @@ _FINDING_KEYS = {
     "value_comparison_ineligible": "ineligible",
 }
 CASE_ID_MAX_LENGTH = 256
+TASK_OWNERS = {
+    "PROVIDE_SOURCE_BOUND_CASE_CORRESPONDENCE": "evaluation_owner",
+    "PROVIDE_PROMPTFOO_SUBJECT_ROWS": "evaluation_owner",
+    "PROVIDE_MATCHING_SOURCE_CASE_IDS": "evaluation_owner",
+    "DECLARE_REMAINING_CASE_CORRESPONDENCE": "evaluation_owner",
+    "VERIFY_INPUT_AND_METRIC_SEMANTICS": "evaluation_owner",
+    "PROVIDE_COMPARATOR_CONDITIONS": "evaluation_owner",
+    "PROVIDE_PROMPTFOO_CASE_METADATA": "evaluation_owner",
+    "VERIFY_GOPPI_PORTABLE_CLOSURE": "source_reviewer",
+    "VERIFY_SOURCE_PROVENANCE": "source_reviewer",
+    "INSPECT_INELIGIBLE_CASE_EVIDENCE": "calling_agent",
+}
 
 
 def case_mapping_prerequisite(
@@ -105,11 +117,11 @@ def inspect_promptfoo_source_case_metadata(row: object, index: int) -> SourceCas
 
 
 def _task(
-    code: str, owner: str, case_index: int | None = None, row_index: int | None = None
+    code: str, case_index: int | None = None, row_index: int | None = None
 ) -> dict[str, object]:
     return {
         "code": code,
-        "owner": owner,
+        "owner": TASK_OWNERS[code],
         "case_index": case_index,
         "row_index": row_index,
     }
@@ -117,8 +129,8 @@ def _task(
 
 def _source_review_tasks() -> list[dict[str, object]]:
     return [
-        _task("VERIFY_GOPPI_PORTABLE_CLOSURE", "source_reviewer"),
-        _task("VERIFY_SOURCE_PROVENANCE", "source_reviewer"),
+        _task("VERIFY_GOPPI_PORTABLE_CLOSURE"),
+        _task("VERIFY_SOURCE_PROVENANCE"),
     ]
 
 
@@ -127,7 +139,7 @@ def unmapped_case_verification_tasks(
 ) -> list[dict[str, object]]:
     """Keep owner mapping prerequisites separate from source-review checks."""
     _, next_owner_action = case_mapping_prerequisite(goppi_case_ids, subject_case_ids)
-    return [_task(next_owner_action, "evaluation_owner"), *_source_review_tasks()]
+    return [_task(next_owner_action), *_source_review_tasks()]
 
 
 def declared_case_verification_tasks(
@@ -135,14 +147,13 @@ def declared_case_verification_tasks(
 ) -> list[dict[str, object]]:
     """Plan checks for declared source claims, preserving the relation's task codes."""
     tasks = [
-        _task("VERIFY_INPUT_AND_METRIC_SEMANTICS", "evaluation_owner"),
-        _task("PROVIDE_COMPARATOR_CONDITIONS", "evaluation_owner"),
+        _task("VERIFY_INPUT_AND_METRIC_SEMANTICS"),
+        _task("PROVIDE_COMPARATOR_CONDITIONS"),
     ]
-    tasks.extend(_task(code, "evaluation_owner") for code in remaining_tasks)
+    tasks.extend(_task(code) for code in remaining_tasks)
     tasks.extend(
         _task(
             "INSPECT_INELIGIBLE_CASE_EVIDENCE",
-            "calling_agent",
             cast(int, pair["case_index"]),
             cast(int, pair["row_index"]),
         )
@@ -167,7 +178,7 @@ def review_source_case_readiness(
     )
     if blockers:
         prerequisite = "missing_owner_metadata"
-        owner_tasks = [_task("PROVIDE_PROMPTFOO_CASE_METADATA", "evaluation_owner")]
+        owner_tasks = [_task("PROVIDE_PROMPTFOO_CASE_METADATA")]
     else:
         subject_case_ids = [
             cast(str, row["case_id"]) for row in inspected if row["slot_kind"] == "subject"
@@ -175,9 +186,9 @@ def review_source_case_readiness(
         prerequisite, next_owner_action = case_mapping_prerequisite(
             goppi_case_ids, subject_case_ids
         )
-        owner_tasks = [_task(next_owner_action, "evaluation_owner")]
+        owner_tasks = [_task(next_owner_action)]
     if blockers and roles_complete and subject_rows == 0:
-        owner_tasks.append(_task("PROVIDE_PROMPTFOO_SUBJECT_ROWS", "evaluation_owner"))
+        owner_tasks.append(_task("PROVIDE_PROMPTFOO_SUBJECT_ROWS"))
     return {
         "metadata": {
             "case_ids": "complete" if case_ids_complete else "incomplete",

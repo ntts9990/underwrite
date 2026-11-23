@@ -8,9 +8,9 @@ from typing import Any, cast
 
 import pytest
 from _repo_paths import repo_root
-from underwrite_core.canonical import content_digest, digest_bytes
+from underwrite_core.canonical import canonical_bytes, content_digest, digest_bytes
 
-from underwrite.cli import record_deepeval_bound
+from underwrite.cli import audit_deepeval, record_deepeval_bound
 from underwrite.cli.evidence import EvidenceError
 from underwrite.cli.main import main
 from underwrite.instrument.evidence.deepeval_compat import ACCOUNTING_SCHEMA
@@ -55,6 +55,56 @@ def test_no_version_bound_audit_uses_v2_pack_and_unknown_producer_version(
         "authority": "owner_asserted_unverified",
     }
     assert result["population"]["observed_count"] == len(result["items"])
+
+
+def test_bound_summary_preserves_owner_and_state_counts_without_item_text(
+    capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["audit-deepeval", str(SOURCE), "--bindings", str(AUTO_PACK), "--json"]) == 0
+    full = json.loads(capsys.readouterr().out)
+    assert main([
+        "audit-deepeval", str(SOURCE), "--bindings", str(AUTO_PACK),
+        "--view", "bound-summary", "--json",
+    ]) == 0
+    streams = capsys.readouterr()
+    assert streams.err == ""
+    summary = json.loads(streams.out)
+    assert summary["schema"] == audit_deepeval.BOUND_SUMMARY_SCHEMA
+    for field in ("source", "declaration_source", "processing", "population"):
+        assert summary[field] == full[field]
+    assert summary["availability_counts"] == {
+        "observed": 2, "missing": 0, "error": 1, "abstained": 0, "total": 3
+    }
+    assert summary["declared_semantic_binding_counts"] == {"bound": 1, "unbound": 2}
+    assert sum(summary["item_next_action_counts"].values()) == full["population"]["observed_count"]
+    assert summary["verification_entry_count"] == len(full["verification"])
+    assert "items" not in summary
+    assert "fixed_score" not in streams.out and "synthetic" not in streams.out
+    assert len(streams.out.encode()) <= audit_deepeval.BOUND_SUMMARY_MAX_BYTES
+    assert streams.out.encode() == canonical_bytes(summary) + b"\n"
+
+
+def test_bound_summary_output_cap_and_required_pack_are_atomic(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    args = [
+        "audit-deepeval", str(SOURCE), "--bindings", str(AUTO_PACK),
+        "--view", "bound-summary", "--json",
+    ]
+    assert main(args) == 0
+    bounded = capsys.readouterr().out
+    monkeypatch.setattr(audit_deepeval, "BOUND_SUMMARY_MAX_BYTES", len(bounded.encode()))
+    assert main(args) == 0
+    assert capsys.readouterr().out == bounded
+    monkeypatch.setattr(audit_deepeval, "BOUND_SUMMARY_MAX_BYTES", len(bounded.encode()) - 1)
+    assert main(args) == ERROR_EXIT
+    streams = capsys.readouterr()
+    assert streams.out == ""
+    assert json.loads(streams.err)["code"] == "OUTPUT_LIMIT_EXCEEDED"
+    assert main(["audit-deepeval", str(SOURCE), "--view", "bound-summary", "--json"]) == ERROR_EXIT
+    streams = capsys.readouterr()
+    assert streams.out == ""
+    assert json.loads(streams.err)["code"] == "USAGE_ERROR"
 
 
 def test_trace_accounting_does_not_silently_project_to_bound_result(

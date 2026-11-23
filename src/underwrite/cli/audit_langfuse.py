@@ -6,7 +6,10 @@ import argparse
 from pathlib import Path
 from typing import Any, Literal, cast
 
-from underwrite.cli.evidence import EvidenceError, ReportOutput, run_cli
+from underwrite_core.canonical import canonical_bytes
+
+from underwrite.cli.evidence import EvidenceError, ReportOutput, output_limit_error, run_cli
+from underwrite.cli.local_json import validate
 from underwrite.instrument.evidence.langfuse_compat import (
     ACCOUNTING_SCHEMA as AUTO_ACCOUNTING_SCHEMA,
 )
@@ -22,6 +25,12 @@ from underwrite.instrument.ingest.langfuse_accounting import (
     audit_langfuse_files,
     output_schema,
 )
+from underwrite.instrument.ingest.schema import packaged_validator
+
+SUMMARY_SCHEMA = "langfuse_accounting_summary.v1"
+SUMMARY_MAX_BYTES = 16 * 1024
+SUMMARY_LINKABILITY = ("SOURCE_HASHES_AND_ROW_PATTERNS_LINKABLE", "SOURCE_HASHES_LINKABLE")
+SCORE_SOURCE_MAX_BYTES = 16 * 1024
 
 _INVENTORY_GUIDANCE = (
     "SUPPLY_PLANNED_INVENTORY_FOR_MISSINGNESS applies only when missing-execution "
@@ -48,7 +57,7 @@ def configure(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--view",
-        choices=("accounting", "row-index", "score-source"),
+        choices=("accounting", "row-index", "score-source", "summary"),
         default="accounting",
         help="Select accounting, a per-score row index, or declared score-source coverage.",
     )
@@ -68,13 +77,47 @@ def configure(parser: argparse.ArgumentParser) -> None:
 
 def produce(args: argparse.Namespace) -> dict[str, object]:
     try:
-        return audit_langfuse_files(
+        if args.view == "summary":
+            return _summary_files(
+                cast(Path, args.observations), cast(Path, args.scores)
+            )
+        report = audit_langfuse_files(
             cast(Path, args.observations),
             cast(Path, args.scores),
             view=cast(Literal["accounting", "row-index", "score-source"], args.view),
         )
+        if (
+            args.view == "score-source"
+            and len(canonical_bytes(report)) + 1 > SCORE_SOURCE_MAX_BYTES
+        ):
+            raise output_limit_error()
+        return report
     except LangfuseFileError as exc:
         raise EvidenceError(exc.code, exc.reason, exc.location) from None
+
+
+def _summary_files(observations: Path, scores: Path) -> dict[str, object]:
+    full = audit_langfuse_files(observations, scores, view="accounting")
+    validate(packaged_validator(AUTO_ACCOUNTING_SCHEMA), full, EvidenceError, "INTERNAL_ERROR")
+    summary = {
+        name: value for name, value in full.items() if name not in {"observations", "scores"}
+    }
+    summary["schema"] = SUMMARY_SCHEMA
+    summary["view"] = "summary"
+    old, new = SUMMARY_LINKABILITY
+    summary["limitations"] = [
+        new if item == old else item for item in cast(list[str], full["limitations"])
+    ]
+    summary["detail_state"] = {
+        "observation_rows": "intentionally_omitted",
+        "score_rows": "intentionally_omitted",
+        "row_patterns": "intentionally_omitted",
+        "full_view": "audit-langfuse --view accounting",
+    }
+    validate(packaged_validator(SUMMARY_SCHEMA), summary, EvidenceError, "INTERNAL_ERROR")
+    if len(canonical_bytes(summary)) + 1 > SUMMARY_MAX_BYTES:
+        raise output_limit_error()
+    return summary
 
 
 def render_human(report: dict[str, object]) -> str:
@@ -118,10 +161,13 @@ def render_selected_human(report: dict[str, object]) -> str:
                 "Next: " + "; ".join(cast(list[str], report["next_actions"])),
             ]
         )
-    if report["schema"] == AUTO_ACCOUNTING_SCHEMA and report.get("reader_profile") == BLOB_READER:
+    if (
+        report["schema"] in {AUTO_ACCOUNTING_SCHEMA, SUMMARY_SCHEMA}
+        and report.get("reader_profile") == BLOB_READER
+    ):
         return render_human(report)
     if (
-        report["schema"] in {AUTO_ACCOUNTING_SCHEMA, AUTO_ROW_INDEX_SCHEMA}
+        report["schema"] in {AUTO_ACCOUNTING_SCHEMA, AUTO_ROW_INDEX_SCHEMA, SUMMARY_SCHEMA}
         and report.get("reader_profile") == CLI_READER
     ):
         return render_cli_human(report)
@@ -169,7 +215,7 @@ def main(argv: list[str]) -> int:
         configure,
         produce,
         ReportOutput(
-            lambda args: output_schema(args.view),
+            lambda args: SUMMARY_SCHEMA if args.view == "summary" else output_schema(args.view),
             human=render_selected_human,
         ),
     )
