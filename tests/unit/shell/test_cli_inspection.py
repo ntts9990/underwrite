@@ -69,7 +69,9 @@ def test_human_all_values_are_escaped_and_bounded(
     unsafe = "\x1b\n" + "x" * (cli.DISPLAY_LIMIT * 2)
 
     def failure(path: Path) -> dict[str, object]:
-        raise InspectionError(unsafe, unsafe, "", unsafe)
+        error = InspectionError("INTERNAL_ERROR", "INTERNAL_ERROR", "")
+        error.payload.update(code=unsafe, reason=unsafe, next_action=unsafe)
+        raise error
 
     monkeypatch.setattr(cli, "inspect_artifact", failure)
     assert cli.main(["case.json"]) == INVOCATION_EXIT

@@ -16,7 +16,6 @@ from underwrite.instrument.evidence.goppi_trajectory import (
     RESULT_SCHEMA_V2,
     TrajectoryError,
 )
-from underwrite.instrument.ingest.application import NEXT_ACTIONS
 from underwrite.instrument.ingest.goppi_trajectory import (
     TrajectoryInputError,
     audit_goppi_trajectory,
@@ -68,7 +67,7 @@ def trajectory_cli_error(
     """Map trajectory failures to the option or artifact the caller can correct."""
     if error.reason == "GOPPI_VERIFIER_UNAVAILABLE":
         return EvidenceError(
-            error.code, error.reason, "/goppi_executable", NEXT_ACTIONS["USAGE_ERROR"]
+            error.code, error.reason, "/goppi_executable", context="verifier_executable"
         )
     location = "/verifier" if isinstance(error, VerifierError) else error.location or "/exchange"
     return EvidenceError(error.code, error.reason, location)

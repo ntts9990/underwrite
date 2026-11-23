@@ -110,4 +110,4 @@ def main(argv: list[str]) -> int:
         sys.stdout.write(output)
         return 0
     sys.stderr.write(canonical_bytes(error.payload).decode() + "\n")
-    return 2
+    return error.exit_code

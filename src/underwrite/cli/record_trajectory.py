@@ -17,6 +17,7 @@ from underwrite.cli.audit_trajectory import trajectory_cli_error
 from underwrite.cli.evidence import EvidenceError, ReportOutput, output_line_size, run_cli
 from underwrite.cli.local_json import Validator, decode_document, validate
 from underwrite.cli.record_capture import (
+    analysis_exit_code,
     finalize_captured_record,
     render_record_response,
     saved_record,
@@ -238,7 +239,7 @@ def run_record_trajectory(
         "source": {"state": "captured", "source_members": history["source_members"]},
         "analysis": analysis,
         "verifier_report_history": history,
-        "exit_code": 0 if outcome.error is None else 2,
+        "exit_code": analysis_exit_code(analysis),
     }
     spec = CapturedRecordSpec(
         identifier,

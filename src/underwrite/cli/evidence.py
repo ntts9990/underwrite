@@ -13,7 +13,7 @@ from typing import Any, NoReturn
 from underwrite_core.canonical import canonical_bytes
 
 from underwrite.cli.local_json import Validator, read_document, validate
-from underwrite.instrument.ingest.application import NEXT_ACTIONS
+from underwrite.error_contract.registry import EVIDENCE_ACTIONS, evidence_projection
 from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
 
 REPORT_MAX_BYTES = 1024 * 1024
@@ -42,37 +42,37 @@ def output_line_size(encoded: str | bytes) -> int:
     return len(encoded.encode("utf-8") if isinstance(encoded, str) else encoded) + 1
 
 
-ERROR_ACTIONS = {
-    **NEXT_ACTIONS,
-    "INVALID_INPUT": "CORRECT_INPUT",
-    "INPUT_LIMIT_EXCEEDED": "REDUCE_INPUT_SIZE",
-    "OUTPUT_LIMIT_EXCEEDED": "REDUCE_INPUT_SIZE",
-    "UNSUPPORTED_PROFILE": "USE_SUPPORTED_PROFILE",
-    "UNSUPPORTED_FORMAT": "USE_SUPPORTED_PROFILE",
-    "EXPECTED_HASH_MISMATCH": "CHECK_EXPECTED_HASH",
-    "INVALID_MANIFEST": "CORRECT_MANIFEST",
-    "INVALID_ARTIFACT_PATH": "CORRECT_MANIFEST",
-    "COMPUTATION_LIMIT_EXCEEDED": "REDUCE_COMPUTATION",
-    "INPUT_BINDING_MISMATCH": "CORRECT_INPUT_BINDING",
-}
+ERROR_ACTIONS = EVIDENCE_ACTIONS
 
 
 class EvidenceError(ValueError):
     """Only adapter-owned codes, reasons and structural locations reach stderr."""
 
     def __init__(
-        self, code: str, reason: str, location: str = "", next_action: str | None = None
+        self, code: str, reason: str, location: str = "", context: str = "default"
     ) -> None:
+        projection = evidence_projection(code, context)
+        self.exit_code = projection.exit_code
         self.payload: dict[str, object] = {
             "schema": "evidence_error.v1",
             "code": code,
             "reason": reason,
             "location": location,
-            "next_action": next_action or ERROR_ACTIONS[code],
+            "next_action": projection.next_action,
             "retryable": False,
-            "exit_code": 2,
+            "exit_code": self.exit_code,
         }
         super().__init__(reason)
+
+
+def usage_error() -> EvidenceError:
+    """Return the CLI's fixed, content-minimized argument refusal."""
+    return EvidenceError("USAGE_ERROR", "INVALID_ARGUMENTS_SEE_HELP")
+
+
+def output_limit_error() -> EvidenceError:
+    """Return the CLI's fixed, content-minimized output limit refusal."""
+    return EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
 
 
 class EvidenceArgumentParser(argparse.ArgumentParser):
@@ -83,7 +83,7 @@ class EvidenceArgumentParser(argparse.ArgumentParser):
         super().__init__(*args, **kwargs)
 
     def error(self, message: str) -> NoReturn:
-        raise EvidenceError("USAGE_ERROR", "INVALID_ARGUMENTS_SEE_HELP")
+        raise usage_error()
 
 
 def read_validated(
@@ -102,7 +102,7 @@ def emit_error(error: EvidenceError, *, as_json: bool) -> int:
     encoded = canonical_bytes(error.payload).decode("utf-8")
     output = encoded if as_json else "Evidence command could not complete: " + encoded
     print(output, file=sys.stderr)
-    return 2
+    return error.exit_code
 
 
 def run_cli(

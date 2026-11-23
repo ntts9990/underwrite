@@ -12,6 +12,7 @@ from underwrite_core.canonical import CanonicalizationError, canonical_bytes, di
 from underwrite.cli.evidence import EvidenceError, ReportOutput, run_cli
 from underwrite.cli.local_json import Validator, validate
 from underwrite.cli.record_capture import (
+    analysis_exit_code,
     finalize_captured_record,
     render_record_response,
     storage_validator,
@@ -131,7 +132,7 @@ def _files(
         "execution_mode": "in_process",
         "record_id": identifier,
         "analysis_state": analysis["state"],
-        "analysis_exit_code": 0 if result else 2,
+        "analysis_exit_code": analysis_exit_code(analysis),
     }
     invocation_bytes = canonical_bytes(invocation) + b"\n"
     if len(invocation_bytes) > INVOCATION_MAX_BYTES:
@@ -200,7 +201,7 @@ def run_record_baseline(
         "command": COMMAND,
         "source": source,
         "analysis": analysis,
-        "exit_code": 0 if analysis["state"] == "result" else 2,
+        "exit_code": analysis_exit_code(analysis),
     }
     files = _files(captured, analysis, identifier)
     spec = CapturedRecordSpec(

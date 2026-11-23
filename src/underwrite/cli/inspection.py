@@ -10,7 +10,6 @@ from typing import NoReturn, cast
 
 from underwrite_core.canonical import canonical_bytes
 
-from underwrite.instrument.ingest.application import NEXT_ACTIONS
 from underwrite.instrument.ingest.inspection import InspectionError, inspect_artifact
 
 DISPLAY_LIMIT = 1024
@@ -18,7 +17,7 @@ DISPLAY_LIMIT = 1024
 
 class _Parser(argparse.ArgumentParser):
     def error(self, message: str) -> NoReturn:
-        raise InspectionError("USAGE_ERROR", "INVALID_ARGUMENTS_SEE_HELP", "", "CORRECT_MANIFEST")
+        raise InspectionError("USAGE_ERROR", "INVALID_ARGUMENTS_SEE_HELP", "")
 
 
 def configure(parser: argparse.ArgumentParser) -> None:
@@ -87,9 +86,7 @@ def main(argv: list[str]) -> int:
         return 2
     except Exception:
         # Unexpected defects are invocation failures, never ordinary artifact findings.
-        error = InspectionError(
-            "INTERNAL_ERROR", "INTERNAL_ERROR", "", NEXT_ACTIONS["INTERNAL_ERROR"]
-        )
+        error = InspectionError("INTERNAL_ERROR", "INTERNAL_ERROR", "")
         print(
             canonical_bytes(error.payload).decode() if "--json" in argv else _human(error.payload),
             file=sys.stderr,

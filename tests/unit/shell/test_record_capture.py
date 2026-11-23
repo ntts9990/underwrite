@@ -10,6 +10,8 @@ from typing import cast
 import pytest
 from underwrite_core.canonical import digest_bytes
 
+from underwrite.cli.evidence import EvidenceError
+from underwrite.cli.record_capture import analysis_exit_code
 from underwrite.service import _record_format, records
 from underwrite.service.records import (
     CapturedRecordFile,
@@ -20,6 +22,25 @@ from underwrite.service.records import (
 
 PRIVATE_DIR_MODE = 0o700
 PRIVATE_FILE_MODE = 0o600
+ANALYSIS_ERROR_EXIT = 2
+
+
+def test_composed_analysis_exit_projects_component_error_only() -> None:
+    assert analysis_exit_code({"state": "result"}) == 0
+    assert (
+        analysis_exit_code({"state": "error", "error": {"exit_code": ANALYSIS_ERROR_EXIT}})
+        == ANALYSIS_ERROR_EXIT
+    )
+    for invalid in (
+        {"state": "result", "error": {"exit_code": 2}},
+        {"state": "error", "error": {"exit_code": True}},
+        {"state": "error", "error": {"exit_code": 0}},
+        {"state": "error"},
+        {"state": "unavailable"},
+    ):
+        with pytest.raises(EvidenceError) as caught:
+            analysis_exit_code(invalid)
+        assert caught.value.payload["code"] == "INTERNAL_ERROR"
 
 
 def captured_spec(

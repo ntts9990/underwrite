@@ -6,6 +6,7 @@ from importlib.resources import as_file, files
 
 from underwrite_core.canonical import CanonicalizationError
 
+from underwrite.error_contract.registry import BASE_ACTIONS, instrument_exit_code
 from underwrite.instrument.ingest.codecs.deepeval import DeepevalPayloadError
 from underwrite.instrument.ingest.codecs.evidence_bundle import EvidenceBundlePayloadError
 from underwrite.instrument.ingest.codecs.inspect import InspectPayloadError
@@ -25,13 +26,7 @@ from underwrite.instrument.ingest.transport import (
 
 DEFAULT_MAX_BYTES = 4 * 1024 * 1024
 DEFAULT_MAX_DEPTH = 64
-NEXT_ACTIONS = {
-    "SCHEMA_CONFIGURATION_ERROR": "REINSTALL_PACKAGE",
-    "SOURCE_READ_FAILED": "PROVIDE_REGULAR_LOCAL_FILE",
-    "USAGE_ERROR": "CORRECT_ARGUMENTS",
-    "INTERNAL_ERROR": "REPORT_INTERNAL_ERROR",
-    "UNSUPPORTED_PLATFORM": "USE_SUPPORTED_PLATFORM",
-}
+NEXT_ACTIONS = BASE_ACTIONS
 
 
 class UsageError(ValueError):
@@ -61,20 +56,18 @@ def direct_file_read_error(error: TransportError) -> tuple[str, str]:
 
 
 # Values below are adapter-owned public reasons, never arbitrary exception text.
-DIAGNOSTICS: dict[type[Exception], tuple[str, int, dict[str, str] | str]] = {
+DIAGNOSTICS: dict[type[Exception], tuple[str, dict[str, str] | str]] = {
     UsageError: (
         "USAGE_ERROR",
-        2,
         {
             "INVALID_ARGUMENTS_SEE_HELP": "INVALID_ARGUMENTS_SEE_HELP",
             "BODY_TRANSPORT_LOCATOR_REQUIRED": "BODY_TRANSPORT_LOCATOR_REQUIRED",
             "TRANSPORT_LOCATOR_REQUIRES_BODY": "TRANSPORT_LOCATOR_REQUIRES_BODY",
         },
     ),
-    UnsupportedFormat: ("UNSUPPORTED_FORMAT", 1, {"UNSUPPORTED_FORMAT": "UNSUPPORTED_FORMAT"}),
+    UnsupportedFormat: ("UNSUPPORTED_FORMAT", {"UNSUPPORTED_FORMAT": "UNSUPPORTED_FORMAT"}),
     DecodeError: (
         "INVALID_INPUT",
-        1,
         {
             "INVALID_JSON_INPUT": "INVALID_JSON_INPUT",
             "DUPLICATE_JSON_KEY": "DUPLICATE_JSON_KEY",
@@ -84,7 +77,6 @@ DIAGNOSTICS: dict[type[Exception], tuple[str, int, dict[str, str] | str]] = {
     ),
     TransportError: (
         "INVALID_INPUT",
-        1,
         {
             "SOURCE_READ_FAILED": "SOURCE_READ_FAILED",
             "SOURCE_NOT_REGULAR_FILE": "SOURCE_NOT_REGULAR_FILE",
@@ -94,7 +86,6 @@ DIAGNOSTICS: dict[type[Exception], tuple[str, int, dict[str, str] | str]] = {
     ),
     SourceError: (
         "INVALID_SOURCE",
-        1,
         {
             "INVALID_PROJECTION": "REFERENCE_MUST_BE_TEXT",
             "EMPTY_REFERENCE": "EMPTY_REFERENCE",
@@ -104,7 +95,6 @@ DIAGNOSTICS: dict[type[Exception], tuple[str, int, dict[str, str] | str]] = {
     ),
     ProjectionError: (
         "INVALID_INPUT",
-        1,
         {
             "INVALID_PROJECTION": "INVALID_PROJECTION",
             "NON_STRING_KEY": "NON_STRING_KEY",
@@ -113,12 +103,10 @@ DIAGNOSTICS: dict[type[Exception], tuple[str, int, dict[str, str] | str]] = {
     ),
     ObservationValidationError: (
         "INVALID_OBSERVATION",
-        1,
         {"INVALID_OBSERVATION": "INVALID_OBSERVATION"},
     ),
     SchemaConfigurationError: (
         "SCHEMA_CONFIGURATION_ERROR",
-        2,
         {
             "INVALID_OBSERVATION_SCHEMA": "INVALID_OBSERVATION_SCHEMA",
             "WRONG_OBSERVATION_CONTRACT": "WRONG_OBSERVATION_CONTRACT",
@@ -129,21 +117,20 @@ DIAGNOSTICS: dict[type[Exception], tuple[str, int, dict[str, str] | str]] = {
     ),
     CodecConfigurationError: (
         "SCHEMA_CONFIGURATION_ERROR",
-        2,
         {"DUPLICATE_CODEC_SELECTOR": "DUPLICATE_CODEC_SELECTOR"},
     ),
-    EvidenceBundlePayloadError: ("INVALID_INPUT", 1, "MALFORMED_EVIDENCE_BUNDLE_PAYLOAD"),
-    DeepevalPayloadError: ("INVALID_INPUT", 1, "MALFORMED_DEEPEVAL_PAYLOAD"),
-    InspectPayloadError: ("INVALID_INPUT", 1, "MALFORMED_INSPECT_PAYLOAD"),
-    LangfusePayloadError: ("INVALID_INPUT", 1, "MALFORMED_LANGFUSE_PAYLOAD"),
-    OpenInferencePayloadError: ("INVALID_INPUT", 1, "MALFORMED_OPENINFERENCE_PAYLOAD"),
-    OtlpJsonPayloadError: ("INVALID_INPUT", 1, "MALFORMED_OTLP_JSON_PAYLOAD"),
-    PromptfooPayloadError: ("INVALID_INPUT", 1, "MALFORMED_PROMPTFOO_PAYLOAD"),
+    EvidenceBundlePayloadError: ("INVALID_INPUT", "MALFORMED_EVIDENCE_BUNDLE_PAYLOAD"),
+    DeepevalPayloadError: ("INVALID_INPUT", "MALFORMED_DEEPEVAL_PAYLOAD"),
+    InspectPayloadError: ("INVALID_INPUT", "MALFORMED_INSPECT_PAYLOAD"),
+    LangfusePayloadError: ("INVALID_INPUT", "MALFORMED_LANGFUSE_PAYLOAD"),
+    OpenInferencePayloadError: ("INVALID_INPUT", "MALFORMED_OPENINFERENCE_PAYLOAD"),
+    OtlpJsonPayloadError: ("INVALID_INPUT", "MALFORMED_OTLP_JSON_PAYLOAD"),
+    PromptfooPayloadError: ("INVALID_INPUT", "MALFORMED_PROMPTFOO_PAYLOAD"),
 }
 
 
 def instrument_diagnostic(error: Exception, command: str) -> dict[str, object]:
-    code, exit_code, reasons = DIAGNOSTICS[type(error)]
+    code, reasons = DIAGNOSTICS[type(error)]
     reason = reasons if isinstance(reasons, str) else reasons[error.args[0]]
     if reason in {"BYTE_LIMIT_EXCEEDED", "DEPTH_LIMIT_EXCEEDED"}:
         code = "INPUT_LIMIT_EXCEEDED"
@@ -152,7 +139,7 @@ def instrument_diagnostic(error: Exception, command: str) -> dict[str, object]:
         "SOURCE_NOT_REGULAR_FILE",
         "SOURCE_NONBLOCKING_UNAVAILABLE",
     }:
-        code, exit_code = "SOURCE_READ_FAILED", 2
+        code = "SOURCE_READ_FAILED"
     elif isinstance(error, ProjectionError) and isinstance(error.__cause__, CanonicalizationError):
         if error.__cause__.args == ("INT_OUT_OF_SAFE_RANGE",):
             code, reason = "CANONICAL_NUMBER_INCOMPATIBLE", "INT_OUT_OF_SAFE_RANGE"
@@ -161,5 +148,5 @@ def instrument_diagnostic(error: Exception, command: str) -> dict[str, object]:
         "command": command,
         "code": code,
         "reason": reason,
-        "exit_code": exit_code,
+        "exit_code": instrument_exit_code(code),
     }

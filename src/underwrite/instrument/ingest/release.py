@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 from typing import cast
 
+from underwrite.error_contract.registry import instrument_exit_code
 from underwrite.instrument.ingest import inspection
 from underwrite.instrument.ingest.application import DIAGNOSTICS, NEXT_ACTIONS
 from underwrite.instrument.ingest.release_bindings import (
@@ -49,7 +50,7 @@ ENTRY_ACTIONS = {
 UNSUPPORTED = {"UNSUPPORTED_FORMAT", "UNSUPPORTED_LINKAGE_PROFILE"}
 
 
-READ_REASONS = set(cast(dict[str, str], DIAGNOSTICS[TransportError][2]).values()) - {
+READ_REASONS = set(cast(dict[str, str], DIAGNOSTICS[TransportError][1]).values()) - {
     "BYTE_LIMIT_EXCEEDED",
     "SOURCE_NONBLOCKING_UNAVAILABLE",
 }
@@ -57,9 +58,9 @@ READ_REASONS = set(cast(dict[str, str], DIAGNOSTICS[TransportError][2]).values()
 
 BUFFER_REASONS = {
     reason
-    for error, (category, exit_code, reasons) in DIAGNOSTICS.items()
+    for error, (category, reasons) in DIAGNOSTICS.items()
     if error is not TransportError
-    and exit_code == 1
+    and instrument_exit_code(category) == 1
     and category in {"INVALID_INPUT", "INVALID_OBSERVATION"}
     for reason in ([reasons] if isinstance(reasons, str) else reasons.values())
 } | {"INT_OUT_OF_SAFE_RANGE"}
@@ -229,9 +230,7 @@ def validate_release_report(report: Row) -> None:
     except Exception as exc:
         if isinstance(exc, ReleaseError) and exc.payload["code"] == "SCHEMA_CONFIGURATION_ERROR":
             raise
-        raise ReleaseError(
-            "INTERNAL_ERROR", "INTERNAL_ERROR", "", NEXT_ACTIONS["INTERNAL_ERROR"]
-        ) from exc
+        raise ReleaseError("INTERNAL_ERROR", "INTERNAL_ERROR", "") from exc
 
 
 def inspect_release(path: Path) -> Row:
@@ -253,6 +252,4 @@ def inspect_release(path: Path) -> Row:
     except tuple(DIAGNOSTICS) as exc:
         raise release_error(exc) from exc
     except OSError as exc:
-        raise ReleaseError(
-            "SOURCE_READ_FAILED", "SOURCE_READ_FAILED", "", NEXT_ACTIONS["SOURCE_READ_FAILED"]
-        ) from exc
+        raise ReleaseError("SOURCE_READ_FAILED", "SOURCE_READ_FAILED", "") from exc
