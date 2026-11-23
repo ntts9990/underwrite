@@ -217,9 +217,11 @@ are retained in full. A saved diagnostic is not a successful analysis; a verifie
 failure creates no record. On storage failure, inspect the requested ID before
 retrying. Do not overwrite it or manufacture a successful history.
 
-Reopening verifies the whole stored record and returns current v2 analysis and
-report history, or old v1 documents under explicitly historical fields with a
-non-native effective interpretation. It needs neither Goppi nor the original export and reports
+Reopening verifies the whole stored record and returns its retained analysis and
+report history: a current review v3 or, for a record saved earlier, its original
+review v2 without cycle or runner fields, flagged in `analysis_limitations`. Old v1
+documents stay under explicitly historical fields with a non-native effective
+interpretation. It needs neither Goppi nor the original export and reports
 `native_verification_performed_now: false`. Use this dedicated reader for the
 trajectory report's existing 8 MiB bound; do not work around the generic
 `read-json` 1 MiB cap by truncating analysis. See [storage details](https://github.com/ntts9990/underwrite/blob/main/STORAGE.md#retain-a-goppi-paired-trajectory).

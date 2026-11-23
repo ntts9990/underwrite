@@ -16,7 +16,7 @@ from typing import Any, cast
 
 import pytest
 from drivers.goppi_trajectory_verifier_stub import verifier_response
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, ValidationError
 from underwrite_core.canonical import canonical_bytes, digest_bytes
 
 from underwrite.cli import main, record_capture, records
@@ -251,7 +251,7 @@ def test_mutated_execution_with_nonverifying_port_stays_report_only_on_record_an
     execution_path.write_bytes(canonical_bytes(execution))
     root = tmp_path / "store"
     result = _run(exchange, root, Stub())
-    assert result["schema"] == command.SCHEMA_V2
+    assert result["schema"] == command.SCHEMA_V3
     assert result["verifier_report_history"]["verifier_report_state"] == "report_accepted"
     assert result["verifier_report_history"]["verifier_identity_verified"] is False
     assert result["analysis"]["report"]["trust_scope"]["content_closure"] == (
@@ -267,6 +267,109 @@ def test_mutated_execution_with_nonverifying_port_stays_report_only_on_record_an
     assert b'"native_verification"' not in raw
     assert b"local_goppi_same_byte_snapshot" not in raw
     assert b"self_consistent_content_closure" not in raw
+
+
+def test_new_record_retains_current_review_under_unchanged_layout(
+    exchange: Path, tmp_path: Path
+) -> None:
+    root = tmp_path / "store"
+    result = _run(exchange, root)
+    _assert_schema(result)
+    assert result["schema"] == command.SCHEMA_V3 == "trajectory_record.v3"
+    report = result["analysis"]["report"]
+    assert report["schema"] == "goppi_trajectory_review.v3"
+    assert report["cycle"]["status"] == "stopped"
+    assert report["runner"]["model_unrecorded_rows"] == 0
+    assert "obtain_evaluated_stage_verdict" in {
+        task["kind"] for task in report["next_verification_tasks"]
+    }
+    assert "evaluated_stage_verdicts_are_digest_only" in report["interpretation_limits"]
+    manifest = read_record(root, "sample").manifest
+    assert manifest["metadata"] == {"layout": command.LAYOUT_V2, "analysis_state": "result"}
+    stored = json.loads(read_record_file(root, "sample", command.RESULT_NAME).data)
+    assert stored == report
+    reopened = cast(dict[str, Any], command.run_read_trajectory(root, "sample"))
+    _assert_schema(reopened)
+    assert reopened["schema"] == command.READ_SCHEMA_V3 == "trajectory_record_read.v3"
+    assert reopened["analysis"] == result["analysis"]
+    assert reopened["analysis_limitations"] == []
+    summary = cast(dict[str, Any], command.run_read_trajectory_summary(root, "sample"))
+    _assert_schema(summary)
+    assert summary["populations"] == report["populations"]
+
+
+def test_stopped_cycle_missing_a_stage_is_recorded_with_its_disclosures(
+    exchange: Path, tmp_path: Path
+) -> None:
+    execution_path = exchange / "paired/execution.json"
+    execution = json.loads(execution_path.read_bytes())
+    execution["stages"] = [s for s in execution["stages"] if s["stage"] != "held_out"]
+    execution_path.write_text(json.dumps(execution))
+    rows_path = exchange / "paired/rows.jsonl"
+    rows = [json.loads(line) for line in rows_path.read_text().splitlines()]
+    kept = [row for row in rows if row["stage"] != "held_out"]
+    rows_path.write_text("".join(json.dumps(row) + "\n" for row in kept))
+    manifest_path = exchange / "paired/manifest.json"
+    manifest = json.loads(manifest_path.read_bytes())
+    manifest["row_count"] = len(kept)
+    manifest_path.write_text(json.dumps(manifest))
+    trajectory_path = exchange / "trajectory/trajectory.json"
+    trajectory = json.loads(trajectory_path.read_bytes())
+    trajectory["units"] = [u for u in trajectory["units"] if u["unit"]["stage"] != "held_out"]
+    trajectory["availability_counts"].update(retained=len(kept), total=len(kept))
+    trajectory_path.write_text(json.dumps(trajectory))
+    root = tmp_path / "store"
+
+    result = _run(exchange, root)
+    _assert_schema(result)
+    assert result["exit_code"] == 0
+    report = result["analysis"]["report"]
+    assert report["cycle"] == {"status": "stopped", "stages_absent_from_export": ["held_out"]}
+    stopped = next(
+        task
+        for task in report["next_verification_tasks"]
+        if task["kind"] == "obtain_stopped_cycle_stage_record"
+    )
+    assert stopped["scope"] == [
+        {"cycle_run_id": report["source_context"]["cycle_run_id"], "stage": "held_out"}
+    ]
+    assert report["interpretation_limits"][-3:] == [
+        "stopped_cycle_absent_stages_may_be_unrecorded",
+        "stopped_cycle_stop_reason_not_exported",
+        "evaluated_stage_verdicts_are_digest_only",
+    ]
+    reopened = cast(dict[str, Any], command.run_read_trajectory(root, "sample"))
+    _assert_schema(reopened)
+    assert reopened["analysis"] == result["analysis"]
+    assert reopened["analysis_limitations"] == []
+
+
+def test_prechange_v2_analysis_record_reopens_through_current_reader(tmp_path: Path) -> None:
+    fixture = Path(__file__).parents[2] / "fixtures/trajectory-record-v2"
+    ledger = json.loads((fixture / "byte-ledger.json").read_bytes())
+    with tarfile.open(fixture / ledger["archive"]["name"], "r:gz") as archive:
+        members = archive.getmembers()
+        archive.extractall(tmp_path, members=members, filter="data")
+        for member in members:
+            (tmp_path / member.name).chmod(member.mode)
+    reopened = cast(dict[str, Any], command.run_read_trajectory(tmp_path, "prechange.v2"))
+    _assert_schema(reopened)
+    assert reopened["record_layout"] == command.LAYOUT_V2
+    assert reopened["analysis"]["report"]["schema"] == "goppi_trajectory_review.v2"
+    assert reopened["analysis_limitations"] == [command.RETAINED_ANALYSIS_LIMITATION]
+    # The limitation is derived from the stored generation, so it cannot be dropped.
+    unlabeled = deepcopy(reopened)
+    unlabeled["analysis_limitations"] = []
+    with pytest.raises(ValidationError):
+        cast(Validator, packaged_validator(command.READ_SCHEMA_V3)).validate(unlabeled)
+    _rewrite(
+        tmp_path,
+        command.RESULT_NAME,
+        lambda d: d.update(schema="goppi_trajectory_review.v3"),
+        identifier="prechange.v2",
+    )
+    with pytest.raises(EvidenceError):
+        command.run_read_trajectory(tmp_path, "prechange.v2")
 
 
 def test_same_buffer_capture_survives_source_removal_and_no_native_on_reopen(
@@ -469,7 +572,7 @@ def test_summary_output_limit_is_independent_from_full_view(
     error = json.loads(streams.err)
     assert error["code"] == "OUTPUT_LIMIT_EXCEEDED"
     assert error["reason"] == "OUTPUT_LIMIT_EXCEEDED"
-    assert command.run_read_trajectory(root, "sample")["schema"] == command.READ_SCHEMA_V2
+    assert command.run_read_trajectory(root, "sample")["schema"] == command.READ_SCHEMA_V3
 
 
 @pytest.mark.parametrize("stage", ["before_native", "after_native"])
@@ -611,9 +714,15 @@ def test_blocked_storage_returns_analysis_without_false_absence_claim(
     assert root.read_text() == "occupied"
 
 
-def _rewrite(root: Path, name: str, change: Callable[[dict[str, Any]], object]) -> None:
+def _rewrite(
+    root: Path,
+    name: str,
+    change: Callable[[dict[str, Any]], object],
+    *,
+    identifier: str = "sample",
+) -> None:
     """Make internally hash-consistent corruption; typed binding must still reject it."""
-    directory = root / "records/sample"
+    directory = root / "records" / identifier
     manifest_path = directory / "manifest.json"
     manifest = json.loads(manifest_path.read_bytes())
     if name == "manifest":
@@ -687,6 +796,11 @@ CORRUPTIONS: list[tuple[str, Callable[[dict[str, Any]], object]]] = [
         command.INVOCATION_NAME,
         lambda d: d.update(configured_verifier_source="operator_configured_executable"),
     ),
+    # A current analysis cannot be relabeled as the retained prior or historical generation.
+    (command.RESULT_NAME, lambda d: d.update(schema="goppi_trajectory_review.v2")),
+    (command.RESULT_NAME, lambda d: d.update(schema="goppi_trajectory_review.v1")),
+    (command.RESULT_NAME, lambda d: d.update(schema="goppi_trajectory_review.v4")),
+    (command.RESULT_NAME, lambda d: d.pop("cycle")),
 ]
 
 

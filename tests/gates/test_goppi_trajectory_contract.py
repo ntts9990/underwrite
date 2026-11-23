@@ -6,8 +6,10 @@ import copy
 import hashlib
 import importlib.util
 import json
+import os
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
@@ -16,11 +18,14 @@ from jsonschema import ValidationError
 
 from underwrite.cli.local_json import Validator
 from underwrite.instrument.evidence.goppi_trajectory import (
+    AVAILABILITIES,
     MEMBERS,
-    OUTCOME_ACTIONS_SCHEMA_V2,
+    OUTCOME_ACTIONS_SCHEMA_V3,
     RESULT_SCHEMA,
     RESULT_SCHEMA_V2,
+    RESULT_SCHEMA_V3,
     analyze_goppi_trajectory,
+    review_goppi_trajectory,
 )
 from underwrite.instrument.ingest.schema import packaged_validator
 
@@ -105,9 +110,16 @@ def test_schema_is_generated_from_policy_vocabulary(monkeypatch: pytest.MonkeyPa
     assert module.build(version=2) == json.loads(
         (ROOT / "contracts" / f"{RESULT_SCHEMA_V2}.schema.json").read_bytes()
     )
-    assert module.build(outcome_actions=True, version=2) == json.loads(
-        (ROOT / "contracts" / f"{OUTCOME_ACTIONS_SCHEMA_V2}.schema.json").read_bytes()
-    )
+    for outcome_actions, schema in ((False, RESULT_SCHEMA_V3), (True, OUTCOME_ACTIONS_SCHEMA_V3)):
+        assert module.build(outcome_actions=outcome_actions, version=3) == json.loads(
+            (ROOT / "contracts" / f"{schema}.schema.json").read_bytes()
+        )
+    # The direct-only v2 outcome-actions output has no remaining writer or reader.
+    with pytest.raises(ValueError, match="UNSUPPORTED_GOPPI_TRAJECTORY_CONTRACT_VERSION"):
+        module.build(outcome_actions=True, version=2)
+    retired = "goppi_trajectory_outcome_actions.v2.schema.json"
+    assert not os.path.lexists(ROOT / "contracts" / retired)
+    assert not os.path.lexists(ROOT / "src/underwrite/_contracts" / retired)
 
 
 def test_goppi_trajectory_contracts_are_current() -> None:
@@ -156,11 +168,10 @@ def test_v1_schema_bytes_remain_pinned() -> None:
 def _v2_report(
     report: dict[str, Any],
     *,
-    outcome_actions: bool = False,
     accepted_source: str | None = None,
 ) -> dict[str, Any]:
     result = copy.deepcopy(report)
-    result["schema"] = OUTCOME_ACTIONS_SCHEMA_V2 if outcome_actions else RESULT_SCHEMA_V2
+    result["schema"] = RESULT_SCHEMA_V2
     binding = result["trust_scope"]["outcome_harness_binding"]
     if accepted_source is None:
         result["trust_scope"] = {
@@ -282,27 +293,6 @@ def test_outcome_actions_schema_accepts_pure_result_and_matches_packaged_asset(
 
 
 @pytest.mark.parametrize(
-    "accepted_source",
-    [None, "caller_supplied_python_port", "operator_configured_executable"],
-)
-def test_v2_outcome_actions_schema_accepts_declared_trust_states(
-    action_report: dict[str, Any], accepted_source: str | None
-) -> None:
-    authored = (ROOT / "contracts" / f"{OUTCOME_ACTIONS_SCHEMA_V2}.schema.json").read_bytes()
-    packaged = (
-        ROOT / "src/underwrite/_contracts" / f"{OUTCOME_ACTIONS_SCHEMA_V2}.schema.json"
-    ).read_bytes()
-    assert authored == packaged
-    cast(Validator, packaged_validator(OUTCOME_ACTIONS_SCHEMA_V2)).validate(
-        _v2_report(
-            action_report,
-            outcome_actions=True,
-            accepted_source=accepted_source,
-        )
-    )
-
-
-@pytest.mark.parametrize(
     "mutation",
     ["owner", "command", "authorization", "scope_size", "kind", "extra"],
 )
@@ -329,3 +319,222 @@ def test_outcome_actions_schema_refuses_task_masquerades(
         action_report["fabricated"] = True
     with pytest.raises(ValidationError):
         cast(Validator, packaged_validator(OUTCOME_ACTIONS_SCHEMA)).validate(action_report)
+
+
+STOPPED_LIMIT = "stopped_cycle_absent_stages_may_be_unrecorded"
+STOP_REASON_LIMIT = "stopped_cycle_stop_reason_not_exported"
+DIGEST_ONLY_LIMIT = "evaluated_stage_verdicts_are_digest_only"
+STOPPED_TASK = "obtain_stopped_cycle_stage_record"
+VERDICT_TASK = "obtain_evaluated_stage_verdict"
+ACCEPTED_TRUST = {
+    "verifier_report_state": "report_accepted",
+    "verifier_source": "operator_configured_executable",
+    "verifier_identity_verified": False,
+    "response_snapshot_binding": "selected_fields_matched",
+    "snapshot_postcheck": "unchanged",
+    "content_closure": "verifier_reported_valid",
+    "authenticity": "verifier_reported_content_digest_only",
+}
+
+
+def _current(shape: str = "recorded", *, outcome_actions: bool = False) -> dict[str, Any]:
+    """Run the pure owner on consistent fixture variants; never hand-assemble a report."""
+    execution = json.loads((FIXTURE / "paired/execution.json").read_bytes())
+    rows = tuple(
+        json.loads(line) for line in (FIXTURE / "paired/rows.jsonl").read_text().splitlines()
+    )
+    trajectory = json.loads((FIXTURE / "trajectory/trajectory.json").read_bytes())
+    if shape in {"stopped_before_held_out", "completed_without_held_out"}:
+        execution["stages"] = [s for s in execution["stages"] if s["stage"] != "held_out"]
+        rows = tuple(row for row in rows if row["stage"] != "held_out")
+        trajectory["units"] = [u for u in trajectory["units"] if u["unit"]["stage"] != "held_out"]
+        trajectory["availability_counts"].update(retained=len(rows), total=len(rows))
+        if shape == "completed_without_held_out":
+            execution["source"]["cycle_status"] = "completed"
+    elif shape == "closed_same_batch":
+        execution["stages"] = [execution["stages"][0]]
+        execution["stages"][0].update(
+            execution_status="closed",
+            exported_row_count=0,
+            reason_code="budget_stop",
+            classification="indeterminate",
+        )
+        execution["claims"]["outcome_harness_binding"] = "not_applicable_no_evaluated_stages"
+        rows = ()
+        trajectory.update(
+            units=[],
+            closed_stages=["same_batch"],
+            availability_counts=dict.fromkeys((*AVAILABILITIES, "total"), 0),
+        )
+    return cast(
+        dict[str, Any],
+        review_goppi_trajectory(
+            execution,
+            rows,
+            trajectory,
+            {
+                p: (
+                    "sha256:" + hashlib.sha256((FIXTURE / p).read_bytes()).hexdigest(),
+                    (FIXTURE / p).stat().st_size,
+                )
+                for p in MEMBERS
+            },
+            outcome_actions=outcome_actions,
+        ),
+    )
+
+
+def _v3_validator(outcome_actions: bool = False) -> Validator:
+    return cast(
+        Validator,
+        packaged_validator(OUTCOME_ACTIONS_SCHEMA_V3 if outcome_actions else RESULT_SCHEMA_V3),
+    )
+
+
+SHAPES = ("recorded", "stopped_before_held_out", "completed_without_held_out", "closed_same_batch")
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+@pytest.mark.parametrize("outcome_actions", [False, True])
+@pytest.mark.parametrize("accepted", [False, True])
+def test_v3_contracts_accept_pure_and_report_accepted_results(
+    shape: str, outcome_actions: bool, accepted: bool
+) -> None:
+    name = OUTCOME_ACTIONS_SCHEMA_V3 if outcome_actions else RESULT_SCHEMA_V3
+    authored = (ROOT / "contracts" / f"{name}.schema.json").read_bytes()
+    assert authored == (ROOT / "src/underwrite/_contracts" / f"{name}.schema.json").read_bytes()
+    report = _current(shape, outcome_actions=outcome_actions)
+    if accepted:
+        report["trust_scope"].update(ACCEPTED_TRUST)
+    _v3_validator(outcome_actions).validate(report)
+
+
+def _cycle_task(report: dict[str, Any], kind: str) -> dict[str, Any]:
+    return next(item for item in report["next_verification_tasks"] if item["kind"] == kind)
+
+
+def _drop_task(report: dict[str, Any], kind: str) -> None:
+    report["next_verification_tasks"] = [
+        item for item in report["next_verification_tasks"] if item["kind"] != kind
+    ]
+
+
+def _hide_absent_stage(report: dict[str, Any]) -> None:
+    report["cycle"]["stages_absent_from_export"] = []
+    report["interpretation_limits"].remove(STOPPED_LIMIT)
+    _drop_task(report, STOPPED_TASK)
+
+
+def _complete_with_stop_claims(report: dict[str, Any]) -> None:
+    report["cycle"]["status"] = "completed"
+    report["interpretation_limits"].remove(STOPPED_LIMIT)
+    report["interpretation_limits"].remove(STOP_REASON_LIMIT)
+
+
+def _stop_task_names(report: dict[str, Any], stage: str) -> None:
+    scope = _cycle_task(report, STOPPED_TASK)["scope"]
+    scope.append({**scope[0], "stage": stage})
+
+
+def _close_first_stage(report: dict[str, Any]) -> None:
+    report["stages"][0].update(
+        execution_status="closed", reason_code="budget_stop", classification="indeterminate"
+    )
+
+
+Mutation = Callable[[dict[str, Any]], object]
+# shape -> mutation pairs that the contract must refuse.
+V3_REFUSALS: dict[str, tuple[str, Mutation]] = {
+    "drop_digest_only_limit": (
+        "recorded",
+        lambda r: r["interpretation_limits"].remove(DIGEST_ONLY_LIMIT),
+    ),
+    "drop_stop_reason_limit": (
+        "recorded",
+        lambda r: r["interpretation_limits"].remove(STOP_REASON_LIMIT),
+    ),
+    "stop_reason_limit_with_closed_stage": (
+        "closed_same_batch",
+        lambda r: r["interpretation_limits"].append(STOP_REASON_LIMIT),
+    ),
+    "absent_limit_without_absent_stage": (
+        "recorded",
+        lambda r: r["interpretation_limits"].insert(-2, STOPPED_LIMIT),
+    ),
+    "absent_stage_without_absent_limit": (
+        "stopped_before_held_out",
+        lambda r: r["interpretation_limits"].remove(STOPPED_LIMIT),
+    ),
+    "absent_stage_without_stop_task": (
+        "stopped_before_held_out",
+        lambda r: _drop_task(r, STOPPED_TASK),
+    ),
+    "stop_claims_for_completed_cycle": ("stopped_before_held_out", _complete_with_stop_claims),
+    "hidden_absent_stage": ("stopped_before_held_out", _hide_absent_stage),
+    "recorded_stage_listed_absent": (
+        "completed_without_held_out",
+        lambda r: r["cycle"].update(stages_absent_from_export=["held_in", "held_out"]),
+    ),
+    "stop_task_names_recorded_stage": (
+        "stopped_before_held_out",
+        lambda r: _stop_task_names(r, "same_batch"),
+    ),
+    "stop_task_without_cycle_run_id": (
+        "stopped_before_held_out",
+        lambda r: _cycle_task(r, STOPPED_TASK)["scope"][0].pop("cycle_run_id"),
+    ),
+    "verdict_task_omits_evaluated_stage": (
+        "recorded",
+        lambda r: _cycle_task(r, VERDICT_TASK)["scope"].pop(),
+    ),
+    "verdict_task_names_absent_stage": (
+        "stopped_before_held_out",
+        lambda r: _cycle_task(r, VERDICT_TASK)["scope"].append(
+            {"stage": "held_out", "decision_digest": "sha256:" + "a" * 64}
+        ),
+    ),
+    "reordered_limits": ("recorded", lambda r: r["interpretation_limits"].reverse()),
+    "unknown_cycle_status": ("recorded", lambda r: r["cycle"].update(status="paused")),
+    "evaluated_without_decision": ("recorded", lambda r: r["stages"][0].pop("decision_digest")),
+    "evaluated_reported_verdict": (
+        "recorded",
+        lambda r: r["stages"][0].update(verdict_state="producer_reported"),
+    ),
+    "closed_digest_only_verdict": ("recorded", _close_first_stage),
+    "verdict_task_without_digest": (
+        "recorded",
+        lambda r: _cycle_task(r, VERDICT_TASK)["scope"][0].pop("decision_digest"),
+    ),
+    "verdict_task_owner": (
+        "recorded",
+        lambda r: _cycle_task(r, VERDICT_TASK).update(owner="calling_agent"),
+    ),
+    "runner_extra": ("recorded", lambda r: r["runner"]["models"][0].update(verified=True)),
+    "runner_negative": ("recorded", lambda r: r["runner"].update(model_unrecorded_rows=-1)),
+    "duplicate_absent_stage": (
+        "stopped_before_held_out",
+        lambda r: r["cycle"].update(stages_absent_from_export=["held_out", "held_out"]),
+    ),
+    "legacy_trust": (
+        "recorded",
+        lambda r: r["trust_scope"].update(native_verification="not_performed"),
+    ),
+}
+
+
+@pytest.mark.parametrize("mutation", sorted(V3_REFUSALS))
+def test_v3_contract_refuses_unbound_cycle_and_verdict_claims(mutation: str) -> None:
+    shape, change = V3_REFUSALS[mutation]
+    report = _current(shape)
+    _v3_validator().validate(report)
+    change(report)
+    with pytest.raises(ValidationError):
+        _v3_validator().validate(report)
+
+
+def test_retained_v2_review_contract_bytes_remain_pinned() -> None:
+    """Stored layout-v2 records keep their v2 analyses; the contract cannot drift."""
+    raw = (ROOT / "contracts" / f"{RESULT_SCHEMA_V2}.schema.json").read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == (
+        "0108a28992026f4a426cd4e75a6f63ec8dec9d837c832e53fdb932916fa590f0"
+    )

@@ -90,7 +90,7 @@ def test_frozen_pi15_exchange_and_consumer_semantics(tmp_path: Path) -> None:
     assert trajectory["availability_counts"]["retained"] == PAIRED_ROWS
 
     report = cast(dict[str, Any], audit_goppi_trajectory(exchange, verifier=ResponseStub()))
-    assert report["schema"] == "goppi_trajectory_review.v2"
+    assert report["schema"] == "goppi_trajectory_review.v3"
     assert report["state"] == "analyzed"
     assert report["populations"]["paired_rows"] == PAIRED_ROWS
     assert report["populations"]["case_stage_repeat_pairs"] == CASE_STAGE_REPEAT_PAIRS

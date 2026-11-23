@@ -97,7 +97,7 @@ a score into a task verdict.
 --root DIR --id ID --view summary --json` for an existing retained record. It checks current
 stored bytes without running Goppi; the historical verifier report is not a
 fresh native verification. Its bounded output is `trajectory_record_read_summary.v1`;
-the CLI's default full read remains `trajectory_record_read.v2`.
+the CLI's default full read is `trajectory_record_read.v3`.
 `underwrite_review_pair` projects `underwrite review-pair --input FILE --policy
 FILE --context FILE --view summary --json`. It retains the paired evidence and
 context digests, declared condition counts and limitations, while omitting the
@@ -1419,10 +1419,11 @@ Goppi paired+trajectory export; published `0.1.1` predates this command. Their
 **result contracts differ**: the published 0.2.0 `audit-trajectory` returns
 `goppi_trajectory_review.v1`, and its record/read commands return
 `trajectory_record.v1` / `trajectory_record_read.v1`. The current checkout returns
-the corresponding v2 contracts, accepts the Goppi Pi 1.5 native capture profile,
-and offers `--view outcome-actions`; the published 0.2.0 does not include those
-checkout changes. Inspect the selected executable's `capabilities --json` before
-using the v2 interpretation or action view described below.
+review and outcome-action v3 with record/read v3, accepts the Goppi Pi 1.5 native
+capture profile, and offers `--view outcome-actions`; the published 0.2.0 does not
+include those checkout changes. Inspect the selected executable's
+`capabilities --json` before using the v3 interpretation or action view described
+below.
 Use the complete outer directory containing `paired/` and `trajectory/`; a bare
 paired export is not evidence of zero tool calls. Goppi must already be installed
 with offline trajectory verification support. Underwrite does not install it or
@@ -1446,15 +1447,41 @@ the exact bounded input bytes to a private temporary directory, invokes only
 response fields against selected snapshot facts and confirms the snapshot bytes
 did not change after the process. It cannot independently establish the
 executable's identity or prove which bytes the process read or validated. The
-v2 result labels content closure and authenticity as **verifier-reported**.
+result labels content closure and authenticity as **verifier-reported**.
 Temporary files are removed afterward. A missing or incompatible verifier is
 a typed refusal, not a fallback to weaker validation. Source-supplied schemas
 and strings are data.
 For `GOPPI_VERIFIER_UNAVAILABLE`, check the existing configured executable and pass
 its path with `--goppi-executable`; changing the export cannot supply a verifier.
 
-`goppi_trajectory_review.v2` separates `populations`, `comparisons`, `trust_scope`
-and `next_verification_tasks`. Compare within the complete case/stage/repeat key;
+`goppi_trajectory_review.v3` separates `populations`, `comparisons`, `trust_scope`
+and `next_verification_tasks`, and also reports what the export says about the
+cycle, stage verdicts and runner. These are producer claims, not Underwrite
+acceptance or a confirmed result:
+
+- `cycle.status` is the export's `completed` or `stopped` cycle status, which the
+  accepted verifier report also stated. `cycle.stages_absent_from_export` lists
+  supported stages that have no stage entry.
+- `runner` gives the declared runner profile and each `runner_model` declared in
+  trajectory case contexts, with its paired-row count and the rows that declare
+  none.
+- Each stage has a `verdict_state`. A closed stage reports the producer's
+  `classification` and `reason_code`. An evaluated stage exports only a
+  `decision_digest`, so its verdict is `digest_only`, not a pass.
+
+When a stopped cycle's export lacks a stage, the result appends
+`stopped_cycle_absent_stages_may_be_unrecorded` and an
+`obtain_stopped_cycle_stage_record` task scoped to that cycle and stage. The
+export cannot show whether such a stage was planned. Only a closed stage exports
+a reason, so a stopped cycle without one also gets
+`stopped_cycle_stop_reason_not_exported`. Evaluated stages add
+`evaluated_stage_verdicts_are_digest_only` and an `obtain_evaluated_stage_verdict`
+task. These cycle-level tasks do not depend on comparisons: an export with no
+comparable pairs, or with improved outcomes in its recorded stages, can still
+need them. Report them with the comparisons, and do not describe a stopped cycle
+as a completed improvement.
+
+Compare within the complete case/stage/repeat key;
 stages can reuse run IDs and cases. Paired rows, repeated observations and tool
 spans do not increase the independent-case population. Unavailable capture has
 null tool counts; retained zero-tool capture has actual zero counts. Observed false,
@@ -1479,14 +1506,15 @@ underwrite audit-trajectory --exchange /absolute/path/to/export \
   --view outcome-actions --json
 ```
 
-It returns `goppi_trajectory_outcome_actions.v2` with one grouped
+It returns `goppi_trajectory_outcome_actions.v3` with one grouped
 `inspect_outcome_change_without_tool_status_change` task for eligible comparisons.
 The task asks the calling agent to inspect the selected source outcomes and
 retained comparison context. Unchanged outcomes, missing capture, incomparable
 conditions, and comparisons already showing tool-status deltas are excluded.
 Equal projected tool-status counts do not establish identical calls, trace content,
-cause, improvement or approval. The default review and new retained records
-use v2; the action view does not create or read a retained record.
+cause, improvement or approval. It keeps the review's cycle, stage-verdict and
+runner disclosures and their tasks. The default review and new retained records
+use review v3; the action view does not create or read a retained record.
 
 Exit 0 means analysis completed, including partial capture or unfavorable results.
 The configured verifier **reports** content consistency; Underwrite does not
@@ -1509,14 +1537,20 @@ contains the analysis or a safely classified diagnostic, invocation, and
 configured-verifier report history. The source files saved are the buffers analyzed, even if
 the original paths later change.
 
-`trajectory_record.v2` separates analysis, verifier-report history, and
+`trajectory_record.v3` separates analysis, verifier-report history, and
 storage: exit 0 is a saved result, exit 2 a retained diagnostic or a pre-store
 refusal, and exit 3 a storage/verification failure. Inspect the typed envelope;
 an error does not imply a record was created. Missing/incompatible verifiers and
 all verifier execution failures publish no record. Existing IDs are not replaced.
 
-`trajectory_record_read.v2` returns new analysis and verifier-report history
-after checking the whole retained record. For a v1 record it keeps the original
+`trajectory_record_read.v3` returns the retained analysis and verifier-report
+history after checking the whole retained record. Records keep the
+`trajectory-record.v2` file layout. A record saved before this change returns its
+original `goppi_trajectory_review.v2` analysis unchanged, without the cycle,
+stage-verdict and runner fields. Its `analysis_limitations` then lists
+`retained_analysis_omits_cycle_status_stage_verdicts_and_runner`, as it does for
+a v1 result; do not read such a result as an uninterrupted cycle. A new analysis
+of the same export is a new record. For a v1 record it keeps the original
 report and history only under historical fields, with an effective
 `legacy_unattributed_report` or `legacy_not_performed` interpretation. It needs
 neither the original export nor Goppi and reports
@@ -1539,7 +1573,7 @@ report = audit_goppi_trajectory(
 ```
 
 Pass `view="outcome-actions"` to this Python function for the same direct-only
-action view. Leave the argument unset for the default v2 review. Supplying a
+action view. Leave the argument unset for the default v3 review. Supplying a
 custom Python `verifier=` port is supported for composition but is identified
 as `caller_supplied_python_port`; it cannot confer native verification.
 

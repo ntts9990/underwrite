@@ -104,7 +104,7 @@ The retained `records read-trajectory --view summary` profile is a separate
 read-only tool: it checks stored bytes and direct links without invoking Goppi
 or writing a record. It returns a bounded, content-minimized
 `trajectory_record_read_summary.v1` result validated by the CLI. The default
-full `trajectory_record_read.v2` result remains available through CLI only:
+full `trajectory_record_read.v3` result remains available through CLI only:
 its large success payload would be duplicated in MCP text and structured content.
 The compact summary can advertise its installed output schema in `tools/list`.
 

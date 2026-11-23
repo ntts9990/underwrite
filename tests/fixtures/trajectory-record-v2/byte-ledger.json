@@ -1,0 +1,89 @@
+{
+  "schema": "underwrite.prechange_trajectory_records.v2",
+  "source_commit": "4efa4b0d96b448ed88261298fab6849c9e77e93a",
+  "archive": {
+    "name": "prechange-records-v2.tar.gz",
+    "bytes": 73399,
+    "sha256": "sha256:86e130374dec609587617e546d615d17657420b9c90a943bbfe4e724a648863d"
+  },
+  "tar_members": {
+    ".staging": "directory",
+    "records": "directory",
+    "records/prechange.v2": "directory",
+    "records/prechange.v2/files": "directory",
+    "records/prechange.v2/files/analysis": "directory",
+    "records/prechange.v2/files/analysis/trajectory.json": "file",
+    "records/prechange.v2/files/invocation.json": "file",
+    "records/prechange.v2/files/source": "directory",
+    "records/prechange.v2/files/source/paired": "directory",
+    "records/prechange.v2/files/source/paired/execution.json": "file",
+    "records/prechange.v2/files/source/paired/manifest.json": "file",
+    "records/prechange.v2/files/source/paired/rows.jsonl": "file",
+    "records/prechange.v2/files/source/paired/schema.json": "file",
+    "records/prechange.v2/files/source/trajectory": "directory",
+    "records/prechange.v2/files/source/trajectory/manifest.json": "file",
+    "records/prechange.v2/files/source/trajectory/schema.json": "file",
+    "records/prechange.v2/files/source/trajectory/trajectory.json": "file",
+    "records/prechange.v2/files/verification": "directory",
+    "records/prechange.v2/files/verification/history.json": "file",
+    "records/prechange.v2/manifest.json": "file"
+  },
+  "records": {
+    "prechange.v2": {
+      "record_layout": "trajectory-record.v2",
+      "analysis_state": "result",
+      "analysis_schema": "goppi_trajectory_review.v2",
+      "verifier_report_state": "report_accepted",
+      "files": {
+        "files/analysis/trajectory.json": {
+          "bytes": 208096,
+          "sha256": "sha256:6f8606477b75ded74f66f30fa94b52c54cdc4bf21dd00bbf76cae0cb94189546"
+        },
+        "files/invocation.json": {
+          "bytes": 233,
+          "sha256": "sha256:fea53f7865bee1a71eda48ebb218c5bfa79d23ac3135ec26ebf8edd19a4a8ca2"
+        },
+        "files/source/paired/execution.json": {
+          "bytes": 4595,
+          "sha256": "sha256:c84382fd7e9c9900f3074f50fee91a239969d4e1384c63a9bf3214f828979e54"
+        },
+        "files/source/paired/manifest.json": {
+          "bytes": 798,
+          "sha256": "sha256:d437983b3ced8fa3d63dfe35183ef8e6005506b65aa7f58b1081d064476e8074"
+        },
+        "files/source/paired/rows.jsonl": {
+          "bytes": 187384,
+          "sha256": "sha256:13c3e066e7ea45849f18118d0f81f0a49998d43adfbbfec7ac4b3541702ae554"
+        },
+        "files/source/paired/schema.json": {
+          "bytes": 12306,
+          "sha256": "sha256:0e76595668255eecea653090b66d9948626fa55a01c2f947c1b5463440fe1c81"
+        },
+        "files/source/trajectory/manifest.json": {
+          "bytes": 622,
+          "sha256": "sha256:350e037a4b56b0266e4712f1f73589c91cd228bb40bcbd77a984c1dded8a07c5"
+        },
+        "files/source/trajectory/schema.json": {
+          "bytes": 11253,
+          "sha256": "sha256:56501dee20f0b2afc28066c6d8a2b8af04dbe31d62b46bd26107377be66cd8dd"
+        },
+        "files/source/trajectory/trajectory.json": {
+          "bytes": 234824,
+          "sha256": "sha256:99d6d54ba2bbeb2309129d621cd87be52597ed5d08c5818f6394dc318f4aedbe"
+        },
+        "files/verification/history.json": {
+          "bytes": 1404,
+          "sha256": "sha256:8a05a5e01957aecc4c5f963eec11d2e9c33102bc20107615798b2304144f4869"
+        },
+        "manifest.json": {
+          "bytes": 2539,
+          "sha256": "sha256:7a9b76ffb8c7bfea20c1be948d15e14c5cfc0e3d15ff387a5ad28b60bd1c75e0"
+        }
+      }
+    }
+  },
+  "contracts": {
+    "goppi_trajectory_review.v2": "sha256:0108a28992026f4a426cd4e75a6f63ec8dec9d837c832e53fdb932916fa590f0",
+    "trajectory_verification_history.v2": "sha256:37f4c1ea39fcc2a09076323b59e465418372cec71365ff4265faffc9e3169aea"
+  }
+}

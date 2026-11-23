@@ -22,11 +22,11 @@ from underwrite.instrument.evidence.goppi_trajectory import (
     MAX_SPANS_PER_UNIT,
     MAX_UNITS,
     MEMBERS,
-    OUTCOME_ACTIONS_SCHEMA_V2,
-    RESULT_SCHEMA_V2,
+    OUTCOME_ACTIONS_SCHEMA_V3,
+    RESULT_SCHEMA_V3,
+    VERIFIER_REPORT_NOT_PERFORMED,
     TrajectoryError,
-    analyze_goppi_trajectory,
-    analyze_goppi_trajectory_actions,
+    review_goppi_trajectory,
 )
 from underwrite.instrument.ingest.goppi_verifier import (
     STDOUT_MAX_BYTES,
@@ -258,9 +258,9 @@ class TrajectoryAnalysis:
 
 def _result_schema(view: str) -> str:
     if view == "review":
-        return RESULT_SCHEMA_V2
+        return RESULT_SCHEMA_V3
     if view == "outcome-actions":
-        return OUTCOME_ACTIONS_SCHEMA_V2
+        return OUTCOME_ACTIONS_SCHEMA_V3
     raise TrajectoryInputError("UNSUPPORTED_PROFILE", "TRAJECTORY_VIEW_UNSUPPORTED", "/view")
 
 
@@ -354,15 +354,7 @@ def _history(
 
 def _verifier_report_fields(state: str, source: str | None) -> dict[str, object]:
     if state == "not_performed":
-        return {
-            "verifier_report_state": state,
-            "verifier_source": None,
-            "verifier_identity_verified": False,
-            "response_snapshot_binding": "not_checked",
-            "snapshot_postcheck": "not_checked",
-            "content_closure": "not_checked",
-            "authenticity": "not_checked",
-        }
+        return dict(VERIFIER_REPORT_NOT_PERFORMED)
     if state != "report_accepted" or source not in (
         "caller_supplied_python_port",
         "operator_configured_executable",
@@ -470,26 +462,20 @@ def _audit_captured_goppi_trajectory(
         validator=contracts.history,
     )
     try:
-        analyzer = (
-            analyze_goppi_trajectory_actions
-            if view == "outcome-actions"
-            else analyze_goppi_trajectory
-        )
-        report = analyzer(
+        report = review_goppi_trajectory(
             documents["paired/execution.json"],
             rows,
             trajectory,
             {name: (item.sha256, item.size) for name, item in captured.items()},
+            outcome_actions=view == "outcome-actions",
         )
     except TrajectoryError as exc:
         if not trajectory_diagnostic_history_matches(exc.code, exc.reason, "report_accepted"):
             raise
         return TrajectoryAnalysis(None, exc, history)
-    trust = _object(report["trust_scope"])
-    for old_field in ("native_verification", "integrity_scope", "authenticity"):
-        trust.pop(old_field)
-    trust.update(_verifier_report_fields("report_accepted", verifier_source))
-    report["schema"] = _result_schema(view)
+    _object(report["trust_scope"]).update(
+        _verifier_report_fields("report_accepted", verifier_source)
+    )
     _validate(contracts.result, report, response=False)
     try:
         size = len(canonical_bytes(report)) + 1

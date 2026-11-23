@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
+import os
 import sys
 from copy import deepcopy
 from pathlib import Path
@@ -13,7 +15,7 @@ import pytest
 from jsonschema import ValidationError
 
 from underwrite.cli.local_json import Validator
-from underwrite.cli.record_trajectory import LAYOUT, LAYOUT_V2, READ_SCHEMA_V2, SCHEMA_V2
+from underwrite.cli.record_trajectory import LAYOUT, LAYOUT_V2, READ_SCHEMA_V3, SCHEMA_V3
 from underwrite.instrument.ingest.goppi_trajectory import HISTORY_SCHEMA, HISTORY_SCHEMA_V2
 from underwrite.instrument.ingest.schema import packaged_validator
 
@@ -34,7 +36,7 @@ def test_generated_trajectory_record_contracts_match_authored_owners(
         HISTORY_SCHEMA: module.build_history(),
         HISTORY_SCHEMA_V2: module.build_history_v2(),
         **module.build_envelopes(ROOT),
-        **module.build_envelopes_v2(ROOT),
+        **module.build_envelopes_v3(ROOT),
     }
     for schema_name, schema in expected.items():
         authored = ROOT / "contracts" / (schema_name + ".schema.json")
@@ -191,7 +193,7 @@ def test_history_v2_accepts_only_the_two_closed_trust_combinations(state: str) -
 def _read_envelope(layout: str, history_state: str) -> dict[str, object]:
     verification = _verification()
     common: dict[str, object] = {
-        "schema": READ_SCHEMA_V2,
+        "schema": READ_SCHEMA_V3,
         "command": "records read-trajectory",
         "record_id": verification["record_id"],
         "manifest_digest": verification["manifest_digest"],
@@ -204,6 +206,7 @@ def _read_envelope(layout: str, history_state: str) -> dict[str, object]:
         return {
             **common,
             "analysis": _error_analysis(),
+            "analysis_limitations": [],
             "verifier_report_history": _history_v2(history_state),
             "verification_interpretation": {
                 "state": "current_not_performed"
@@ -217,6 +220,7 @@ def _read_envelope(layout: str, history_state: str) -> dict[str, object]:
     return {
         **common,
         "historical_analysis": _error_analysis(),
+        "analysis_limitations": [],
         "historical_native_verification_history": _history_v1(history_state),
         "verification_interpretation": {
             "state": "legacy_not_performed"
@@ -238,10 +242,10 @@ def _read_envelope(layout: str, history_state: str) -> dict[str, object]:
         (LAYOUT, "verified"),
     ],
 )
-def test_read_v2_is_an_exact_layout_and_history_tagged_union(
+def test_read_v3_is_an_exact_layout_and_history_tagged_union(
     layout: str, history_state: str
 ) -> None:
-    validator = cast(Validator, packaged_validator(READ_SCHEMA_V2))
+    validator = cast(Validator, packaged_validator(READ_SCHEMA_V3))
     envelope = _read_envelope(layout, history_state)
     validator.validate(envelope)
 
@@ -258,11 +262,11 @@ def test_read_v2_is_an_exact_layout_and_history_tagged_union(
         validator.validate(mixed)
 
 
-def test_record_v2_uses_report_history_and_preserves_exit_semantics() -> None:
-    validator = cast(Validator, packaged_validator(SCHEMA_V2))
+def test_record_v3_uses_report_history_and_preserves_exit_semantics() -> None:
+    validator = cast(Validator, packaged_validator(SCHEMA_V3))
     verification = _verification()
     envelope: dict[str, object] = {
-        "schema": SCHEMA_V2,
+        "schema": SCHEMA_V3,
         "command": "records audit-trajectory",
         "source": {"state": "captured", "source_members": _source_members()},
         "analysis": _error_analysis(),
@@ -286,3 +290,140 @@ def test_record_v2_uses_report_history_and_preserves_exit_semantics() -> None:
     wrong_exit["exit_code"] = 0
     with pytest.raises(ValidationError):
         validator.validate(wrong_exit)
+
+
+def _documents() -> tuple[Any, ...]:
+    from underwrite.instrument.evidence.goppi_trajectory import MEMBERS
+
+    fixture = ROOT / "fixtures/conformance/goppi-trajectory/exchange"
+    return (
+        json.loads((fixture / "paired/execution.json").read_bytes()),
+        tuple(
+            json.loads(line) for line in (fixture / "paired/rows.jsonl").read_text().splitlines()
+        ),
+        json.loads((fixture / "trajectory/trajectory.json").read_bytes()),
+        {
+            name: (
+                "sha256:" + hashlib.sha256((fixture / name).read_bytes()).hexdigest(),
+                (fixture / name).stat().st_size,
+            )
+            for name in MEMBERS
+        },
+    )
+
+
+def _current_review() -> dict[str, Any]:
+    from underwrite.instrument.evidence.goppi_trajectory import review_goppi_trajectory
+
+    report = cast(dict[str, Any], review_goppi_trajectory(*_documents()))
+    report["trust_scope"].update(ACCEPTED_TRUST)
+    return report
+
+
+ACCEPTED_TRUST = {
+    "verifier_report_state": "report_accepted",
+    "verifier_source": "operator_configured_executable",
+    "verifier_identity_verified": False,
+    "response_snapshot_binding": "selected_fields_matched",
+    "snapshot_postcheck": "unchanged",
+    "content_closure": "verifier_reported_valid",
+    "authenticity": "verifier_reported_content_digest_only",
+}
+
+
+def _prior_review() -> dict[str, Any]:
+    """Shape of the retained v2 analysis; frozen real records are tested separately."""
+    from underwrite.instrument.evidence.goppi_trajectory import analyze_goppi_trajectory
+
+    report = cast(dict[str, Any], analyze_goppi_trajectory(*_documents()))
+    report["schema"] = "goppi_trajectory_review.v2"
+    binding = report["trust_scope"]["outcome_harness_binding"]
+    report["trust_scope"] = {
+        **ACCEPTED_TRUST,
+        "source_authentication_independently_verified": False,
+        "producer_projection_independently_verified": False,
+        "outcome_harness_binding": binding,
+    }
+    return report
+
+
+def test_record_v3_retains_only_current_review_analysis() -> None:
+    validator = cast(Validator, packaged_validator(SCHEMA_V3))
+    verification = _verification()
+    envelope: dict[str, object] = {
+        "schema": SCHEMA_V3,
+        "command": "records audit-trajectory",
+        "source": {"state": "captured", "source_members": _source_members()},
+        "analysis": {"state": "result", "report": _current_review()},
+        "verifier_report_history": _history_v2("report_accepted"),
+        "storage": {
+            "state": "saved",
+            "record_id": verification["record_id"],
+            "manifest_digest": verification["manifest_digest"],
+            "verification": verification,
+        },
+        "exit_code": 0,
+    }
+    validator.validate(envelope)
+    prior = deepcopy(envelope)
+    prior["analysis"] = {"state": "result", "report": _prior_review()}
+    with pytest.raises(ValidationError):
+        validator.validate(prior)
+
+
+@pytest.mark.parametrize("generation", ["prior", "current"])
+def test_read_v3_layout_v2_dispatches_retained_analysis_by_exact_schema(generation: str) -> None:
+    validator = cast(Validator, packaged_validator(READ_SCHEMA_V3))
+    envelope = _read_envelope(LAYOUT_V2, "report_accepted")
+    report = _prior_review() if generation == "prior" else _current_review()
+    envelope["analysis"] = {"state": "result", "report": report}
+    expected = (
+        ["retained_analysis_omits_cycle_status_stage_verdicts_and_runner"]
+        if generation == "prior"
+        else []
+    )
+    envelope["analysis_limitations"] = expected
+    validator.validate(envelope)
+    flipped = deepcopy(envelope)
+    flipped["analysis_limitations"] = [] if expected else [
+        "retained_analysis_omits_cycle_status_stage_verdicts_and_runner"
+    ]
+    with pytest.raises(ValidationError):
+        validator.validate(flipped)
+
+    relabeled = deepcopy(envelope)
+    relabeled["analysis"]["report"]["schema"] = (  # type: ignore[index]
+        "goppi_trajectory_review.v3" if generation == "prior" else "goppi_trajectory_review.v2"
+    )
+    with pytest.raises(ValidationError):
+        validator.validate(relabeled)
+    historical = deepcopy(envelope)
+    historical["analysis"]["report"]["schema"] = "goppi_trajectory_review.v1"  # type: ignore[index]
+    with pytest.raises(ValidationError):
+        validator.validate(historical)
+
+
+def test_retired_v2_envelope_contracts_are_not_packaged() -> None:
+    for name in ("trajectory_record.v2", "trajectory_record_read.v2"):
+        assert not os.path.lexists(ROOT / "contracts" / f"{name}.schema.json")
+        assert not os.path.lexists(ROOT / "src/underwrite/_contracts" / f"{name}.schema.json")
+
+
+def test_historical_result_read_must_carry_its_analysis_limitation() -> None:
+    validator = cast(Validator, packaged_validator(READ_SCHEMA_V3))
+    envelope = _read_envelope(LAYOUT, "verified")
+    from underwrite.instrument.evidence.goppi_trajectory import analyze_goppi_trajectory
+
+    report = cast(dict[str, Any], analyze_goppi_trajectory(*_documents()))
+    report["trust_scope"].update(
+        native_verification="local_goppi_same_byte_snapshot",
+        integrity_scope="self_consistent_content_closure",
+        authenticity="content_digest_only",
+    )
+    envelope["historical_analysis"] = {"state": "result", "report": report}
+    with pytest.raises(ValidationError):
+        validator.validate(envelope)
+    envelope["analysis_limitations"] = [
+        "retained_analysis_omits_cycle_status_stage_verdicts_and_runner"
+    ]
+    validator.validate(envelope)

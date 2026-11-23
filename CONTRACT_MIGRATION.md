@@ -1,15 +1,32 @@
 # Current contract consolidation milestone
 
 Post-milestone trajectory update (2026-10-31): the trajectory v1 rows in the
-inventory below describe the original consolidation decision. Current development
-emits `goppi_trajectory_review.v2`,
+inventory below describe the original consolidation decision. Development then
+emitted `goppi_trajectory_review.v2`,
 `goppi_trajectory_outcome_actions.v2`, `trajectory_verification_history.v2`,
-`trajectory_record.v2`, and `trajectory_record_read.v2`. The v1 contracts remain
+`trajectory_record.v2`, and `trajectory_record_read.v2`; the next paragraph
+records their current successors. The v1 contracts remain
 byte-stable for existing pure calculations and to reopen stored v1 records with
 historical labels. New CLI reports call an accepted configured-verifier response
 a report, not independent native verification. This later change does not alter
 the initial inventory
 denominator or the published 0.2.0 package.
+
+Trajectory disclosure update (2026-11-23): the v2 review and outcome-action
+results had closed top-level shapes and a constant `interpretation_limits` list,
+so they could not report a stopped cycle, digest-only verdicts of evaluated stages
+or the declared runner. Following the inspection-v3 rule (binding decision 7
+below), current development emits
+`goppi_trajectory_review.v3` and `goppi_trajectory_outcome_actions.v3` rather
+than redefining v2. The record and read envelopes embedding that analysis become
+`trajectory_record.v3` and `trajectory_record_read.v3`, as baseline-record v2 did
+for its nested result. Stored records keep the `trajectory-record.v2` file layout
+and their original analysis bytes; the reader dispatches each stored analysis by
+its exact schema, so `goppi_trajectory_review.v2` remains packaged as a stored-read
+contract; a reopened earlier analysis carries an explicit `analysis_limitations`
+entry instead of new fields. The writer-less `goppi_trajectory_outcome_actions.v2`,
+`trajectory_record.v2` and `trajectory_record_read.v2` are retired from the
+package. Pure v1 calculations and v1 contracts are unchanged.
 
 Scope: unreleased development changes across the entire repository. Published
 0.2.0 remains unchanged. [Milestone #2](https://github.com/ntts9990/underwrite/milestone/2)
@@ -483,6 +500,10 @@ New schema decisions (not hidden in initial denominator):
 | `common_result_inspection.v3` | S5 | Sole summary output, exact selected input v1/v2 plus original raw hash; no upgraded input fiction. |
 | `common_result_inspection_actions.v3` | S5 | Sole actions output, source-owned vocabularies and same identity guarantee as summary. |
 | `common_result_marginal_comparison.v1` | A3 follow-up | Additive CLI/Python comparison of two validated actions projections; same-format/unit arithmetic only, item correspondence and semantic comparability remain unestablished. Existing v3 outputs and default MCP catalog remain unchanged. |
+| `goppi_trajectory_review.v3` | Trajectory disclosure | Sole review writer; cycle status, stage verdict states and declared runner stay producer claims, and conditional limits and cycle tasks are bound to them. Review v2 remains only to read stored analyses. |
+| `goppi_trajectory_outcome_actions.v3` | Trajectory disclosure | Sole direct action view with the same disclosures; writer-less v2 is retired. |
+| `trajectory_record.v3` | Trajectory disclosure | Sole record writer embedding review v3; the `trajectory-record.v2` file layout and stored bytes are unchanged; v2 envelope retired. |
+| `trajectory_record_read.v3` | Trajectory disclosure | Sole full reader; v1 stays historical and layout-v2 analyses dispatch by exact review v2/v3 schema; v2 envelope retired. |
 | `declared_claims.v3` | S7 amendment | Shared measured-subject admission, separate candidate/claim grammar, new actual tagged seal. |
 | `acceptance_decision.v3` | S7 amendment | Sole decision writer admits exact shared subject IDs and retains policy/semantic/seal binding and human-review boundary. |
 

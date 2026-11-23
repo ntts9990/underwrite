@@ -9,8 +9,18 @@ from typing import Any
 
 from _schema_compose import embed_contracts, nullable, object_schema, reference, tagged
 
-from underwrite.cli.record_trajectory import LAYOUT, LAYOUT_V2, READ_SCHEMA_V2, SCHEMA_V2
-from underwrite.instrument.evidence.goppi_trajectory import MEMBERS
+from underwrite.cli.record_trajectory import (
+    LAYOUT,
+    LAYOUT_V2,
+    READ_SCHEMA_V3,
+    RETAINED_ANALYSIS_LIMITATION,
+    SCHEMA_V3,
+)
+from underwrite.instrument.evidence.goppi_trajectory import (
+    MEMBERS,
+    RESULT_SCHEMA_V2,
+    RESULT_SCHEMA_V3,
+)
 from underwrite.instrument.ingest.goppi_trajectory import (
     HISTORY_SCHEMA,
     HISTORY_SCHEMA_V2,
@@ -259,6 +269,22 @@ def _interpretation(*, historical: bool) -> dict[str, Any]:
     )
 
 
+def _analysis_limitations_binding(analysis_field: str, *, prior_only: bool) -> dict[str, Any]:
+    """A retained result without the current review's disclosure must say so."""
+    report: dict[str, Any] = {"required": ["state"], "properties": {"state": {"const": "result"}}}
+    if prior_only:
+        report["required"].append("report")
+        report["properties"]["report"] = {
+            "required": ["schema"],
+            "properties": {"schema": {"const": RESULT_SCHEMA_V2}},
+        }
+    return {
+        "if": {"required": [analysis_field], "properties": {analysis_field: report}},
+        "then": {"properties": {"analysis_limitations": {"const": [RETAINED_ANALYSIS_LIMITATION]}}},
+        "else": {"properties": {"analysis_limitations": {"const": []}}},
+    }
+
+
 def _history_interpretation_binding(
     history_field: str, history_state_field: str, pairs: tuple[tuple[str, str], ...]
 ) -> list[dict[str, Any]]:
@@ -281,7 +307,24 @@ def _history_interpretation_binding(
     ]
 
 
-def build_envelopes_v2(root: Path) -> dict[str, dict[str, Any]]:
+def _retained_report() -> dict[str, Any]:
+    """Layout-v2 records keep the analysis generation they were written with."""
+    generations = {
+        RESULT_SCHEMA_V3: "goppi_trajectory_review",
+        RESULT_SCHEMA_V2: "prior_goppi_trajectory_review",
+    }
+    return {
+        "type": "object",
+        "required": ["schema"],
+        "properties": {"schema": {"enum": list(generations)}},
+        "allOf": [
+            {"if": {"properties": {"schema": {"const": name}}}, "then": reference(definition)}
+            for name, definition in generations.items()
+        ],
+    }
+
+
+def build_envelopes_v3(root: Path) -> dict[str, dict[str, Any]]:
     definitions, _ = embed_contracts(
         root,
         (
@@ -292,10 +335,17 @@ def build_envelopes_v2(root: Path) -> dict[str, dict[str, Any]]:
             "record_verification",
         ),
         versions={
-            "goppi_trajectory_review": "v2",
+            "goppi_trajectory_review": "v3",
             "trajectory_verification_history": "v2",
         },
     )
+    prior, _ = embed_contracts(
+        root,
+        ("goppi_trajectory_review",),
+        versions={"goppi_trajectory_review": "v2"},
+        namespaces={"goppi_trajectory_review": "prior_goppi_trajectory_review"},
+    )
+    definitions.update(prior)
     historical, _ = embed_contracts(
         root,
         ("goppi_trajectory_review", "trajectory_verification_history"),
@@ -306,6 +356,8 @@ def build_envelopes_v2(root: Path) -> dict[str, dict[str, Any]]:
     )
     definitions.update(historical)
     definitions["analysis"] = _analysis("goppi_trajectory_review")
+    definitions["retained_report"] = _retained_report()
+    definitions["retained_analysis"] = _analysis("retained_report")
     definitions["historical_analysis"] = _analysis("historical_goppi_trajectory_review")
     definitions["source"] = object_schema(
         {
@@ -333,10 +385,10 @@ def build_envelopes_v2(root: Path) -> dict[str, dict[str, Any]]:
 
     record = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "urn:underwrite:contract:" + SCHEMA_V2,
+        "$id": "urn:underwrite:contract:" + SCHEMA_V3,
         **object_schema(
             {
-                "schema": {"const": SCHEMA_V2},
+                "schema": {"const": SCHEMA_V3},
                 "command": {"const": "records audit-trajectory"},
                 "source": reference("source"),
                 "analysis": reference("analysis"),
@@ -361,8 +413,9 @@ def build_envelopes_v2(root: Path) -> dict[str, dict[str, Any]]:
         ],
     }
 
+    limitations = {"enum": [[], [RETAINED_ANALYSIS_LIMITATION]]}
     read_common = {
-        "schema": {"const": READ_SCHEMA_V2},
+        "schema": {"const": READ_SCHEMA_V3},
         "command": {"const": "records read-trajectory"},
         **identity,
         "source": reference("source"),
@@ -373,19 +426,23 @@ def build_envelopes_v2(root: Path) -> dict[str, dict[str, Any]]:
         {
             **read_common,
             "record_layout": {"const": LAYOUT_V2},
-            "analysis": reference("analysis"),
+            "analysis": reference("retained_analysis"),
             "verifier_report_history": reference("trajectory_verification_history"),
             "verification_interpretation": _interpretation(historical=False),
+            "analysis_limitations": limitations,
         }
     )
-    current_read["allOf"] = _history_interpretation_binding(
-        "verifier_report_history",
-        "verifier_report_state",
-        (
-            ("not_performed", "current_not_performed"),
-            ("report_accepted", "current_report_only"),
+    current_read["allOf"] = [
+        *_history_interpretation_binding(
+            "verifier_report_history",
+            "verifier_report_state",
+            (
+                ("not_performed", "current_not_performed"),
+                ("report_accepted", "current_report_only"),
+            ),
         ),
-    )
+        _analysis_limitations_binding("analysis", prior_only=True),
+    ]
     historical_read = object_schema(
         {
             **read_common,
@@ -395,23 +452,27 @@ def build_envelopes_v2(root: Path) -> dict[str, dict[str, Any]]:
                 "historical_trajectory_verification_history"
             ),
             "verification_interpretation": _interpretation(historical=True),
+            "analysis_limitations": limitations,
         }
     )
-    historical_read["allOf"] = _history_interpretation_binding(
-        "historical_native_verification_history",
-        "state",
-        (
-            ("not_performed", "legacy_not_performed"),
-            ("verified", "legacy_unattributed_report"),
+    historical_read["allOf"] = [
+        *_history_interpretation_binding(
+            "historical_native_verification_history",
+            "state",
+            (
+                ("not_performed", "legacy_not_performed"),
+                ("verified", "legacy_unattributed_report"),
+            ),
         ),
-    )
+        _analysis_limitations_binding("historical_analysis", prior_only=False),
+    ]
     read = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "urn:underwrite:contract:" + READ_SCHEMA_V2,
+        "$id": "urn:underwrite:contract:" + READ_SCHEMA_V3,
         **tagged([historical_read, current_read], field="record_layout"),
         "$defs": definitions,
     }
-    return {SCHEMA_V2: record, READ_SCHEMA_V2: read}
+    return {SCHEMA_V3: record, READ_SCHEMA_V3: read}
 
 
 def main() -> None:
@@ -428,7 +489,7 @@ def main() -> None:
         else:
             history_path.write_text(history_raw)
     schemas.update(build_envelopes(ROOT))
-    schemas.update(build_envelopes_v2(ROOT))
+    schemas.update(build_envelopes_v3(ROOT))
     for name, schema in schemas.items():
         path = ROOT / "contracts" / (name + ".schema.json")
         raw = json.dumps(schema, ensure_ascii=False, indent=2) + "\n"

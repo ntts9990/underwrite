@@ -111,18 +111,21 @@ def _positive_review() -> dict[str, Any]:
         "schema": check.CONTRACTS["underwrite_review"],
         "state": "analyzed",
         "trust_scope": dict(check.REVIEW_TRUST),
+        "cycle": dict(check.REVIEW_CYCLE),
         "authority": dict(check.REVIEW_AUTHORITY),
         "populations": dict(check.POPULATIONS),
         "comparisons": [copy.deepcopy(stable) for _ in range(72)],
     }
 
 
-@pytest.mark.parametrize("mutation", ["population", "stable_change"])
+@pytest.mark.parametrize("mutation", ["population", "stable_change", "undisclosed_cycle"])
 def test_positive_review_rejects_population_or_semantic_drift(mutation: str) -> None:
     review = _positive_review()
     check.validate_review(review)
     if mutation == "population":
         review["populations"]["paired_rows"] = 143
+    elif mutation == "undisclosed_cycle":
+        review.pop("cycle")
     else:
         for comparison in review["comparisons"]:
             comparison["difference"]["outcome_changed"] = False
