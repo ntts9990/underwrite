@@ -6,7 +6,7 @@ the same cases, or when a source's `pass` leaves evidence gaps. The result names
 what was checked and what remains to verify; it does not approve a change.
 
 underwrite reads local artifacts. An agent can run its CLI, keep the JSON outputs,
-and report what each output establishes. It does not need a server or credentials.
+and report what each output establishes. It does not need a network service or credentials.
 Install the versioned CLI with `uv tool install 'underwrite==0.2.0'`, then run
 `underwrite` directly. The app resolves a compatible `underwrite-core`.
 For an importable Python API, install the same app version into a Python 3.12
@@ -27,6 +27,125 @@ of inferring support from the package version alone. Published `0.1.0` has
 `capabilities`, producer audits, records, and handoff commands; older `0.0.1`
 does not. Use help-based discovery with any installed version. Capability
 availability is not evidence that an arbitrary export satisfies a profile.
+
+The current checkout includes an optional client-started local stdio MCP command,
+`underwrite-mcp`. `underwrite_capabilities` returns the same `capabilities.v1`
+result as `underwrite capabilities --json`. For local common-result files,
+`underwrite_inspect_result_v1` and `underwrite_inspect_result_v2` return the
+same structural summary as `underwrite inspect-result FILE --json` for their
+respective `evidence_result.v1` and `evidence_result.v2` profiles. Choose the
+matching profile; a mismatch is a typed input error.
+`underwrite_inspect_result_v1_actions` and `underwrite_inspect_result_v2_actions`
+project the same files through `inspect-result --view actions --json`, adding
+item action and declared semantic binding counts. This is structural
+inspection, not producer verification, measurement or approval.
+`underwrite_audit_baseline` projects `underwrite audit-baseline --exchange DIR
+--json` for a completed local Goppi baseline exchange v2 directory. Its
+descriptive evidence retains the CLI's source-claim and missingness limits.
+`underwrite_inspect` projects `underwrite inspect CASE.json --json` for a local
+`artifact_case.v1` manifest. It checks selected bytes and an optional expected
+hash and returns the observation projection state. `not_created` is a result,
+not a tool error, even though the CLI exits 1. It does not verify source
+claims, measure outcomes or approve deployment.
+`underwrite_audit_promptfoo` projects `audit-promptfoo FILE --view summary
+--json` for a local SummaryV3 export. It keeps producer-declared and supplied-row
+counts, their differences, relation, finding code counts, fixed next actions and
+limits. Row coordinates and source text are omitted. A consistent relation
+does not prove export completeness or producer truth; an expected-hash check
+requires the manifest based CLI route.
+`underwrite_audit_counts` projects `audit-counts CASE.json --view summary
+--json` for a supported Promptfoo manifest. It computes the same count summary
+from the selected bytes and includes `source_binding`: the manifest byte hash
+and whether an optional expected artifact hash was `matched` or `not_supplied`.
+A mismatch is a typed invocation error, not an inconsistent count result.
+The direct file route marks the absent manifest `not_applicable`; this differs
+from a manifest with no expected hash. Manifest identity does not authenticate
+the source or the producer's verdict.
+`underwrite_audit_deepeval` projects `audit-deepeval FILE --view summary
+--json` for a local TestRun. It keeps supplied case and serialized metric
+populations, evaluator error and unscored counts, source-declared case count
+comparison, closed next actions, and interpretation limits. Case and metric
+names and evaluator error text are omitted. Planned and expectation populations
+remain unknown; trace structure and owner metric bindings use separate CLI
+views and are not inferred from this summary.
+`underwrite_audit_deepeval_trace` projects `audit-deepeval FILE --view
+trace-summary --json`. It returns supplied case, trace and span populations,
+source status counts, unresolved parent references, cycles and fixed next
+actions without individual case/span coordinates or parent pointers. Those
+links are source claims, not causality, chronology, complete instrumentation
+or a measured effect. Metric accounting remains a separate view.
+`underwrite_audit_deepeval_bound` projects `audit-deepeval FILE --bindings
+PACK --view bound-summary --json`. It reads the TestRun and owner-asserted
+binding pack once each, then returns their distinct byte hashes, supplied
+metric-occurrence population, availability, item action and declared semantic
+binding counts. Item values, names and coordinates are omitted. The pack's
+authority is explicitly `owner_asserted_unverified`; these hashes identify
+bytes, not owner authenticity, source truth, a measured effect or approval.
+`underwrite_audit_langfuse` projects `audit-langfuse --observations FILE
+--scores FILE --view summary --json`. It preserves both selected file hashes,
+score-kind and local-association counts, planned unknowns and, for CLI captures,
+retrieval and pagination state. Observation and score rows, values and row
+patterns are omitted. The two files are independently selected; collection
+windows and export completeness are not verified.
+`underwrite_audit_langfuse_score_source` projects the existing `audit-langfuse
+--view score-source --json` from the same two files. It keeps known
+API/ANNOTATION/EVAL and missing/null/unrecognized source counts, source hashes,
+scope and fixed next actions under 16 KiB. A score's source is a producer
+claim; this does not authenticate an actor, verify evaluator execution or turn
+a score into a task verdict.
+`underwrite_records_read_trajectory` projects `underwrite records read-trajectory
+--root DIR --id ID --view summary --json` for an existing retained record. It checks current
+stored bytes without running Goppi; the historical verifier report is not a
+fresh native verification. Its bounded output is `trajectory_record_read_summary.v1`;
+the CLI's default full read remains `trajectory_record_read.v2`.
+`underwrite_review_pair` projects `underwrite review-pair --input FILE --policy
+FILE --context FILE --view summary --json`. It retains the paired evidence and
+context digests, declared condition counts and limitations, while omitting the
+source's condition values, history text and partition labels. The default CLI
+full view remains `paired_review.v1`; neither view verifies declared conditions
+or authorizes a change.
+`underwrite_review_artifacts` projects `underwrite review-artifacts
+--goppi-assessment FILE --goppi-result FILE --promptfoo FILE
+--view summary --json`, with optional `--correspondence FILE`. It requires
+owner case metadata for the strict review. Its bounded result preserves source
+hashes, reader identities, population counts, correspondence state, finding
+counts, next task codes and limitations. It omits per-pair details and
+coordinates. Missing metadata requires `underwrite_review_artifacts_readiness`,
+which projects `review-artifacts --view readiness-summary --json` on the same
+three files. It groups blockers by code, preserves unknown row roles, and omits
+row locations and source strings. The full CLI `--view readiness` retains row
+coordinates. Neither tool establishes input equivalence, improvement or approval.
+`underwrite_records_list` projects `records list --view page --json` from a
+private local store. It returns up to 50 record IDs with complete/unpublished
+states and omits labels. Pass `next_page.offset` and the result's `catalog_digest`
+with the same root to continue. If `catalog_state` is `changed`, restart at
+offset zero; the digest identifies an observed catalog, not an atomic snapshot
+or file integrity check. The default CLI `records list` output is unchanged.
+`underwrite_records_show` projects `records show --view summary --json` for one
+published ID. It returns canonical manifest metadata plus up to 16 exact
+logical file names, roles, media types and declared sizes/hashes. Use
+`next_file_page.offset` with the same root, ID and top-level `manifest_digest`
+to continue; a changed digest returns no files and requires a restart. Label,
+metadata and source locators are omitted. This reads the manifest only; run
+`records verify` separately to check stored file bytes and direct links.
+`underwrite_records_verify` projects `records verify --view summary --json` for
+an exact published ID. It reads stored bytes and direct linked manifests,
+returning `valid` and one check-state code per checked file and link, without
+coordinate alignment. Code repetitions give the finding counts; file names and
+linked record IDs are omitted. `valid: false` is a successful tool
+result describing failed integrity. It does not rerun producers, verify linked
+files or sources, or grant approval. Use the full CLI view for coordinates.
+`underwrite_records_read_json` projects `records read-json --view bounded` for
+one exact logical file after checking its stored bytes against the manifest.
+It returns the complete `record_document.v1` only when the escaped CLI JSON
+line, including newline, fits 16 KiB; otherwise it returns
+`record_error.v1 / OUTPUT_LIMIT_EXCEEDED` without partial content. Use the
+default CLI full view for larger documents. The nested `content` is untrusted
+retained data, not an Underwrite instruction, verdict, next action, provenance
+or approval. Other files and links are not checked by this read.
+Point an MCP client at the command only if it supports local stdio tools. The command does
+not start a network listener or background process, and the package does not
+register it with any client automatically.
 
 In `required_inputs`, each array entry is required and `|` means alternatives
 within that entry. For registered `ingest`/`project` codecs, `--file` satisfies
