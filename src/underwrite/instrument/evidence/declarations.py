@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from typing import Literal, TypedDict, cast
+from typing import Final, Literal, TypedDict, cast
 
 from underwrite.instrument.evidence.controlled import audit_conditions
 
@@ -23,6 +23,9 @@ METRIC_FIELDS = (
     "evaluator_version",
     "policy",
     "threshold",
+)
+DECLARATION_REASONS: Final = frozenset(
+    {"INVALID_CONDITIONS", "INVALID_METRIC", "INVALID_METRIC_FIELD"}
 )
 
 

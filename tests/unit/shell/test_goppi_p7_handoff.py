@@ -245,6 +245,28 @@ def test_manifest_receipt_paths_use_completion_root(tmp_path: Path) -> None:
     assert captured.documents.protocol_receipts == fixture.documents.protocol_receipts
 
 
+def test_receipt_structural_error_location_preserves_exact_logical_name(tmp_path: Path) -> None:
+    from drivers.goppi_p7_fixture import build_goppi_p7_fixture
+
+    handoff = build_goppi_p7_fixture().write(tmp_path)
+    manifest_path = (
+        tmp_path / "study/offline-verifier-regrade/private/protocol-receipts-manifest.json"
+    )
+    manifest = json.loads(manifest_path.read_bytes())
+    entry = manifest["files"][0]
+    old_path = tmp_path / "study/offline-verifier-regrade" / entry["path"]
+    digest = "e" + "0" * 63
+    entry["path"] = f"private/protocol-receipts/{digest}.json"
+    new_path = tmp_path / "study/offline-verifier-regrade" / entry["path"]
+    old_path.rename(new_path)
+    manifest_path.write_text(json.dumps(manifest))
+    _repair_capture_claims(tmp_path, handoff)
+
+    captured = capture_goppi_p7_handoff(handoff, source_root=tmp_path, policy=POLICY)
+    logical_name = f"regrade/private/protocol-receipts/{digest}.json"
+    assert captured.artifact_by_name[logical_name].logical_name == logical_name
+
+
 def test_source_count_limit_is_explicit_and_exact(tmp_path: Path) -> None:
     from drivers.goppi_p7_fixture import build_goppi_p7_fixture
 

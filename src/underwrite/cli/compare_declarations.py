@@ -7,7 +7,11 @@ from pathlib import Path
 from typing import Any, cast
 
 from underwrite.cli.evidence import EvidenceError, read_validated, run_cli
-from underwrite.instrument.evidence.declarations import DeclarationError, compare_declarations
+from underwrite.instrument.evidence.declarations import (
+    DECLARATION_REASONS,
+    DeclarationError,
+    compare_declarations,
+)
 from underwrite.instrument.evidence.promptfoo_compat import ACCOUNTING_SCHEMA
 
 AUDIT_MAX_BYTES = 1024 * 1024
@@ -83,7 +87,12 @@ def produce(args: argparse.Namespace) -> dict[str, object]:
             left["conditions"], right["conditions"], left["metric"], right["metric"]
         )
     except DeclarationError as exc:
-        raise EvidenceError("INVALID_INPUT", str(exc), "/manifest") from exc
+        reason = (
+            exc.args[0]
+            if exc.args and type(exc.args[0]) is str and exc.args[0] in DECLARATION_REASONS
+            else "INVALID_DECLARATION"
+        )
+        raise EvidenceError("INVALID_INPUT", reason, "/manifest") from exc
     return {
         "schema": "declared_comparison.v1",
         "input_digests": {"baseline": baseline_digest, "candidate": candidate_digest},
