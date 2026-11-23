@@ -12,7 +12,7 @@ from typing import Any, cast
 from underwrite_core.canonical import canonical_bytes, content_digest
 
 from underwrite.cli import measurement_flow
-from underwrite.cli.evidence import EvidenceError, ReportOutput, run_cli
+from underwrite.cli.evidence import EvidenceError, ReportOutput, output_limit_error, run_cli
 from underwrite.cli.local_json import Validator, decode_document, validate
 from underwrite.cli.records import OUTPUT_MAX_BYTES, record_error_payload
 from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
@@ -193,7 +193,7 @@ def run_replay_measure(root: Path, identifier: str) -> dict[str, object]:
     }
     validate(aggregate, report, EvidenceError, "INTERNAL_ERROR")
     if len(canonical_bytes(report)) + 1 > OUTPUT_MAX_BYTES:
-        raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
+        raise output_limit_error()
     return report
 
 

@@ -1,10 +1,11 @@
 """Measure the structure program's reference values from source files.
 
-The output is a one-off measurement, not a gate. Import direction and layer
+The output measures the error-literal ratchet gate. Import direction and layer
 independence stay owned by `.importlinter` and `tests/gates/test_layers.py`.
 Like import-linter, imports inside functions and `TYPE_CHECKING` blocks count.
-The error-code value is a lower bound: it reads only the first argument of
-error constructors and `_fail`/`_error`/`_invalid` helpers.
+The error-code estimate counts upper-case literals in every argument of error
+constructors and error/require helpers. It includes detailed reasons and actions,
+so it is a candidate-literal count rather than a count of public category codes.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ CORE = Path("packages/underwrite-core/src/underwrite_core")
 # `instrument` mixes the effectful ingest shell with pure evidence verifiers.
 SPLIT_UNITS = frozenset({"instrument"})
 CODE = re.compile(r"[A-Z][A-Z0-9_]{5,}")
-ERROR_CALLS = ("_fail", "_error", "_invalid")
+ERROR_CALLS = ("_fail", "_error", "_invalid", "_refuse", "_require", "require")
 HELPER_MODULE_MINIMUM = 3
 INTERNAL = frozenset({"underwrite", "underwrite_core"})
 
@@ -49,6 +50,34 @@ class Metrics(TypedDict):
     unit_edges: UnitEdges
     repeated_private_helpers: list[dict[str, str | int]]
     error_code_estimate: dict[str, int]
+    registered_error_literal_sites: dict[str, int]
+    dynamic_evidence_error_forwarding: dict[str, int]
+
+
+PUBLIC_ERROR_CONTRACTS = (
+    "acceptance_error.v1",
+    "artifact_inspection_error.v1",
+    "evidence_error.v1",
+    "instrument_error.v1",
+    "measurement_error.v1",
+    "record_error.v1",
+    "release_inspection_error.v1",
+)
+
+
+def registered_error_codes(root: Path) -> set[str]:
+    """Read the seven public category-code sets from their JSON contracts."""
+    codes: set[str] = set()
+    for name in PUBLIC_ERROR_CONTRACTS:
+        path = root / "contracts" / f"{name}.schema.json"
+        if not path.exists():
+            continue
+        schema = json.loads(path.read_text(encoding="utf-8"))
+        properties = schema.get("properties", {})
+        category = properties.get("code", {})
+        codes.update(category.get("enum", ()))
+        codes.update(schema.get("$defs", {}))
+    return codes
 
 
 def _lines(path: Path) -> int:
@@ -104,20 +133,85 @@ def _callee(node: ast.Call) -> str:
     return ""
 
 
-def error_codes(tree: ast.Module) -> set[str]:
-    """Lower-bound estimate: upper-case first arguments of error constructors and helpers."""
-    codes: set[str] = set()
+def error_literals(tree: ast.Module) -> list[str]:
+    """Upper-case literal sites at any argument position in error and require calls."""
+    codes: list[str] = []
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Call) or not node.args:
+        if not isinstance(node, ast.Call):
             continue
         name = _callee(node)
         if not (name.endswith("Error") or name.startswith(ERROR_CALLS)):
             continue
-        first = node.args[0]
-        if isinstance(first, ast.Constant) and isinstance(first.value, str):
-            if CODE.fullmatch(first.value):
-                codes.add(first.value)
+        for argument in (*node.args, *(keyword.value for keyword in node.keywords)):
+            if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
+                if CODE.fullmatch(argument.value):
+                    codes.append(argument.value)
     return codes
+
+
+def error_codes(tree: ast.Module) -> set[str]:
+    """Distinct upper-case literal candidates, including adapter-owned reasons."""
+    return set(error_literals(tree))
+
+
+def _registered_sites(
+    literals: list[str], public_codes: set[str], relative: str, modules: set[str]
+) -> int:
+    if relative == "src/underwrite/error_contract/registry.py":
+        return 0
+    count = sum(code in public_codes for code in literals)
+    if count:
+        modules.add(relative)
+    return count
+
+
+def _call_argument(node: ast.Call, position: int, keyword: str) -> ast.expr | None:
+    if len(node.args) > position:
+        return node.args[position]
+    return next((item.value for item in node.keywords if item.arg == keyword), None)
+
+
+def dynamic_evidence_error_forwarding(tree: ast.Module) -> int:
+    """Count EvidenceError sites with a non-literal reason or location.
+
+    This deliberately measures syntax only. A literal does not prove provenance,
+    and a dynamic expression can still be safely derived from a closed owner enum.
+    """
+    aliases = {"EvidenceError"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            aliases.update(
+                item.asname for item in node.names if item.name == "EvidenceError" and item.asname
+            )
+    sites = 0
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or _callee(node) not in aliases:
+            continue
+        if any(isinstance(argument, ast.Starred) for argument in node.args) or any(
+            item.arg is None for item in node.keywords
+        ):
+            sites += 1
+            continue
+        fields = (
+            _call_argument(node, 1, "reason"),
+            _call_argument(node, 2, "location"),
+        )
+        if any(
+            value is not None
+            and not (isinstance(value, ast.Constant) and isinstance(value.value, str))
+            for value in fields
+        ):
+            sites += 1
+    return sites
+
+
+def _record_dynamic_evidence_forwarding(
+    tree: ast.Module, relative: str, modules: set[str]
+) -> int:
+    sites = dynamic_evidence_error_forwarding(tree)
+    if sites:
+        modules.add(relative)
+    return sites
 
 
 def _reachable(edges: dict[str, set[str]], start: str) -> set[str]:
@@ -154,6 +248,11 @@ def measure(root: Path) -> Metrics:
     sites: Counter[tuple[str, str]] = Counter()
     helpers: dict[str, set[str]] = defaultdict(set)
     codes: dict[str, set[str]] = defaultdict(set)
+    public_codes = registered_error_codes(root)
+    registered_sites = 0
+    registered_modules: set[str] = set()
+    dynamic_forwarding_sites = 0
+    dynamic_forwarding_modules: set[str] = set()
     for path in files:
         module = _module(root, path)
         source = unit(module)
@@ -171,8 +270,13 @@ def measure(root: Path) -> Metrics:
             if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                 if node.name.startswith("_") and not node.name.startswith("__"):
                     helpers[node.name].add(relative)
-        for code in error_codes(tree):
+        literals = error_literals(tree)
+        for code in literals:
             codes[code].add(relative)
+        registered_sites += _registered_sites(literals, public_codes, relative, registered_modules)
+        dynamic_forwarding_sites += _record_dynamic_evidence_forwarding(
+            tree, relative, dynamic_forwarding_modules
+        )
     edges: dict[str, set[str]] = defaultdict(set)
     for source, destination in sites:
         edges[source].add(destination)
@@ -205,6 +309,14 @@ def measure(root: Path) -> Metrics:
             if count >= HELPER_MODULE_MINIMUM
         ],
         "error_code_estimate": {"distinct": len(codes), "modules": len(modules_with_codes)},
+        "registered_error_literal_sites": {
+            "sites": registered_sites,
+            "modules": len(registered_modules),
+        },
+        "dynamic_evidence_error_forwarding": {
+            "sites": dynamic_forwarding_sites,
+            "modules": len(dynamic_forwarding_modules),
+        },
     }
 
 

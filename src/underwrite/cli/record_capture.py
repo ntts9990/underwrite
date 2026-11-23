@@ -12,7 +12,7 @@ from typing import Any, cast
 from jsonschema import Draft202012Validator
 from underwrite_core.canonical import canonical_bytes
 
-from underwrite.cli.evidence import EvidenceError, output_line_size
+from underwrite.cli.evidence import EvidenceError, output_limit_error, output_line_size
 from underwrite.cli.local_json import Validator, validate
 from underwrite.cli.records import record_error_candidates, record_error_payload
 from underwrite.service._record_format import FormatError, record_id
@@ -71,7 +71,7 @@ def analysis_record_file(
     )
     encoded = canonical_bytes(document) + b"\n"
     if len(encoded) > max_bytes:
-        raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
+        raise output_limit_error()
     return CapturedRecordFile(
         result_name if result else "analysis/error.json",
         "result" if result else "log",
@@ -185,7 +185,7 @@ def admit_record_response(  # noqa: PLR0913 - explicit producer contracts and ou
                 ),
             )
     if (maximum if as_json else human_maximum) > max_bytes:
-        raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
+        raise output_limit_error()
 
 
 def finalize_captured_record(  # noqa: PLR0913 - explicit validators preserve producer contracts

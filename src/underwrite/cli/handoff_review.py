@@ -13,6 +13,7 @@ from underwrite.cli.evidence import (
     ERROR_ACTIONS,
     EvidenceError,
     ReportOutput,
+    output_limit_error,
     output_line_size,
     run_cli,
 )
@@ -317,7 +318,7 @@ def run_goppi_p7_handoff(request: HandoffRequest) -> HandoffRun:
         envelope["next_actions"] = _next_actions(envelope["analysis"])
         # Allow room for the bounded storage identity/diagnostic before any store mutation.
         if output_line_size(canonical_bytes(envelope)) > MAX_OUTPUT_BYTES - storage_reserve:
-            raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
+            raise output_limit_error()
     except SchemaConfigurationError:
         # A broken installed response contract cannot certify an aggregate response.
         raise
@@ -330,7 +331,7 @@ def run_goppi_p7_handoff(request: HandoffRequest) -> HandoffRun:
         _validate(RESULT_SCHEMA, envelope)
     if output_line_size(canonical_bytes(envelope)) + storage_reserve > MAX_OUTPUT_BYTES:
         # A configured limit smaller than the truthful diagnostic cannot admit a store mutation.
-        raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
+        raise output_limit_error()
     envelope["storage"] = _store(request, capture, verified, envelope)
     if envelope["storage"]["state"] == "error":
         envelope["exit_code"] = 3
