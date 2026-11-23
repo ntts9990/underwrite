@@ -17,6 +17,7 @@ from underwrite.instrument.evidence import accounting as pure
 from underwrite.instrument.evidence import promptfoo_compat
 from underwrite.instrument.evidence.promptfoo_compat import ACCOUNTING_SCHEMA, SOURCE_FORMAT
 from underwrite.instrument.ingest import accounting as adapter
+from underwrite.instrument.ingest.project import Projection
 from underwrite.instrument.ingest.transport import TransportError
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -49,6 +50,104 @@ def test_raw_and_default_manifest_outputs_are_byte_identical(
     old = capsys.readouterr()
     assert old.out == stdout and old.err == ""
     assert {path.name: path.read_bytes() for path in tmp_path.iterdir()} == before
+
+
+def test_summary_preserves_accounting_and_action_meaning_without_row_coordinates(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    artifact, _ = files(tmp_path)
+    assert audit_promptfoo.main([str(artifact), "--view", "actions", "--json"]) == 0
+    full = json.loads(capsys.readouterr().out)
+    assert audit_promptfoo.main([str(artifact), "--view", "summary", "--json"]) == 0
+    streams = capsys.readouterr()
+    assert streams.err == ""
+    summary = json.loads(streams.out)
+    assert summary["schema"] == audit_promptfoo.SUMMARY_SCHEMA
+    for field in (
+        "source", "raw_hash", "reader_profile", "scope", "producer_stats", "row_tallies",
+        "deltas", "declared_relation", "limitations", "next_actions",
+    ):
+        assert summary[field] == full[field]
+    assert summary["finding_counts"] == {
+        code: sum(row["code"] == code for row in full["findings"])
+        for code in ("CATEGORY_COUNT_MISMATCH", "SOURCE_FLAGS_DISAGREE")
+    }
+    assert summary["source_binding"] == {
+        "kind": "direct_file", "manifest_hash": None,
+        "expected_hash_check": "not_applicable",
+    }
+    assert summary["detail_state"]["full_view"] == "audit-promptfoo --view actions"
+    assert "row_index" not in streams.out and "location" not in streams.out
+    assert len(streams.out.encode()) <= audit_promptfoo.SUMMARY_MAX_BYTES
+    assert streams.out.encode() == canonical_bytes(summary) + b"\n"
+
+
+def test_summary_output_limit_is_atomic_and_default_remains_available(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    artifact, _ = files(tmp_path)
+    assert audit_promptfoo.main([str(artifact), "--view", "summary", "--json"]) == 0
+    bounded = capsys.readouterr().out
+    monkeypatch.setattr(audit_promptfoo, "SUMMARY_MAX_BYTES", len(bounded.encode()))
+    assert audit_promptfoo.main([str(artifact), "--view", "summary", "--json"]) == 0
+    assert capsys.readouterr().out == bounded
+    monkeypatch.setattr(audit_promptfoo, "SUMMARY_MAX_BYTES", len(bounded.encode()) - 1)
+    assert audit_promptfoo.main([str(artifact), "--view", "summary", "--json"]) == ERROR_EXIT
+    streams = capsys.readouterr()
+    assert streams.out == ""
+    assert json.loads(streams.err)["code"] == "OUTPUT_LIMIT_EXCEEDED"
+    assert audit_promptfoo.main([str(artifact), "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["schema"] == ACCOUNTING_SCHEMA
+
+
+def test_manifest_summary_keeps_expected_hash_state_and_same_accounting(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    artifact, manifest = files(tmp_path)
+    assert audit_promptfoo.main([str(artifact), "--view", "summary", "--json"]) == 0
+    direct = json.loads(capsys.readouterr().out)
+    assert audit_counts.main([str(manifest), "--view", "summary", "--json"]) == 0
+    absent = json.loads(capsys.readouterr().out)
+    assert absent["source_binding"]["kind"] == "manifest_case"
+    assert absent["source_binding"]["expected_hash_check"] == "not_supplied"
+    assert absent["source_binding"]["manifest_hash"] == digest_bytes(manifest.read_bytes())
+    assert absent["detail_state"]["full_view"] == "audit-counts --view full"
+    for key in ("raw_hash", "producer_stats", "row_tallies", "deltas", "finding_counts"):
+        assert absent[key] == direct[key]
+    update(manifest, "artifact", {"expected_hash": digest_bytes(artifact.read_bytes())})
+    assert audit_counts.main([str(manifest), "--view", "summary", "--json"]) == 0
+    matched = json.loads(capsys.readouterr().out)
+    assert matched["source_binding"]["expected_hash_check"] == "matched"
+    assert matched["source_binding"]["manifest_hash"] == digest_bytes(manifest.read_bytes())
+    assert matched["finding_counts"] == absent["finding_counts"]
+    update(manifest, "artifact", {"expected_hash": "sha256:" + "0" * 64})
+    assert audit_counts.main([str(manifest), "--view", "summary", "--json"]) == ERROR_EXIT
+    streams = capsys.readouterr()
+    assert streams.out == ""
+    assert json.loads(streams.err)["code"] == "EXPECTED_HASH_MISMATCH"
+
+
+def test_manifest_summary_uses_one_inspection_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, manifest = files(tmp_path)
+    original = adapter.inspect_artifact_with_projection
+    calls: list[Path] = []
+
+    def observe(
+        path: Path,
+        *,
+        required_source: tuple[str, str] | None = None,
+        allowed_sources: frozenset[tuple[str, str]] | None = None,
+    ) -> tuple[dict[str, object], Projection | None]:
+        calls.append(path)
+        return original(path, required_source=required_source, allowed_sources=allowed_sources)
+
+    monkeypatch.setattr(adapter, "inspect_artifact_with_projection", observe)
+    actions, inspection = adapter.audit_case_actions_with_inspection(manifest)
+    assert calls == [manifest]
+    assert actions["schema"] == promptfoo_compat.ACTIONS_SCHEMA
+    assert inspection["expected_hash_check"] == "not_supplied"
 
 
 def test_manifest_locators_do_not_change_current_source_accounting(

@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:record_verification_summary.v1",
+  "title": "record_verification_summary.v1",
+  "description": "Content-minimized stored-byte and direct-link integrity result. Finding coordinates are omitted; valid does not establish provenance or approval.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "view",
+    "record_id",
+    "manifest_digest",
+    "valid",
+    "links_check_states",
+    "file_check_states",
+    "verification_scope",
+    "limitations",
+    "detail_state"
+  ],
+  "properties": {
+    "schema": {
+      "const": "record_verification_summary.v1"
+    },
+    "view": {
+      "const": "summary"
+    },
+    "record_id": {
+      "$ref": "#/$defs/record_id"
+    },
+    "manifest_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "valid": {
+      "type": "boolean"
+    },
+    "verification_scope": {
+      "const": "stored_bytes_and_direct_links"
+    },
+    "file_check_states": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "enum": [
+          "CHECKED_NO_FINDING",
+          "FILE_MISSING",
+          "FILE_NOT_REGULAR",
+          "FILE_NOT_PRIVATE",
+          "FILE_READ_FAILED",
+          "FILE_SIZE_MISMATCH",
+          "FILE_DIGEST_MISMATCH"
+        ]
+      }
+    },
+    "links_check_states": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "enum": [
+          "CHECKED_NO_FINDING",
+          "LINK_RECORD_NOT_FOUND",
+          "LINK_RECORD_NOT_PUBLISHED",
+          "LINK_MANIFEST_INVALID",
+          "LINK_DIGEST_MISMATCH"
+        ]
+      }
+    },
+    "limitations": {
+      "const": [
+        "SOURCE_PROVENANCE_NOT_ESTABLISHED",
+        "LINKED_RECORD_FILE_BYTES_NOT_VERIFIED",
+        "RERUN_NOT_PERFORMED",
+        "NO_APPROVAL_AUTHORITY",
+        "FINDING_COORDINATES_OMITTED",
+        "CHECK_STATES_NOT_COORDINATE_ALIGNED"
+      ]
+    },
+    "detail_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file_names",
+        "linked_record_ids",
+        "full_view"
+      ],
+      "properties": {
+        "file_names": {
+          "const": "intentionally_omitted"
+        },
+        "linked_record_ids": {
+          "const": "intentionally_omitted"
+        },
+        "full_view": {
+          "const": "records verify --view full"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "valid": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "file_check_states": {
+            "items": {
+              "const": "CHECKED_NO_FINDING"
+            }
+          },
+          "links_check_states": {
+            "items": {
+              "const": "CHECKED_NO_FINDING"
+            }
+          }
+        }
+      },
+      "else": {
+        "anyOf": [
+          {
+            "properties": {
+              "file_check_states": {
+                "contains": {
+                  "enum": [
+                    "FILE_MISSING",
+                    "FILE_NOT_REGULAR",
+                    "FILE_NOT_PRIVATE",
+                    "FILE_READ_FAILED",
+                    "FILE_SIZE_MISMATCH",
+                    "FILE_DIGEST_MISMATCH"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "links_check_states": {
+                "contains": {
+                  "enum": [
+                    "LINK_RECORD_NOT_FOUND",
+                    "LINK_RECORD_NOT_PUBLISHED",
+                    "LINK_MANIFEST_INVALID",
+                    "LINK_DIGEST_MISMATCH"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "record_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 96,
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,95}(?![\\s\\S])"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}(?![\\s\\S])"
+    }
+  }
+}

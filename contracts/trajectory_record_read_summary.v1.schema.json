@@ -1,0 +1,256 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:trajectory_record_read_summary.v1",
+  "title": "trajectory_record_read_summary.v1",
+  "description": "Content-minimized trajectory record reopen result. Current stored-byte verification is distinct from retained historical verifier claims.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "command",
+    "view",
+    "record_id",
+    "manifest_digest",
+    "record_layout",
+    "analysis_state",
+    "current_storage_verification",
+    "historical_verifier_claim",
+    "populations",
+    "missingness",
+    "detail_state",
+    "native_verification_performed_now",
+    "authority",
+    "limitations"
+  ],
+  "properties": {
+    "schema": {"const": "trajectory_record_read_summary.v1"},
+    "command": {"const": "records read-trajectory"},
+    "view": {"const": "summary"},
+    "record_id": {"$ref": "#/$defs/record_id"},
+    "manifest_digest": {"$ref": "#/$defs/digest"},
+    "record_layout": {
+      "enum": ["trajectory-record.v1", "trajectory-record.v2"]
+    },
+    "analysis_state": {"enum": ["result", "error"]},
+    "current_storage_verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "scope", "files_checked", "links_checked", "findings_count"],
+      "properties": {
+        "status": {"const": "verified"},
+        "scope": {"const": "stored_bytes_and_direct_links"},
+        "files_checked": {"const": 10},
+        "links_checked": {"const": 0},
+        "findings_count": {"const": 0}
+      }
+    },
+    "historical_verifier_claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "reported_scope",
+        "verifier_identity_verified",
+        "source_authentication_independently_verified",
+        "producer_projection_independently_verified"
+      ],
+      "properties": {
+        "state": {
+          "enum": ["not_performed", "report_accepted", "legacy_unattributed_report"]
+        },
+        "reported_scope": {
+          "enum": [
+            "not_performed",
+            "report_only_content_closure",
+            "legacy_self_consistent_content_closure"
+          ]
+        },
+        "verifier_identity_verified": {"const": false},
+        "source_authentication_independently_verified": {"const": false},
+        "producer_projection_independently_verified": {"const": false}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"state": {"const": "not_performed"}}},
+          "then": {"properties": {"reported_scope": {"const": "not_performed"}}}
+        },
+        {
+          "if": {"properties": {"state": {"const": "report_accepted"}}},
+          "then": {
+            "properties": {"reported_scope": {"const": "report_only_content_closure"}}
+          }
+        },
+        {
+          "if": {"properties": {"state": {"const": "legacy_unattributed_report"}}},
+          "then": {
+            "properties": {
+              "reported_scope": {"const": "legacy_self_consistent_content_closure"}
+            }
+          }
+        }
+      ]
+    },
+    "populations": {"$ref": "#/$defs/populations"},
+    "missingness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["population_state", "missing_population_fields"],
+      "properties": {
+        "population_state": {"enum": ["available", "not_available_analysis_error"]},
+        "missing_population_fields": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/population_field"},
+          "maxItems": 5,
+          "uniqueItems": true
+        }
+      }
+    },
+    "detail_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome_details",
+        "comparison_details",
+        "outcome_missingness_state",
+        "analysis_diagnostic",
+        "full_view"
+      ],
+      "properties": {
+        "outcome_details": {"const": "intentionally_omitted"},
+        "comparison_details": {"const": "intentionally_omitted"},
+        "outcome_missingness_state": {"const": "intentionally_omitted"},
+        "analysis_diagnostic": {
+          "enum": ["not_applicable", "intentionally_omitted_use_full_view"]
+        },
+        "full_view": {"const": "records read-trajectory --view full"}
+      }
+    },
+    "native_verification_performed_now": {"const": false},
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["human_review", "execution_authorized", "merge_authorized", "revert_authorized"],
+      "properties": {
+        "human_review": {"const": "required"},
+        "execution_authorized": {"const": false},
+        "merge_authorized": {"const": false},
+        "revert_authorized": {"const": false}
+      }
+    },
+    "limitations": {
+      "const": [
+        "storage_verification_establishes_current_stored_byte_integrity_only",
+        "historical_verifier_evidence_was_not_executed_now",
+        "verifier_identity_is_not_verified",
+        "source_authentication_and_producer_projection_are_not_independently_verified",
+        "population_counts_are_retained_analysis_claims",
+        "outcome_comparison_and_missingness_details_are_omitted_use_full_view"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"analysis_state": {"const": "result"}}},
+      "then": {
+        "properties": {
+          "populations": {"$ref": "#/$defs/available_populations"},
+          "missingness": {
+            "properties": {
+              "population_state": {"const": "available"},
+              "missing_population_fields": {"maxItems": 0}
+            }
+          },
+          "detail_state": {
+            "properties": {"analysis_diagnostic": {"const": "not_applicable"}}
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"analysis_state": {"const": "error"}}},
+      "then": {
+        "properties": {
+          "populations": {"$ref": "#/$defs/missing_populations"},
+          "missingness": {
+            "properties": {
+              "population_state": {"const": "not_available_analysis_error"},
+              "missing_population_fields": {
+                "const": [
+                  "paired_rows",
+                  "case_stage_repeat_pairs",
+                  "unique_source_case_ids",
+                  "stage_case_slots",
+                  "primary_repeat_pairs"
+                ]
+              }
+            }
+          },
+          "detail_state": {
+            "properties": {
+              "analysis_diagnostic": {"const": "intentionally_omitted_use_full_view"}
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "record_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 96,
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,95}(?![\\s\\S])"
+    },
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}(?![\\s\\S])"},
+    "population_field": {
+      "enum": [
+        "paired_rows",
+        "case_stage_repeat_pairs",
+        "unique_source_case_ids",
+        "stage_case_slots",
+        "primary_repeat_pairs"
+      ]
+    },
+    "population_value": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "maximum": 10000
+    },
+    "populations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "paired_rows",
+        "case_stage_repeat_pairs",
+        "unique_source_case_ids",
+        "stage_case_slots",
+        "primary_repeat_pairs"
+      ],
+      "properties": {
+        "paired_rows": {"$ref": "#/$defs/population_value"},
+        "case_stage_repeat_pairs": {"$ref": "#/$defs/population_value"},
+        "unique_source_case_ids": {"$ref": "#/$defs/population_value"},
+        "stage_case_slots": {"$ref": "#/$defs/population_value"},
+        "primary_repeat_pairs": {"$ref": "#/$defs/population_value"}
+      }
+    },
+    "available_populations": {
+      "properties": {
+        "paired_rows": {"type": "integer"},
+        "case_stage_repeat_pairs": {"type": "integer"},
+        "unique_source_case_ids": {"type": "integer"},
+        "stage_case_slots": {"type": "integer"},
+        "primary_repeat_pairs": {"type": "integer"}
+      }
+    },
+    "missing_populations": {
+      "properties": {
+        "paired_rows": {"type": "null"},
+        "case_stage_repeat_pairs": {"type": "null"},
+        "unique_source_case_ids": {"type": "null"},
+        "stage_case_slots": {"type": "null"},
+        "primary_repeat_pairs": {"type": "null"}
+      }
+    }
+  }
+}

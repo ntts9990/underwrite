@@ -64,6 +64,7 @@ SCHEMA = "trajectory_record.v1"
 READ_SCHEMA = "trajectory_record_read.v1"
 SCHEMA_V2 = "trajectory_record.v2"
 READ_SCHEMA_V2 = "trajectory_record_read.v2"
+SUMMARY_SCHEMA = "trajectory_record_read_summary.v1"
 COMMAND = "records audit-trajectory"
 READ_COMMAND = "records read-trajectory"
 KIND = "goppi.trajectory-review"
@@ -71,6 +72,7 @@ LAYOUT = "trajectory-record.v1"
 LAYOUT_V2 = "trajectory-record.v2"
 WRAPPER_MAX_BYTES = 64 * 1024
 OUTPUT_MAX_BYTES = MAX_REPORT_BYTES + WRAPPER_MAX_BYTES
+SUMMARY_OUTPUT_MAX_BYTES = 16 * 1024
 HISTORY_NAME = "verification/history.json"
 INVOCATION_NAME = "invocation.json"
 RESULT_NAME = "analysis/trajectory.json"
@@ -106,6 +108,19 @@ def _contracts(layout: str) -> _Contracts:
         cast(Validator, packaged_validator("record_verification.v1")),
         cast(Validator, packaged_validator(READ_SCHEMA_V2)),
     )
+
+
+@dataclass(frozen=True)
+class _ReopenedTrajectory:
+    identifier: str
+    snapshot: RecordSnapshot
+    layout: str
+    state: str
+    sources: list[dict[str, Any]]
+    history: dict[str, Any]
+    analysis: dict[str, Any]
+    verification: dict[str, Any]
+    contracts: _Contracts
 
 
 def _identifier(value: str) -> str:
@@ -405,8 +420,8 @@ def _interpretation(layout: str, history: Mapping[str, Any]) -> dict[str, object
     }
 
 
-def run_read_trajectory(root: Path, identifier: str) -> dict[str, object]:
-    """Read retained analysis under its exact layout; verify current stored bytes only."""
+def _reopen_trajectory(root: Path, identifier: str) -> _ReopenedTrajectory:
+    """Validate retained analysis and all stored bytes without assembling an output view."""
     identifier = _identifier(identifier)
     try:
         snapshot = read_record(root, identifier)
@@ -445,33 +460,163 @@ def run_read_trajectory(root: Path, identifier: str) -> dict[str, object]:
         )
     except RecordError as exc:
         raise EvidenceError("INVALID_INPUT", "TRAJECTORY_RECORD_" + exc.code, "/record") from None
+    return _ReopenedTrajectory(
+        identifier,
+        snapshot,
+        layout,
+        state,
+        sources,
+        history,
+        analysis,
+        verification,
+        contracts,
+    )
+
+
+def run_read_trajectory(root: Path, identifier: str) -> dict[str, object]:
+    """Read retained analysis under its exact layout; verify current stored bytes only."""
+    reopened = _reopen_trajectory(root, identifier)
     envelope: dict[str, object] = {
         "schema": READ_SCHEMA_V2,
         "command": READ_COMMAND,
-        "record_id": identifier,
-        "manifest_digest": snapshot.digest,
-        "source": {"state": "captured", "source_members": sources},
-        "current_storage_verification": verification,
+        "record_id": reopened.identifier,
+        "manifest_digest": reopened.snapshot.digest,
+        "source": {"state": "captured", "source_members": reopened.sources},
+        "current_storage_verification": reopened.verification,
         "native_verification_performed_now": False,
-        "record_layout": layout,
-        "verification_interpretation": _interpretation(layout, history),
+        "record_layout": reopened.layout,
+        "verification_interpretation": _interpretation(reopened.layout, reopened.history),
     }
-    if layout == LAYOUT:
-        envelope["historical_analysis"] = analysis
-        envelope["historical_native_verification_history"] = history
+    if reopened.layout == LAYOUT:
+        envelope["historical_analysis"] = reopened.analysis
+        envelope["historical_native_verification_history"] = reopened.history
     else:
-        envelope["analysis"] = analysis
-        envelope["verifier_report_history"] = history
-    validate(contracts.reopen, envelope, EvidenceError, "INTERNAL_ERROR")
+        envelope["analysis"] = reopened.analysis
+        envelope["verifier_report_history"] = reopened.history
+    validate(reopened.contracts.reopen, envelope, EvidenceError, "INTERNAL_ERROR")
     if output_line_size(canonical_bytes(envelope)) > OUTPUT_MAX_BYTES:
         raise output_limit_error()
     return envelope
 
 
-def configure_read(parser: argparse.ArgumentParser) -> None:
+_POPULATION_FIELDS = (
+    "paired_rows",
+    "case_stage_repeat_pairs",
+    "unique_source_case_ids",
+    "stage_case_slots",
+    "primary_repeat_pairs",
+)
+_SUMMARY_LIMITATIONS = [
+    "storage_verification_establishes_current_stored_byte_integrity_only",
+    "historical_verifier_evidence_was_not_executed_now",
+    "verifier_identity_is_not_verified",
+    "source_authentication_and_producer_projection_are_not_independently_verified",
+    "population_counts_are_retained_analysis_claims",
+    "outcome_comparison_and_missingness_details_are_omitted_use_full_view",
+]
+
+
+def _historical_verifier_claim(layout: str, history: Mapping[str, Any]) -> dict[str, object]:
+    if layout == LAYOUT:
+        state = history["state"]
+        return {
+            "state": "not_performed" if state == "not_performed" else "legacy_unattributed_report",
+            "reported_scope": "not_performed"
+            if state == "not_performed"
+            else "legacy_self_consistent_content_closure",
+            "verifier_identity_verified": False,
+            "source_authentication_independently_verified": False,
+            "producer_projection_independently_verified": False,
+        }
+    state = history["verifier_report_state"]
+    return {
+        "state": state,
+        "reported_scope": "not_performed"
+        if state == "not_performed"
+        else "report_only_content_closure",
+        "verifier_identity_verified": False,
+        "source_authentication_independently_verified": False,
+        "producer_projection_independently_verified": False,
+    }
+
+
+def run_read_trajectory_summary(root: Path, identifier: str) -> dict[str, object]:
+    """Return a bounded summary after the same full stored-record validation as the full view."""
+    reopened = _reopen_trajectory(root, identifier)
+    report = reopened.analysis.get("report")
+    has_populations = reopened.state == "result" and type(report) is dict
+    retained = cast(dict[str, Any], report).get("populations") if has_populations else None
+    populations = {
+        field: cast(dict[str, Any], retained)[field] if type(retained) is dict else None
+        for field in _POPULATION_FIELDS
+    }
+    verification = reopened.verification
+    summary: dict[str, object] = {
+        "schema": SUMMARY_SCHEMA,
+        "command": READ_COMMAND,
+        "view": "summary",
+        "record_id": reopened.identifier,
+        "manifest_digest": reopened.snapshot.digest,
+        "record_layout": reopened.layout,
+        "analysis_state": reopened.state,
+        "current_storage_verification": {
+            "status": "verified",
+            "scope": verification["verification_scope"],
+            "files_checked": verification["files_checked"],
+            "links_checked": verification["links_checked"],
+            "findings_count": len(cast(list[object], verification["findings"])),
+        },
+        "historical_verifier_claim": _historical_verifier_claim(reopened.layout, reopened.history),
+        "populations": populations,
+        "missingness": {
+            "population_state": "available" if has_populations else "not_available_analysis_error",
+            "missing_population_fields": [] if has_populations else list(_POPULATION_FIELDS),
+        },
+        "detail_state": {
+            "outcome_details": "intentionally_omitted",
+            "comparison_details": "intentionally_omitted",
+            "outcome_missingness_state": "intentionally_omitted",
+            "analysis_diagnostic": (
+                "not_applicable"
+                if reopened.state == "result"
+                else "intentionally_omitted_use_full_view"
+            ),
+            "full_view": "records read-trajectory --view full",
+        },
+        "native_verification_performed_now": False,
+        "authority": {
+            "human_review": "required",
+            "execution_authorized": False,
+            "merge_authorized": False,
+            "revert_authorized": False,
+        },
+        "limitations": _SUMMARY_LIMITATIONS,
+    }
+    validate(
+        cast(Validator, packaged_validator(SUMMARY_SCHEMA)),
+        summary,
+        EvidenceError,
+        "INTERNAL_ERROR",
+    )
+    if output_line_size(canonical_bytes(summary)) > SUMMARY_OUTPUT_MAX_BYTES:
+        raise output_limit_error()
+    return summary
+
+
+def _configure_record_identity(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--root", type=Path, required=True, help="Private record root.")
     parser.add_argument("--id", type=_identifier, required=True, help="Immutable record ID.")
     parser.add_argument("--json", action="store_true", help="Emit typed trajectory record JSON.")
+
+
+def configure_read(parser: argparse.ArgumentParser) -> None:
+    _configure_record_identity(parser)
+    parser.add_argument(
+        "--view",
+        choices=("full", "summary"),
+        default="full",
+        help="Emit the complete retained analysis (default) or its bounded summary.",
+    )
     parser.description = (
         "Reopen retained trajectory analysis and verify all stored bytes without executing Goppi. "
         "Historical native verification is not a fresh execution."
@@ -479,7 +624,7 @@ def configure_read(parser: argparse.ArgumentParser) -> None:
 
 
 def configure(parser: argparse.ArgumentParser) -> None:
-    configure_read(parser)
+    _configure_record_identity(parser)
     parser.add_argument("--exchange", type=Path, required=True)
     parser.add_argument(
         "--goppi-executable", type=Path, help="Operator-selected Goppi; defaults to goppi on PATH."
@@ -517,13 +662,24 @@ def main_read(argv: list[str]) -> int:
         READ_COMMAND,
         argv,
         configure_read,
-        lambda args: run_read_trajectory(args.root, args.id),
+        lambda args: (
+            run_read_trajectory_summary(args.root, args.id)
+            if args.view == "summary"
+            else run_read_trajectory(args.root, args.id)
+        ),
         ReportOutput(
-            READ_SCHEMA_V2,
+            lambda args: SUMMARY_SCHEMA if args.view == "summary" else READ_SCHEMA_V2,
             OUTPUT_MAX_BYTES,
             human=lambda result: (
-                "Retained trajectory analysis reopened; stored bytes verified. "
-                "Native verification was not performed now.\n" + canonical_bytes(result).decode()
+                (
+                    "Retained trajectory summary reopened; stored bytes verified. "
+                    if result["schema"] == SUMMARY_SCHEMA
+                    else "Retained trajectory analysis reopened; stored bytes verified. "
+                )
+                + (
+                    "Native verification was not performed now.\n"
+                    + canonical_bytes(result).decode()
+                )
             ),
         ),
     )
