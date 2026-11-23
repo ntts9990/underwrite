@@ -482,6 +482,7 @@ New schema decisions (not hidden in initial denominator):
 | `baseline_record.v2` | S5 | Sole current baseline writer embeds evidence_result.v2; old nested-result identity and stored history remain intact. |
 | `common_result_inspection.v3` | S5 | Sole summary output, exact selected input v1/v2 plus original raw hash; no upgraded input fiction. |
 | `common_result_inspection_actions.v3` | S5 | Sole actions output, source-owned vocabularies and same identity guarantee as summary. |
+| `common_result_marginal_comparison.v1` | A3 follow-up | Additive CLI/Python comparison of two validated actions projections; same-format/unit arithmetic only, item correspondence and semantic comparability remain unestablished. Existing v3 outputs and default MCP catalog remain unchanged. |
 | `declared_claims.v3` | S7 amendment | Shared measured-subject admission, separate candidate/claim grammar, new actual tagged seal. |
 | `acceptance_decision.v3` | S7 amendment | Sole decision writer admits exact shared subject IDs and retains policy/semantic/seal binding and human-review boundary. |
 
