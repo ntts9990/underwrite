@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any, cast
@@ -49,6 +50,57 @@ def invoke(tmp_path: Path, capsys: pytest.CaptureFixture[str], *extra: str) -> t
     cast(Validator, packaged_validator("paired_handoff_review.v1")).validate(document)
     assert document["exit_code"] == code
     return code, document
+
+
+def _replace_receipt_path(source: Path, leading: str, *, failure: str) -> str:
+    receipt_manifest_path = (
+        source / "study/offline-verifier-regrade/private/protocol-receipts-manifest.json"
+    )
+    receipt_manifest = json.loads(receipt_manifest_path.read_bytes())
+    receipt_entry = cast(dict[str, Any], receipt_manifest["files"][0])
+    old_path = source / "study/offline-verifier-regrade" / cast(str, receipt_entry["path"])
+    digest = leading + "0" * 63
+    receipt_entry["path"] = f"private/protocol-receipts/{digest}.json"
+    new_path = source / "study/offline-verifier-regrade" / receipt_entry["path"]
+    old_path.rename(new_path)
+
+    def identity(path: Path) -> dict[str, object]:
+        raw = path.read_bytes()
+        return {"sha256": "sha256:" + hashlib.sha256(raw).hexdigest(), "bytes": len(raw)}
+
+    if failure == "parse":
+        new_path.write_bytes(b"\xff")
+        receipt_entry.update(identity(new_path))
+    elif failure == "digest":
+        receipt_entry["sha256"] = "sha256:" + "0" * 64
+    elif failure == "size":
+        receipt_entry["bytes"] = cast(int, receipt_entry["bytes"]) + 1
+    else:
+        new_path.unlink()
+    receipt_manifest_path.write_text(json.dumps(receipt_manifest))
+
+    completion_path = source / "study/offline-verifier-regrade/completion-manifest.json"
+    completion = json.loads(completion_path.read_bytes())
+    for entry in cast(list[dict[str, object]], completion["files"]):
+        entry.update(identity(completion_path.parent / cast(str, entry["path"])))
+    protocol_receipts = cast(dict[str, object], completion["protocol_receipts"])
+    protocol_receipts["manifest_sha256"] = identity(receipt_manifest_path)["sha256"]
+    completion_path.write_text(json.dumps(completion))
+
+    handoff_path = source / "study/paired-analysis-input/consumer-handoff.json"
+    handoff = json.loads(handoff_path.read_bytes())
+    handoff["entry_files"]["source_regrade_completion"]["sha256"] = identity(completion_path)[
+        "sha256"
+    ]
+    handoff_path.write_text(json.dumps(handoff))
+
+    mapping_manifest_path = source / "study/paired-analysis-input/manifest.json"
+    mapping_manifest = json.loads(mapping_manifest_path.read_bytes())
+    for entry in cast(list[dict[str, object]], mapping_manifest["files"]):
+        target = mapping_manifest_path.parent / cast(str, entry["path"])
+        entry.update(identity(target))
+    mapping_manifest_path.write_text(json.dumps(mapping_manifest))
+    return digest
 
 
 def test_exact_review_reuses_existing_engine_once_without_store(
@@ -109,6 +161,52 @@ def test_malformed_join_leaf_preserves_typed_error_through_cli(
     assert report["analysis"]["error"]["code"] == "INVALID_INPUT"
     assert report["analysis"]["error"]["reason"] == "HANDOFF_IDENTITY_JOIN_MISMATCH"
     assert report["analysis"]["error"]["location"] == "/paired_input/metadata"
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_code", "reason"),
+    [
+        ("digest", "INVALID_INPUT", "HANDOFF_DIGEST_MISMATCH"),
+        ("size", "INVALID_INPUT", "HANDOFF_SIZE_MISMATCH"),
+        ("parse", "INVALID_INPUT", "CAPTURE_INVALID_JSON"),
+        ("read", "SOURCE_READ_FAILED", "CAPTURE_READ_FAILED"),
+    ],
+)
+def test_receipt_digest_path_never_changes_or_leaks_cli_diagnostic(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    failure: str,
+    expected_code: str,
+    reason: str,
+) -> None:
+    diagnostics: list[dict[str, object]] = []
+    digests: list[str] = []
+    for leading in ("e", "f", "4"):
+        source = tmp_path / f"source-{leading}"
+        handoff = build_goppi_p7_fixture().write(source)
+        digests.append(_replace_receipt_path(source, leading, failure=failure))
+        code = main(
+            [
+                "review-handoff",
+                "--handoff",
+                str(handoff),
+                "--source-root",
+                str(source),
+                "--json",
+            ]
+        )
+        streams = capsys.readouterr()
+        assert streams.err == ""
+        report = json.loads(streams.out)
+        cast(Validator, packaged_validator("paired_handoff_review.v1")).validate(report)
+        assert code == report["exit_code"] == ANALYSIS_ERROR_EXIT
+        diagnostics.append(cast(dict[str, object], report["analysis"]["error"]))
+
+    projected = [(item["code"], item["reason"], item["location"]) for item in diagnostics]
+    assert projected == [(expected_code, reason, "/regrade/files/0")] * 3
+    for diagnostic in diagnostics:
+        public_fields = f"{diagnostic['reason']} {diagnostic['location']}"
+        assert all(digest not in public_fields for digest in digests)
 
 
 def test_record_captures_the_same_source_and_results(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -43,6 +44,32 @@ def output_line_size(encoded: str | bytes) -> int:
 
 
 ERROR_ACTIONS = EVIDENCE_ACTIONS
+_REASON_TOKEN = re.compile(r"[A-Z][A-Z0-9_]*\Z")
+_LOCATION_SEGMENT = re.compile(r"(?:[A-Za-z_][A-Za-z0-9_.~-]*|0|[1-9][0-9]*)\Z")
+_INVALID_POINTER_ESCAPE = re.compile(r"~(?![01])")
+_LEGACY_LOCATIONS = frozenset({"/", "trajectory"})
+MAX_ERROR_REASON_LENGTH = 128
+MAX_ERROR_LOCATION_LENGTH = 512
+
+
+def _safe_error_fields(reason: str, location: str) -> bool:
+    if (
+        type(reason) is not str
+        or len(reason) > MAX_ERROR_REASON_LENGTH
+        or _REASON_TOKEN.fullmatch(reason) is None
+    ):
+        return False
+    if type(location) is not str or len(location) > MAX_ERROR_LOCATION_LENGTH:
+        return False
+    if not location or location in _LEGACY_LOCATIONS:
+        return True
+    if not location.startswith("/"):
+        return False
+    return all(
+        _LOCATION_SEGMENT.fullmatch(segment) is not None
+        and _INVALID_POINTER_ESCAPE.search(segment) is None
+        for segment in location.split("/")[1:]
+    )
 
 
 class EvidenceError(ValueError):
@@ -51,6 +78,8 @@ class EvidenceError(ValueError):
     def __init__(
         self, code: str, reason: str, location: str = "", context: str = "default"
     ) -> None:
+        if not _safe_error_fields(reason, location):
+            code, reason, location, context = "INTERNAL_ERROR", "INTERNAL_ERROR", "", "default"
         projection = evidence_projection(code, context)
         self.exit_code = projection.exit_code
         self.payload: dict[str, object] = {
