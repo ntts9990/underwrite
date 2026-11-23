@@ -13,6 +13,7 @@ from underwrite.cli.local_json import Validator, validate
 from underwrite.cli.record_capture import (
     analysis_exit_code,
     finalize_captured_record,
+    new_record_id_argument,
     render_record_response,
     storage_validator,
 )
@@ -41,13 +42,6 @@ SOURCE_NAMES = (
 )
 
 
-def _identifier(value: str) -> str:
-    try:
-        return record_id(value)
-    except FormatError:
-        raise argparse.ArgumentTypeError("valid new record ID required") from None
-
-
 def configure(parser: argparse.ArgumentParser) -> None:
     parser.description = (
         "Capture and retain a strict owner-mapped C55 and Promptfoo review. "
@@ -59,7 +53,7 @@ def configure(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--promptfoo", type=Path, required=True, metavar="FILE")
     parser.add_argument("--correspondence", type=Path, required=True, metavar="FILE")
     parser.add_argument("--root", type=Path, required=True, metavar="ROOT")
-    parser.add_argument("--id", type=_identifier, required=True, metavar="NEW_ID")
+    parser.add_argument("--id", type=new_record_id_argument, required=True, metavar="NEW_ID")
     parser.add_argument("--json", action="store_true", help=f"Emit {SCHEMA} JSON.")
 
 

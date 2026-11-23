@@ -23,6 +23,7 @@ from underwrite.cli.record_capture import (
     analysis_exit_code,
     analysis_record_file,
     finalize_captured_record,
+    new_record_id_argument,
     render_record_response,
     storage_validator,
 )
@@ -86,13 +87,6 @@ def _applied_reader(analysis: dict[str, Any]) -> dict[str, str]:
     return selected
 
 
-def _identifier(value: str) -> str:
-    try:
-        return record_id(value)
-    except FormatError:
-        raise argparse.ArgumentTypeError("valid new record ID required") from None
-
-
 def configure(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "file",
@@ -101,7 +95,9 @@ def configure(parser: argparse.ArgumentParser) -> None:
         help="Entire local Promptfoo export to retain.",
     )
     parser.add_argument("--root", type=Path, required=True, help="Explicit private record root.")
-    parser.add_argument("--id", type=_identifier, required=True, help="New immutable record ID.")
+    parser.add_argument(
+        "--id", type=new_record_id_argument, required=True, help="New immutable record ID."
+    )
     parser.add_argument(
         "--json", action="store_true", help="Emit the selected Promptfoo record JSON contract."
     )
