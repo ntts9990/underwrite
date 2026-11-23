@@ -1312,6 +1312,46 @@ def _mcp_surface_pilot(cli: Path, work: Path) -> None:  # noqa: PLR0915 - one wi
             "installed MCP actions result drift",
         )
         wheel.require("private-input-v2" not in str(selected), "MCP reflected an input path")
+    compared = wheel.success(
+        [
+            str(cli),
+            "compare-results",
+            "--baseline",
+            str(first),
+            "--candidate",
+            str(first),
+            "--json",
+        ],
+        work,
+    )
+    comparison = json.loads(compared.stdout)
+    wheel.require(
+        comparison["schema"] == "common_result_marginal_comparison.v1"
+        and comparison["marginal_calculation"]["state"] == "computed"
+        and comparison["marginal_calculation"]["availability_counts"]["delta"]["total"] == 0
+        and comparison["item_correspondence"]["state"] == "not_established",
+        "installed marginal comparison drift",
+    )
+    wheel.require("private-input-v2" not in compared.stdout, "comparison reflected an input path")
+    mixed = wheel.success(
+        [
+            str(cli),
+            "compare-results",
+            "--baseline",
+            str(first),
+            "--candidate",
+            str(second),
+            "--json",
+        ],
+        work,
+    )
+    ineligible = json.loads(mixed.stdout)["marginal_calculation"]
+    wheel.require(
+        ineligible["state"] == "not_computed"
+        and ineligible["reason"] == "RESULT_FORMAT_MISMATCH"
+        and ineligible["item_next_action_counts"] is None,
+        "installed comparison mixed-format refusal drift",
+    )
     _check_mcp_extended_tools(
         cli,
         work,

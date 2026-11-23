@@ -22,6 +22,7 @@ from underwrite.cli import (
     capabilities,
     commands,
     compare_declarations,
+    compare_results,
     handoff_review,
     inspect_result,
     inspection,
@@ -195,6 +196,22 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
             for view, output in inspect_result.OUTPUT_SCHEMAS.items()
         ),
         _standalone(inspect_result.main),
+    ),
+    CommandDescriptor(
+        "compare-results",
+        "Compare declared marginal counts from two common-result files without item linkage.",
+        compare_results.configure,
+        tuple(
+            profile(
+                f"{baseline}|{candidate}",
+                ("baseline", "candidate"),
+                tuple(dict.fromkeys((baseline, candidate))),
+                (compare_results.RESULT_SCHEMA,),
+            )
+            for baseline in inspect_result.INPUT_SCHEMAS
+            for candidate in inspect_result.INPUT_SCHEMAS
+        ),
+        _standalone(compare_results.main),
     ),
     CommandDescriptor(
         "review-artifacts",

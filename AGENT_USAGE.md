@@ -1360,6 +1360,38 @@ It is a test input from a feature branch, not an authenticated production result
 or a claim that the feature is on goppi main. The runtime command has no goppi
 dependency.
 
+## Compare two common-result marginals
+
+Use the additive CLI when an agent needs a bounded, typed comparison of two
+local common-result files:
+
+```sh
+underwrite compare-results --baseline BEFORE.json --candidate AFTER.json --json
+```
+
+The Python equivalent is `underwrite.cli.compare_results.compare_result_files`
+with two `Path` arguments. Each file is screened through the existing
+`inspect-result --view actions` path. The new
+`common_result_marginal_comparison.v1` result keeps the selected file hashes,
+declared processing and population, and candidate-minus-baseline differences in
+availability, item action, and declared binding **marginal counts**. It never
+copies item values, coordinates, source identities, or input paths into output.
+
+The calculation is `computed` only when both files are analyzed and declare
+the same `evidence_result` schema and population unit. Otherwise every delta
+is null with a closed reason and next task. A null planned count remains unknown.
+The population's `observed_count` and item availability `observed` remain
+separate fields. Even when arithmetic is computed, `item_correspondence` is
+`not_established` and `semantic_comparability` is `unestablished`. The next tasks
+request a source-bound item binding and verification of population and metric
+meaning. Equal counts, coordinates or hashes do not establish an item transition,
+improvement, producer authentication, or approval. The two selected reads are
+bounded but are not an atomic file-pair snapshot.
+
+This command is a CLI/Python result in the current checkout. The default
+`underwrite-mcp` catalog still has its existing 22 tools; no comparison MCP tool
+is registered. Published packages may not include this unreleased command.
+
 ## Compare a Goppi paired trajectory
 
 This is the first-party companion path for an export from a compatible

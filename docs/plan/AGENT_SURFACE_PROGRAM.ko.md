@@ -202,6 +202,11 @@ A1은 MCP 없이도 CLI 사용자에게 이득이다. 결과 해석이 쉬워지
 - `underwrite_inspect_result_v1_actions`와 `_v2_actions`는 각 입력 계약에 고정된
   CLI `inspect-result --view actions --json`을 투영한다. 요약에 항목별 다음 행동과
   선언된 의미 결합의 **개수**가 추가되며 원본 주장이나 검증 참조를 재검사하지 않는다.
+  뒤에 추가된 `compare-results`는 두 actions 요약의 주변분포 차이와 항목 대응
+  미확립을 별도 `common_result_marginal_comparison.v1` JSON으로 반환하는
+  CLI/Python 경로다. 기본 MCP 22도구와 이 절의 고정 A3 catalog·점수에는
+  포함하지 않는다. 같은 schema·단위에서 계산된 delta도 개별 항목 전이나
+  의미적 개선을 뜻하지 않는다.
 - `audit-trajectory`는 기본 읽기 전용 도구 목록에 넣지 않는다. 이 CLI는 임시
   스냅샷을 만들고 선택된 Goppi 실행 파일을 호출한다. 시간·출력 제한은 있으나
   실행 파일의 파일·네트워크 효과를 격리하지 못한다. [ADR-024](../adr/ADR-024-read-only-agent-surface.md)의

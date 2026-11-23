@@ -457,6 +457,7 @@ PY
 | 알아볼 내용 | 안내 |
 | --- | --- |
 | 에이전트 실행, 입력 선택, JSON 해석 | [에이전트 사용](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md) |
+| 두 공통 결과의 주변분포 차이와 항목 대응 부재 확인 | [주변분포 비교](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#compare-two-common-result-marginals) |
 | 선언, 쌍대 근거, goppi handoff 비교 | [근거 작업 흐름](https://github.com/ntts9990/underwrite/blob/main/AGENT_USAGE.md#source-checkout-pilot-compare-declarations) |
 | 저장, 검증, 조회, 재계산 | [로컬 기록](https://github.com/ntts9990/underwrite/blob/main/STORAGE.md) |
 | 생성 도구 fixture와 검증 범위 | [생성 도구 근거](https://github.com/ntts9990/underwrite/blob/main/EVIDENCE_REVIEW.md) |
