@@ -36,6 +36,11 @@ LIMITATIONS = [
 ]
 
 
+def unsupported_result_schema_error() -> EvidenceError:
+    """The existing CLI refusal for an unselected result input contract."""
+    return EvidenceError("INVALID_INPUT", "UNSUPPORTED_RESULT_SCHEMA", "/result/schema")
+
+
 def inspection_vocabulary(schema: object) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """Read only the two closed item vocabularies from the trusted input contract."""
     try:
@@ -71,7 +76,9 @@ def closed_vocabulary_names(values: object) -> tuple[str, ...]:
     return tuple(names)
 
 
-def inspect_result_file(path: Path, *, view: View = "summary") -> dict[str, object]:
+def inspect_result_file(
+    path: Path, *, view: View = "summary", expected_source: str | None = None
+) -> dict[str, object]:
     """Screen selected raw bytes against the installed common-result contract.
 
     This checks structure and analyzed item invariants only. Embedded source and
@@ -84,8 +91,13 @@ def inspect_result_file(path: Path, *, view: View = "summary") -> dict[str, obje
         raw, INPUT_MAX_BYTES, INPUT_MAX_DEPTH, "/result", "INVALID_INPUT", EvidenceError
     )
     selected_format = document.get("schema")
-    if type(selected_format) is not str or selected_format not in INPUT_SCHEMAS:
-        raise EvidenceError("INVALID_INPUT", "UNSUPPORTED_RESULT_SCHEMA", "/result/schema")
+    if (
+        type(selected_format) is not str
+        or selected_format not in INPUT_SCHEMAS
+        or expected_source is not None
+        and selected_format != expected_source
+    ):
+        raise unsupported_result_schema_error()
     # Only exact keys in this code-owned map can select trusted installed contracts.
     input_schema = selected_format
     output_schema = OUTPUT_SCHEMAS[view]
@@ -192,16 +204,20 @@ def render_selected_human(report: dict[str, object]) -> str:
     )
 
 
-def produce(args: argparse.Namespace) -> dict[str, object]:
-    return inspect_result_file(cast(Path, args.file), view=cast(View, args.view))
+def produce(
+    args: argparse.Namespace, *, expected_source: str | None = None
+) -> dict[str, object]:
+    return inspect_result_file(
+        cast(Path, args.file), view=cast(View, args.view), expected_source=expected_source
+    )
 
 
-def main(argv: list[str]) -> int:
+def main(argv: list[str], *, expected_source: str | None = None) -> int:
     return run_cli(
         "inspect-result",
         argv,
         configure,
-        produce,
+        lambda args: produce(args, expected_source=expected_source),
         ReportOutput(
             lambda args: (OUTPUT_SCHEMAS[args.view],),
             human=render_selected_human,

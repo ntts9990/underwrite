@@ -12,7 +12,7 @@ from typing import Any, Protocol, cast
 
 import pytest
 from _repo_paths import repo_root
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, ValidationError
 from underwrite_core.canonical import canonical_bytes, digest_bytes
 
 from underwrite.cli import records
@@ -68,6 +68,351 @@ def _error(capsys: pytest.CaptureFixture[str], argv: list[str], expected: str) -
 def _save_args(root: Path, spec: Path, *, as_json: bool = True) -> list[str]:
     args = ["save", "--root", str(root), "--spec", str(spec)]
     return [*args, "--json"] if as_json else args
+
+
+def test_catalog_pages_preserve_ids_and_detect_changed_listing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root, spec_path, _ = _inputs(tmp_path)
+    total = records.CATALOG_PAGE_SIZE + 1
+    for index in range(total):
+        spec = _spec(f"synthetic.capture-{index:03}")
+        spec["label"] = "PRIVATE_LABEL_CANARY_\u202e"
+        record_service.save_record(root, spec, spec_path.parent)
+    first_args = ["list", "--root", str(root), "--view", "page", "--json"]
+    code, first, other = _invoke(capsys, first_args)
+    assert code == 0 and other == ""
+    _validator(records.CATALOG_PAGE_SCHEMA).validate(first)
+    assert first["record_count"] == total
+    assert first["catalog_state"] == "observed"
+    assert len(first["records"]) == records.CATALOG_PAGE_SIZE
+    assert first["next_action"] == "FOLLOW_NEXT_PAGE_OR_SELECT_ID"
+    assert first["next_page"]["offset"] == records.CATALOG_PAGE_SIZE
+    assert "catalog_digest" not in first["next_page"]
+    assert "PRIVATE_LABEL_CANARY" not in json.dumps(first, ensure_ascii=False)
+    assert str(root) not in json.dumps(first)
+    following = [
+        *first_args,
+        "--offset", str(first["next_page"]["offset"]),
+        "--catalog-digest", first["catalog_digest"],
+    ]
+    code, second, other = _invoke(capsys, following)
+    assert code == 0 and other == ""
+    _validator(records.CATALOG_PAGE_SCHEMA).validate(second)
+    assert second["catalog_state"] == "observed"
+    assert len(second["records"]) == 1
+    assert second["next_page"] is None
+    assert second["next_action"] == "SELECT_ID_OR_FINISH"
+    assert {row["record_id"] for row in first["records"] + second["records"]} == {
+        f"synthetic.capture-{index:03}" for index in range(total)
+    }
+    record_service.save_record(root, _spec(f"synthetic.capture-{total:03}"), spec_path.parent)
+    code, changed, other = _invoke(capsys, following)
+    assert code == 0 and other == ""
+    _validator(records.CATALOG_PAGE_SCHEMA).validate(changed)
+    assert changed["catalog_state"] == "changed"
+    assert changed["catalog_digest"] != first["catalog_digest"]
+    assert changed["records"] == [] and changed["next_page"] is None
+    assert changed["restart_offset"] == 0
+    assert changed["next_action"] == "RESTART_FROM_FIRST_PAGE"
+    _assert_catalog_page_contract_rejects_contradictions(first, second, changed)
+    for offset in (1, 999, 1000):
+        _error(
+            capsys,
+            [*first_args, "--offset", str(offset), "--catalog-digest", changed["catalog_digest"]],
+            "USAGE_ERROR",
+        )
+
+
+def _assert_catalog_page_contract_rejects_contradictions(
+    first: dict[str, Any], second: dict[str, Any], changed: dict[str, Any]
+) -> None:
+    validator = _validator(records.CATALOG_PAGE_SCHEMA)
+    mutations: list[dict[str, Any]] = []
+    wrong_offset = {**first, "offset": 1}
+    mutations.append(wrong_offset)
+    wrong_next = json.loads(json.dumps(first))
+    wrong_next["next_page"]["offset"] = 1000
+    mutations.append(wrong_next)
+    wrong_no_records = {**first, "next_action": "NO_RECORDS"}
+    mutations.append(wrong_no_records)
+    changed_with_entries = {**changed, "records": first["records"]}
+    mutations.append(changed_with_entries)
+    last_with_next = {**second, "next_action": "FOLLOW_NEXT_PAGE_OR_SELECT_ID"}
+    mutations.append(last_with_next)
+    duplicate = json.loads(json.dumps(first))
+    duplicate["records"][1] = duplicate["records"][0]
+    mutations.append(duplicate)
+    empty_count = {**first, "record_count": 0}
+    mutations.append(empty_count)
+    early_end = {**first, "next_page": None, "next_action": "SELECT_ID_OR_FINISH"}
+    mutations.append(early_end)
+    offset_after_count = {**second, "record_count": 1}
+    mutations.append(offset_after_count)
+    hidden_remainder = {**second, "record_count": 1000}
+    mutations.append(hidden_remainder)
+    for mutation in mutations:
+        with pytest.raises(ValidationError):
+            validator.validate(mutation)
+
+
+def test_catalog_page_has_fixed_worst_case_size_and_atomic_overflow(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rows = [
+        {
+            "record_id": "r" + "x" * 92 + f"{index:03}",
+            "state": "complete",
+            "manifest_digest": "sha256:" + "a" * 64,
+            "kind": "k" * 64,
+            "label": "PRIVATE_LABEL_CANARY_\u202e" + "x" * 231,
+            "captured_at": "2026-11-16T00:00:00Z",
+        }
+        for index in range(records.CATALOG_PAGE_SIZE)
+    ]
+    catalog: dict[str, object] = {
+        "schema": "record_catalog.v1", "record_count": len(rows), "records": rows,
+    }
+    _validator("record_catalog.v1").validate(catalog)
+    page = records._catalog_page(catalog, 0, None)  # pyright: ignore[reportPrivateUsage]
+    assert len(canonical_bytes(page)) + 1 <= records.CATALOG_PAGE_MAX_BYTES
+    assert "PRIVATE_LABEL_CANARY" not in json.dumps(page)
+    def listed(root: Path) -> dict[str, object]:
+        del root
+        return catalog
+
+    monkeypatch.setattr(records, "list_records", listed)
+    monkeypatch.setattr(records, "CATALOG_PAGE_MAX_BYTES", 1)
+    _error(
+        capsys,
+        ["list", "--root", str(tmp_path), "--view", "page", "--json"],
+        "OUTPUT_LIMIT_EXCEEDED",
+    )
+
+
+def test_record_show_summary_pages_exact_file_names_without_private_manifest_text(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    spec = _spec()
+    spec["label"] = "PRIVATE_LABEL_CANARY_\u202e"
+    spec["metadata"]["private"] = "PRIVATE_METADATA_CANARY"
+    root, spec_path, _ = _inputs(tmp_path, spec)
+    source = spec_path.parent
+    files: list[dict[str, Any]] = []
+    for index in range(records.RECORD_FILE_PAGE_SIZE + 1):
+        name = f"note-{index:02}.txt"
+        (source / name).write_text("synthetic", encoding="utf-8")
+        files.append({
+            "name": f"source/{name}", "role": "source", "path": name,
+            "media_type": "text/plain;charset=utf-8",
+            "source_locator": "PRIVATE_SOURCE_LOCATOR_CANARY",
+        })
+    spec["files"] = files
+    spec_path.write_text(json.dumps(spec), encoding="utf-8")
+    record_service.save_record(root, spec, source)
+    base = ["show", "--root", str(root), "--id", spec["record_id"], "--json"]
+    code, full, other = _invoke(capsys, base)
+    assert code == 0 and other == ""
+    code, listing, other = _invoke(
+        capsys, ["list", "--root", str(root), "--view", "page", "--json"]
+    )
+    assert code == 0 and other == ""
+    selected_digest = listing["records"][0]["manifest_digest"]
+    code, first, other = _invoke(
+        capsys, [*base, "--view", "summary", "--manifest-digest", selected_digest]
+    )
+    assert code == 0 and other == ""
+    _validator(records.RECORD_VIEW_SUMMARY_SCHEMA).validate(first)
+    assert first["manifest_digest"] == full["manifest_digest"]
+    assert first["record_id"] == spec["record_id"]
+    assert first["file_count"] == len(files)
+    assert sum(first["file_role_counts"].values()) == len(files)
+    assert len(first["files"]) == records.RECORD_FILE_PAGE_SIZE
+    assert first["files"][0]["name"] == "source/note-00.txt"
+    assert "sha256" not in first["files"][0]
+    assert "declared_sha256" in first["files"][0]
+    assert first["next_file_page"] == {"offset": records.RECORD_FILE_PAGE_SIZE}
+    assert first["next_action"] == "FOLLOW_NEXT_FILE_PAGE_OR_SELECT_NAME"
+    assert first["verification_scope"] == "canonical_published_manifest_only"
+    assert len(canonical_bytes(first)) + 1 <= records.RECORD_VIEW_SUMMARY_MAX_BYTES
+    assert not any(
+        token in json.dumps(first, ensure_ascii=False)
+        for token in (
+            "PRIVATE_LABEL_CANARY", "PRIVATE_METADATA_CANARY", "PRIVATE_SOURCE_LOCATOR_CANARY"
+        )
+    )
+    next_args = [
+        *base, "--view", "summary", "--file-offset", str(first["next_file_page"]["offset"]),
+        "--manifest-digest", first["manifest_digest"],
+    ]
+    code, second, other = _invoke(capsys, next_args)
+    assert code == 0 and other == ""
+    _validator(records.RECORD_VIEW_SUMMARY_SCHEMA).validate(second)
+    assert [item["name"] for item in second["files"]] == ["source/note-16.txt"]
+    assert second["next_file_page"] is None
+    assert second["next_action"] == "SELECT_NAME_OR_FINISH"
+    code, changed, other = _invoke(
+        capsys, [*base, "--view", "summary", "--file-offset", "16",
+                 "--manifest-digest", "sha256:" + "0" * 64],
+    )
+    assert code == 0 and other == ""
+    _validator(records.RECORD_VIEW_SUMMARY_SCHEMA).validate(changed)
+    assert changed["manifest_state"] == "changed"
+    assert changed["files"] == [] and changed["next_file_page"] is None
+    assert changed["restart_offset"] == 0
+    assert changed["next_action"] == "RESTART_FROM_FIRST_FILE_PAGE"
+    _assert_show_summary_contract_rejects_contradictions(first, second, changed)
+    for offset in (1, 64):
+        _error(
+            capsys,
+            [*base, "--view", "summary", "--file-offset", str(offset),
+             "--manifest-digest", first["manifest_digest"]],
+            "USAGE_ERROR",
+        )
+
+
+def _assert_show_summary_contract_rejects_contradictions(
+    first: dict[str, Any], second: dict[str, Any], changed: dict[str, Any]
+) -> None:
+    validator = _validator(records.RECORD_VIEW_SUMMARY_SCHEMA)
+    early_end = {**first, "next_action": "SELECT_NAME_OR_FINISH", "next_file_page": None}
+    impossible_count = {**second, "file_count": 1}
+    hidden_remainder = {**second, "file_count": 64}
+    changed_with_files = {**changed, "files": first["files"]}
+    wrong_next = json.loads(json.dumps(first))
+    wrong_next["next_file_page"]["offset"] = 48
+    wrong_selection = json.loads(json.dumps(first))
+    wrong_selection["selection"] = {
+        "scope": "explicit_files", "excluded_state": "declared", "excluded_count": None
+    }
+    for mutation in (
+        early_end, impossible_count, hidden_remainder, changed_with_files,
+        wrong_next, wrong_selection,
+    ):
+        with pytest.raises(ValidationError):
+            validator.validate(mutation)
+
+
+def test_record_show_summary_worst_case_size_and_atomic_overflow(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, spec_path, _ = _inputs(tmp_path)
+    saved = record_service.save_record(root, _spec(), spec_path.parent)
+    manifest = json.loads(json.dumps(saved.manifest))
+    manifest["files"] = [
+        {
+            "name": "f" + "x" * 251 + f"{index:04}",
+            "role": "source",
+            "sha256": "sha256:" + "a" * 64,
+            "bytes": 33554432,
+            "media_type": "x" * 128,
+            "source_locator": "PRIVATE_SOURCE_LOCATOR_CANARY",
+        }
+        for index in range(records.RECORD_FILE_PAGE_SIZE)
+    ]
+    snapshot = record_service.RecordSnapshot(manifest, saved.digest)
+    page = records._record_summary(snapshot, 0, None)  # pyright: ignore[reportPrivateUsage]
+    assert len(canonical_bytes(page)) + 1 <= records.RECORD_VIEW_SUMMARY_MAX_BYTES
+    assert "PRIVATE_SOURCE_LOCATOR_CANARY" not in json.dumps(page)
+    monkeypatch.setattr(records, "RECORD_VIEW_SUMMARY_MAX_BYTES", 1)
+    _error(
+        capsys,
+        [
+            "show", "--root", str(root), "--id", "synthetic.capture-001",
+            "--view", "summary", "--json",
+        ],
+        "OUTPUT_LIMIT_EXCEEDED",
+    )
+
+
+def test_record_verify_summary_preserves_integrity_result_without_coordinates(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    spec = _spec()
+    spec["label"] = "PRIVATE_LABEL_CANARY_\u202e"
+    root, spec_path, _ = _inputs(tmp_path, spec)
+    record_service.save_record(root, spec, spec_path.parent)
+    base = ["verify", "--root", str(root), "--id", spec["record_id"], "--json"]
+    code, full, other = _invoke(capsys, base)
+    assert code == 0 and other == ""
+    code, summary, other = _invoke(capsys, [*base, "--view", "summary"])
+    assert code == 0 and other == ""
+    _validator(records.RECORD_VERIFICATION_SUMMARY_SCHEMA).validate(summary)
+    for name in ("record_id", "manifest_digest", "valid", "verification_scope"):
+        assert summary[name] == full[name]
+    assert len(summary["file_check_states"]) == full["files_checked"]
+    assert len(summary["links_check_states"]) == full["links_checked"]
+    assert summary["valid"] is True
+    assert summary["file_check_states"] == ["CHECKED_NO_FINDING"]
+    assert summary["links_check_states"] == []
+    assert "PRIVATE_LABEL_CANARY" not in json.dumps(summary, ensure_ascii=False)
+    assert len(canonical_bytes(summary)) + 1 <= records.RECORD_VERIFICATION_SUMMARY_MAX_BYTES
+    stored = root / "records" / spec["record_id"] / "files" / "source" / "note.txt"
+    original = stored.read_bytes()
+    stored.write_bytes(b"x" * len(original))
+    code, failed_full, other = _invoke(capsys, base)
+    assert code == 0 and other == "" and failed_full["valid"] is False
+    code, failed, other = _invoke(capsys, [*base, "--view", "summary"])
+    assert code == 0 and other == ""
+    _validator(records.RECORD_VERIFICATION_SUMMARY_SCHEMA).validate(failed)
+    assert failed["valid"] is False
+    assert failed["file_check_states"].count("FILE_DIGEST_MISMATCH") == 1
+    assert sum(state != "CHECKED_NO_FINDING" for state in failed["file_check_states"]) == len(
+        failed_full["findings"]
+    )
+    assert "source/note.txt" not in json.dumps(failed)
+    _assert_verify_summary_contract_rejects_contradictions(summary, failed)
+
+
+def _assert_verify_summary_contract_rejects_contradictions(
+    valid: dict[str, Any], failed: dict[str, Any]
+) -> None:
+    validator = _validator(records.RECORD_VERIFICATION_SUMMARY_SCHEMA)
+    true_with_finding = json.loads(json.dumps(valid))
+    true_with_finding["file_check_states"][0] = "FILE_DIGEST_MISMATCH"
+    false_without_finding = json.loads(json.dumps(failed))
+    false_without_finding["file_check_states"][0] = "CHECKED_NO_FINDING"
+    too_many_files = json.loads(json.dumps(valid))
+    too_many_files["file_check_states"] = ["CHECKED_NO_FINDING"] * 65
+    too_many_links = json.loads(json.dumps(valid))
+    too_many_links["links_check_states"] = ["LINK_RECORD_NOT_FOUND"] * 17
+    for mutation in (true_with_finding, false_without_finding, too_many_files, too_many_links):
+        with pytest.raises(ValidationError):
+            validator.validate(mutation)
+
+
+def test_record_verify_summary_counts_link_findings_and_refuses_overflow(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, spec_path, _ = _inputs(tmp_path)
+    record_service.save_record(root, _spec(), spec_path.parent)
+    report: dict[str, object] = {
+        "schema": "record_verification.v1",
+        "record_id": "synthetic.capture-001",
+        "manifest_digest": "sha256:" + "a" * 64,
+        "valid": False,
+        "files_checked": 1,
+        "links_checked": 1,
+        "findings": [
+            {
+                "code": "LINK_RECORD_NOT_FOUND", "name": None,
+                "record_id": "PRIVATE_RECORD_CANARY".lower(),
+            }
+        ],
+        "verification_scope": "stored_bytes_and_direct_links",
+    }
+    summary = records._verification_summary(report)  # pyright: ignore[reportPrivateUsage]
+    assert cast(dict[str, Any], summary)["links_check_states"] == ["LINK_RECORD_NOT_FOUND"]
+    assert "private_record_canary" not in json.dumps(summary)
+    monkeypatch.setattr(records, "RECORD_VERIFICATION_SUMMARY_MAX_BYTES", 1)
+    _error(
+        capsys,
+        [
+            "verify", "--root", str(root), "--id", "synthetic.capture-001",
+            "--view", "summary", "--json",
+        ],
+        "OUTPUT_LIMIT_EXCEEDED",
+    )
 
 
 @pytest.mark.parametrize(
@@ -604,6 +949,47 @@ def test_read_json_checks_full_output_budget_including_newline(
     assert capsys.readouterr().out == expected
     monkeypatch.setattr(records, "OUTPUT_MAX_BYTES", limit - 1)
     _error(capsys, args, "OUTPUT_LIMIT_EXCEEDED")
+
+
+def test_read_json_bounded_view_preserves_small_content_and_refuses_large_result(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    args, _ = _read_json_args(tmp_path, b'{"text":"untrusted data"}')
+    assert records.main(args) == 0
+    full = capsys.readouterr().out
+    bounded = [*args, "--view", "bounded"]
+    assert records.main(bounded) == 0
+    assert capsys.readouterr().out == full
+    assert len(full.encode()) <= records.RECORD_DOCUMENT_BOUNDED_MAX_BYTES
+    monkeypatch.setattr(records, "RECORD_DOCUMENT_BOUNDED_MAX_BYTES", len(full.encode()))
+    assert records.main(bounded) == 0
+    assert capsys.readouterr().out == full
+    monkeypatch.setattr(records, "RECORD_DOCUMENT_BOUNDED_MAX_BYTES", len(full.encode()) - 1)
+    _error(capsys, bounded, "OUTPUT_LIMIT_EXCEEDED")
+    assert records.main(args) == 0
+    assert capsys.readouterr().out == full
+
+
+def test_read_json_bounded_view_rejects_large_content_atomically(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args, _ = _read_json_args(tmp_path, b'{"secret":"' + b"PRIVATE_CONTENT_CANARY" * 1000 + b'"}')
+    assert records.main(args) == 0
+    full = capsys.readouterr().out
+    assert len(full.encode()) > records.RECORD_DOCUMENT_BOUNDED_MAX_BYTES
+    error = _error(capsys, [*args, "--view", "bounded"], "OUTPUT_LIMIT_EXCEEDED")
+    assert error["location"] == "/output"
+    assert "PRIVATE_CONTENT_CANARY" not in json.dumps(error)
+
+
+def test_read_json_bounded_view_checks_integrity_before_output_size(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args, root = _read_json_args(tmp_path, b'{"secret":"' + b"x" * 20000 + b'"}')
+    stored = root / "records/synthetic.capture-001/files" / args[-1]
+    stored.write_bytes(b'"' + b"y" * 20000 + b'"')
+    error = _error(capsys, [*args, "--view", "bounded"], "RECORD_FILE_INTEGRITY_MISMATCH")
+    assert error["location"] == "/record"
 
 
 def test_read_json_checks_integrity_before_content_and_distinguishes_unknown_name(

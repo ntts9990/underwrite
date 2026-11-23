@@ -1,0 +1,428 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:promptfoo_accounting_summary.v1",
+  "title": "promptfoo_accounting_summary.v1",
+  "description": "Content-minimized Promptfoo row-count accounting with owner action codes. Finding coordinates and source text are omitted.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "view",
+    "source",
+    "raw_hash",
+    "reader_profile",
+    "scope",
+    "producer_stats",
+    "row_tallies",
+    "deltas",
+    "declared_relation",
+    "finding_counts",
+    "limitations",
+    "next_actions",
+    "source_binding",
+    "detail_state"
+  ],
+  "properties": {
+    "schema": {
+      "const": "promptfoo_accounting_summary.v1"
+    },
+    "view": {
+      "const": "summary"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "summary_version",
+        "producer_version",
+        "producer_version_state",
+        "claims_verified"
+      ],
+      "properties": {
+        "format": {
+          "const": "promptfoo.eval-output"
+        },
+        "summary_version": {
+          "const": 3
+        },
+        "producer_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 128,
+          "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?![\\s\\S])"
+        },
+        "producer_version_state": {
+          "enum": [
+            "unknown",
+            "declared"
+          ]
+        },
+        "claims_verified": {
+          "const": false
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "producer_version_state": {
+              "const": "unknown"
+            },
+            "producer_version": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "producer_version_state": {
+              "const": "declared"
+            },
+            "producer_version": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "raw_hash": {
+      "$ref": "#/$defs/hash"
+    },
+    "reader_profile": {
+      "const": "promptfoo.summary-v3.selected-fields.v1"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "population",
+        "selected_fields_only",
+        "planned_evaluations",
+        "export_completeness"
+      ],
+      "properties": {
+        "population": {
+          "const": "supplied_results_rows"
+        },
+        "selected_fields_only": {
+          "const": true
+        },
+        "planned_evaluations": {
+          "const": "unknown"
+        },
+        "export_completeness": {
+          "const": "unknown"
+        }
+      }
+    },
+    "producer_stats": {
+      "$ref": "#/$defs/counts"
+    },
+    "row_tallies": {
+      "$ref": "#/$defs/counts"
+    },
+    "deltas": {
+      "$ref": "#/$defs/deltas"
+    },
+    "declared_relation": {
+      "enum": [
+        "consistent",
+        "inconsistent"
+      ]
+    },
+    "limitations": {
+      "const": [
+        "PLANNED_DENOMINATOR_UNKNOWN",
+        "CAUSE_UNKNOWN",
+        "SOURCE_CLAIMS_UNVERIFIED",
+        "UNCONSUMED_FIELDS_AND_POPULATIONS_NOT_ANALYZED",
+        "SOURCE_HASH_AND_VERSION_LINKABLE",
+        "NO_APPROVAL_AUTHORITY"
+      ]
+    },
+    "next_actions": {
+      "type": "array",
+      "maxItems": 2,
+      "items": {
+        "enum": [
+          "RECONCILE_SOURCE_DECLARED_COUNTS",
+          "INSPECT_SOURCE_FLAG_DISAGREEMENTS"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "finding_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "CATEGORY_COUNT_MISMATCH",
+        "SOURCE_FLAGS_DISAGREE"
+      ],
+      "properties": {
+        "CATEGORY_COUNT_MISMATCH": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2003
+        },
+        "SOURCE_FLAGS_DISAGREE": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2003
+        }
+      }
+    },
+    "source_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "manifest_hash",
+        "expected_hash_check"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "direct_file",
+            "manifest_case"
+          ]
+        },
+        "manifest_hash": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expected_hash_check": {
+          "enum": [
+            "not_applicable",
+            "not_supplied",
+            "matched"
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "direct_file"
+            },
+            "manifest_hash": {
+              "type": "null"
+            },
+            "expected_hash_check": {
+              "const": "not_applicable"
+            }
+          }
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "manifest_case"
+            },
+            "manifest_hash": {
+              "$ref": "#/$defs/hash"
+            },
+            "expected_hash_check": {
+              "enum": [
+                "not_supplied",
+                "matched"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "detail_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "row_coordinates",
+        "source_text",
+        "full_view"
+      ],
+      "properties": {
+        "row_coordinates": {
+          "const": "intentionally_omitted"
+        },
+        "source_text": {
+          "const": "intentionally_omitted"
+        },
+        "full_view": {
+          "enum": [
+            "audit-promptfoo --view actions",
+            "audit-counts --view full"
+          ]
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "finding_counts": {
+            "properties": {
+              "CATEGORY_COUNT_MISMATCH": {
+                "minimum": 1
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "next_actions": {
+            "contains": {
+              "const": "RECONCILE_SOURCE_DECLARED_COUNTS"
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "next_actions": {
+            "not": {
+              "contains": {
+                "const": "RECONCILE_SOURCE_DECLARED_COUNTS"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "finding_counts": {
+            "properties": {
+              "SOURCE_FLAGS_DISAGREE": {
+                "minimum": 1
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "next_actions": {
+            "contains": {
+              "const": "INSPECT_SOURCE_FLAG_DISAGREEMENTS"
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "next_actions": {
+            "not": {
+              "contains": {
+                "const": "INSPECT_SOURCE_FLAG_DISAGREEMENTS"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "source_binding": {
+            "properties": {
+              "kind": {
+                "const": "direct_file"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "detail_state": {
+            "properties": {
+              "full_view": {
+                "const": "audit-promptfoo --view actions"
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "detail_state": {
+            "properties": {
+              "full_view": {
+                "const": "audit-counts --view full"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "successes",
+        "failures",
+        "errors",
+        "total"
+      ],
+      "properties": {
+        "successes": {
+          "$ref": "#/$defs/nonnegative"
+        },
+        "failures": {
+          "$ref": "#/$defs/nonnegative"
+        },
+        "errors": {
+          "$ref": "#/$defs/nonnegative"
+        },
+        "total": {
+          "$ref": "#/$defs/nonnegative"
+        }
+      }
+    },
+    "deltas": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "successes",
+        "failures",
+        "errors",
+        "total"
+      ],
+      "properties": {
+        "successes": {
+          "$ref": "#/$defs/signed"
+        },
+        "failures": {
+          "$ref": "#/$defs/signed"
+        },
+        "errors": {
+          "$ref": "#/$defs/signed"
+        },
+        "total": {
+          "$ref": "#/$defs/signed"
+        }
+      }
+    },
+    "nonnegative": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740992
+    },
+    "signed": {
+      "type": "integer",
+      "minimum": -9007199254740992,
+      "maximum": 9007199254740992
+    }
+  }
+}

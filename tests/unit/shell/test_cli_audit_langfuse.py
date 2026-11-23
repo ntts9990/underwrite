@@ -92,6 +92,80 @@ def test_supplied_scores_keep_kinds_associations_and_two_raw_identities(
     assert str(tmp_path) not in stdout
 
 
+@pytest.mark.parametrize("reader", ["blob", "cli"])
+def test_summary_preserves_counts_retrieval_and_missingness_without_rows(
+    reader: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    if reader == "blob":
+        observations = GOLDEN / "observations_v2-2026-09-14T06-40-00.json"
+        scores = GOLDEN / "scores-2026-09-14T06-40-00.json"
+    else:
+        examples = ROOT / "fixtures/examples/langfuse-cli"
+        observations, scores = examples / "observations.json", examples / "scores.json"
+    args = ["--observations", str(observations), "--scores", str(scores)]
+    assert audit_langfuse.main([*args, "--json"]) == 0
+    full = json.loads(capsys.readouterr().out)
+    assert audit_langfuse.main([*args, "--view", "summary", "--json"]) == 0
+    streams = capsys.readouterr()
+    assert streams.err == ""
+    summary = json.loads(streams.out)
+    assert summary["schema"] == audit_langfuse.SUMMARY_SCHEMA
+    for name in ("sources", "scope", "counts", "planned", "next_actions", "reader_profile"):
+        assert summary[name] == full[name]
+    if reader == "cli":
+        assert summary["retrieval"] == full["retrieval"]
+    else:
+        assert "retrieval" not in summary
+    assert "observations" not in summary and "scores" not in summary
+    assert "SOURCE_HASHES_AND_ROW_PATTERNS_LINKABLE" not in summary["limitations"]
+    assert "SOURCE_HASHES_LINKABLE" in summary["limitations"]
+    assert "reviewer_note" not in streams.out and "synthetic review" not in streams.out
+    assert len(streams.out.encode()) <= audit_langfuse.SUMMARY_MAX_BYTES
+    assert streams.out.encode() == canonical_bytes(summary) + b"\n"
+
+
+def test_summary_output_limit_is_atomic_and_full_view_remains_available(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    observations = GOLDEN / "observations_v2-2026-09-14T06-40-00.json"
+    scores = GOLDEN / "scores-2026-09-14T06-40-00.json"
+    args = ["--observations", str(observations), "--scores", str(scores)]
+    assert audit_langfuse.main([*args, "--view", "summary", "--json"]) == 0
+    bounded = capsys.readouterr().out
+    monkeypatch.setattr(audit_langfuse, "SUMMARY_MAX_BYTES", len(bounded.encode()))
+    assert audit_langfuse.main([*args, "--view", "summary", "--json"]) == 0
+    assert capsys.readouterr().out == bounded
+    monkeypatch.setattr(audit_langfuse, "SUMMARY_MAX_BYTES", len(bounded.encode()) - 1)
+    assert audit_langfuse.main([*args, "--view", "summary", "--json"]) == ERROR_EXIT
+    streams = capsys.readouterr()
+    assert streams.out == ""
+    assert json.loads(streams.err)["code"] == "OUTPUT_LIMIT_EXCEEDED"
+    assert audit_langfuse.main([*args, "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["schema"] == audit_langfuse.AUTO_ACCOUNTING_SCHEMA
+
+
+def test_score_source_view_has_atomic_model_output_bound(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder = ROOT / "fixtures/examples/langfuse-cli"
+    args = [
+        "--observations", str(folder / "observations.json"),
+        "--scores", str(folder / "scores.json"),
+        "--view", "score-source", "--json",
+    ]
+    assert audit_langfuse.main(args) == 0
+    bounded = capsys.readouterr().out
+    assert len(bounded.encode()) <= audit_langfuse.SCORE_SOURCE_MAX_BYTES
+    monkeypatch.setattr(audit_langfuse, "SCORE_SOURCE_MAX_BYTES", len(bounded.encode()))
+    assert audit_langfuse.main(args) == 0
+    assert capsys.readouterr().out == bounded
+    monkeypatch.setattr(audit_langfuse, "SCORE_SOURCE_MAX_BYTES", len(bounded.encode()) - 1)
+    assert audit_langfuse.main(args) == ERROR_EXIT
+    streams = capsys.readouterr()
+    assert streams.out == ""
+    assert json.loads(streams.err)["code"] == "OUTPUT_LIMIT_EXCEEDED"
+
+
 def test_each_source_is_read_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     paths, _ = inputs(tmp_path)
     original = adapter.read_local_file

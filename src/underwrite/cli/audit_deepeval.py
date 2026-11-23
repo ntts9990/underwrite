@@ -6,7 +6,23 @@ import argparse
 from pathlib import Path
 from typing import Any, cast
 
-from underwrite.cli.evidence import EvidenceError, ReportOutput, run_cli
+from underwrite_core.canonical import canonical_bytes
+
+from underwrite.cli.evidence import (
+    EvidenceError,
+    ReportOutput,
+    output_limit_error,
+    run_cli,
+    usage_error,
+)
+from underwrite.cli.inspect_result import inspection_vocabulary
+from underwrite.cli.local_json import validate
+from underwrite.instrument.evidence.common_result import (
+    ResultInvariantError,
+    availability_counts,
+    check_result_invariants,
+    item_histograms,
+)
 from underwrite.instrument.evidence.deepeval_binding import (
     AUTO_RESULT_SCHEMA,
     DeepevalBindingError,
@@ -21,6 +37,24 @@ from underwrite.instrument.ingest.deepeval_accounting import (
 )
 from underwrite.instrument.ingest.deepeval_binding import audit_deepeval_bound_file
 from underwrite.instrument.ingest.deepeval_trace import audit_deepeval_trace_file
+from underwrite.instrument.ingest.schema import packaged_validator
+
+SUMMARY_SCHEMA = "deepeval_accounting_summary.v1"
+SUMMARY_MAX_BYTES = 16 * 1024
+TRACE_SUMMARY_SCHEMA = "deepeval_trace_summary.v1"
+TRACE_SUMMARY_MAX_BYTES = 16 * 1024
+TRACE_SUMMARY_LINKABILITY = ("SOURCE_HASH_AND_POINTERS_LINKABLE", "SOURCE_HASH_LINKABLE")
+BOUND_SUMMARY_SCHEMA = "deepeval_bound_summary.v1"
+BOUND_SUMMARY_MAX_BYTES = 16 * 1024
+BOUND_SUMMARY_LIMITATIONS = (
+    "SOURCE_CLAIMS_UNVERIFIED",
+    "OWNER_METRIC_BINDINGS_ASSERTED_UNVERIFIED",
+    "SOURCE_BYTES_WITHOUT_EXTERNAL_EXPECTED_HASH",
+    "PLANNED_POPULATION_UNKNOWN",
+    "ITEM_DETAILS_INTENTIONALLY_OMITTED",
+    "VERIFICATION_REFS_NOT_REPERFORMED",
+    "NO_MEASUREMENT_OR_APPROVAL_AUTHORITY",
+)
 
 AUTO_ORDINARY_HUMAN_LIMIT = (
     "Only supplied serialized metricsData rows are counted; expectation population is unknown."
@@ -46,7 +80,7 @@ def configure(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--view",
-        choices=("accounting", "trace-index"),
+        choices=("accounting", "trace-index", "summary", "trace-summary", "bound-summary"),
         default="accounting",
         help=("Trace-index selects bounded native step statuses; default is accounting."),
     )
@@ -71,17 +105,113 @@ def configure(parser: argparse.ArgumentParser) -> None:
 
 def produce(args: argparse.Namespace) -> dict[str, object]:
     try:
-        if args.view == "trace-index":
+        if args.view == "bound-summary":
+            if args.bindings is None:
+                raise usage_error()
+            return _bound_summary_file(cast(Path, args.file), cast(Path, args.bindings))
+        if args.view in {"trace-index", "trace-summary"}:
             if args.bindings is not None:
                 raise EvidenceError(
                     "UNSUPPORTED_FORMAT", "DEEPEVAL_TRACE_BINDINGS_UNSUPPORTED", "/bindings"
                 )
-            return audit_deepeval_trace_file(cast(Path, args.file))
+            return (
+                _trace_summary_file(cast(Path, args.file))
+                if args.view == "trace-summary"
+                else audit_deepeval_trace_file(cast(Path, args.file))
+            )
+        if args.view == "summary":
+            if args.bindings is not None:
+                raise EvidenceError(
+                    "UNSUPPORTED_FORMAT", "DEEPEVAL_SUMMARY_BINDINGS_UNSUPPORTED", "/bindings"
+                )
+            return _summary_file(cast(Path, args.file))
         if args.bindings is not None:
             return audit_deepeval_bound_file(cast(Path, args.file), cast(Path, args.bindings))
         return audit_deepeval_file(cast(Path, args.file))
     except (DeepevalFileError, DeepevalBindingError) as exc:
         raise EvidenceError(exc.code, exc.reason, exc.location) from None
+
+
+def _summary_file(path: Path) -> dict[str, object]:
+    full = audit_deepeval_file(path)
+    validate(packaged_validator(AUTO_ACCOUNTING_SCHEMA), full, EvidenceError, "INTERNAL_ERROR")
+    summary = {
+        name: value for name, value in full.items() if name != "cases"
+    }
+    summary["schema"] = SUMMARY_SCHEMA
+    summary["view"] = "summary"
+    summary["detail_state"] = {
+        "cases": "intentionally_omitted",
+        "metric_names": "intentionally_omitted",
+        "evaluator_errors": "intentionally_omitted",
+        "full_view": "audit-deepeval --view accounting",
+    }
+    validate(packaged_validator(SUMMARY_SCHEMA), summary, EvidenceError, "INTERNAL_ERROR")
+    if len(canonical_bytes(summary)) + 1 > SUMMARY_MAX_BYTES:
+        raise output_limit_error()
+    return summary
+
+
+def _trace_summary_file(path: Path) -> dict[str, object]:
+    full = audit_deepeval_trace_file(path)
+    validate(packaged_validator(AUTO_TRACE_SCHEMA), full, EvidenceError, "INTERNAL_ERROR")
+    summary = {name: value for name, value in full.items() if name != "cases"}
+    summary["schema"] = TRACE_SUMMARY_SCHEMA
+    summary["view"] = "trace-summary"
+    full_linkability, summary_linkability = TRACE_SUMMARY_LINKABILITY
+    summary["limitations"] = [
+        summary_linkability if item == full_linkability else item
+        for item in cast(list[str], full["limitations"])
+    ]
+    summary["detail_state"] = {
+        "case_coordinates": "intentionally_omitted",
+        "span_coordinates": "intentionally_omitted",
+        "parent_pointers": "intentionally_omitted",
+        "full_view": "audit-deepeval --view trace-index",
+    }
+    validate(packaged_validator(TRACE_SUMMARY_SCHEMA), summary, EvidenceError, "INTERNAL_ERROR")
+    if len(canonical_bytes(summary)) + 1 > TRACE_SUMMARY_MAX_BYTES:
+        raise output_limit_error()
+    return summary
+
+
+def _bound_summary_file(path: Path, bindings_path: Path) -> dict[str, object]:
+    full = audit_deepeval_bound_file(path, bindings_path)
+    validator = packaged_validator(AUTO_RESULT_SCHEMA)
+    validate(validator, full, EvidenceError, "INTERNAL_ERROR")
+    try:
+        check_result_invariants(full)
+    except ResultInvariantError:
+        raise EvidenceError("INTERNAL_ERROR", "INTERNAL_ERROR") from None
+    action_names, binding_names = inspection_vocabulary(validator.schema)
+    available = availability_counts(full)
+    action_counts, binding_counts = item_histograms(full, action_names, binding_names)
+    if available is None or action_counts is None or binding_counts is None:
+        raise EvidenceError("INTERNAL_ERROR", "INTERNAL_ERROR")
+    verification = cast(list[object], full["verification"])
+    summary: dict[str, object] = {
+        "schema": BOUND_SUMMARY_SCHEMA,
+        "view": "bound-summary",
+        "source": full["source"],
+        "declaration_source": full["declaration_source"],
+        "processing": full["processing"],
+        "population": full["population"],
+        "availability_counts": available,
+        "item_next_action_counts": action_counts,
+        "declared_semantic_binding_counts": binding_counts,
+        "verification_entry_count": len(verification),
+        "limitations": list(BOUND_SUMMARY_LIMITATIONS),
+        "detail_state": {
+            "item_values": "intentionally_omitted",
+            "item_coordinates": "intentionally_omitted",
+            "metric_names": "intentionally_omitted",
+            "full_view": "audit-deepeval --bindings PACK",
+        },
+    }
+    validate(packaged_validator(BOUND_SUMMARY_SCHEMA), summary, EvidenceError, "INTERNAL_ERROR")
+    if len(canonical_bytes(summary)) + 1 > BOUND_SUMMARY_MAX_BYTES:
+        raise output_limit_error()
+    return summary
 
 
 def render_bound_human(report: dict[str, object]) -> str:
@@ -105,7 +235,17 @@ def render_bound_human(report: dict[str, object]) -> str:
 
 
 def _render(report: dict[str, object]) -> str:
-    if report["schema"] == AUTO_TRACE_SCHEMA:
+    if report["schema"] == BOUND_SUMMARY_SCHEMA:
+        population = cast(dict[str, object], report["population"])
+        states = cast(dict[str, int], report["availability_counts"])
+        bindings = cast(dict[str, int], report["declared_semantic_binding_counts"])
+        return (
+            f"Supplied metric occurrences: {population['observed_count']}; "
+            f"scored {states['observed']}; evaluator errors {states['error']}; "
+            f"unscored {states['missing']}; owner-bound {bindings['bound']}. "
+            "Owner assertions and source claims remain unverified; no approval authority."
+        )
+    if report["schema"] in {AUTO_TRACE_SCHEMA, TRACE_SUMMARY_SCHEMA}:
         return render_trace_human(report)
     return (
         render_bound_human(report)
@@ -176,6 +316,12 @@ def main(argv: list[str]) -> int:
             lambda args: (
                 AUTO_TRACE_SCHEMA
                 if args.view == "trace-index"
+                else TRACE_SUMMARY_SCHEMA
+                if args.view == "trace-summary"
+                else BOUND_SUMMARY_SCHEMA
+                if args.view == "bound-summary"
+                else SUMMARY_SCHEMA
+                if args.view == "summary"
                 else AUTO_RESULT_SCHEMA
                 if args.bindings is not None
                 else AUTO_ACCOUNTING_SCHEMA

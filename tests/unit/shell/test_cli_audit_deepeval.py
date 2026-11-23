@@ -115,6 +115,60 @@ def test_one_file_reports_mixed_metrics_and_bound_identities(
     assert path.read_bytes() == raw
 
 
+@pytest.mark.parametrize(
+    "fixture",
+    [
+        "fixtures/golden/external/deepeval/test_run_20260914_132634.json",
+        "fixtures/examples/deepeval-auto-4.3.1/ordinary.json",
+    ],
+)
+def test_summary_preserves_populations_and_limits_without_private_case_text(
+    fixture: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = Path(__file__).parents[3] / fixture
+    assert audit_deepeval.main([str(path), "--json"]) == 0
+    full = json.loads(capsys.readouterr().out)
+    assert audit_deepeval.main([str(path), "--view", "summary", "--json"]) == 0
+    streams = capsys.readouterr()
+    assert streams.err == ""
+    summary = json.loads(streams.out)
+    assert summary["schema"] == audit_deepeval.SUMMARY_SCHEMA
+    for name in (
+        "source", "raw_hash", "rule_profile", "scope", "counts", "declared_case_counts",
+        "limitations", "next_actions", "reader_profile",
+    ):
+        assert summary[name] == full[name]
+    assert "cases" not in summary
+    assert "synthetic evaluator error" not in streams.out
+    assert len(streams.out.encode()) <= audit_deepeval.SUMMARY_MAX_BYTES
+    assert streams.out.encode() == canonical_bytes(summary) + b"\n"
+
+
+def test_summary_output_limit_is_atomic_and_bindings_are_separate(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = source_file(tmp_path)
+    assert audit_deepeval.main([str(path), "--view", "summary", "--json"]) == 0
+    bounded = capsys.readouterr().out
+    monkeypatch.setattr(audit_deepeval, "SUMMARY_MAX_BYTES", len(bounded.encode()))
+    assert audit_deepeval.main([str(path), "--view", "summary", "--json"]) == 0
+    assert capsys.readouterr().out == bounded
+    monkeypatch.setattr(audit_deepeval, "SUMMARY_MAX_BYTES", len(bounded.encode()) - 1)
+    assert audit_deepeval.main([str(path), "--view", "summary", "--json"]) == ERROR_EXIT
+    streams = capsys.readouterr()
+    assert streams.out == ""
+    assert json.loads(streams.err)["code"] == "OUTPUT_LIMIT_EXCEEDED"
+    assert audit_deepeval.main([str(path), "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["schema"] == audit_deepeval.AUTO_ACCOUNTING_SCHEMA
+    assert audit_deepeval.main(
+        [str(path), "--view", "summary", "--bindings", "PRIVATE_BINDINGS", "--json"]
+    ) == ERROR_EXIT
+    streams = capsys.readouterr()
+    assert streams.out == ""
+    assert json.loads(streams.err)["reason"] == "DEEPEVAL_SUMMARY_BINDINGS_UNSUPPORTED"
+    assert "PRIVATE_BINDINGS" not in streams.err
+
+
 def test_source_descriptor_is_read_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = source_file(tmp_path)
     original = transport.read_descriptor

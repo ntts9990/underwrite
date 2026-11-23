@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 from collections import Counter
@@ -167,7 +168,8 @@ def _pin_cli_pilot(cli: Path, work: Path) -> None:
     ).stdout.strip()
     details = cast(dict[str, object], result["details"])
     wheel.require(
-        details == {
+        details
+        == {
             "repo": published["repo"],
             "source_commit": published["source_commit"],
             "captured_at": published["captured_at"],
@@ -245,6 +247,1141 @@ def _legacy_usage_pilot(cli: Path, work: Path) -> None:
     )
 
 
+def _paired_review_mcp_inputs(work: Path) -> tuple[Path, Path, Path]:
+    examples = wheel.ROOT / "fixtures/examples/evidence"
+    paired_input = examples / "synthetic-paired-complete.json"
+    paired_policy = examples / "paired-binary-policy.json"
+    paired_context = work / "private-review-context.json"
+    review_context = json.loads((examples / "synthetic-review-context.json").read_text())
+    review_context["conditions"][0]["baseline"] = "PRIVATE_REVIEW_CANARY"
+    paired_context.write_text(json.dumps(review_context), encoding="utf-8")
+    return paired_input, paired_policy, paired_context
+
+
+def _check_mcp_paired_review(
+    cli: Path,
+    work: Path,
+    paired: dict[str, Any],
+    paths: tuple[Path, Path, Path],
+) -> None:
+    paired_input, paired_policy, paired_context = paths
+    cli_paired = wheel.success(
+        [
+            str(cli),
+            "review-pair",
+            "--input",
+            str(paired_input),
+            "--policy",
+            str(paired_policy),
+            "--context",
+            str(paired_context),
+            "--view",
+            "summary",
+            "--json",
+        ],
+        work,
+    )
+    wheel.require(paired["isError"] is False, "installed MCP paired review returned an error")
+    wheel.require(
+        paired["content"] == [{"type": "text", "text": cli_paired.stdout[:-1]}],
+        "installed MCP paired review text drift",
+    )
+    wheel.require(
+        paired["structuredContent"] == json.loads(cli_paired.stdout)
+        and paired["structuredContent"]["schema"] == "paired_review_summary.v1",
+        "installed MCP paired review result drift",
+    )
+    wheel.require("PRIVATE_REVIEW_CANARY" not in str(paired), "MCP leaked declared review text")
+
+
+def _cross_artifact_review_mcp_inputs(work: Path) -> tuple[Path, Path, Path]:
+    source = wheel.ROOT / "fixtures/conformance/goppi-c55-common"
+    assessment = source / "assessment.json"
+    result = source / "evidence-result.json"
+    case_ids = [case["case_id"] for case in json.loads(assessment.read_bytes())["cases"]]
+    rows = [
+        {
+            "success": False,
+            "failureReason": 1,
+            "testCase": {"metadata": {"case_id": "control", "slot_kind": "control"}},
+            "prompt": "PRIVATE_CROSS_ARTIFACT_CANARY",
+        },
+        *[
+            {
+                "success": False,
+                "failureReason": 1,
+                "testCase": {"metadata": {"case_id": case_id, "slot_kind": "subject"}},
+            }
+            for case_id in case_ids
+        ],
+    ]
+    promptfoo = work / "private-cross-artifact-promptfoo.json"
+    promptfoo.write_text(
+        json.dumps(
+            {
+                "results": {
+                    "version": 3,
+                    "results": rows,
+                    "stats": {"successes": 0, "failures": len(rows), "errors": 0},
+                },
+                "metadata": {"promptfooVersion": "0.123.0"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    return assessment, result, promptfoo
+
+
+def _check_mcp_cross_artifact_review(
+    cli: Path, work: Path, projected: dict[str, Any], paths: tuple[Path, Path, Path]
+) -> None:
+    assessment, result, promptfoo = paths
+    selected = wheel.success(
+        [
+            str(cli),
+            "review-artifacts",
+            "--goppi-assessment",
+            str(assessment),
+            "--goppi-result",
+            str(result),
+            "--promptfoo",
+            str(promptfoo),
+            "--view",
+            "summary",
+            "--json",
+        ],
+        work,
+    )
+    wheel.require(projected["isError"] is False, "installed MCP artifact review returned an error")
+    wheel.require(
+        projected["content"] == [{"type": "text", "text": selected.stdout[:-1]}],
+        "installed MCP artifact review text drift",
+    )
+    wheel.require(
+        projected["structuredContent"] == json.loads(selected.stdout)
+        and projected["structuredContent"]["schema"] == "cross_artifact_review_summary.v1",
+        "installed MCP artifact review result drift",
+    )
+    wheel.require("PRIVATE_CROSS_ARTIFACT_CANARY" not in str(projected), "MCP leaked source text")
+
+
+def _cross_artifact_readiness_mcp_inputs(work: Path) -> tuple[Path, Path, Path]:
+    source = wheel.ROOT / "fixtures/conformance/goppi-c55-common"
+    promptfoo = work / "private-readiness-promptfoo.json"
+    golden = wheel.ROOT / "fixtures/golden/external/promptfoo-0.124.1/results.json"
+    document = json.loads(golden.read_bytes())
+    document["results"]["results"][0]["prompt"] = "PRIVATE_READINESS_CANARY"
+    promptfoo.write_text(json.dumps(document), encoding="utf-8")
+    return source / "assessment.json", source / "evidence-result.json", promptfoo
+
+
+def _check_mcp_cross_artifact_readiness(
+    cli: Path, work: Path, projected: dict[str, Any], paths: tuple[Path, Path, Path]
+) -> None:
+    assessment, result, promptfoo = paths
+    selected = wheel.success(
+        [
+            str(cli),
+            "review-artifacts",
+            "--goppi-assessment",
+            str(assessment),
+            "--goppi-result",
+            str(result),
+            "--promptfoo",
+            str(promptfoo),
+            "--view",
+            "readiness-summary",
+            "--json",
+        ],
+        work,
+    )
+    wheel.require(projected["isError"] is False, "installed MCP readiness returned an error")
+    wheel.require(
+        projected["content"] == [{"type": "text", "text": selected.stdout[:-1]}],
+        "installed MCP readiness text drift",
+    )
+    wheel.require(
+        projected["structuredContent"] == json.loads(selected.stdout)
+        and projected["structuredContent"]["schema"] == "cross_artifact_readiness_summary.v1",
+        "installed MCP readiness result drift",
+    )
+    wheel.require("PRIVATE_READINESS_CANARY" not in str(projected), "MCP leaked source text")
+
+
+def _mcp_review_inputs(
+    work: Path,
+) -> tuple[tuple[Path, Path, Path], tuple[Path, Path, Path], tuple[Path, Path, Path]]:
+    return (
+        _paired_review_mcp_inputs(work),
+        _cross_artifact_review_mcp_inputs(work),
+        _cross_artifact_readiness_mcp_inputs(work),
+    )
+
+
+def _record_list_mcp_root(cli: Path, work: Path) -> Path:
+    source = work / "private-record-input"
+    source.mkdir()
+    fixtures = wheel.ROOT / "fixtures/examples/records"
+    (source / "note.txt").write_bytes((fixtures / "note.txt").read_bytes())
+    spec = json.loads((fixtures / "record-spec.json").read_bytes())
+    spec["label"] = "PRIVATE_RECORD_LABEL_CANARY"
+    specification = source / "spec.json"
+    specification.write_text(json.dumps(spec), encoding="utf-8")
+    root = work / "private-record-list-root"
+    wheel.success(
+        [str(cli), "records", "save", "--root", str(root), "--spec", str(specification), "--json"],
+        work,
+    )
+    stored = root / "records/synthetic.capture-001/files/source/note.txt"
+    original = stored.read_bytes()
+    stored.write_bytes(b"x" * len(original))
+    return root
+
+
+def _record_json_mcp_root(cli: Path, work: Path) -> Path:
+    source = work / "private-json-input"
+    source.mkdir()
+    (source / "data.json").write_bytes(b'{"content":"stored\\u202e data"}')
+    fixtures = wheel.ROOT / "fixtures/examples/records"
+    spec = json.loads((fixtures / "record-spec.json").read_bytes())
+    spec["files"][0].update(
+        {"name": "source/data.json", "path": "data.json", "media_type": "application/json"}
+    )
+    specification = source / "spec.json"
+    specification.write_text(json.dumps(spec), encoding="utf-8")
+    root = work / "private-json-record-root"
+    wheel.success(
+        [str(cli), "records", "save", "--root", str(root), "--spec", str(specification), "--json"],
+        work,
+    )
+    return root
+
+
+def _check_mcp_record_list(cli: Path, work: Path, projected: dict[str, Any], root: Path) -> None:
+    selected = wheel.success(
+        [
+            str(cli),
+            "records",
+            "list",
+            "--root",
+            str(root),
+            "--view",
+            "page",
+            "--offset",
+            "0",
+            "--json",
+        ],
+        work,
+    )
+    wheel.require(projected["isError"] is False, "installed MCP record list returned an error")
+    wheel.require(
+        projected["content"] == [{"type": "text", "text": selected.stdout[:-1]}],
+        "installed MCP record list text drift",
+    )
+    wheel.require(
+        projected["structuredContent"] == json.loads(selected.stdout)
+        and projected["structuredContent"]["schema"] == "record_catalog_page.v1",
+        "installed MCP record list result drift",
+    )
+    wheel.require("PRIVATE_RECORD_LABEL_CANARY" not in str(projected), "MCP leaked record label")
+    wheel.require("private-record-list-root" not in str(projected), "MCP leaked root path")
+
+
+def _check_mcp_record_show(cli: Path, work: Path, projected: dict[str, Any], root: Path) -> None:
+    selected = wheel.success(
+        [
+            str(cli),
+            "records",
+            "show",
+            "--root",
+            str(root),
+            "--id",
+            "synthetic.capture-001",
+            "--view",
+            "summary",
+            "--file-offset",
+            "0",
+            "--json",
+        ],
+        work,
+    )
+    wheel.require(projected["isError"] is False, "installed MCP record show returned an error")
+    wheel.require(
+        projected["content"] == [{"type": "text", "text": selected.stdout[:-1]}],
+        "installed MCP record show text drift",
+    )
+    wheel.require(
+        projected["structuredContent"] == json.loads(selected.stdout)
+        and projected["structuredContent"]["schema"] == "record_view_summary.v1",
+        "installed MCP record show result drift",
+    )
+    wheel.require("PRIVATE_RECORD_LABEL_CANARY" not in str(projected), "MCP leaked record label")
+    wheel.require("private-record-list-root" not in str(projected), "MCP leaked root path")
+
+
+def _check_mcp_record_verify(cli: Path, work: Path, projected: dict[str, Any], root: Path) -> None:
+    selected = wheel.success(
+        [
+            str(cli),
+            "records",
+            "verify",
+            "--root",
+            str(root),
+            "--id",
+            "synthetic.capture-001",
+            "--view",
+            "summary",
+            "--json",
+        ],
+        work,
+    )
+    wheel.require(projected["isError"] is False, "installed MCP verify returned an error")
+    wheel.require(
+        projected["content"] == [{"type": "text", "text": selected.stdout[:-1]}],
+        "installed MCP verify text drift",
+    )
+    wheel.require(
+        projected["structuredContent"] == json.loads(selected.stdout)
+        and projected["structuredContent"]["schema"] == "record_verification_summary.v1"
+        and projected["structuredContent"]["valid"] is False,
+        "installed MCP verify result drift",
+    )
+    wheel.require("private-record-list-root" not in str(projected), "MCP leaked root path")
+    wheel.require("source/note.txt" not in str(projected), "MCP leaked finding coordinates")
+
+
+def _check_mcp_record_read_json(
+    cli: Path, work: Path, projected: dict[str, Any], root: Path
+) -> None:
+    selected = wheel.success(
+        [
+            str(cli),
+            "records",
+            "read-json",
+            "--root",
+            str(root),
+            "--id",
+            "synthetic.capture-001",
+            "--name",
+            "source/data.json",
+            "--view",
+            "bounded",
+        ],
+        work,
+    )
+    wheel.require(projected["isError"] is False, "installed MCP read-json returned an error")
+    wheel.require(
+        projected["content"] == [{"type": "text", "text": selected.stdout[:-1]}],
+        "installed MCP read-json text drift",
+    )
+    wheel.require(
+        projected["structuredContent"] == json.loads(selected.stdout)
+        and projected["structuredContent"]["schema"] == "record_document.v1"
+        and projected["structuredContent"]["content"] == {"content": "stored\u202e data"},
+        "installed MCP read-json result drift",
+    )
+    wheel.require(len(selected.stdout.encode()) <= 16 * 1024, "MCP read-json exceeded budget")
+    wheel.require("private-json-record-root" not in str(projected), "MCP leaked root path")
+
+
+def _check_mcp_inspect(
+    cli: Path, work: Path, projected: dict[str, Any], case: Path, state: str
+) -> None:
+    observed = subprocess.run(
+        [str(cli), "inspect", str(case), "--json"],
+        capture_output=True,
+        text=True,
+        cwd=work,
+        check=False,
+        timeout=wheel.COMMAND_TIMEOUT,
+    )
+    wheel.require(
+        observed.returncode == (0 if state == "created" else 1) and observed.stderr == "",
+        "installed CLI inspect result drift",
+    )
+    wheel.require(projected["isError"] is False, "installed MCP inspect returned an error")
+    wheel.require(
+        projected["content"] == [{"type": "text", "text": observed.stdout[:-1]}],
+        "installed MCP inspect text drift",
+    )
+    wheel.require(
+        projected["structuredContent"] == json.loads(observed.stdout)
+        and projected["structuredContent"]["projection"] == state,
+        "installed MCP inspect result drift",
+    )
+    wheel.require(len(observed.stdout.encode()) < 16 * 1024, "MCP inspect exceeded budget")
+
+
+def _check_mcp_promptfoo(cli: Path, work: Path, projected: dict[str, Any], source: Path) -> None:
+    selected = wheel.success(
+        [str(cli), "audit-promptfoo", str(source), "--view", "summary", "--json"],
+        work,
+    )
+    wheel.require(projected["isError"] is False, "installed MCP Promptfoo returned an error")
+    wheel.require(
+        projected["content"] == [{"type": "text", "text": selected.stdout[:-1]}],
+        "installed MCP Promptfoo text drift",
+    )
+    wheel.require(
+        projected["structuredContent"] == json.loads(selected.stdout)
+        and projected["structuredContent"]["schema"] == "promptfoo_accounting_summary.v1",
+        "installed MCP Promptfoo result drift",
+    )
+    wheel.require(len(selected.stdout.encode()) <= 16 * 1024, "MCP Promptfoo exceeded budget")
+    wheel.require("row_index" not in str(projected), "MCP Promptfoo leaked row coordinates")
+
+
+def _check_mcp_audit_counts(cli: Path, work: Path, projected: dict[str, Any], case: Path) -> None:
+    selected = wheel.success(
+        [str(cli), "audit-counts", str(case), "--view", "summary", "--json"],
+        work,
+    )
+    wheel.require(projected["isError"] is False, "installed MCP audit-counts returned an error")
+    wheel.require(
+        projected["content"] == [{"type": "text", "text": selected.stdout[:-1]}],
+        "installed MCP audit-counts text drift",
+    )
+    wheel.require(
+        projected["structuredContent"] == json.loads(selected.stdout)
+        and projected["structuredContent"]["source_binding"]["kind"] == "manifest_case",
+        "installed MCP audit-counts result drift",
+    )
+    wheel.require(len(selected.stdout.encode()) <= 16 * 1024, "MCP audit-counts exceeded budget")
+
+
+def _check_mcp_deepeval(cli: Path, work: Path, projected: dict[str, Any], source: Path) -> None:
+    selected = wheel.success(
+        [str(cli), "audit-deepeval", str(source), "--view", "summary", "--json"],
+        work,
+    )
+    wheel.require(projected["isError"] is False, "installed MCP DeepEval returned an error")
+    wheel.require(
+        projected["content"] == [{"type": "text", "text": selected.stdout[:-1]}],
+        "installed MCP DeepEval text drift",
+    )
+    wheel.require(
+        projected["structuredContent"] == json.loads(selected.stdout)
+        and projected["structuredContent"]["schema"] == "deepeval_accounting_summary.v1",
+        "installed MCP DeepEval result drift",
+    )
+    wheel.require(len(selected.stdout.encode()) <= 16 * 1024, "MCP DeepEval exceeded budget")
+    wheel.require(
+        "synthetic deterministic evaluator error" not in str(projected), "MCP leaked text"
+    )
+
+
+def _check_mcp_deepeval_trace(
+    cli: Path, work: Path, projected: dict[str, Any], source: Path
+) -> None:
+    selected = wheel.success(
+        [str(cli), "audit-deepeval", str(source), "--view", "trace-summary", "--json"],
+        work,
+    )
+    wheel.require(projected["isError"] is False, "installed MCP trace returned an error")
+    wheel.require(
+        projected["content"] == [{"type": "text", "text": selected.stdout[:-1]}],
+        "installed MCP trace text drift",
+    )
+    wheel.require(
+        projected["structuredContent"] == json.loads(selected.stdout)
+        and projected["structuredContent"]["schema"] == "deepeval_trace_summary.v1",
+        "installed MCP trace result drift",
+    )
+    wheel.require(len(selected.stdout.encode()) <= 16 * 1024, "MCP trace exceeded budget")
+    wheel.require("/testCases/" not in str(projected), "MCP trace leaked coordinates")
+
+
+def _check_mcp_deepeval_bound(
+    cli: Path, work: Path, projected: dict[str, Any], source: Path, pack: Path
+) -> None:
+    selected = wheel.success(
+        [
+            str(cli),
+            "audit-deepeval",
+            str(source),
+            "--bindings",
+            str(pack),
+            "--view",
+            "bound-summary",
+            "--json",
+        ],
+        work,
+    )
+    wheel.require(projected["isError"] is False, "installed MCP bound returned an error")
+    wheel.require(
+        projected["content"] == [{"type": "text", "text": selected.stdout[:-1]}],
+        "installed MCP bound text drift",
+    )
+    wheel.require(
+        projected["structuredContent"] == json.loads(selected.stdout)
+        and projected["structuredContent"]["schema"] == "deepeval_bound_summary.v1",
+        "installed MCP bound result drift",
+    )
+    wheel.require(len(selected.stdout.encode()) <= 16 * 1024, "MCP bound exceeded budget")
+    wheel.require("fixed_score" not in str(projected), "MCP bound leaked item detail")
+
+
+def _check_mcp_langfuse(
+    cli: Path, work: Path, projected: dict[str, Any], observations: Path, scores: Path
+) -> None:
+    selected = wheel.success(
+        [
+            str(cli),
+            "audit-langfuse",
+            "--observations",
+            str(observations),
+            "--scores",
+            str(scores),
+            "--view",
+            "summary",
+            "--json",
+        ],
+        work,
+    )
+    wheel.require(projected["isError"] is False, "installed MCP Langfuse returned an error")
+    wheel.require(
+        projected["content"] == [{"type": "text", "text": selected.stdout[:-1]}],
+        "installed MCP Langfuse text drift",
+    )
+    wheel.require(
+        projected["structuredContent"] == json.loads(selected.stdout)
+        and projected["structuredContent"]["schema"] == "langfuse_accounting_summary.v1",
+        "installed MCP Langfuse result drift",
+    )
+    wheel.require(len(selected.stdout.encode()) <= 16 * 1024, "MCP Langfuse exceeded budget")
+    wheel.require("synthetic review" not in str(projected), "MCP Langfuse leaked score text")
+
+
+def _check_mcp_langfuse_score_source(
+    cli: Path, work: Path, projected: dict[str, Any], observations: Path, scores: Path
+) -> None:
+    selected = wheel.success(
+        [
+            str(cli),
+            "audit-langfuse",
+            "--observations",
+            str(observations),
+            "--scores",
+            str(scores),
+            "--view",
+            "score-source",
+            "--json",
+        ],
+        work,
+    )
+    wheel.require(projected["isError"] is False, "installed MCP score source returned an error")
+    wheel.require(
+        projected["content"] == [{"type": "text", "text": selected.stdout[:-1]}],
+        "installed MCP score source text drift",
+    )
+    wheel.require(
+        projected["structuredContent"] == json.loads(selected.stdout)
+        and projected["structuredContent"]["schema"] == "langfuse_score_source_summary.v1",
+        "installed MCP score source result drift",
+    )
+    wheel.require(len(selected.stdout.encode()) <= 16 * 1024, "MCP score source exceeded budget")
+    wheel.require("synthetic review" not in str(projected), "MCP score source leaked text")
+
+
+def _check_mcp_extended_tools(
+    cli: Path,
+    work: Path,
+    responses: list[dict[str, Any]],
+    review_paths: tuple[tuple[Path, Path, Path], tuple[Path, Path, Path], tuple[Path, Path, Path]],
+    record_root: Path,
+    record_json_root: Path,
+) -> None:
+    paired_paths, cross_artifact_paths, readiness_paths = review_paths
+    _check_mcp_paired_review(cli, work, responses[8]["result"], paired_paths)
+    _check_mcp_cross_artifact_review(cli, work, responses[9]["result"], cross_artifact_paths)
+    _check_mcp_cross_artifact_readiness(cli, work, responses[10]["result"], readiness_paths)
+    _check_mcp_record_list(cli, work, responses[11]["result"], record_root)
+    _check_mcp_record_show(cli, work, responses[13]["result"], record_root)
+    _check_mcp_record_verify(cli, work, responses[15]["result"], record_root)
+    _check_mcp_record_read_json(cli, work, responses[17]["result"], record_json_root)
+    refused = responses[12]["result"]
+    wheel.require(refused["isError"] is True, "installed MCP record list refusal was not an error")
+    wheel.require(
+        json.loads(refused["content"][0]["text"])["schema"] == "record_error.v1",
+        "installed MCP record list refused with the wrong error owner",
+    )
+    wheel.require("private-missing-record-root" not in str(refused), "MCP leaked missing root")
+    show_refused = responses[14]["result"]
+    wheel.require(
+        show_refused["isError"] is True,
+        "installed MCP record show refusal was not an error",
+    )
+    wheel.require(
+        json.loads(show_refused["content"][0]["text"])["schema"] == "record_error.v1",
+        "installed MCP record show refused with the wrong error owner",
+    )
+    verify_refused = responses[16]["result"]
+    wheel.require(
+        verify_refused["isError"] is True
+        and json.loads(verify_refused["content"][0]["text"])["schema"] == "record_error.v1",
+        "installed MCP record verify refused with the wrong error owner",
+    )
+    read_refused = responses[18]["result"]
+    wheel.require(
+        read_refused["isError"] is True
+        and json.loads(read_refused["content"][0]["text"])["schema"] == "record_error.v1",
+        "installed MCP read-json refused with the wrong error owner",
+    )
+
+
+def _mcp_surface_pilot(cli: Path, work: Path) -> None:  # noqa: PLR0915 - one wire transcript
+    """The installed stdio tools must project their installed CLI results."""
+    mcp = cli.with_name("underwrite-mcp")
+    wheel.require(mcp.is_file(), "installed read-only MCP entrypoint is missing")
+    first = wheel.ROOT / "fixtures/examples/evidence/common-result-c55.json"
+    second = work / "private-input-v2.json"
+    second_report = _cli_json(
+        cli,
+        [
+            "audit-deepeval",
+            str(wheel.ROOT / "fixtures/examples/deepeval-auto-4.3.1/ordinary.json"),
+            "--bindings",
+            str(wheel.ROOT / "fixtures/examples/evidence/synthetic-deepeval.bindings.v2.json"),
+        ],
+        second,
+        work,
+    )
+    wheel.require(second_report["schema"] == "evidence_result.v2", "v2 smoke input drift")
+    baseline_exchange = Path(
+        shutil.copytree(
+            wheel.ROOT / "fixtures/examples/baseline-event/exchange",
+            work / "private-baseline-exchange",
+        )
+    )
+    paired_paths, cross_artifact_paths, readiness_paths = _mcp_review_inputs(work)
+    record_root = _record_list_mcp_root(cli, work)
+    record_json_root = _record_json_mcp_root(cli, work)
+    inspect_case = (
+        wheel.ROOT / "fixtures/examples/evidence/synthetic-promptfoo-count-mismatch.case.json"
+    )
+    promptfoo_source = (
+        wheel.ROOT / "fixtures/examples/evidence/synthetic-promptfoo-count-mismatch.json"
+    )
+    deepeval_source = wheel.ROOT / "fixtures/examples/deepeval-auto-4.3.1/ordinary.json"
+    trace_source = wheel.ROOT / "fixtures/examples/deepeval-auto-4.3.1/recovery.json"
+    deepeval_pack = wheel.ROOT / "fixtures/examples/evidence/synthetic-deepeval.bindings.v2.json"
+    langfuse_folder = wheel.ROOT / "fixtures/examples/langfuse-cli"
+    langfuse_observations = langfuse_folder / "observations.json"
+    langfuse_scores = langfuse_folder / "scores.json"
+    mismatch_case = work / "private-inspect-case.json"
+    mismatch = json.loads(inspect_case.read_bytes())
+    mismatch["artifact"]["expected_hash"] = "sha256:" + "0" * 64
+    mismatch_case.write_text(json.dumps(mismatch), encoding="utf-8")
+    artifact = mismatch["artifact"]["path"]
+    shutil.copyfile(inspect_case.parent / artifact, work / artifact)
+    messages: tuple[dict[str, object], ...] = (
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-11-25",
+                "capabilities": {},
+                "clientInfo": {"name": "wheel-smoke", "version": "1"},
+            },
+        },
+        {"jsonrpc": "2.0", "method": "notifications/initialized"},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+        {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {"name": "underwrite_capabilities", "arguments": {}},
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "tools/call",
+            "params": {"name": "underwrite_inspect_result_v1", "arguments": {"file": str(first)}},
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 5,
+            "method": "tools/call",
+            "params": {"name": "underwrite_inspect_result_v2", "arguments": {"file": str(second)}},
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 6,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_audit_baseline",
+                "arguments": {"exchange": str(baseline_exchange)},
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 7,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_inspect_result_v1_actions",
+                "arguments": {"file": str(first)},
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 8,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_inspect_result_v2_actions",
+                "arguments": {"file": str(second)},
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_review_pair",
+                "arguments": {
+                    "input": str(paired_paths[0]),
+                    "policy": str(paired_paths[1]),
+                    "context": str(paired_paths[2]),
+                },
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 10,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_review_artifacts",
+                "arguments": {
+                    "goppi_assessment": str(cross_artifact_paths[0]),
+                    "goppi_result": str(cross_artifact_paths[1]),
+                    "promptfoo": str(cross_artifact_paths[2]),
+                },
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 11,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_review_artifacts_readiness",
+                "arguments": {
+                    "goppi_assessment": str(readiness_paths[0]),
+                    "goppi_result": str(readiness_paths[1]),
+                    "promptfoo": str(readiness_paths[2]),
+                },
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 12,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_records_list",
+                "arguments": {"root": str(record_root)},
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 13,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_records_list",
+                "arguments": {"root": str(work / "private-missing-record-root")},
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 14,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_records_show",
+                "arguments": {"root": str(record_root), "id": "synthetic.capture-001"},
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 15,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_records_show",
+                "arguments": {"root": str(record_root), "id": "missing.record"},
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 16,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_records_verify",
+                "arguments": {"root": str(record_root), "id": "synthetic.capture-001"},
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 17,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_records_verify",
+                "arguments": {"root": str(record_root), "id": "missing.record"},
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 18,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_records_read_json",
+                "arguments": {
+                    "root": str(record_json_root),
+                    "id": "synthetic.capture-001",
+                    "name": "source/data.json",
+                },
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 19,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_records_read_json",
+                "arguments": {
+                    "root": str(record_json_root),
+                    "id": "missing.record",
+                    "name": "source/data.json",
+                },
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 20,
+            "method": "tools/call",
+            "params": {"name": "underwrite_inspect", "arguments": {"case": str(inspect_case)}},
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 21,
+            "method": "tools/call",
+            "params": {"name": "underwrite_inspect", "arguments": {"case": str(mismatch_case)}},
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 22,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_audit_promptfoo",
+                "arguments": {"file": str(promptfoo_source)},
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 23,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_audit_promptfoo",
+                "arguments": {"file": str(work / "PRIVATE_MISSING_PROMPTFOO")},
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 24,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_audit_counts",
+                "arguments": {"case": str(inspect_case)},
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 25,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_audit_counts",
+                "arguments": {"case": str(work / "PRIVATE_MISSING_CASE")},
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 26,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_audit_deepeval",
+                "arguments": {"file": str(deepeval_source)},
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 27,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_audit_deepeval",
+                "arguments": {"file": str(work / "PRIVATE_MISSING_DEEPEVAL")},
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 28,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_audit_deepeval_trace",
+                "arguments": {"file": str(trace_source)},
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 29,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_audit_deepeval_trace",
+                "arguments": {"file": str(work / "PRIVATE_MISSING_TRACE")},
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 30,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_audit_deepeval_bound",
+                "arguments": {"file": str(deepeval_source), "bindings": str(deepeval_pack)},
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 31,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_audit_deepeval_bound",
+                "arguments": {
+                    "file": str(deepeval_source),
+                    "bindings": str(work / "PRIVATE_MISSING_PACK"),
+                },
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 32,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_audit_langfuse",
+                "arguments": {
+                    "observations": str(langfuse_observations),
+                    "scores": str(langfuse_scores),
+                },
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 33,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_audit_langfuse",
+                "arguments": {
+                    "observations": str(langfuse_observations),
+                    "scores": str(work / "PRIVATE_MISSING_SCORES"),
+                },
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 34,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_audit_langfuse_score_source",
+                "arguments": {
+                    "observations": str(langfuse_observations),
+                    "scores": str(langfuse_scores),
+                },
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 35,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_audit_langfuse_score_source",
+                "arguments": {
+                    "observations": str(langfuse_observations),
+                    "scores": str(work / "PRIVATE_MISSING_SOURCE_SCORES"),
+                },
+            },
+        },
+    )
+    request = "".join(json.dumps(message, separators=(",", ":")) + "\n" for message in messages)
+    env = os.environ.copy()
+    for name in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV"):
+        env.pop(name, None)
+    try:
+        observed = subprocess.run(
+            [str(mcp)],
+            input=request,
+            capture_output=True,
+            text=True,
+            cwd=work,
+            env=env,
+            check=False,
+            timeout=wheel.COMMAND_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise wheel.SmokeFailure("installed MCP stdio transcript timed out") from exc
+    wheel.require(observed.returncode == 0 and observed.stderr == "", "installed MCP failed")
+    responses = [json.loads(line) for line in observed.stdout.splitlines()]
+    wheel.require(
+        len(responses) == len(messages) - 1,
+        "installed MCP wrote extra or missing stdout lines",
+    )
+    wheel.require(
+        [item["id"] for item in responses] == list(range(1, 36)),
+        "MCP request ids changed",
+    )
+    tools = responses[1]["result"]["tools"]
+    wheel.require(
+        [tool["name"] for tool in tools]
+        == [
+            "underwrite_capabilities",
+            "underwrite_inspect_result_v1",
+            "underwrite_inspect_result_v2",
+            "underwrite_audit_baseline",
+            "underwrite_inspect",
+            "underwrite_audit_promptfoo",
+            "underwrite_audit_counts",
+            "underwrite_audit_deepeval",
+            "underwrite_audit_deepeval_trace",
+            "underwrite_audit_deepeval_bound",
+            "underwrite_audit_langfuse",
+            "underwrite_audit_langfuse_score_source",
+            "underwrite_inspect_result_v1_actions",
+            "underwrite_inspect_result_v2_actions",
+            "underwrite_records_read_trajectory",
+            "underwrite_review_pair",
+            "underwrite_review_artifacts",
+            "underwrite_review_artifacts_readiness",
+            "underwrite_records_list",
+            "underwrite_records_show",
+            "underwrite_records_verify",
+            "underwrite_records_read_json",
+        ],
+        "MCP tool drift",
+    )
+    cli_result = wheel.success([str(cli), "capabilities", "--json"], work)
+    result = responses[2]["result"]
+    wheel.require(result["isError"] is False, "installed MCP capabilities returned an error")
+    wheel.require(cli_result.stdout.endswith("\n"), "installed CLI JSON lost its line delimiter")
+    wheel.require(
+        result["content"] == [{"type": "text", "text": cli_result.stdout[:-1]}],
+        "MCP text drift",
+    )
+    wheel.require(result["structuredContent"] == json.loads(cli_result.stdout), "MCP result drift")
+    for index, source in ((3, first), (4, second)):
+        selected = responses[index]["result"]
+        cli_inspection = wheel.success([str(cli), "inspect-result", str(source), "--json"], work)
+        wheel.require(selected["isError"] is False, "installed MCP inspection returned an error")
+        wheel.require(
+            selected["content"] == [{"type": "text", "text": cli_inspection.stdout[:-1]}],
+            "installed MCP inspection text drift",
+        )
+        wheel.require(
+            selected["structuredContent"] == json.loads(cli_inspection.stdout),
+            "installed MCP inspection result drift",
+        )
+        wheel.require("private-input-v2" not in str(selected), "MCP reflected an input path")
+    baseline_result = responses[5]["result"]
+    cli_baseline = wheel.success(
+        [str(cli), "audit-baseline", "--exchange", str(baseline_exchange), "--json"], work
+    )
+    wheel.require(baseline_result["isError"] is False, "installed MCP baseline returned an error")
+    wheel.require(
+        baseline_result["content"] == [{"type": "text", "text": cli_baseline.stdout[:-1]}],
+        "installed MCP baseline text drift",
+    )
+    wheel.require(
+        baseline_result["structuredContent"] == json.loads(cli_baseline.stdout),
+        "installed MCP baseline result drift",
+    )
+    wheel.require("private-baseline-exchange" not in str(baseline_result), "MCP reflected a path")
+    for index, source in ((6, first), (7, second)):
+        selected = responses[index]["result"]
+        cli_actions = wheel.success(
+            [str(cli), "inspect-result", str(source), "--view", "actions", "--json"], work
+        )
+        wheel.require(selected["isError"] is False, "installed MCP actions returned an error")
+        wheel.require(
+            selected["content"] == [{"type": "text", "text": cli_actions.stdout[:-1]}],
+            "installed MCP actions text drift",
+        )
+        wheel.require(
+            selected["structuredContent"] == json.loads(cli_actions.stdout),
+            "installed MCP actions result drift",
+        )
+        wheel.require("private-input-v2" not in str(selected), "MCP reflected an input path")
+    _check_mcp_extended_tools(
+        cli,
+        work,
+        responses,
+        (paired_paths, cross_artifact_paths, readiness_paths),
+        record_root,
+        record_json_root,
+    )
+    _check_mcp_inspect(cli, work, responses[19]["result"], inspect_case, "created")
+    _check_mcp_inspect(cli, work, responses[20]["result"], mismatch_case, "not_created")
+    _check_mcp_promptfoo(cli, work, responses[21]["result"], promptfoo_source)
+    promptfoo_refused = responses[22]["result"]
+    wheel.require(
+        promptfoo_refused["isError"] is True
+        and json.loads(promptfoo_refused["content"][0]["text"])["schema"] == "evidence_error.v1"
+        and "PRIVATE_MISSING_PROMPTFOO" not in str(promptfoo_refused),
+        "installed MCP Promptfoo refusal drift",
+    )
+    _check_mcp_audit_counts(cli, work, responses[23]["result"], inspect_case)
+    counts_refused = responses[24]["result"]
+    wheel.require(
+        counts_refused["isError"] is True
+        and json.loads(counts_refused["content"][0]["text"])["schema"] == "evidence_error.v1"
+        and "PRIVATE_MISSING_CASE" not in str(counts_refused),
+        "installed MCP audit-counts refusal drift",
+    )
+    _check_mcp_deepeval(cli, work, responses[25]["result"], deepeval_source)
+    deepeval_refused = responses[26]["result"]
+    wheel.require(
+        deepeval_refused["isError"] is True
+        and json.loads(deepeval_refused["content"][0]["text"])["schema"] == "evidence_error.v1"
+        and "PRIVATE_MISSING_DEEPEVAL" not in str(deepeval_refused),
+        "installed MCP DeepEval refusal drift",
+    )
+    _check_mcp_deepeval_trace(cli, work, responses[27]["result"], trace_source)
+    trace_refused = responses[28]["result"]
+    wheel.require(
+        trace_refused["isError"] is True
+        and json.loads(trace_refused["content"][0]["text"])["schema"] == "evidence_error.v1"
+        and "PRIVATE_MISSING_TRACE" not in str(trace_refused),
+        "installed MCP trace refusal drift",
+    )
+    _check_mcp_deepeval_bound(cli, work, responses[29]["result"], deepeval_source, deepeval_pack)
+    bound_refused = responses[30]["result"]
+    wheel.require(
+        bound_refused["isError"] is True
+        and json.loads(bound_refused["content"][0]["text"])["schema"] == "evidence_error.v1"
+        and "PRIVATE_MISSING_PACK" not in str(bound_refused),
+        "installed MCP bound refusal drift",
+    )
+    _check_mcp_langfuse(cli, work, responses[31]["result"], langfuse_observations, langfuse_scores)
+    langfuse_refused = responses[32]["result"]
+    wheel.require(
+        langfuse_refused["isError"] is True
+        and json.loads(langfuse_refused["content"][0]["text"])["schema"] == "evidence_error.v1"
+        and "PRIVATE_MISSING_SCORES" not in str(langfuse_refused),
+        "installed MCP Langfuse refusal drift",
+    )
+    _check_mcp_langfuse_score_source(
+        cli, work, responses[33]["result"], langfuse_observations, langfuse_scores
+    )
+    score_source_refused = responses[34]["result"]
+    wheel.require(
+        score_source_refused["isError"] is True
+        and json.loads(score_source_refused["content"][0]["text"])["schema"] == "evidence_error.v1"
+        and "PRIVATE_MISSING_SOURCE_SCORES" not in str(score_source_refused),
+        "installed MCP score source refusal drift",
+    )
+
+
 def _registry_core_smoke(dist: Path) -> None:
     candidates = sorted(dist.glob("underwrite-*.whl"))
     wheel.require(len(candidates) == 1, "expected one application wheel for registry-core smoke")
@@ -258,6 +1395,7 @@ def _registry_core_smoke(dist: Path) -> None:
         _, registry = wheel.install_registry_core(work, venv, app)
         cli = venv / "bin/underwrite"
         _legacy_usage_pilot(cli, work)
+        _mcp_surface_pilot(cli, work)
         _pin_cli_pilot(cli, work)
         fixtures = wheel.ROOT / "fixtures/examples"
         _native_measurement_pilot(cli, fixtures, work)
@@ -923,11 +2061,11 @@ def _bound_deepeval_record_pilot(
         )
         wheel.require(
             inspection["schema"] == schema
-            and inspection["selected_result"] == {
+            and inspection["selected_result"]
+            == {
                 "format": "evidence_result.v2",
-                "raw_hash": "sha256:" + hashlib.sha256(
-                    (work / "bound-direct.json").read_bytes()
-                ).hexdigest(),
+                "raw_hash": "sha256:"
+                + hashlib.sha256((work / "bound-direct.json").read_bytes()).hexdigest(),
             },
             "current bound inspection changed its original input identity",
         )
@@ -2109,8 +3247,13 @@ def _langfuse_auto_pilot(cli: Path, work: Path) -> None:
             first_score["evaluatorId"] = "PRIVATE_SCORE_CANARY"
             private_scores.write_text(json.dumps(private_document), encoding="utf-8")
             private_args = [
-                "audit-langfuse", "--observations", str(observed), "--scores", str(private_scores),
-                "--view", "score-source",
+                "audit-langfuse",
+                "--observations",
+                str(observed),
+                "--scores",
+                str(private_scores),
+                "--view",
+                "score-source",
             ]
             private_summary = _cli_json(
                 cli, private_args, selected / "private-score-source.json", selected
@@ -2138,13 +3281,20 @@ def _langfuse_auto_pilot(cli: Path, work: Path) -> None:
 
 def _native_measurement_pilot(cli: Path, fixtures: Path, work: Path) -> None:
     retired = (
-        "read.v1", "measurement_policy.v1", "measurement_policy.v2",
-        "declared_claims.v1", "declared_claims.v2",
-        "acceptance_decision.v1", "acceptance_decision.v2", "statistical_seed.v1",
+        "read.v1",
+        "measurement_policy.v1",
+        "measurement_policy.v2",
+        "declared_claims.v1",
+        "declared_claims.v2",
+        "acceptance_decision.v1",
+        "acceptance_decision.v2",
+        "statistical_seed.v1",
     )
     assets = wheel.success(
         [
-            str(cli.with_name("python")), "-I", "-c",
+            str(cli.with_name("python")),
+            "-I",
+            "-c",
             "import json,sys; from importlib.resources import files; "
             "from importlib.util import find_spec; "
             "root=files('underwrite').joinpath('_contracts'); "
@@ -2349,11 +3499,11 @@ def _baseline_evidence_pilot(cli: Path, exchange: Path, work: Path) -> None:
         )
         wheel.require(
             inspected["schema"] == schema
-            and inspected["selected_result"] == {
+            and inspected["selected_result"]
+            == {
                 "format": "evidence_result.v2",
-                "raw_hash": "sha256:" + hashlib.sha256(
-                    (work / "baseline-evidence.json").read_bytes()
-                ).hexdigest(),
+                "raw_hash": "sha256:"
+                + hashlib.sha256((work / "baseline-evidence.json").read_bytes()).hexdigest(),
             },
             "baseline inspection changed the original result format or bytes",
         )
@@ -2368,7 +3518,9 @@ def _native_subject_pilot(cli: Path, fixtures: Path, work: Path) -> None:
     subject = "정확도 / quality\nFORGED_STATUS=PASS\x1b[31m"
     wheel.success(
         [
-            str(cli.with_name("python")), "-I", "-c",
+            str(cli.with_name("python")),
+            "-I",
+            "-c",
             """
 import json, sys
 from pathlib import Path
@@ -2390,21 +3542,33 @@ candidate['claims_digest'] = parse_claims(claims).digest
 for name, value in [('policy', policy), ('claims', claims), ('candidate', candidate)]:
     (work / ('subject-' + name + '.json')).write_bytes(canonical_bytes(value))
 """,
-            str(fixtures / "event-acceptance"), str(work), subject,
+            str(fixtures / "event-acceptance"),
+            str(work),
+            subject,
         ],
         work,
     )
     read = work / "subject-read.json"
     _cli_json(
         cli,
-        ["measure", "--observation", str(work / "observation.json"),
-         "--policy", str(work / "subject-policy.json")],
+        [
+            "measure",
+            "--observation",
+            str(work / "observation.json"),
+            "--policy",
+            str(work / "subject-policy.json"),
+        ],
         read,
         work,
     )
     arguments = [
-        "accept", "--candidate", str(work / "subject-candidate.json"),
-        "--claims", str(work / "subject-claims.json"), "--read", str(read),
+        "accept",
+        "--candidate",
+        str(work / "subject-candidate.json"),
+        "--claims",
+        str(work / "subject-claims.json"),
+        "--read",
+        str(read),
     ]
     decision = _cli_json(cli, arguments, work / "subject-decision.json", work)
     claims = cast(list[dict[str, object]], decision["claims"])
@@ -2417,8 +3581,10 @@ for name, value in [('policy', policy), ('claims', claims), ('candidate', candid
     )
     human = wheel.success([str(cli), *arguments], work)
     wheel.require(
-        not human.stderr and json.dumps(subject, ensure_ascii=True) in human.stdout
-        and "\x1b" not in human.stdout and "\nFORGED_STATUS" not in human.stdout,
+        not human.stderr
+        and json.dumps(subject, ensure_ascii=True) in human.stdout
+        and "\x1b" not in human.stdout
+        and "\nFORGED_STATUS" not in human.stdout,
         "human acceptance output did not escape the measured subject",
     )
 
@@ -2449,7 +3615,8 @@ def _common_result_inspection_pilot(cli: Path, fixtures: Path, work: Path) -> No
         inspection.get("schema") == "common_result_inspection.v3", "result inspection schema"
     )
     wheel.require(
-        inspection.get("selected_result") == {
+        inspection.get("selected_result")
+        == {
             "format": "evidence_result.v1",
             "raw_hash": "sha256:" + hashlib.sha256(selected.read_bytes()).hexdigest(),
         },
@@ -2505,11 +3672,13 @@ def _common_result_inspection_pilot(cli: Path, fixtures: Path, work: Path) -> No
     )
     capabilities = _cli_json(cli, ["capabilities"], work / "inspection-capabilities.json", work)
     descriptor = next(
-        item for item in cast(list[dict[str, object]], capabilities["commands"])
+        item
+        for item in cast(list[dict[str, object]], capabilities["commands"])
         if item["command"] == "inspect-result"
     )
     selected_profile = next(
-        item for item in cast(list[dict[str, object]], descriptor["profiles"])
+        item
+        for item in cast(list[dict[str, object]], descriptor["profiles"])
         if item["name"] == "evidence_result.v1|actions"
     )
     wheel.require(
@@ -2548,9 +3717,15 @@ def _cross_artifact_record_pilot(
     recorded = _cli_json(
         cli,
         [
-            "records", "review-artifacts", *arguments[1:],
-            "--correspondence", str(correspondence),
-            "--root", str(record_root), "--id", record_id,
+            "records",
+            "review-artifacts",
+            *arguments[1:],
+            "--correspondence",
+            str(correspondence),
+            "--root",
+            str(record_root),
+            "--id",
+            record_id,
         ],
         directory / "mapped-record.json",
         directory,
@@ -2583,8 +3758,14 @@ def _cross_artifact_record_pilot(
     read_review = _cli_json(
         cli,
         [
-            "records", "read-json", "--root", str(record_root), "--id", record_id,
-            "--name", "analysis/review.json",
+            "records",
+            "read-json",
+            "--root",
+            str(record_root),
+            "--id",
+            record_id,
+            "--name",
+            "analysis/review.json",
         ],
         directory / "mapped-record-readback.json",
         directory,
@@ -3005,8 +4186,14 @@ def _baseline_record_pilot(cli: Path, fixtures: Path, work: Path) -> None:
     report = _cli_json(
         cli,
         [
-            "records", "audit-baseline", "--exchange", str(exchange),
-            "--root", str(record_root), "--id", identifier,
+            "records",
+            "audit-baseline",
+            "--exchange",
+            str(exchange),
+            "--root",
+            str(record_root),
+            "--id",
+            identifier,
         ],
         work / "baseline-record.json",
         work,
@@ -3021,8 +4208,7 @@ def _baseline_record_pilot(cli: Path, fixtures: Path, work: Path) -> None:
     )
     verification = cast(dict[str, object], storage["verification"])
     wheel.require(
-        storage["state"] == "saved"
-        and verification["files_checked"] == BASELINE_RECORD_FILE_COUNT,
+        storage["state"] == "saved" and verification["files_checked"] == BASELINE_RECORD_FILE_COUNT,
         "baseline record did not verify seven retained files",
     )
     encoded = json.dumps(report)
@@ -3039,15 +4225,20 @@ def _baseline_record_pilot(cli: Path, fixtures: Path, work: Path) -> None:
         work,
     )
     wheel.require(
-        verified["valid"] is True
-        and verified["files_checked"] == BASELINE_RECORD_FILE_COUNT,
+        verified["valid"] is True and verified["files_checked"] == BASELINE_RECORD_FILE_COUNT,
         "baseline record verification failed after source removal",
     )
     selected = _cli_json(
         cli,
         [
-            "records", "read-json", "--root", str(record_root), "--id", identifier,
-            "--name", "analysis/evidence_result.json",
+            "records",
+            "read-json",
+            "--root",
+            str(record_root),
+            "--id",
+            identifier,
+            "--name",
+            "analysis/evidence_result.json",
         ],
         work / "baseline-record-selected.json",
         work,
@@ -3330,11 +4521,17 @@ def _trajectory_pilot(cli: Path, work: Path) -> None:
         "name+'.schema.json').read_bytes()).hexdigest())"
     )
     checked = wheel.success(
-        [str(cli.parent / "python"), "-c", installed_contract,
-         str(work / "trajectory-outcome-actions.json")], work
+        [
+            str(cli.parent / "python"),
+            "-c",
+            installed_contract,
+            str(work / "trajectory-outcome-actions.json"),
+        ],
+        work,
     )
     wheel.require(
-        checked.stdout.strip() == hashlib.sha256(
+        checked.stdout.strip()
+        == hashlib.sha256(
             (wheel.ROOT / "contracts/goppi_trajectory_outcome_actions.v2.schema.json").read_bytes()
         ).hexdigest(),
         "trajectory installed contract differs from authored contract",
@@ -3355,7 +4552,8 @@ def _trajectory_pilot(cli: Path, work: Path) -> None:
         "trajectory outcome-actions installed API/CLI mismatch",
     )
     action_tasks = [
-        task for task in cast(list[dict[str, object]], actions["next_verification_tasks"])
+        task
+        for task in cast(list[dict[str, object]], actions["next_verification_tasks"])
         if task["kind"] == "inspect_outcome_change_without_tool_status_change"
     ]
     wheel.require(len(action_tasks) == 1, "trajectory outcome-actions task population")
@@ -3414,16 +4612,26 @@ def _trajectory_pilot(cli: Path, work: Path) -> None:
     )
     _native_refusal(
         cli,
-        ["audit-trajectory", "--exchange", str(exchange / "paired"),
-         "--goppi-executable", str(verifier)],
+        [
+            "audit-trajectory",
+            "--exchange",
+            str(exchange / "paired"),
+            "--goppi-executable",
+            str(verifier),
+        ],
         work,
         "INVALID_INPUT",
         "TRAJECTORY_COMPLETE_HANDOFF_REQUIRED",
     )
     _native_refusal(
         cli,
-        ["audit-trajectory", "--exchange", str(exchange),
-         "--goppi-executable", str(work / "missing-verifier")],
+        [
+            "audit-trajectory",
+            "--exchange",
+            str(exchange),
+            "--goppi-executable",
+            str(work / "missing-verifier"),
+        ],
         work,
         "SOURCE_READ_FAILED",
         "GOPPI_VERIFIER_UNAVAILABLE",
@@ -3439,9 +4647,20 @@ def _trajectory_record_pilot(
     identifier = "trajectory.smoke-001"
     captured = _cli_json(
         cli,
-        ["records", "audit-trajectory", "--exchange", str(exchange),
-         "--goppi-executable", str(verifier), "--root", str(store), "--id", identifier],
-        work / "trajectory-record.json", work,
+        [
+            "records",
+            "audit-trajectory",
+            "--exchange",
+            str(exchange),
+            "--goppi-executable",
+            str(verifier),
+            "--root",
+            str(store),
+            "--id",
+            identifier,
+        ],
+        work / "trajectory-record.json",
+        work,
     )
     analysis = cast(dict[str, object], captured["analysis"])
     storage = cast(dict[str, object], captured["storage"])
@@ -3450,16 +4669,89 @@ def _trajectory_record_pilot(
     wheel.require(storage["state"] == "saved", "trajectory retention failed")
     hashes = {
         path.relative_to(exchange).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
-        for path in exchange.rglob("*") if path.is_file()
+        for path in exchange.rglob("*")
+        if path.is_file()
     }
     shutil.rmtree(exchange)
     verifier.unlink()
     reopened = _cli_json(
         cli,
         ["records", "read-trajectory", "--root", str(store), "--id", identifier],
-        work / "trajectory-record-read.json", work,
+        work / "trajectory-record-read.json",
+        work,
     )
     wheel.require(reopened["analysis"] == analysis, "trajectory reopen changed historical analysis")
+    mcp = cli.with_name("underwrite-mcp")
+    messages: tuple[dict[str, object], ...] = (
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-11-25",
+                "capabilities": {},
+                "clientInfo": {"name": "wheel-smoke", "version": "1"},
+            },
+        },
+        {"jsonrpc": "2.0", "method": "notifications/initialized"},
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_records_read_trajectory",
+                "arguments": {"root": str(store), "id": identifier},
+            },
+        },
+    )
+    request = "".join(json.dumps(message, separators=(",", ":")) + "\n" for message in messages)
+    env = os.environ.copy()
+    for name in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV"):
+        env.pop(name, None)
+    observed = subprocess.run(
+        [str(mcp)],
+        input=request,
+        capture_output=True,
+        text=True,
+        cwd=work,
+        env=env,
+        check=False,
+        timeout=wheel.COMMAND_TIMEOUT,
+    )
+    wheel.require(observed.returncode == 0 and observed.stderr == "", "MCP retained read failed")
+    responses = [json.loads(line) for line in observed.stdout.splitlines()]
+    wheel.require([item["id"] for item in responses] == [1, 2], "MCP retained read ids")
+    selected = responses[1]["result"]
+    cli_read = wheel.success(
+        [
+            str(cli),
+            "records",
+            "read-trajectory",
+            "--root",
+            str(store),
+            "--id",
+            identifier,
+            "--view",
+            "summary",
+            "--json",
+        ],
+        work,
+    )
+    wheel.require(selected["isError"] is False, "MCP retained read returned an error")
+    wheel.require(
+        selected["content"] == [{"type": "text", "text": cli_read.stdout[:-1]}],
+        "MCP retained read text drift",
+    )
+    wheel.require(
+        selected["structuredContent"] == json.loads(cli_read.stdout),
+        "MCP retained summary result drift",
+    )
+    wheel.require(
+        selected["structuredContent"]["schema"] == "trajectory_record_read_summary.v1"
+        and selected["structuredContent"]["native_verification_performed_now"] is False,
+        "MCP retained summary claimed fresh native verification",
+    )
+    wheel.require("trajectory-records" not in str(selected), "MCP retained read leaked store path")
     interpretation = cast(dict[str, object], reopened["verification_interpretation"])
     wheel.require(
         reopened["schema"] == "trajectory_record_read.v2"
@@ -3503,6 +4795,7 @@ def _smoke(dist: Path) -> None:
         wheel.check_wheel_origins(venv, wheels)
         wheel.stale_core_upgrade(work, wheels)
         _legacy_usage_pilot(cli, work)
+        _mcp_surface_pilot(cli, work)
         _pin_cli_pilot(cli, work)
         _evidence_pilots(cli, fixtures, work)
         _record_pilots(cli, fixtures, work)

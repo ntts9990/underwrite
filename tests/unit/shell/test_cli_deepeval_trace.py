@@ -68,6 +68,50 @@ def test_native_trace_has_explicit_minimized_machine_route(
         assert sentinel not in stdout
 
 
+@pytest.mark.parametrize("name", ["success", "recovery"])
+def test_trace_summary_preserves_populations_and_actions_without_coordinates(
+    capsys: pytest.CaptureFixture[str], name: str
+) -> None:
+    path = FIXTURES / f"{name}.json"
+    exit_code, full, _, _ = _invoke(capsys, path, "--view", "trace-index")
+    assert exit_code == 0
+    exit_code, summary, stdout, stderr = _invoke(capsys, path, "--view", "trace-summary")
+    assert exit_code == 0 and stderr == ""
+    assert summary["schema"] == audit_deepeval.TRACE_SUMMARY_SCHEMA
+    for field in (
+        "source", "raw_hash", "rule_profile", "scope", "counts", "next_actions", "reader_profile"
+    ):
+        assert summary[field] == full[field]
+    assert "cases" not in summary
+    assert "SOURCE_HASH_AND_POINTERS_LINKABLE" not in summary["limitations"]
+    assert "SOURCE_HASH_LINKABLE" in summary["limitations"]
+    assert summary["detail_state"]["parent_pointers"] == "intentionally_omitted"
+    assert "/testCases/" not in stdout
+    assert len(stdout.encode()) <= audit_deepeval.TRACE_SUMMARY_MAX_BYTES
+    assert stdout.encode() == canonical_bytes(summary) + b"\n"
+
+
+def test_trace_summary_output_limit_is_atomic_and_bindings_refused(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = FIXTURES / "recovery.json"
+    exit_code, _, bounded, _ = _invoke(capsys, path, "--view", "trace-summary")
+    assert exit_code == 0
+    monkeypatch.setattr(audit_deepeval, "TRACE_SUMMARY_MAX_BYTES", len(bounded.encode()))
+    assert _invoke(capsys, path, "--view", "trace-summary")[0] == 0
+    monkeypatch.setattr(audit_deepeval, "TRACE_SUMMARY_MAX_BYTES", len(bounded.encode()) - 1)
+    exit_code, error, stdout, _ = _invoke(capsys, path, "--view", "trace-summary")
+    assert exit_code == ERROR_EXIT and stdout == ""
+    assert error["code"] == "OUTPUT_LIMIT_EXCEEDED"
+    exit_code, _, stdout, _ = _invoke(capsys, path, "--view", "trace-index")
+    assert exit_code == 0 and stdout
+    exit_code, error, stdout, _ = _invoke(
+        capsys, path, "--view", "trace-summary", "--bindings", "PRIVATE_BINDINGS"
+    )
+    assert exit_code == ERROR_EXIT and stdout == ""
+    assert error["reason"] == "DEEPEVAL_TRACE_BINDINGS_UNSUPPORTED"
+
+
 @pytest.mark.parametrize(
     ("options", "reason"),
     [

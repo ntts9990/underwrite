@@ -8,9 +8,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, ValidationError
 from underwrite_core.canonical import canonical_bytes, digest_bytes
 
+from underwrite.cli import review_artifacts as command
 from underwrite.cli.main import main
 from underwrite.instrument.ingest.application import DEFAULT_MAX_BYTES
 from underwrite.instrument.ingest.cross_artifact import (
@@ -237,6 +238,149 @@ def test_complete_map_reports_equal_difference_and_all_ineligible_states(
     }
     assert CANARY not in stdout
     assert all(str(path) not in stdout for path in paths)
+
+
+@pytest.mark.parametrize("mapped", [False, True])
+def test_bounded_summary_preserves_meaning_without_pair_coordinates_or_source_strings(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], mapped: bool
+) -> None:
+    assessment, result, promptfoo, _, _ = _inputs(tmp_path)
+    paths = (assessment, result, promptfoo)
+    declaration = _declaration(tmp_path, paths)[0] if mapped else None
+    full_code, full, _, _ = _invoke(capsys, paths, declaration)
+    args = [
+        "review-artifacts",
+        "--goppi-assessment",
+        str(assessment),
+        "--goppi-result",
+        str(result),
+        "--promptfoo",
+        str(promptfoo),
+        "--view",
+        "summary",
+        "--json",
+    ]
+    if declaration is not None:
+        args.extend(("--correspondence", str(declaration)))
+    assert main(args) == full_code == 0
+    streams = capsys.readouterr()
+    assert streams.err == ""
+    summary = json.loads(streams.out)
+    assert summary["schema"] == "cross_artifact_review_summary.v1"
+    assert summary["source_identity"] == full["source_identity"]
+    assert summary["populations"] == full["populations"]
+    assert summary["finding_counts"] == full["finding_counts"]
+    assert summary["limitations"] == full["limitations"]
+    assert summary["readers"]["goppi"] == full["readers"]["goppi"]
+    assert summary["readers"]["promptfoo"] == {
+        "profile": full["readers"]["promptfoo"]["profile"],
+        "producer_version_state": full["readers"]["promptfoo"]["producer_version_state"],
+    }
+    assert sum(summary["finding_counts"].values()) == len(full["correspondence"]["pairs"])
+    assert "pair_count" not in summary["correspondence"]
+    assert summary["correspondence"]["unmatched_case_count"] == len(
+        full["correspondence"]["unmatched_case_indices"]
+    )
+    assert sum(task["count"] for task in summary["next_verification_tasks"]) == len(
+        full["next_verification_tasks"]
+    )
+    assert len(streams.out.encode()) <= command.SUMMARY_OUTPUT_MAX_BYTES
+    assert CANARY not in streams.out
+    assert "case_index" not in summary["correspondence"]
+    assert "row_index" not in streams.out
+    assert "producer_version" not in summary
+    packaged_validator(command.SUMMARY_SCHEMA).validate(summary)  # pyright: ignore[reportUnknownMemberType]
+    _assert_summary_rejects_contradictions(summary, mapped=mapped)
+
+
+def _assert_summary_rejects_contradictions(summary: dict[str, Any], *, mapped: bool) -> None:
+    without_authority_limit = deepcopy(summary)
+    without_authority_limit["limitations"].remove("NO_IMPROVEMENT_OR_APPROVAL")
+    with pytest.raises(ValidationError):
+        packaged_validator(command.SUMMARY_SCHEMA).validate(without_authority_limit)  # pyright: ignore[reportUnknownMemberType]
+    duplicate_task = deepcopy(summary)
+    changed_count = deepcopy(duplicate_task["next_verification_tasks"][0])
+    changed_count["count"] += 1
+    duplicate_task["next_verification_tasks"].append(changed_count)
+    with pytest.raises(ValidationError):
+        packaged_validator(command.SUMMARY_SCHEMA).validate(duplicate_task)  # pyright: ignore[reportUnknownMemberType]
+    wrong_owner = deepcopy(summary)
+    for task in wrong_owner["next_verification_tasks"]:
+        if task["code"] == "VERIFY_SOURCE_PROVENANCE":
+            task["owner"] = "calling_agent"
+    with pytest.raises(ValidationError):
+        packaged_validator(command.SUMMARY_SCHEMA).validate(wrong_owner)  # pyright: ignore[reportUnknownMemberType]
+    wrong_version_state = deepcopy(summary)
+    wrong_version_state["detail_state"]["producer_version"] = "not_applicable"
+    with pytest.raises(ValidationError):
+        packaged_validator(command.SUMMARY_SCHEMA).validate(wrong_version_state)  # pyright: ignore[reportUnknownMemberType]
+    if not mapped:
+        wrong_findings = deepcopy(summary)
+        wrong_findings["finding_counts"]["equal"] = 1
+        with pytest.raises(ValidationError):
+            packaged_validator(command.SUMMARY_SCHEMA).validate(wrong_findings)  # pyright: ignore[reportUnknownMemberType]
+
+
+def test_summary_requires_no_subject_action_when_subject_rows_zero(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assessment, result, promptfoo, document, _ = _inputs(tmp_path)
+    for row in document["results"]["results"]:
+        row["testCase"]["metadata"]["slot_kind"] = "control"
+    _write(promptfoo, document)
+    args = [
+        "review-artifacts", "--goppi-assessment", str(assessment),
+        "--goppi-result", str(result), "--promptfoo", str(promptfoo),
+        "--view", "summary", "--json",
+    ]
+    assert main(args) == 0
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["populations"]["promptfoo"]["subject_rows"] == 0
+    assert any(
+        task["code"] == "PROVIDE_PROMPTFOO_SUBJECT_ROWS"
+        for task in summary["next_verification_tasks"]
+    )
+    contradicted = deepcopy(summary)
+    for task in contradicted["next_verification_tasks"]:
+        if task["code"] == "PROVIDE_PROMPTFOO_SUBJECT_ROWS":
+            task["code"] = "VERIFY_SOURCE_PROVENANCE"
+    with pytest.raises(ValidationError):
+        packaged_validator(command.SUMMARY_SCHEMA).validate(contradicted)  # pyright: ignore[reportUnknownMemberType]
+
+
+def test_summary_marks_absent_producer_version_as_not_applicable(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assessment, result, promptfoo, document, _ = _inputs(tmp_path)
+    del document["metadata"]["promptfooVersion"]
+    _write(promptfoo, document)
+    assert main([
+        "review-artifacts", "--goppi-assessment", str(assessment),
+        "--goppi-result", str(result), "--promptfoo", str(promptfoo),
+        "--view", "summary", "--json",
+    ]) == 0
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["readers"]["promptfoo"]["producer_version_state"] == "unknown"
+    assert summary["detail_state"]["producer_version"] == "not_applicable"
+    contradicted = deepcopy(summary)
+    contradicted["detail_state"]["producer_version"] = "intentionally_omitted"
+    with pytest.raises(ValidationError):
+        packaged_validator(command.SUMMARY_SCHEMA).validate(contradicted)  # pyright: ignore[reportUnknownMemberType]
+
+
+def test_summary_overflow_is_atomic(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assessment, result, promptfoo, _, _ = _inputs(tmp_path)
+    monkeypatch.setattr(command, "SUMMARY_OUTPUT_MAX_BYTES", 1)
+    assert main([
+        "review-artifacts", "--goppi-assessment", str(assessment),
+        "--goppi-result", str(result), "--promptfoo", str(promptfoo),
+        "--view", "summary", "--json",
+    ]) == ERROR_EXIT
+    streams = capsys.readouterr()
+    assert streams.out == ""
+    assert json.loads(streams.err)["code"] == "OUTPUT_LIMIT_EXCEEDED"
 
 
 def test_partial_map_exposes_both_unmatched_populations_without_comparing_them(

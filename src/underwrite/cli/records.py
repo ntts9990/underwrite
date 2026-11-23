@@ -4,17 +4,21 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import NoReturn, cast
 
-from underwrite_core.canonical import CanonicalizationError, canonical_bytes
+from underwrite_core.canonical import CanonicalizationError, canonical_bytes, content_digest
 
+from underwrite._model_json_text import escape_text_controls
 from underwrite.cli.local_json import read_document, validate
 from underwrite.error_contract.registry import RECORD_PROJECTIONS
 from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
 from underwrite.instrument.ingest.transport import DecodeError, decode_json
 from underwrite.service.records import (
+    MAX_RECORDS,
+    RECORD_MAX_FILES,
     RecordError,
     RecordSnapshot,
     list_records,
@@ -27,6 +31,19 @@ from underwrite.service.records import (
 SPEC_MAX_BYTES = 256 * 1024
 SPEC_MAX_DEPTH = 16
 OUTPUT_MAX_BYTES = 2 * 1024 * 1024
+CATALOG_PAGE_MAX_BYTES = 16 * 1024
+CATALOG_PAGE_SIZE = 50
+CATALOG_PAGE_SCHEMA = "record_catalog_page.v1"
+RECORD_VIEW_SUMMARY_SCHEMA = "record_view_summary.v1"
+RECORD_FILE_PAGE_SIZE = 16
+RECORD_VIEW_SUMMARY_MAX_BYTES = 16 * 1024
+RECORD_VERIFICATION_SUMMARY_SCHEMA = "record_verification_summary.v1"
+RECORD_VERIFICATION_SUMMARY_MAX_BYTES = 16 * 1024
+RECORD_DOCUMENT_BOUNDED_MAX_BYTES = 16 * 1024
+_DIGEST_PATTERN = re.compile(r"sha256:[0-9a-f]{64}\Z")
+_USAGE_ERROR = "USAGE_ERROR"
+_INTERNAL_ERROR = "INTERNAL_ERROR"
+_OUTPUT_LIMIT_ERROR = "OUTPUT_LIMIT_EXCEEDED"
 
 DOCUMENT_MAX_DEPTH = 32
 
@@ -53,12 +70,27 @@ class _CliError(ValueError):
 
 class _Parser(argparse.ArgumentParser):
     def error(self, message: str) -> NoReturn:
-        raise _CliError("USAGE_ERROR")
+        raise _CliError(_USAGE_ERROR)
 
 
 def _common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--root", required=True, type=Path, help="Explicit private record root.")
     parser.add_argument("--json", action="store_true", help="Canonical typed JSON on stdout.")
+
+
+def _configure_read_views(
+    show: argparse.ArgumentParser, verify: argparse.ArgumentParser
+) -> None:
+    show.add_argument(
+        "--view", choices=("full", "summary"), default="full",
+        help="Return the full manifest or a bounded metadata and file-name page.",
+    )
+    show.add_argument("--file-offset", type=int, default=0, help="Start file index for summary.")
+    show.add_argument("--manifest-digest", help="Manifest digest from the previous summary page.")
+    verify.add_argument(
+        "--view", choices=("full", "summary"), default="full",
+        help="Return complete findings or bounded counts without coordinates.",
+    )
 
 
 def configure(parser: argparse.ArgumentParser) -> None:
@@ -73,6 +105,14 @@ def configure(parser: argparse.ArgumentParser) -> None:
     save.add_argument("--spec", required=True, type=Path, help="Local record_spec.v1 JSON.")
     listing = commands.add_parser("list", help="List complete and unpublished record IDs.")
     _common(listing)
+    listing.add_argument(
+        "--view", choices=("full", "page"), default="full",
+        help="Return the full catalog or a bounded page without labels.",
+    )
+    listing.add_argument("--offset", type=int, default=0, help="Start index for page view.")
+    listing.add_argument(
+        "--catalog-digest", help="Observed catalog digest from the previous page."
+    )
     show = commands.add_parser("show", help="Show one complete published record.")
     _common(show)
     show.add_argument("--id", required=True, help="Record ID.")
@@ -82,9 +122,14 @@ def configure(parser: argparse.ArgumentParser) -> None:
     _common(document)
     document.add_argument("--id", required=True, help="Record ID.")
     document.add_argument("--name", required=True, help="Exact logical name from manifest.files.")
+    document.add_argument(
+        "--view", choices=("full", "bounded"), default="full",
+        help="Return the complete document, requiring at most 16 KiB for bounded view.",
+    )
     verify = commands.add_parser("verify", help="Verify stored bytes and direct links.")
     _common(verify)
     verify.add_argument("--id", required=True, help="Record ID.")
+    _configure_read_views(show, verify)
     from underwrite.cli import record_promptfoo
 
     audit = commands.add_parser(
@@ -148,9 +193,9 @@ def _service_error(error: RecordError) -> _CliError:
     code = getattr(error, "code", None)
     location = getattr(error, "location", None)
     if type(code) is not str or code not in RECORD_PROJECTIONS:
-        return _CliError("INTERNAL_ERROR")
+        return _CliError(_INTERNAL_ERROR)
     if type(location) is not str or location not in _SERVICE_LOCATIONS:
-        return _CliError("INTERNAL_ERROR")
+        return _CliError(_INTERNAL_ERROR)
     return _CliError(code, location)
 
 
@@ -192,7 +237,7 @@ def _view(snapshot: RecordSnapshot) -> dict[str, object]:
         packaged_validator("result_record.v1"),
         snapshot.manifest,
         _input_error,
-        "INTERNAL_ERROR",
+        _INTERNAL_ERROR,
         "/output",
     )
     return {
@@ -235,6 +280,268 @@ def _document(root: Path, identifier: str, name: str) -> dict[str, object]:
     }
 
 
+def _catalog_page(
+    catalog: dict[str, object], offset: int, expected: str | None
+) -> dict[str, object]:
+    """Page one observed listing; mismatched continuation returns no mixed entries."""
+    if (
+        offset < 0
+        or offset > MAX_RECORDS
+        or offset % CATALOG_PAGE_SIZE
+        or offset > 0 and expected is None
+    ):
+        raise _CliError(_USAGE_ERROR)
+    if expected is not None and _DIGEST_PATTERN.fullmatch(expected) is None:
+        raise _CliError(_USAGE_ERROR)
+    validate(
+        packaged_validator("record_catalog.v1"),
+        catalog,
+        _input_error,
+        _INTERNAL_ERROR,
+        "/output",
+    )
+    digest = content_digest(catalog)
+    count = cast(int, catalog["record_count"])
+    changed = expected is not None and expected != digest
+    if not changed and offset > 0 and offset >= count:
+        raise _CliError(_USAGE_ERROR)
+    rows = cast(list[dict[str, object]], catalog["records"])
+    selected = [] if changed else rows[offset : offset + CATALOG_PAGE_SIZE]
+    entries = [
+        {
+            name: row[name]
+            for name in ("record_id", "state", "manifest_digest", "kind")
+            if name in row
+        }
+        for row in selected
+    ]
+    following = offset + len(entries)
+    next_page = (
+        {"offset": following}
+        if not changed and following < count
+        else None
+    )
+    page: dict[str, object] = {
+        "schema": CATALOG_PAGE_SCHEMA,
+        "view": "page",
+        "catalog_state": "changed" if changed else "observed",
+        "catalog_digest": digest,
+        "record_count": count,
+        "offset": offset,
+        "page_size": CATALOG_PAGE_SIZE,
+        "records": entries,
+        "next_page": next_page,
+        "restart_offset": 0 if changed else None,
+        "next_action": "RESTART_FROM_FIRST_PAGE"
+        if changed
+        else "FOLLOW_NEXT_PAGE_OR_SELECT_ID"
+        if next_page is not None
+        else "SELECT_ID_OR_FINISH"
+        if entries
+        else "NO_RECORDS",
+        "verification_scope": "catalog_metadata_only",
+        "limitations": [
+            "FILES_NOT_VERIFIED",
+            "SOURCE_PROVENANCE_NOT_ESTABLISHED",
+            "CATALOG_NOT_ATOMIC_SNAPSHOT",
+        ],
+        "detail_state": {
+            "labels": "intentionally_omitted",
+            "captured_at": "intentionally_omitted",
+            "full_view": "records list --view full",
+        },
+    }
+    if len(canonical_bytes(page)) + 1 > CATALOG_PAGE_MAX_BYTES:
+        raise _CliError(_OUTPUT_LIMIT_ERROR, "/output")
+    return page
+
+
+def _record_summary(
+    snapshot: RecordSnapshot, offset: int, expected: str | None
+) -> dict[str, object]:
+    """Summarize one manifest and page safe logical file names without reopening files."""
+    if (
+        offset < 0
+        or offset >= RECORD_MAX_FILES
+        or offset % RECORD_FILE_PAGE_SIZE
+        or offset > 0 and expected is None
+        or expected is not None and _DIGEST_PATTERN.fullmatch(expected) is None
+    ):
+        raise _CliError(_USAGE_ERROR)
+    full = _view(snapshot)
+    validate(
+        packaged_validator("record_view.v1"), full, _input_error, _INTERNAL_ERROR, "/output"
+    )
+    record = snapshot.manifest
+    files = cast(list[dict[str, object]], record["files"])
+    links = cast(list[dict[str, object]], record["links"])
+    changed = expected is not None and expected != snapshot.digest
+    if not changed and offset >= len(files):
+        raise _CliError(_USAGE_ERROR)
+    selected = [] if changed else files[offset : offset + RECORD_FILE_PAGE_SIZE]
+    page_files = [
+        {
+            "name": file["name"],
+            "role": file["role"],
+            "media_type": file["media_type"],
+            "declared_sha256": file["sha256"],
+            "declared_bytes": file["bytes"],
+        }
+        for file in selected
+    ]
+    following = offset + len(page_files)
+    next_file_page = (
+        {"offset": following}
+        if not changed and following < len(files)
+        else None
+    )
+    selection = cast(dict[str, object], record["selection"])
+    excluded = cast(list[object] | None, selection["excluded"])
+    verification = cast(dict[str, object], record["rerun_verification"])
+    provenance = cast(dict[str, object], record["provenance"])
+    summary: dict[str, object] = {
+        "schema": RECORD_VIEW_SUMMARY_SCHEMA,
+        "view": "summary",
+        "manifest_state": "changed" if changed else "observed",
+        "manifest_digest": snapshot.digest,
+        "record_id": record["record_id"],
+        "kind": record["kind"],
+        "captured_at": record["captured_at"],
+        "selection": {
+            "scope": selection["scope"],
+            "excluded_state": "not_declared" if excluded is None else "declared",
+            "excluded_count": len(excluded) if excluded is not None else None,
+        },
+        "rerun_verification_status": verification["status"],
+        "provenance_verified": provenance["verified"],
+        "attestation_reference_state": "absent"
+        if provenance["attestation_ref"] is None
+        else "declared_unverified",
+        "file_count": len(files),
+        "file_role_counts": {
+            role: sum(file["role"] == role for file in files)
+            for role in (
+                "source", "input", "policy", "result", "verification", "code", "log", "environment"
+            )
+        },
+        "declared_file_bytes": sum(cast(int, file["bytes"]) for file in files),
+        "file_offset": offset,
+        "file_page_size": RECORD_FILE_PAGE_SIZE,
+        "files": page_files,
+        "next_file_page": next_file_page,
+        "restart_offset": 0 if changed else None,
+        "next_action": "RESTART_FROM_FIRST_FILE_PAGE"
+        if changed
+        else "FOLLOW_NEXT_FILE_PAGE_OR_SELECT_NAME"
+        if next_file_page is not None
+        else "SELECT_NAME_OR_FINISH",
+        "link_relation_counts": {
+            relation: sum(link["relation"] == relation for link in links)
+            for relation in ("input", "related")
+        },
+        "verification_scope": "canonical_published_manifest_only",
+        "limitations": [
+            "STORED_FILE_BYTES_NOT_READ_OR_VERIFIED",
+            "DIRECT_LINK_TARGETS_NOT_READ_OR_VERIFIED",
+            "SOURCE_PROVENANCE_NOT_ESTABLISHED",
+            "RERUN_REFERENCE_NOT_EXECUTED_NOW",
+            "NO_APPROVAL_AUTHORITY",
+        ],
+        "detail_state": {
+            "label": "intentionally_omitted",
+            "metadata": "intentionally_omitted",
+            "source_locators": "intentionally_omitted",
+            "link_targets": "intentionally_omitted",
+            "artifact_references": "intentionally_omitted",
+            "full_view": "records show --view full",
+        },
+    }
+    if len(canonical_bytes(summary)) + 1 > RECORD_VIEW_SUMMARY_MAX_BYTES:
+        raise _CliError(_OUTPUT_LIMIT_ERROR, "/output")
+    return summary
+
+
+def _show(args: argparse.Namespace, root: Path) -> tuple[dict[str, object], str]:
+    snapshot = read_record(root, cast(str, args.id))
+    if args.view == "full":
+        if args.file_offset or args.manifest_digest is not None:
+            raise _CliError(_USAGE_ERROR)
+        return _view(snapshot), "record_view.v1"
+    return (
+        _record_summary(
+            snapshot, cast(int, args.file_offset), cast(str | None, args.manifest_digest)
+        ),
+        RECORD_VIEW_SUMMARY_SCHEMA,
+    )
+
+
+def _verification_summary(report: dict[str, object]) -> dict[str, object]:
+    """Retain the verifier's result and counts, omitting caller-owned coordinates."""
+    validate(
+        packaged_validator("record_verification.v1"),
+        report,
+        _input_error,
+        _INTERNAL_ERROR,
+        "/output",
+    )
+    summary_validator = packaged_validator(RECORD_VERIFICATION_SUMMARY_SCHEMA)
+    schema = cast(dict[str, object], summary_validator.schema)
+    fields = cast(dict[str, object], schema["properties"])
+    file_states_schema = cast(dict[str, object], fields["file_check_states"])
+    link_states_schema = cast(dict[str, object], fields["links_check_states"])
+    file_codes = set(cast(list[str], cast(dict[str, object], file_states_schema["items"])["enum"]))
+    link_codes = set(cast(list[str], cast(dict[str, object], link_states_schema["items"])["enum"]))
+    findings = cast(list[dict[str, object]], report["findings"])
+    file_failures = sorted(
+        cast(str, finding["code"]) for finding in findings if finding["code"] in file_codes
+    )
+    link_failures = sorted(
+        cast(str, finding["code"]) for finding in findings if finding["code"] in link_codes
+    )
+    files_checked = cast(int, report["files_checked"])
+    links_checked = cast(int, report["links_checked"])
+    if len(file_failures) > files_checked or len(link_failures) > links_checked:
+        raise _CliError(_INTERNAL_ERROR, "/output")
+    summary: dict[str, object] = {
+        "schema": RECORD_VERIFICATION_SUMMARY_SCHEMA,
+        "view": "summary",
+        **{
+            name: report[name]
+            for name in (
+                "record_id", "manifest_digest", "valid", "verification_scope",
+            )
+        },
+        "file_check_states": ["CHECKED_NO_FINDING"] * (files_checked - len(file_failures))
+        + file_failures,
+        "links_check_states": ["CHECKED_NO_FINDING"] * (links_checked - len(link_failures))
+        + link_failures,
+        "limitations": [
+            "SOURCE_PROVENANCE_NOT_ESTABLISHED",
+            "LINKED_RECORD_FILE_BYTES_NOT_VERIFIED",
+            "RERUN_NOT_PERFORMED",
+            "NO_APPROVAL_AUTHORITY",
+            "FINDING_COORDINATES_OMITTED",
+            "CHECK_STATES_NOT_COORDINATE_ALIGNED",
+        ],
+        "detail_state": {
+            "file_names": "intentionally_omitted",
+            "linked_record_ids": "intentionally_omitted",
+            "full_view": "records verify --view full",
+        },
+    }
+    validate(summary_validator, summary, _input_error, _INTERNAL_ERROR, "/output")
+    if len(canonical_bytes(summary)) + 1 > RECORD_VERIFICATION_SUMMARY_MAX_BYTES:
+        raise _CliError(_OUTPUT_LIMIT_ERROR, "/output")
+    return summary
+
+
+def _verify(args: argparse.Namespace, root: Path) -> tuple[dict[str, object], str]:
+    report = verify_record(root, cast(str, args.id))
+    if args.view == "summary":
+        return _verification_summary(report), RECORD_VERIFICATION_SUMMARY_SCHEMA
+    return report, "record_verification.v1"
+
+
 def _produce(args: argparse.Namespace) -> tuple[dict[str, object], str]:
     root = cast(Path, args.root)
     command = cast(str, args.records_command)
@@ -242,17 +549,25 @@ def _produce(args: argparse.Namespace) -> tuple[dict[str, object], str]:
         spec_path = cast(Path, args.spec)
         return _view(save_record(root, _spec(spec_path), spec_path.parent)), "record_view.v1"
     if command == "show":
-        return _view(read_record(root, cast(str, args.id))), "record_view.v1"
+        return _show(args, root)
     if command == "read-json":
         return _document(root, cast(str, args.id), cast(str, args.name)), "record_document.v1"
     if command == "list":
-        return list_records(root), "record_catalog.v1"
-    return verify_record(root, cast(str, args.id)), "record_verification.v1"
+        catalog = list_records(root)
+        if args.view == "full":
+            if args.offset or args.catalog_digest is not None:
+                raise _CliError(_USAGE_ERROR)
+            return catalog, "record_catalog.v1"
+        return (
+            _catalog_page(catalog, cast(int, args.offset), cast(str | None, args.catalog_digest)),
+            CATALOG_PAGE_SCHEMA,
+        )
+    return _verify(args, root)
 
 
 def _validated_report(args: argparse.Namespace) -> dict[str, object]:
     report, schema = _produce(args)
-    validate(packaged_validator(schema), report, _input_error, "INTERNAL_ERROR", "/output")
+    validate(packaged_validator(schema), report, _input_error, _INTERNAL_ERROR, "/output")
     return report
 
 
@@ -325,8 +640,15 @@ def main(argv: list[str]) -> int:
         output = _render(
             report, as_json=cast(bool, args.json) or args.records_command == "read-json"
         )
+        if (
+            args.records_command == "read-json"
+            and args.view == "bounded"
+        ):
+            output = escape_text_controls(output)
+            if len(output.encode("utf-8")) + 1 > RECORD_DOCUMENT_BOUNDED_MAX_BYTES:
+                raise _CliError(_OUTPUT_LIMIT_ERROR, "/output")
         if len(output.encode("utf-8")) + 1 > OUTPUT_MAX_BYTES:
-            raise _CliError("OUTPUT_LIMIT_EXCEEDED", "/output")
+            raise _CliError(_OUTPUT_LIMIT_ERROR, "/output")
     except RecordError as exc:
         error = _service_error(exc)
     except _CliError as exc:
@@ -334,7 +656,7 @@ def main(argv: list[str]) -> int:
     except SchemaConfigurationError:
         error = _CliError("SCHEMA_CONFIGURATION_ERROR")
     except Exception:
-        error = _CliError("INTERNAL_ERROR")
+        error = _CliError(_INTERNAL_ERROR)
     else:
         sys.stdout.write(output + "\n")
         return 0

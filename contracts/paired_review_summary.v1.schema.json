@@ -1,0 +1,530 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:paired_review_summary.v1",
+  "title": "paired_review_summary.v1",
+  "description": "Content-minimized summary of one exact paired review; declared strings and per-group details are omitted, and no decision authority is granted.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "view",
+    "paired_evidence_ref",
+    "context_digest",
+    "declared_conditions",
+    "history",
+    "partition",
+    "declarations_verified",
+    "actual_conditions_verified",
+    "semantic_equivalence_verified",
+    "detail_state",
+    "limitations"
+  ],
+  "properties": {
+    "schema": {
+      "const": "paired_review_summary.v1"
+    },
+    "view": {
+      "const": "summary"
+    },
+    "paired_evidence_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "digest",
+        "input_digest",
+        "policy_digest",
+        "status",
+        "reason"
+      ],
+      "properties": {
+        "schema": {
+          "const": "paired_binary_evidence.v1"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "input_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "policy_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "status": {
+          "enum": [
+            "measured",
+            "not_measured"
+          ]
+        },
+        "reason": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "PRIMARY_CASE_INVENTORY_MISSING",
+                "PLANNED_SLOT_INVENTORY_MISSING",
+                "PRIMARY_COHORT_INCOMPLETE",
+                "INSUFFICIENT_PRIMARY_CASES",
+                "ASSUMPTIONS_NOT_DECLARED"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "context_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "declared_conditions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coverage",
+        "total",
+        "classifications"
+      ],
+      "properties": {
+        "coverage": {
+          "enum": [
+            "declared",
+            "unknown"
+          ]
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32
+        },
+        "classifications": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "intended_change",
+            "unchanged_treatment",
+            "invariant_changed",
+            "invariant_unchanged",
+            "unknown"
+          ],
+          "properties": {
+            "intended_change": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 32
+            },
+            "unchanged_treatment": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 32
+            },
+            "invariant_changed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 32
+            },
+            "invariant_unchanged": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 32
+            },
+            "unknown": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 32
+            }
+          }
+        }
+      }
+    },
+    "history": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "record_count",
+        "selector_coverage"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "absent",
+            "present"
+          ]
+        },
+        "record_count": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 32
+            }
+          ]
+        },
+        "selector_coverage": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "complete",
+                "partial",
+                "unknown"
+              ]
+            }
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "state": {
+              "const": "absent"
+            },
+            "record_count": {
+              "type": "null"
+            },
+            "selector_coverage": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "state": {
+              "const": "present"
+            },
+            "record_count": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 32
+            },
+            "selector_coverage": {
+              "enum": [
+                "complete",
+                "partial",
+                "unknown"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "partition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "group_count",
+        "case_count"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "absent",
+            "present"
+          ]
+        },
+        "group_count": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 33
+            }
+          ]
+        },
+        "case_count": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 128
+            }
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "state": {
+              "const": "absent"
+            },
+            "group_count": {
+              "type": "null"
+            },
+            "case_count": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "state": {
+              "const": "present"
+            },
+            "group_count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 33
+            },
+            "case_count": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 128
+            }
+          }
+        }
+      ]
+    },
+    "declarations_verified": {
+      "const": false
+    },
+    "actual_conditions_verified": {
+      "const": false
+    },
+    "semantic_equivalence_verified": {
+      "const": false
+    },
+    "detail_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "condition_values",
+        "history_records",
+        "partition_groups",
+        "full_view"
+      ],
+      "properties": {
+        "condition_values": {
+          "const": "intentionally_omitted"
+        },
+        "history_records": {
+          "enum": [
+            "intentionally_omitted",
+            "not_applicable"
+          ]
+        },
+        "partition_groups": {
+          "enum": [
+            "intentionally_omitted",
+            "not_applicable"
+          ]
+        },
+        "full_view": {
+          "const": "review-pair --view full"
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 11,
+      "items": {
+        "enum": [
+          "DECLARED_CONDITIONS_NOT_VERIFIED",
+          "CONDITION_SCOPE_NOT_VERIFIED",
+          "DIGEST_BINDING_NOT_PROVENANCE",
+          "SOURCE_METADATA_AVAILABLE_IN_PAIRED_EVIDENCE",
+          "NO_CAUSAL_CONCLUSION",
+          "NO_APPROVAL_OR_DEPLOYMENT_AUTHORITY",
+          "NO_CONDITIONS_DECLARED",
+          "HISTORY_RESULT_REFERENCES_NOT_VERIFIED",
+          "NO_RESCORING_PERFORMED",
+          "HISTORY_COMPLETENESS_UNVERIFIED",
+          "CASE_PARTITION_DECLARED_NOT_VERIFIED"
+        ]
+      },
+      "uniqueItems": true
+    }
+  },
+  "allOf": [
+    {
+      "properties": {
+        "limitations": {
+          "contains": {
+            "const": "DECLARED_CONDITIONS_NOT_VERIFIED"
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "limitations": {
+          "contains": {
+            "const": "CONDITION_SCOPE_NOT_VERIFIED"
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "limitations": {
+          "contains": {
+            "const": "DIGEST_BINDING_NOT_PROVENANCE"
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "limitations": {
+          "contains": {
+            "const": "SOURCE_METADATA_AVAILABLE_IN_PAIRED_EVIDENCE"
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "limitations": {
+          "contains": {
+            "const": "NO_CAUSAL_CONCLUSION"
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "limitations": {
+          "contains": {
+            "const": "NO_APPROVAL_OR_DEPLOYMENT_AUTHORITY"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "declared_conditions": {
+            "properties": {
+              "coverage": {
+                "const": "unknown"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "limitations": {
+            "contains": {
+              "const": "NO_CONDITIONS_DECLARED"
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "limitations": {
+            "not": {
+              "contains": {
+                "const": "NO_CONDITIONS_DECLARED"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "history": {
+            "properties": {
+              "state": {
+                "const": "present"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "limitations": {
+            "allOf": [
+              {
+                "contains": {
+                  "const": "HISTORY_RESULT_REFERENCES_NOT_VERIFIED"
+                }
+              },
+              {
+                "contains": {
+                  "const": "NO_RESCORING_PERFORMED"
+                }
+              },
+              {
+                "contains": {
+                  "const": "HISTORY_COMPLETENESS_UNVERIFIED"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "limitations": {
+            "not": {
+              "contains": {
+                "enum": [
+                  "HISTORY_RESULT_REFERENCES_NOT_VERIFIED",
+                  "NO_RESCORING_PERFORMED",
+                  "HISTORY_COMPLETENESS_UNVERIFIED"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "partition": {
+            "properties": {
+              "state": {
+                "const": "present"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "limitations": {
+            "contains": {
+              "const": "CASE_PARTITION_DECLARED_NOT_VERIFIED"
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "limitations": {
+            "not": {
+              "contains": {
+                "const": "CASE_PARTITION_DECLARED_NOT_VERIFIED"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  }
+}

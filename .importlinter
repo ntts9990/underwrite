@@ -22,6 +22,7 @@ source_modules=
     underwrite.measurement_contract
     underwrite.error_contract
 forbidden_modules=
+    underwrite.agent_surface
     underwrite.instrument.ingest
     underwrite.fleet
     underwrite.service
@@ -33,6 +34,7 @@ forbidden_modules=
 name = Layer hierarchy: shell above pure above core
 type = layers
 layers=
+    underwrite.agent_surface
     underwrite.cli
     underwrite.service | underwrite.fleet | underwrite.instrument.ingest
     underwrite._fileio | underwrite._json

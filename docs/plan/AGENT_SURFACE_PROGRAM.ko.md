@@ -1,6 +1,6 @@
 # 에이전트 표면 프로그램 (첫 판)
 
-작성: 2026-11-16. 코드 기준: `1d344a8`. 상태: **계획. MCP 코드는 아직 없다.**
+작성: 2026-11-16. 최초 표면 측정 코드 기준: `1d344a8`. 상태: **A1 검증 완료, A2 읽기 전용 도구 22개 검증 후 추가 확장 잠정 동결, A3 일곱 도구 첫 관측 평가 완료.**
 결정 근거: [ADR-024](../adr/ADR-024-read-only-agent-surface.md).
 
 ## 0. 이 문서의 위치와 범위
@@ -95,6 +95,217 @@
 
 A1은 MCP 없이도 CLI 사용자에게 이득이다. 결과 해석이 쉬워지고 오류 의미가 한 곳에 모인다.
 그래서 A2보다 먼저 한다. A0은 A1과 A2의 기준값을 정하는 측정이다.
+
+### A0/A2 도구 측정과 경계
+
+- `scripts/agent_surface_metrics.py`는 descriptor의 명령·프로필 수와 실제
+  `tools/list` canonical JSON 크기, 도구별 전체·출력 스키마·설명 크기,
+  고유 출력 스키마 총량과 정확히 중복된 스키마 묶음·중복 바이트를 잰다.
+  첫 도구만 있을 때
+  2,528바이트였고, `inspect-result` v1·v2 프로필을 각각 추가한 세 도구 목록은
+  11,708바이트였다. Goppi baseline 입력 디렉터리 도구까지 포함한 네 도구 목록은
+  23,348바이트였다. `inspect-result` actions 보기 두 개를 포함한 여섯 도구 목록은
+  34,738바이트였다. 설명은 순서대로 230·243·243·271·247·247바이트다.
+  저장된 trajectory 기록 요약 도구를 더한 일곱 도구 목록은 41,564바이트이고,
+  마지막 설명은 290바이트다.
+- `tests/gates/test_agent_surface_budget.py`는 현재 측정값을 여유 없는 상한으로
+  고정하고 설명·목록이 늘면 실패한다. 이번 증가분은 두 입력 계약을 별도 도구로
+  구분하고 각각 설치된 출력 스키마를 노출하는 비용이다. 두 번째 증가분은
+  `goppi-baseline-exchange-v2`에서 `evidence_result.v2`를 투영하는 데 필요한
+  설치된 출력 스키마와 도구 설명의 비용이다. 세 번째 증가분은 두 입력 계약의
+  `actions` 보기를 구분하고 닫힌 행동·의미 결합 개수 계약을 노출하는 비용이다.
+  일곱 번째 도구에서 전체 `trajectory_record_read.v2` 계약(60,930바이트)을
+  투영하면 MCP 성공 응답도 크게 중복된다. 그래서 CLI에 16KiB 이하인
+  `trajectory_record_read_summary.v1` 보기를 별도로 추가했다. 도구 목록에는 이
+  작은 설치 스키마(6,176바이트)를 싣는다. 목록 증가분은 6,826바이트다.
+  A3 첫 관측의 `h01`에서 입력 파일이 없다는 이유로 `capabilities` 호출을
+  놓쳐, 파일이 필요 없다는 문장을 설명에 명시했다. 설명은 230→221바이트,
+  전체 목록은 41,564→41,555바이트로 줄어 관문 상한도 함께 낮췄다.
+  여덟 번째 `review-pair` 요약 도구는 설치 스키마와 세 입력 설명을 포함해
+  목록을 5,988바이트 늘린 47,543바이트이며 설명은 242바이트다.
+  독립 검토에서 선언·이력·구획 상태와 `limitations`가 모순될 수 있는
+  출력 스키마 결함을 찾아 원본 계약의 조건별 필수·금지 규칙을 모두
+  투영했다. 설치 스키마가 552바이트 늘어 현재 목록 상한은 48,095바이트다.
+  아홉 번째 `review-artifacts` strict 요약 도구는 세 필수 입력과 선택적
+  source-bound case map, 새 설치 스키마를 싣는다. 관계·독자 버전 상태·작업
+  코드별 소유자와 집계 키 유일성을 계약에 묶어 목록은 10,363바이트 늘어난
+  58,458바이트이고 설명은 356바이트다. 기존 `review`·`readiness` CLI 계약을
+  강화하지 않아 이전에 schema-valid했던 보관 문서를 거부하지 않는다. 새
+  요약 계약만 현재 출력의 고정 한계 9개를 모두 요구한다.
+  열 번째 `review-artifacts` readiness 요약 도구는 누락 메타데이터의 blocker
+  코드별 개수와 다음 작업을 담는 설치 스키마를 싣는다. strict 요약의 불필요한
+  schema 조각을 함께 제거한 뒤 목록은 순증 12,046바이트인 70,504바이트,
+  설명은 380바이트다. 기존 readiness CLI 본문은 그대로 둔다.
+  열한 번째 `records list` 페이지 도구는 설치된 페이지 계약과 이어 읽기
+  인자와 각 현재 위치·다음 위치 쌍의 모순을 막는 조건을 포함해 목록을
+  8,529바이트 늘린 79,033바이트이고 설명은 353바이트다.
+  열두 번째 `records show` manifest 요약 도구는 정확한 파일 이름을 16개씩
+  제공하는 설치 계약과 이어 읽기 인자·검사 조건을 포함해 목록을
+  7,876바이트 늘린 86,909바이트이고 설명은 432바이트다.
+  열세 번째 `records verify` 요약 도구는 설치된 결과 계약과 정확한 기록 ID
+  입력을 포함해 목록을 3,167바이트 늘린 90,076바이트이고 설명은 300바이트다.
+  열네 번째 `records read-json` 한정 도구는 기존 설치 계약과 정확한 파일
+  선택자를 재사용한다. 내용은 선택 파일의 저장 바이트를 확인한 뒤 전체
+  응답이 16KiB 이하일 때만 반환한다. 목록은 2,573바이트 늘어난
+  92,649바이트이고 설명은 389바이트다.
+  열다섯 번째 `inspect` 도구는 기존 `artifact_inspection.v1` 계약과
+  단일 manifest 선택자를 싣는다. 목록은 3,456바이트 늘어난
+  96,105바이트이고 설명은 341바이트다.
+  열여섯 번째 `audit-promptfoo` 요약 도구는 기존 actions 계산에서 선언·
+  제공 행의 개수와 finding 코드별 개수만 남기는 설치 계약을 싣는다.
+  목록은 5,083바이트 늘어난 101,188바이트이고 설명은 347바이트다.
+  열일곱 번째 `audit-counts` 도구는 같은 요약 계약에 manifest의 바이트
+  정체성과 선택적 예상 해시 검사 상태를 명시한다. 두 지원 버전 프로필과
+  입력 선택자가 목록을 6,990바이트 늘려 108,178바이트이며 설명은
+  377바이트다.
+  열여덟 번째 `audit-deepeval` 기본 회계 요약은 두 독자 프로필의 원래
+  개수·선언 비교·한계 조건을 보존하고 사례·지표 이름과 평가기 오류 원문을
+  제외한다. 목록은 10,347바이트 늘어난 118,525바이트이고 설명은
+  402바이트다.
+  열아홉 번째 DeepEval trace 요약은 제공된 사례·trace·span과 부모 참조
+  상태의 개수를 원 계약에서 가져오고 개별 pointer를 제외한다. 목록은
+  5,921바이트 늘어난 124,446바이트이고 설명은 316바이트다.
+  스무 번째 owner-bound DeepEval 요약은 source와 binding pack의 서로
+  다른 바이트 해시, 제공된 지표 상태·행동·binding 개수를 보존한다.
+  목록은 7,882바이트 늘어난 132,328바이트이고 설명은 364바이트다.
+  스물한 번째 `audit-langfuse` 요약은 blob-array와 CLI-list 독자의 별도
+  집계·retrieval·누락 한계를 유지하고 관찰·점수 행을 제외한다.
+  목록은 13,241바이트 늘어난 145,569바이트이고 설명은 356바이트다.
+  스물두 번째 score-source 도구는 기존 설치 계약의 known/unknown source
+  개수를 그대로 투영한다. 목록은 7,533바이트 늘어난 153,102바이트이고
+  설명은 316바이트다.
+  현재 22개 목록의 출력 스키마 합계는 137,560바이트(전체의 약 89.8%)이고,
+  고유 스키마 합계는 123,031바이트다. 세 묶음에서 정확히 중복된
+  14,529바이트는 전체의 약 9.5%다. A3 실행에서 사용한 동결 목록
+  41,564바이트에 비해 현재 목록은 약 3.68배다. 실행 뒤 설명을 줄인
+  일곱 도구 목록의 41,555바이트와는 구분한다. 이 값은 JSON 바이트이며
+  모델 token 비용이나 선택 성능 측정이 아니다.
+  **A2 도구 추가는 여기서 잠정 동결한다.** 첫 A3 관측은 일곱 도구만
+  사용했으므로 나중에 추가한 15개 도구의 선택·해석 효과를 말할 수 없다.
+  새 독립 의도 묶음과 현재 목록으로 비교하기 전에는 도구 병합, 외부 `$ref`
+  또는 출력 스키마 생략을 단순한 크기 최적화로 취급하지 않는다. 현재
+  예산 관문은 정확한 153,102바이트를 상한으로 유지한다.
+  이후 증가는 용도와 비용을 기록하고 상한을 명시적으로 검토한다.
+- `underwrite_capabilities`는 CLI의 `capabilities.v1`을 사용한다.
+  `underwrite_inspect_result_v1`과 `_v2`는 각각 `evidence_result.v1`과 `.v2`
+  파일을 CLI의 `inspect-result --json`으로 읽어 `common_result_inspection.v3`
+  구조 요약만 돌려준다. 입력 계약이 도구와 다르면 CLI와 같은
+  `UNSUPPORTED_RESULT_SCHEMA` 오류다. 성공 JSON text는 CLI stdout의 마지막 줄
+  구분 개행만 뺀 본문이고 `structuredContent`는 이를 parse한 객체다. 입력·출력
+  실패는 `isError`와 기존 `evidence_error.v1` text이며 부분 성공은 내지 않는다.
+  요약은 원본 주장 검증, 측정, 승인이 아니다. 현재 CLI의 상한 실패도 기존 오류
+  봉투로 투영한다. 아래의 **상한 초과 부분 결과** 초안은 차기 계약이며 아직 출력하지 않는다.
+- `underwrite_audit_baseline`은 등록된 `goppi-baseline-exchange-v2` 프로필의
+  로컬 exchange 디렉터리 하나를 CLI `audit-baseline --exchange ... --json`에 넘겨
+  `evidence_result.v2`를 그대로 투영한다. 이 결과는 기술적 source claim이며
+  Goppi verifier 실행, 독립 출처 확인, 개선 판정, 승인 권한을 더하지 않는다.
+- `underwrite_inspect_result_v1_actions`와 `_v2_actions`는 각 입력 계약에 고정된
+  CLI `inspect-result --view actions --json`을 투영한다. 요약에 항목별 다음 행동과
+  선언된 의미 결합의 **개수**가 추가되며 원본 주장이나 검증 참조를 재검사하지 않는다.
+- `audit-trajectory`는 기본 읽기 전용 도구 목록에 넣지 않는다. 이 CLI는 임시
+  스냅샷을 만들고 선택된 Goppi 실행 파일을 호출한다. 시간·출력 제한은 있으나
+  실행 파일의 파일·네트워크 효과를 격리하지 못한다. [ADR-024](../adr/ADR-024-read-only-agent-surface.md)의
+  효과 도구 규칙에 따라 별도 결정과 시작 시점의 명시적 허용 전에는 MCP 도구로
+  표시하지 않는다. 현재 paired trajectory 검사는 CLI에서만 수행한다.
+- `underwrite_records_read_trajectory`는 이미 저장된 기록의 `records
+  read-trajectory --root ... --id ... --view summary --json`만 투영한다. 현재 저장 바이트와
+  직접 링크를 검사하지만 Goppi를 호출하지 않고 원본 export를 재검사하지 않는다.
+  성공 요약은 16KiB로 제한하며 전체 분석 본문은 의도적으로 생략한다.
+  오류 분석의 상세 진단도 생략 상태와 full 보기 경로를 명시한다.
+  `native_verification_performed_now: false`를 그대로 보존한다. 이 경로는 기록을
+  새로 저장하지 않으며 기존 기록의 검증 이력을 새 권한으로 승격하지 않는다.
+- `underwrite_review_pair` 조각의 실패 불변식은 전체 `paired_review.v1`이 문맥에서 온
+  조건 이름·값·이력 문장을 최대 1MiB 출력에 포함한다는 점이다. MCP 기본 도구가
+  이를 그대로 두 채널에 복사하면 선언 데이터가 모델의 지시 문장처럼 보일 수 있다.
+  owner는 `cli/review_pair.py`의 결과 보기와 설치된 출력 계약이다. 기본 CLI
+  `full` 출력 바이트는 유지하고, 새 `--view summary`가 기존 review를 한 번
+  계산한 뒤 digest·상태·선언된 조건 분포·이력/partition 존재와 모집단 개수·
+  고정 한계만 남긴다. 이름·값·사유 문장·taxonomy ID·이력 ID는 이 보기에 넣지
+  않는다. 16KiB 상한과 생략 사실·full 보기 경로를 명시한다. MCP는 이 CLI
+  profile만 투영한다. 세 입력 중 하나가 잘못되면 부분 결과 없이 기존 오류를
+  내고, native verifier·저장·승인 기능은 추가하지 않는다.
+- `underwrite_review_artifacts`는 strict `review-artifacts`에서 세 원본을 한 번씩
+  읽고, 선택한 correspondence가 있으면 그 결속을 검사한다. 새 CLI `summary`
+  보기는 source hash, reader profile·버전 선언 상태, 두 모집단, 대응 범위,
+  발견 개수(합계가 짝 개수), 다음 작업의 `(code, owner, count)`와 고정 한계를 보존한다.
+  짝별 값·분류·좌표, 일치하지 않은 좌표, producer 버전 원문은 생략하고
+  16KiB로 제한한다. 사례 메타데이터가 부족하면 이 strict 경로는 기존 오류로
+  거부한다.
+- `underwrite_review_artifacts_readiness`는 원본 세 파일을 CLI
+  `review-artifacts --view readiness-summary --json`으로 읽어 blocker의
+  코드별 개수와 누락된 사례 ID·역할 상태, 다음 검증 작업, 모집단과 한계를
+  보존한다. 행 좌표·경로·producer 버전 원문은 생략하고 16KiB로 제한한다.
+  사례 비교는 수행하지 않으며 `correspondence` 입력을 거부한다.
+- `underwrite_records_list`는 `records list --view page --json`의 고정 50개
+  페이지를 투영한다. label·captured_at·root 경로를 모델 응답에서 생략하고,
+  ID·상태·kind·manifest digest만 남긴다. 전체 catalog digest가 바뀌면
+  성공 상태 `changed`와 빈 항목, `restart_offset: 0`을 돌려 누락·중복을
+  막는다. 다음 페이지는 같은 root와 응답의 offset·digest로 호출한다.
+  이 digest는 읽은 목록의 동일성만 나타내며 원자적 filesystem snapshot이나
+  저장 파일 검증은 아니다. 잘못된 인자·저장소 오류는 CLI와 같은
+  `record_error.v1`를 돌린다.
+- `underwrite_records_show`는 `records show --view summary --json`으로 하나의
+  canonical manifest를 읽어 ID·kind·시각·파일 역할별 개수·선언된 총 바이트·
+  rerun/provenance 상태와 정확한 logical file name을 최대 16개씩 투영한다.
+  라벨·metadata·source locator·link 대상은 생략한다. 파일 크기·해시는
+  manifest 선언값이며 저장 바이트나 직접 링크를 검사하지 않는다. 다음 파일
+  페이지는 같은 root·ID와 현재 manifest digest를 요구하고, digest가 바뀌면
+  파일을 내지 않고 첫 페이지 재시작을 지시한다.
+- `underwrite_records_verify`는 `records verify --view summary --json`을
+  투영한다. 저장 파일 바이트와 직접 연결 manifest를 읽어 `valid`, 검사한 파일·
+  링크 수를 각각 상태 코드 배열의 길이로 보존하고, 실패 코드는 배열에
+  반복해 담는다. 실패한 항목의 파일 이름·연결
+  기록 ID는 생략해 16KiB로 제한한다. `valid: false`는 도구 호출 오류가 아닌
+  무결성 실패 결과이며 연결 대상 파일 바이트, producer 재실행·출처·승인은
+  확인하지 않는다.
+- `underwrite_records_read_json`은 `records read-json --view bounded`를
+  투영한다. 선택 파일의 원래 바이트를 manifest와 대조한 뒤 전체 JSON
+  응답이 개행 포함 16KiB 이하일 때만 `record_document.v1`을 반환한다.
+  초과하면 부분 문서 없이 기존 `record_error.v1 / OUTPUT_LIMIT_EXCEEDED`를
+  돌린다. 기본 CLI 전체 보기는 유지한다. 저장 `content`는 비신뢰 데이터로
+  표시하며 다른 파일·연결 기록·출처·승인은 검사하지 않는다.
+- `underwrite_inspect`는 기존 `inspect CASE.json --json`의 결과를 그대로
+  투영한다. 선택 파일의 바이트 해시와 예상 해시 비교, 관찰 생성 상태 및
+  고정 진단만 반환한다. `not_created`의 CLI 종료 코드 1은 MCP 도구 오류가
+  아닌 성공 결과로 해석하며, 호출 오류는 기존
+  `artifact_inspection_error.v1`을 사용한다.
+- `underwrite_audit_promptfoo`는 기존 `audit-promptfoo`의 actions 계산을
+  한 번 수행해 선언·제공 행 모집단, 차이, 관계, finding 코드별 개수와
+  고정된 다음 검증 행동만 16KiB 이하로 투영한다. 행 좌표와 원본 내용은
+  제외하며 원본 주장, export 완전성, 승인 여부는 구분한다.
+- `underwrite_audit_counts`는 manifest가 선택한 Promptfoo artifact를
+  예상 해시 검사와 같은 읽기에서 집계한다. `source_binding`의
+  `manifest_case`는 manifest 바이트 해시와 `matched` 또는 `not_supplied`를
+  담고, 직접 파일의 `direct_file`은 `not_applicable`을 담는다. 불일치한
+  예상 해시는 호출 오류이며 manifest 해시는 출처 인증이 아니다.
+- `underwrite_audit_deepeval`은 `audit-deepeval --view summary --json`으로
+  공급된 사례·serialized metric 모집단, 오류·미채점 수, 선언된 사례 수의
+  대응, 다음 행동과 한계를 16KiB 이하로 투영한다. 원본 사례·지표 이름과
+  오류 문구는 제외한다. planned/expectation 모집단과 trace 구조, owner
+  binding은 이 보기에서 측정하지 않는다.
+- `underwrite_audit_deepeval_trace`는 `audit-deepeval --view trace-summary
+  --json`으로 제공된 사례·trace·span, source status, 미해결 부모 참조와
+  순환 구성원 개수 및 다음 행동을 16KiB 이하로 투영한다. 개별 pointer는
+  제외하며 원본의 linkability 한계는 남은 해시만 가리키게 바꾼다.
+  연결은 인과·시간 순서·계측 완전성의 증거가 아니다.
+- `underwrite_audit_deepeval_bound`는 `audit-deepeval --bindings PACK
+  --view bound-summary --json`을 투영한다. TestRun과 선언 pack을 각각 한 번
+  읽고 source identity, 선언 identity, 제공된 metric occurrence 모집단,
+  availability·item action·declared semantic binding 개수를 16KiB 이하로
+  반환한다. 원본 값·이름·좌표는 제외하며 owner 의미의 진위와 출처는
+  검증하지 않는다.
+- `underwrite_audit_langfuse`는 `audit-langfuse --view summary --json`의
+  두 입력 파일 원본 해시, score 종류·연관 상태 개수, planned unknown과
+  CLI-list retrieval/pagination 상태를 16KiB 이하로 투영한다. 원본 행과
+  값은 제외한다. 두 파일의 선택은 원자적 쌍이나 동일 수집 창을 증명하지
+  않으며 export 완전성도 모른다.
+- `underwrite_audit_langfuse_score_source`는 기존 `--view score-source`
+  결과의 API/ANNOTATION/EVAL과 missing/null/unrecognized source 선언
+  개수를 16KiB 이하로 투영한다. actor 신원·evaluator 실행은 검증하지
+  않으며 score는 task verdict가 아니다.
+- 프로토콜 지원 범위는 client가 시작하는 local stdio MCP `2025-11-25`의
+  initialize/initialized, tools/list, tools/call뿐이다. 네트워크 listener,
+  상주 프로세스, 모델 호출, 쓰기 도구를 추가하지 않는다.
 
 ### A1 첫 조각: 한도 오류 관문과 측정 기준
 
@@ -266,7 +477,9 @@ A1은 MCP 없이도 CLI 사용자에게 이득이다. 결과 해석이 쉬워지
 
 ## 6. 열린 질문
 
-1. A2의 패키징: 기본 설치에 넣을지, optional extra로 둘지. A0–A1 뒤 의존성 비교와 함께 정한다.
+1. A2의 첫 도구 패키징은 [ADR-024](../adr/ADR-024-read-only-agent-surface.md)에 따라
+   기존 의존성만 쓰는 기본 설치로 정했다. 이후 SDK 도입이 필요해지면 optional extra를
+   포함해 다시 비교한다.
 2. A1의 남은 경계: 일곱 독립 오류 봉투의 범주·행동 투영은 registry에 모였다.
    `evidence_error.v1`의 현재 예외 전달 경로를 분류하고 중앙 문법 검사를 넣었다.
    새 경로의 출처 검사와 `cli_result.v1`의 결과 상태 투영은 후속 계약 조각이다.

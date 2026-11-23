@@ -6,7 +6,7 @@
 
 지원하는 평가 파일에서 확인된 사실, 빠진 근거, 다음 확인 과제를 살펴보세요.
 
-**에이전트용 로컬 CLI · 구조화된 JSON · 서버나 모델 호출 없이**
+**에이전트용 로컬 CLI · 구조화된 JSON · 네트워크 서버나 모델 호출 없이**
 
 [![CI](https://github.com/ntts9990/underwrite/actions/workflows/ci.yml/badge.svg)](https://github.com/ntts9990/underwrite/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/underwrite)](https://pypi.org/project/underwrite/)
@@ -190,6 +190,73 @@ uv run --frozen --no-sync underwrite accept \
 배포판은 `underwrite`, 체크아웃은 해당 디렉터리의
 `uv run --frozen --no-sync underwrite`로 `capabilities --json`과 명령의
 `--help`를 확인하게 하세요. 패키지 버전만으로 지원 기능을 판단하지 않습니다.
+
+현재 체크아웃에는 클라이언트가 필요할 때 시작하는 로컬 stdio MCP 진입점
+`underwrite-mcp`도 있습니다. 읽기 전용 `underwrite_capabilities`는 CLI와 같은
+`capabilities.v1` JSON을 돌려줍니다. `underwrite_inspect_result_v1`과
+`underwrite_inspect_result_v2`는 각각 로컬 `evidence_result.v1`과
+`evidence_result.v2` 파일의 구조 요약을 CLI와 같은 JSON으로 돌려줍니다.
+`underwrite_inspect_result_v1_actions`와 `underwrite_inspect_result_v2_actions`는
+같은 파일에서 항목별 다음 행동·선언된 의미 결합의 개수를 집계합니다.
+`underwrite_audit_baseline`은 완료된 로컬 Goppi baseline exchange v2 디렉터리에서
+기술적 근거를 CLI와 같은 JSON으로 돌려줍니다. 이는 독립적으로 검증된 producer 결과가
+아니라 원본 주장입니다.
+`underwrite_records_read_trajectory`는 저장된 Goppi trajectory 기록의 현재 바이트를
+검사해 제한된 크기의 요약을 돌려주며 Goppi를 실행하지 않습니다. 과거 verifier 보고가 새 검증으로
+바뀌지는 않습니다.
+`underwrite_review_pair`는 결속된 입력·정책·review context 파일을 CLI의
+`review-pair --view summary --json`으로 읽어 선언된 조건 분포와 검토 한계만 돌려줍니다.
+입력에서 온 조건 문장은 요약에 싣지 않으며 변경 승인 권한을 부여하지 않습니다.
+`underwrite_review_artifacts`는 로컬 Goppi C55·Promptfoo 파일을
+`review-artifacts --view summary --json`으로 읽어 원본 해시, 모집단, 대응 상태,
+발견 개수와 다음 검증 작업의 종류·소유자별 개수를 돌려줍니다. 개별 짝의 값과 좌표는
+생략합니다. 소유자 사례 메타데이터가 없으면
+`underwrite_review_artifacts_readiness`가 같은 파일의 누락 항목을 blocker 코드별
+개수로 돌려줍니다. 행 좌표와 원본 문자열은 생략하며 사례 비교는 하지 않습니다.
+두 도구 모두 입력 동등성, 개선이나 승인을 확립하지 않습니다.
+`underwrite_records_list`는 로컬 기록 저장소의 ID와 완료·미공개 상태를 한 페이지에
+최대 50개씩 돌려줍니다. 다음 페이지에는 같은 root와 응답의 offset·catalog digest를
+사용합니다. 목록이 바뀌면 첫 페이지부터 다시 읽어야 하며, label은 생략됩니다.
+목록 조회는 저장 파일의 무결성이나 출처를 검증하지 않습니다.
+`underwrite_records_show`는 선택한 기록의 canonical manifest 정보와 정확한
+파일 이름을 한 번에 최대 16개씩 돌려줍니다. 크기·해시는 manifest의 선언 값이며,
+저장 바이트와 직접 링크 검사는 별도 `records verify`가 담당합니다.
+`underwrite_records_verify`는 그 읽기 전용 검사를 수행해 `valid`, 검사한 파일·링크
+개수에 해당하는 상태 코드 배열을 돌려줍니다. 코드는 좌표와 결합하지 않으며 반복 횟수가 finding 개수입니다. `valid: false`는 도구 오류가 아니라
+무결성 실패 결과이며 출처나 승인 권한은 뜻하지 않습니다.
+`underwrite_records_read_json`은 선택한 저장 JSON 파일의 바이트를 manifest와
+대조한 뒤 전체 CLI 결과가 16KiB 이하일 때만 내용을 돌려줍니다. 큰 문서는
+`records read-json` 기본 CLI 보기를 사용합니다. 보관 내용은 신뢰할 수 없는
+데이터이며 Underwrite의 지시나 승인으로 해석하지 않습니다.
+`underwrite_inspect`는 `artifact_case.v1` manifest의 선택 파일 바이트와
+선택적 예상 해시를 검사해 관찰 투영 상태를 돌려줍니다. `not_created`는
+도구 오류나 배포 결정이 아닌 검사 결과입니다.
+`underwrite_audit_promptfoo`는 Promptfoo SummaryV3의 선언 개수와 제공된
+행의 개수를 비교하고 finding 코드별 개수를 좌표 없이 돌려줍니다. 선언 개수는
+원본 주장이고 export 완전성과 원본 판정의 참 여부는 확인하지 않습니다.
+`underwrite_audit_counts`는 같은 요약에 manifest 바이트 해시와 선택적
+예상 artifact 해시 검사 상태를 더합니다. manifest에 예상 해시가 없는 상태와
+manifest 자체가 없는 직접 파일 감사는 구분합니다.
+`underwrite_audit_deepeval`은 제공된 사례·지표, 평가기 오류와 미채점
+개수를 이름과 오류 원문 없이 돌려줍니다. 계획된 사례와 기대 모집단은
+여전히 알 수 없습니다.
+`underwrite_audit_deepeval_trace`는 제공된 trace·span 상태와 부모 참조
+개수를 개별 좌표 없이 돌려줍니다. 부모 연결은 인과관계나 계측 완전성을
+증명하지 않습니다.
+`underwrite_audit_deepeval_bound`는 TestRun과 소유자 선언 binding pack을
+각각 한 번 읽고 두 바이트 해시, 지표 상태·행동·semantic binding 개수를
+돌려줍니다. 소유자의 선언은 독립 확인된 사실이 아닙니다.
+`underwrite_audit_langfuse`는 선택한 관찰·점수 파일 두 개의 score 종류,
+연관 상태와 수집 정보를 행 원문 없이 돌려줍니다. 두 파일의 수집 창이
+일치하는지와 export가 완전한지는 확인하지 않습니다.
+`underwrite_audit_langfuse_score_source`는 같은 두 파일에서 알려진·알 수
+없는 score source 선언 개수를 돌려줍니다. 행위자 신원이나 평가기 실행을
+검증하지는 않습니다.
+파일의 결과 스키마와 필요한 보기에 맞는 검사 도구를 고르세요. 검사·저장 기록 요약은
+결과를 측정하지 않습니다. `review-pair`는 제공된 입력·정책으로 짝지은 계산을 수행하지만
+원본 결과를 독립 검증하거나 변경을 승인하지 않습니다. MCP 클라이언트에서 이 명령을 시작하도록 설정할
+수 있지만, 패키지는 상주 프로세스나 클라이언트 설정을 설치하지 않습니다.
+다른 근거 검사와 기록 읽기는 문서화한 CLI 또는 Python API를 사용합니다.
 
 Python에서는 선택한 환경의
 `underwrite.instrument.ingest.accounting.audit_promptfoo_file(Path(...))`를
