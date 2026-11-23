@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import io
 import json
 import os
 import subprocess
 import sys
+import tarfile
 import time
 from pathlib import Path
 from typing import Any, cast
@@ -167,17 +170,46 @@ def test_native_missing_trajectory_reason_is_exact() -> None:
         check.validate_missing(native, audit)
 
 
-@pytest.mark.parametrize("mutation", ["contract", "npm_resolution", "python_resolution"])
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "contract",
+        "npm_resolution",
+        "python_resolution",
+        "goppi_package",
+        "unexpected_tarball",
+        "bytes_not_matched",
+        "malformed_digest",
+        "extra_field",
+    ],
+)
 def test_success_summary_requires_contract_and_resolution_identities(mutation: str) -> None:
-    summary = {
+    tarball = "sha256:" + "c" * 64
+    summary: dict[str, Any] = {
+        "artifacts": {"goppi_tarball": {"bytes": 1, "sha256": tarball}},
         "contracts": dict(check.CONTRACTS),
         "trust_limits": dict(check.TRUST_LIMITS),
         "npm_resolution": {"package_count": 1, "sha256": "sha256:" + "a" * 64},
         "python_resolution": {"package_count": 1, "sha256": "sha256:" + "b" * 64},
+        "goppi_package": {
+            "tarball_sha256_expected": tarball,
+            "manifest_sha256": "sha256:" + "d" * 64,
+            "cli_target": "dist/cli.js",
+            "cli_sha256": "sha256:" + "e" * 64,
+            "installed_bytes_match_tarball": True,
+        },
     }
     check.validate_success_summary(summary)
     if mutation == "contract":
         summary["contracts"]["native_verification"] = "wrong"
+    elif mutation == "unexpected_tarball":
+        summary["artifacts"]["goppi_tarball"]["sha256"] = "sha256:" + "f" * 64
+    elif mutation == "bytes_not_matched":
+        summary["goppi_package"]["installed_bytes_match_tarball"] = False
+    elif mutation == "malformed_digest":
+        summary["goppi_package"]["cli_sha256"] = "e" * 64
+    elif mutation == "extra_field":
+        summary["goppi_package"]["package_name"] = "example-producer"
     else:
         del summary[mutation]
     with pytest.raises(check.Failure):
@@ -198,6 +230,8 @@ def test_failure_summary_is_structured_and_path_free(
             str(missing),
             "--node",
             str(missing),
+            "--goppi-tarball-sha256",
+            "sha256:" + "0" * 64,
         ]
     )
     streams = capsys.readouterr()
@@ -211,3 +245,561 @@ def test_failure_summary_is_structured_and_path_free(
         "next_action": "CORRECT_ARGUMENTS",
     }
     assert str(tmp_path) not in streams.err
+
+
+CLI = b"#!/usr/bin/env node\nconsole.log('synthetic producer');\n"
+Members = list[tuple[str, bytes | None]]
+
+
+SYMLINK, HARDLINK = b"\x00symlink:", b"\x00hardlink:"
+
+
+def _tarball(path: Path, members: Members) -> Path:
+    """Write an npm-pack-shaped archive; None is a directory, a link prefix names a target."""
+    with tarfile.open(path, "w:gz") as archive:
+        for name, data in members:
+            info = tarfile.TarInfo(name)
+            if data is None:
+                info.type = tarfile.DIRTYPE
+                archive.addfile(info)
+            elif data.startswith((SYMLINK, HARDLINK)):
+                info.type = tarfile.SYMTYPE if data.startswith(SYMLINK) else tarfile.LNKTYPE
+                info.linkname = data.split(b":", 1)[1].decode()
+                archive.addfile(info)
+            else:
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
+    return path
+
+
+def _manifest(**fields: object) -> bytes:
+    return json.dumps({"name": "example-producer", "version": "1.0.0", **fields}).encode()
+
+
+def _sha256(data: bytes) -> str:
+    return "sha256:" + hashlib.sha256(data).hexdigest()
+
+
+@pytest.mark.parametrize(
+    ("name", "declared", "target"),
+    [
+        ("example-producer", {"example-producer": "./dist/cli.js"}, "dist/cli.js"),
+        ("example-producer", "dist/cli.js", "dist/cli.js"),
+        (
+            "@example/producer",
+            {"helper": "bin/helper.js", "producer": "dist/cli.js"},
+            "dist/cli.js",
+        ),
+        ("example-producer", {"differently-named": "dist/cli.js"}, "dist/cli.js"),
+    ],
+)
+def test_cli_comes_from_the_tarball_manifest_not_a_fixed_path(
+    tmp_path: Path, name: str, declared: object, target: str
+) -> None:
+    manifest = _manifest(name=name, bin=declared)
+    tarball = _tarball(
+        tmp_path / "producer.tgz",
+        [
+            ("package/package.json", manifest),
+            ("package/dist/cli.js", CLI),
+            ("package/bin/helper.js", b"helper"),
+        ],
+    )
+    package = check.package_cli(tarball)
+    assert (package.name, package.target) == (name, target)
+    assert package.manifest_sha256 == _sha256(manifest)
+    assert package.cli_sha256 == _sha256(CLI)
+    assert dict(package.files) == {
+        "package.json": _sha256(manifest),
+        "dist/cli.js": _sha256(CLI),
+        "bin/helper.js": _sha256(b"helper"),
+    }
+
+
+def test_checker_source_names_no_installed_package_layout() -> None:
+    source = (ROOT / "scripts/check_goppi_installed_pair.py").read_text(encoding="utf-8")
+    assert "node_modules/" not in source
+    assert ".mjs" not in source
+
+
+PACKAGE_REFUSALS: dict[str, tuple[Members, str]] = {
+    "missing_manifest": ([("package/dist/cli.js", CLI)], "GOPPI_PACKAGE_MANIFEST_MISSING"),
+    "manifest_outside_package": (
+        [("other/package.json", _manifest(bin="dist/cli.js")), ("package/dist/cli.js", CLI)],
+        "GOPPI_PACKAGE_MEMBER_OUTSIDE_ROOT",
+    ),
+    "duplicate_manifest": (
+        [
+            ("package/package.json", _manifest(bin="dist/cli.js")),
+            ("package/package.json", _manifest(bin="dist/other.js")),
+            ("package/dist/cli.js", CLI),
+        ],
+        "GOPPI_PACKAGE_MEMBER_AMBIGUOUS",
+    ),
+    "manifest_not_json": (
+        [("package/package.json", b"{"), ("package/dist/cli.js", CLI)],
+        "GOPPI_PACKAGE_MANIFEST_INVALID",
+    ),
+    "manifest_not_object": (
+        [("package/package.json", b"[]"), ("package/dist/cli.js", CLI)],
+        "GOPPI_PACKAGE_MANIFEST_INVALID",
+    ),
+    "traversal_name": (
+        [("package/package.json", _manifest(name="../escape", bin="dist/cli.js"))],
+        "GOPPI_PACKAGE_NAME_INVALID",
+    ),
+    "uppercase_name": (
+        [("package/package.json", _manifest(name="Producer", bin="dist/cli.js"))],
+        "GOPPI_PACKAGE_NAME_INVALID",
+    ),
+    "non_text_name": (
+        [("package/package.json", _manifest(name=7, bin="dist/cli.js"))],
+        "GOPPI_PACKAGE_NAME_INVALID",
+    ),
+    "missing_bin": (
+        [("package/package.json", _manifest()), ("package/dist/cli.js", CLI)],
+        "GOPPI_CLI_UNDECLARED",
+    ),
+    "empty_bin": (
+        [("package/package.json", _manifest(bin={})), ("package/dist/cli.js", CLI)],
+        "GOPPI_CLI_UNDECLARED",
+    ),
+    "ambiguous_bin": (
+        [
+            ("package/package.json", _manifest(bin={"one": "dist/cli.js", "two": "dist/b.js"})),
+            ("package/dist/cli.js", CLI),
+            ("package/dist/b.js", CLI),
+        ],
+        "GOPPI_CLI_AMBIGUOUS",
+    ),
+    "absolute_bin": (
+        [("package/package.json", _manifest(bin="/usr/bin/env"))],
+        "GOPPI_CLI_PATH_INVALID",
+    ),
+    "parent_bin": (
+        [("package/package.json", _manifest(bin="../../outside.js"))],
+        "GOPPI_CLI_PATH_INVALID",
+    ),
+    "backslash_bin": (
+        [("package/package.json", _manifest(bin="dist\\cli.js")), ("package/dist/cli.js", CLI)],
+        "GOPPI_CLI_PATH_INVALID",
+    ),
+    "bin_not_in_tarball": (
+        [("package/package.json", _manifest(bin="dist/other.js")), ("package/dist/cli.js", CLI)],
+        "GOPPI_CLI_MISSING",
+    ),
+    "bin_is_directory": (
+        [("package/package.json", _manifest(bin="dist")), ("package/dist", None)],
+        "GOPPI_CLI_MISSING",
+    ),
+    "duplicate_cli": (
+        [
+            ("package/package.json", _manifest(bin="dist/cli.js")),
+            ("package/dist/cli.js", CLI),
+            ("package/dist/cli.js", b"replacement"),
+        ],
+        "GOPPI_PACKAGE_MEMBER_AMBIGUOUS",
+    ),
+    "case_variant_shadows_cli": (
+        [
+            ("package/package.json", _manifest(bin="dist/cli.js")),
+            ("package/dist/cli.js", CLI),
+            ("package/dist/CLI.js", b"replacement"),
+        ],
+        "GOPPI_PACKAGE_MEMBER_AMBIGUOUS",
+    ),
+    "member_outside_root": (
+        [
+            ("package/package.json", _manifest(bin="dist/cli.js")),
+            ("package/dist/cli.js", b"import './impl.js';\n"),
+            ("package/dist/impl.js", b"verified"),
+            ("shadow/dist/impl.js", b"installed instead by root stripping"),
+        ],
+        "GOPPI_PACKAGE_MEMBER_OUTSIDE_ROOT",
+    ),
+    "dot_prefixed_root": (
+        [
+            ("./package/package.json", _manifest(bin="dist/cli.js")),
+            ("./package/dist/cli.js", CLI),
+        ],
+        "GOPPI_PACKAGE_MEMBER_OUTSIDE_ROOT",
+    ),
+    "symlinked_cli": (
+        [
+            ("package/package.json", _manifest(bin="dist/cli.js")),
+            ("package/dist/real.js", CLI),
+            ("package/dist/cli.js", SYMLINK + b"real.js"),
+        ],
+        "GOPPI_PACKAGE_MEMBER_TYPE_UNSUPPORTED",
+    ),
+    "hardlinked_manifest": (
+        [
+            ("package/real.json", _manifest(bin="dist/cli.js")),
+            ("package/package.json", HARDLINK + b"package/real.json"),
+            ("package/dist/cli.js", CLI),
+        ],
+        "GOPPI_PACKAGE_MEMBER_TYPE_UNSUPPORTED",
+    ),
+    "deeply_nested_manifest": (
+        [("package/package.json", b"[" * 200_000), ("package/dist/cli.js", CLI)],
+        "GOPPI_PACKAGE_MANIFEST_INVALID",
+    ),
+}
+
+
+@pytest.mark.parametrize("case", sorted(PACKAGE_REFUSALS))
+def test_package_identity_refuses_any_other_shape(tmp_path: Path, case: str) -> None:
+    members, reason = PACKAGE_REFUSALS[case]
+    tarball = _tarball(tmp_path / "producer.tgz", members)
+    with pytest.raises(check.Failure) as caught:
+        check.package_cli(tarball)
+    assert caught.value.reason == reason
+    assert caught.value.location == "/goppi_tarball"
+
+
+def test_unreadable_tarball_is_refused(tmp_path: Path) -> None:
+    tarball = tmp_path / "producer.tgz"
+    tarball.write_bytes(b"not a gzip archive")
+    with pytest.raises(check.Failure) as caught:
+        check.package_cli(tarball)
+    assert caught.value.reason == "GOPPI_PACKAGE_UNREADABLE"
+
+
+def _installed(tmp_path: Path) -> tuple[Any, Path, Path]:
+    manifest = _manifest(bin={"example-producer": "./dist/cli.js"})
+    tarball = _tarball(
+        tmp_path / "producer.tgz",
+        [("package/package.json", manifest), ("package/dist/cli.js", CLI)],
+    )
+    npm_root = tmp_path / "npm"
+    directory = npm_root / "node_modules" / "example-producer"
+    (directory / "dist").mkdir(parents=True)
+    (directory / "package.json").write_bytes(manifest)
+    (directory / "dist/cli.js").write_bytes(CLI)
+    return check.package_cli(tarball), npm_root, directory
+
+
+def test_installed_cli_is_the_verified_tarball_member(tmp_path: Path) -> None:
+    package, npm_root, directory = _installed(tmp_path)
+    assert check.installed_cli(npm_root, package) == (directory / "dist/cli.js").resolve()
+
+
+@pytest.mark.parametrize(
+    ("mutation", "reason"),
+    [
+        ("cli_bytes", "GOPPI_CLI_INSTALL_MISMATCH"),
+        ("manifest_bytes", "GOPPI_CLI_INSTALL_MISMATCH"),
+        ("missing", "GOPPI_CLI_INSTALL_MISSING"),
+        ("cli_symlink", "GOPPI_CLI_INSTALL_REDIRECTED"),
+        ("package_symlink", "GOPPI_CLI_INSTALL_REDIRECTED"),
+        ("scope_symlink", "GOPPI_CLI_INSTALL_REDIRECTED"),
+        ("extra_file", "GOPPI_CLI_INSTALL_MISMATCH"),
+        ("symlinked_subdirectory", "GOPPI_CLI_INSTALL_REDIRECTED"),
+    ],
+)
+def test_installed_cli_refuses_other_bytes_or_redirected_paths(
+    tmp_path: Path, mutation: str, reason: str
+) -> None:
+    package, npm_root, directory = _installed(tmp_path)
+    cli = directory / "dist/cli.js"
+    if mutation == "cli_bytes":
+        cli.write_bytes(b"different program")
+    elif mutation == "manifest_bytes":
+        (directory / "package.json").write_bytes(_manifest(bin="dist/cli.js"))
+    elif mutation == "missing":
+        cli.unlink()
+    elif mutation == "cli_symlink":
+        outside = tmp_path / "outside.js"
+        outside.write_bytes(CLI)
+        cli.unlink()
+        cli.symlink_to(outside)
+    elif mutation == "package_symlink":
+        moved = tmp_path / "elsewhere"
+        directory.rename(moved)
+        directory.symlink_to(moved, target_is_directory=True)
+    elif mutation == "extra_file":
+        (directory / "dist/injected.js").write_bytes(b"not in the tarball")
+    elif mutation == "symlinked_subdirectory":
+        (tmp_path / "outside").mkdir()
+        (directory / "lib").symlink_to(tmp_path / "outside", target_is_directory=True)
+    else:
+        manifest = _manifest(name="@example/producer", bin="dist/cli.js")
+        tarball = _tarball(
+            tmp_path / "scoped.tgz",
+            [("package/package.json", manifest), ("package/dist/cli.js", CLI)],
+        )
+        package = check.package_cli(tarball)
+        real_scope = tmp_path / "real-scope"
+        (real_scope / "producer/dist").mkdir(parents=True)
+        (real_scope / "producer/package.json").write_bytes(manifest)
+        (real_scope / "producer/dist/cli.js").write_bytes(CLI)
+        (npm_root / "node_modules/@example").symlink_to(real_scope, target_is_directory=True)
+    with pytest.raises(check.Failure) as caught:
+        check.installed_cli(npm_root, package)
+    assert caught.value.reason == reason
+
+
+ARGUMENTS = [
+    "--goppi-tarball",
+    "producer.tgz",
+    "--underwrite-wheel",
+    "underwrite.whl",
+    "--underwrite-core-wheel",
+    "underwrite_core.whl",
+    "--node",
+    "node",
+]
+
+
+def test_expected_tarball_digest_accepts_only_the_exact_form() -> None:
+    valid = "sha256:" + "a" * 64
+    parsed = check.parser().parse_args([*ARGUMENTS, "--goppi-tarball-sha256", valid])
+    assert parsed.goppi_tarball_sha256 == valid
+    for value in ("abc", "sha256:" + "A" * 64, "sha256:" + "a" * 63, "a" * 64):
+        with pytest.raises(check.argparse.ArgumentTypeError):
+            check.expected_sha256(value)
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [(None, "required: --goppi-tarball-sha256"), ("sha256:" + "a" * 63, "expected sha256:")],
+)
+def test_expected_tarball_digest_is_required_on_the_command_line(
+    value: str | None, message: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    argv = [*ARGUMENTS] if value is None else [*ARGUMENTS, "--goppi-tarball-sha256", value]
+    with pytest.raises(SystemExit) as caught:
+        check.parser().parse_args(argv)
+    assert caught.value.code == 2  # noqa: PLR2004
+    assert message in capsys.readouterr().err
+
+
+def test_different_tarball_is_refused_before_installation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def forbidden(*_: object, **__: object) -> None:
+        pytest.fail("an unexpected tarball must be refused before installation")
+
+    monkeypatch.setattr(check, "install", forbidden)
+    inputs: dict[str, Path] = {}
+    for role in check.ARTIFACT_ROLES:
+        inputs[role] = tmp_path / f"{role}.input"
+        inputs[role].write_bytes(role.encode())
+    expected = "sha256:" + "0" * 64
+    code = check.main(
+        [
+            "--goppi-tarball",
+            str(inputs["goppi_tarball"]),
+            "--underwrite-wheel",
+            str(inputs["underwrite_wheel"]),
+            "--underwrite-core-wheel",
+            str(inputs["underwrite_core_wheel"]),
+            "--node",
+            str(inputs["node_executable"]),
+            "--goppi-tarball-sha256",
+            expected,
+        ]
+    )
+    report = json.loads(capsys.readouterr().err)
+    assert code == 1
+    assert report["failure"] == {
+        "phase": "snapshot",
+        "reason": "GOPPI_TARBALL_DIGEST_MISMATCH",
+        "location": "/goppi_tarball",
+        "next_action": "CORRECT_ARGUMENTS",
+    }
+    assert report["goppi_package"] == {"tarball_sha256_expected": expected}
+    assert report["artifacts"]["goppi_tarball"]["sha256"] == _sha256(b"goppi_tarball")
+
+
+def test_member_size_limit_is_enforced(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(check, "PACKAGE_MEMBER_MAX_BYTES", len(CLI) - 1)
+    tarball = _tarball(
+        tmp_path / "producer.tgz",
+        [("package/package.json", _manifest(bin="dist/cli.js")), ("package/dist/cli.js", CLI)],
+    )
+    with pytest.raises(check.Failure) as caught:
+        check.package_cli(tarball)
+    assert caught.value.reason == "GOPPI_PACKAGE_MEMBER_LIMIT"
+
+
+def test_package_identity_is_read_before_any_installation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def forbidden(*_: object, **__: object) -> None:
+        pytest.fail("a tarball without a valid manifest must be refused before npm runs")
+
+    def which(name: str) -> str:
+        return f"/usr/bin/{name}"
+
+    monkeypatch.setattr(check.shutil, "which", which)
+    monkeypatch.setattr(check, "run", forbidden)
+    tarball = _tarball(tmp_path / "producer.tgz", [("package/dist/cli.js", CLI)])
+    with pytest.raises(check.Failure) as caught:
+        check.install(
+            tmp_path / "work",
+            {"goppi_tarball": tarball},
+            Path("/usr/bin/node"),
+            {},
+            {"goppi_package": {"tarball_sha256_expected": _sha256(tarball.read_bytes())}},
+        )
+    assert caught.value.reason == "GOPPI_PACKAGE_MANIFEST_MISSING"
+
+
+def test_summary_failures_are_reported_not_raised(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def accepted_without_package_identity(_: object, summary: dict[str, Any]) -> None:
+        summary["contracts"] = dict(check.CONTRACTS)
+
+    monkeypatch.setattr(check, "accept", accepted_without_package_identity)
+    code = check.main([*ARGUMENTS, "--goppi-tarball-sha256", "sha256:" + "a" * 64])
+    report = json.loads(capsys.readouterr().err)
+    assert code == 1 and report["status"] == "failed"
+    assert report["failure"]["reason"] == "SUCCESS_PACKAGE_IDENTITY_MISSING"
+
+
+@pytest.mark.parametrize("nested", ["node_modules/dep/index.js", "node_modules/.bin/dep"])
+def test_files_only_npm_extracted_under_the_package_are_refused(
+    tmp_path: Path, nested: str
+) -> None:
+    """A member another reader cannot see would otherwise shadow an import resolution."""
+    package, npm_root, directory = _installed(tmp_path)
+    hidden = directory / nested
+    hidden.parent.mkdir(parents=True)
+    hidden.write_bytes(b"export default 'not audited';\n")
+    with pytest.raises(check.Failure) as caught:
+        check.installed_cli(npm_root, package)
+    assert caught.value.reason == "GOPPI_CLI_INSTALL_MISMATCH"
+
+
+def test_bundled_files_are_compared_like_any_other_member(tmp_path: Path) -> None:
+    manifest = _manifest(bin="dist/cli.js")
+    bundled = b"module.exports = 'bundled';\n"
+    tarball = _tarball(
+        tmp_path / "producer.tgz",
+        [
+            ("package/package.json", manifest),
+            ("package/dist/cli.js", CLI),
+            ("package/node_modules/bundled/index.js", bundled),
+        ],
+    )
+    package = check.package_cli(tarball)
+    directory = tmp_path / "npm/node_modules/example-producer"
+    (directory / "dist").mkdir(parents=True)
+    (directory / "node_modules/bundled").mkdir(parents=True)
+    (directory / "package.json").write_bytes(manifest)
+    (directory / "dist/cli.js").write_bytes(CLI)
+    (directory / "node_modules/bundled/index.js").write_bytes(bundled)
+    assert check.installed_cli(tmp_path / "npm", package) == (directory / "dist/cli.js").resolve()
+    (directory / "node_modules/bundled/index.js").write_bytes(b"changed")
+    with pytest.raises(check.Failure) as caught:
+        check.installed_cli(tmp_path / "npm", package)
+    assert caught.value.reason == "GOPPI_CLI_INSTALL_MISMATCH"
+
+
+def test_non_regular_installed_entries_are_refused_without_reading(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package, npm_root, directory = _installed(tmp_path)
+    os.mkfifo(directory / "dist/pipe")
+    original = check.digest
+
+    def guarded(path: Path) -> str:
+        # Opening a FIFO blocks; fail fast instead of hanging if the type check regresses.
+        assert path.name != "pipe", "a non-regular entry was opened for hashing"
+        return cast(str, original(path))
+
+    monkeypatch.setattr(check, "digest", guarded)
+    with pytest.raises(check.Failure) as caught:
+        check.installed_cli(npm_root, package)
+    assert caught.value.reason == "GOPPI_CLI_INSTALL_MISMATCH"
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="permission bits do not restrict root")
+def test_unlistable_installed_directory_is_refused(tmp_path: Path) -> None:
+    package, npm_root, directory = _installed(tmp_path)
+    hidden = directory / "hidden"
+    hidden.mkdir()
+    (hidden / "extra.js").write_bytes(b"not in the tarball")
+    hidden.chmod(0)
+    try:
+        with pytest.raises(check.Failure) as caught:
+            check.installed_cli(npm_root, package)
+    finally:
+        hidden.chmod(0o700)
+    assert caught.value.reason == "GOPPI_CLI_INSTALL_UNREADABLE"
+
+
+def test_total_member_size_limit_is_enforced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest = _manifest(bin="dist/cli.js")
+    monkeypatch.setattr(check, "PACKAGE_TOTAL_MAX_BYTES", len(manifest) + len(CLI) - 1)
+    tarball = _tarball(
+        tmp_path / "producer.tgz",
+        [("package/package.json", manifest), ("package/dist/cli.js", CLI)],
+    )
+    with pytest.raises(check.Failure) as caught:
+        check.package_cli(tarball)
+    assert caught.value.reason == "GOPPI_PACKAGE_MEMBER_LIMIT"
+
+
+@pytest.mark.parametrize(
+    ("variant", "installed_as"),
+    [
+        ("package//dist/impl.js", "dist/impl.js"),
+        ("package/./dist/impl.js", "dist/impl.js"),
+        ("package/dist/" + "e\u0301.js", "dist/" + "\u00e9.js"),
+    ],
+)
+def test_reader_normalization_differences_cannot_hide_an_installed_file(
+    tmp_path: Path, variant: str, installed_as: str
+) -> None:
+    """npm may install two differently written members at one path; the tree must still match."""
+    manifest = _manifest(bin="dist/cli.js")
+    audited = installed_as.split("/", 1)[1]
+    tarball = _tarball(
+        tmp_path / "producer.tgz",
+        [
+            ("package/package.json", manifest),
+            ("package/dist/cli.js", CLI),
+            ("package/dist/" + audited, b"audited"),
+            (variant, b"installed instead"),
+        ],
+    )
+    package = check.package_cli(tarball)
+    directory = tmp_path / "npm/node_modules/example-producer"
+    (directory / "dist").mkdir(parents=True)
+    (directory / "package.json").write_bytes(manifest)
+    (directory / "dist/cli.js").write_bytes(CLI)
+    (directory / installed_as).write_bytes(b"installed instead")
+    with pytest.raises(check.Failure) as caught:
+        check.installed_cli(tmp_path / "npm", package)
+    assert caught.value.reason == "GOPPI_CLI_INSTALL_MISMATCH"
+
+
+@pytest.mark.parametrize("tamper", [False, True])
+def test_installed_files_are_verified_again_after_the_checks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tamper: bool
+) -> None:
+    package, npm_root, directory = _installed(tmp_path)
+    cli = directory / "dist/cli.js"
+    pair = check.InstalledPair(cli, tmp_path / "underwrite", package, npm_root)
+    checks = [{"name": "complete_exchange", "status": "passed"}]
+
+    def exercise(*_: object) -> list[dict[str, str]]:
+        if tamper:
+            (directory / "dist/cli.js").write_bytes(b"replaced by an executed program")
+        return checks
+
+    monkeypatch.setattr(check, "exercise", exercise)
+    if not tamper:
+        assert check.checked_exercise(tmp_path, tmp_path, tmp_path, pair, {}) == checks
+        return
+    with pytest.raises(check.Failure) as caught:
+        check.checked_exercise(tmp_path, tmp_path, tmp_path, pair, {})
+    assert (caught.value.reason, caught.value.phase) == (
+        "GOPPI_CLI_CHANGED_DURING_CHECKS",
+        "verification",
+    )

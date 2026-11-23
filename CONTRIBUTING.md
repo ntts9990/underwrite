@@ -99,17 +99,32 @@ binary supplied below. Then run local installed-pair acceptance:
 ```sh
 uv run --frozen --no-sync python scripts/check_goppi_installed_pair.py \
   --goppi-tarball /absolute/path/to/goppi.tgz \
+  --goppi-tarball-sha256 sha256:EXPECTED_TARBALL_DIGEST \
   --underwrite-wheel /absolute/path/to/underwrite.whl \
   --underwrite-core-wheel /absolute/path/to/underwrite_core.whl \
   --node /absolute/path/to/node-24 \
   --report output/goppi-installed-pair.json
 ```
 
-The script installs the selected artifacts in a fresh temporary directory and exercises
-the pinned public synthetic trajectory with native positive and refusal cases.
-It records artifact hashes and the observed npm/Python dependency-resolution
-identities. Registry access is allowed for installation; the runtime is not a
-network sandbox. It does not claim reproducible transitive resolution, producer
+Pass the tarball digest stated for the accepted source commit, or the digest of
+your own reproducible build of it; any other tarball is refused before
+installation. The checker takes the package name and CLI entry from the
+tarball's own `package/package.json`, not from a fixed install layout. It refuses
+a missing, ambiguous or escaping entry, and members outside that single package
+root or other than regular files and directories. After installation, every file
+npm placed anywhere under the package directory, nested `node_modules` included,
+must equal the tarball member at the same path, with no extra or missing file. It
+compares the installed tree because npm may read member names and the end of the
+archive differently from the checker's own reader. An installation that nests
+registry dependencies or links inside the package directory is therefore refused.
+It repeats the comparison after the checks run.
+
+The script installs the selected artifacts in a fresh temporary directory and
+exercises the pinned public synthetic trajectory with native positive and refusal
+cases. It records artifact hashes, the package manifest and CLI digests, and the
+observed npm/Python dependency-resolution identities. Registry access is allowed
+for installation; the runtime is not a network sandbox. It does not claim
+reproducible transitive resolution, producer
 authentication, real-provider performance, or permission to merge. Run it for Goppi integration changes and
 release preparation, not as a scheduled or everyday CI dependency. Before changing
 how a Goppi contract, fixture pin, or verifier output is consumed, tell the Goppi
