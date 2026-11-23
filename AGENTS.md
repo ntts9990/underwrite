@@ -4,8 +4,11 @@ underwrite is a local evidence CLI and Python library. Keep changes focused on
 observable behavior and verify claims against tests and the implemented contracts.
 Build for coding agents working with local artifacts: a documented CLI and importable
 Python API, typed JSON results, and explicit next actions. Do not expand the product
-into Docker, a server, or a web interface. See [AGENT_USAGE.md](AGENT_USAGE.md)
-for the agent-facing workflow.
+into Docker, a server or background process, or a web interface. The one exception
+is a read-only local stdio MCP server, started by the calling client, that projects
+the CLI's result contracts unchanged; see
+[ADR-024](docs/adr/ADR-024-read-only-agent-surface.md). See
+[AGENT_USAGE.md](AGENT_USAGE.md) for the agent-facing workflow.
 
 ## Shared workspace policy
 
@@ -19,6 +22,11 @@ for common-module and architecture decisions. Identify logical responsibility an
 contract before comparing code shape; reuse existing owners without merging
 different measurement meanings. Keep the pure core/effectful adapter boundaries
 below, and introduce ports only for concrete interactions that need them.
+Run planned slices through the
+[maintainer delivery loop](CONTRIBUTING.md#maintainer-delivery-loop): map each
+defect or review finding to its failed invariant and owner before editing, fix
+every entry point sharing that cause at the owner, and keep refactoring continuous
+under the [structure program](docs/plan/STRUCTURE_PROGRAM.ko.md).
 
 Decide product ownership before implementation reuse. Underwrite's distinct work
 is cross-producer evidence meaning, comparability, missingness, and next

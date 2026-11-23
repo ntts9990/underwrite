@@ -1612,6 +1612,9 @@ underwrite review-handoff \
   --source-root /path/to/goppi --json
 ```
 
+For Goppi paired trajectory exports, use
+[trajectory review](#compare-a-goppi-paired-trajectory).
+
 The handoff directory contains `consumer-handoff.json` and `manifest.json`.
 The explicit source root must contain that directory and every referenced file.
 Without `--source-root`, only files inside the handoff directory are allowed;
