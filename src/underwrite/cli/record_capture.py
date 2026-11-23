@@ -4,6 +4,7 @@ Shared response admission, rendering, and storage of captured producer evidence.
 
 from __future__ import annotations
 
+import argparse
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
@@ -14,6 +15,7 @@ from underwrite_core.canonical import canonical_bytes
 from underwrite.cli.evidence import EvidenceError, output_line_size
 from underwrite.cli.local_json import Validator, validate
 from underwrite.cli.records import record_error_candidates, record_error_payload
+from underwrite.service._record_format import FormatError, record_id
 from underwrite.service.records import (
     CapturedRecordFile,
     CapturedRecordSpec,
@@ -23,6 +25,14 @@ from underwrite.service.records import (
 )
 
 STORAGE_FAILURE_EXIT = 3
+
+
+def new_record_id_argument(value: str) -> str:
+    """Validate a new record ID with the shared record CLI argument wording."""
+    try:
+        return record_id(value)
+    except FormatError:
+        raise argparse.ArgumentTypeError("valid new record ID required") from None
 
 
 def analysis_exit_code(analysis: Mapping[str, object]) -> int:
