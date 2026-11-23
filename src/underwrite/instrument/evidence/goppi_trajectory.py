@@ -12,22 +12,28 @@ import re
 import unicodedata
 from collections import Counter
 from collections.abc import Mapping
+from types import MappingProxyType
 from typing import Any, cast
 
 from underwrite_core.canonical import CanonicalizationError, canonical_bytes
 
 RESULT_SCHEMA = "goppi_trajectory_review.v1"
 RESULT_SCHEMA_V2 = "goppi_trajectory_review.v2"
+RESULT_SCHEMA_V3 = "goppi_trajectory_review.v3"
 REVIEW_POLICY = "goppi.descriptive-paired-trajectory.v1"
+REVIEW_POLICY_V2 = "goppi.descriptive-paired-trajectory.v2"
 OUTCOME_ACTIONS_SCHEMA = "goppi_trajectory_outcome_actions.v1"
-OUTCOME_ACTIONS_SCHEMA_V2 = "goppi_trajectory_outcome_actions.v2"
+OUTCOME_ACTIONS_SCHEMA_V3 = "goppi_trajectory_outcome_actions.v3"
 OUTCOME_ACTIONS_POLICY = "goppi.descriptive-paired-trajectory-outcome-actions.v1"
+OUTCOME_ACTIONS_POLICY_V2 = "goppi.descriptive-paired-trajectory-outcome-actions.v2"
 OUTCOME_REASONS = {
     "endpoint_failure": ("agent_timeout", "agent_budget", "agent_answer"),
     "missing": ("infra", "verifier_infra", "exhausted_retries", "not_started"),
 }
 CLOSED_STAGE_REASONS = ("partial_stage", "budget_stop", "hard_failure")
 CLOSED_STAGE_CLASSIFICATIONS = ("indeterminate", "rejected")
+CYCLE_STATUSES = ("completed", "stopped")
+STAGE_VERDICT_STATES = {"evaluated": "digest_only", "closed": "producer_reported"}
 OUTCOME_HARNESS_BINDINGS = (
     "v1_not_reverified",
     "v2_verified_against_patch_manifest",
@@ -133,6 +139,16 @@ OUTCOME_ACTION_TASK_EVIDENCE = {
         "selected baseline/candidate source outcome claims and retained comparison context review",
     ),
 }
+CYCLE_TASK_EVIDENCE = {
+    "obtain_evaluated_stage_verdict": (
+        "goppi",
+        "producer stage verdict value bound to each listed decision digest",
+    ),
+    "obtain_stopped_cycle_stage_record": (
+        "goppi",
+        "producer plan and execution status for listed stages absent from the stopped cycle",
+    ),
+}
 INTERPRETATION_LIMITS = (
     "source_outcomes_are_producer_claims",
     "content_identity_is_not_independent_provenance",
@@ -143,6 +159,28 @@ INTERPRETATION_LIMITS = (
     "repeated_rows_are_not_independent_cases",
     "metadata_may_identify_sources_not_anonymized",
     "snapshot_checks_do_not_establish_original_directory_privacy",
+)
+CURRENT_INTERPRETATION_LIMITS = (
+    *INTERPRETATION_LIMITS,
+    "cycle_status_stage_verdicts_and_runner_are_producer_claims",
+)
+ABSENT_STAGE_LIMIT = "stopped_cycle_absent_stages_may_be_unrecorded"
+# Only a closed stage exports a stop reason; nothing records why a cycle stopped otherwise.
+STOP_REASON_LIMIT = "stopped_cycle_stop_reason_not_exported"
+DIGEST_ONLY_VERDICT_LIMIT = "evaluated_stage_verdicts_are_digest_only"
+# Appended after CURRENT_INTERPRETATION_LIMITS, in this order, only when each applies.
+CYCLE_LIMITS = (ABSENT_STAGE_LIMIT, STOP_REASON_LIMIT, DIGEST_ONLY_VERDICT_LIMIT)
+# A pure review accepts no verifier report; adapters replace these after accepting one.
+VERIFIER_REPORT_NOT_PERFORMED: Mapping[str, object] = MappingProxyType(
+    {
+        "verifier_report_state": "not_performed",
+        "verifier_source": None,
+        "verifier_identity_verified": False,
+        "response_snapshot_binding": "not_checked",
+        "snapshot_postcheck": "not_checked",
+        "content_closure": "not_checked",
+        "authenticity": "not_checked",
+    }
 )
 _MEMBER_IDENTITY_PARTS = 2
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
@@ -552,17 +590,20 @@ def _tasks(comparisons: list[dict[str, Any]]) -> list[dict[str, Any]]:
             if affected:
                 scopes[kind].append({"comparison_id": item["id"], "arms": affected})
     return [
-        {
-            "id": _identity("task:", {"kind": kind, "scope": scope}),
-            "kind": kind,
-            "scope": scope,
-            "owner": TASK_EVIDENCE[kind][0],
-            "required_evidence": TASK_EVIDENCE[kind][1],
-            "execution_authorized": False,
-        }
-        for kind, scope in sorted(scopes.items())
-        if scope
+        _task(kind, scope, TASK_EVIDENCE[kind]) for kind, scope in sorted(scopes.items()) if scope
     ]
+
+
+def _task(kind: str, scope: list[dict[str, Any]], evidence: tuple[str, str]) -> dict[str, Any]:
+    owner, required_evidence = evidence
+    return {
+        "id": _identity("task:", {"kind": kind, "scope": scope}),
+        "kind": kind,
+        "scope": scope,
+        "owner": owner,
+        "required_evidence": required_evidence,
+        "execution_authorized": False,
+    }
 
 
 def _stages(execution: dict[str, Any], comparisons: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -630,13 +671,12 @@ def _stages(execution: dict[str, Any], comparisons: list[dict[str, Any]]) -> lis
     return sorted(result, key=lambda item: STAGES.index(item["stage"]))
 
 
-def analyze_goppi_trajectory(
+def _analysis(
     execution: dict[str, Any],
     rows: tuple[dict[str, Any], ...],
     trajectory: dict[str, Any],
     identities: Mapping[str, tuple[str, int]],
-) -> dict[str, object]:
-    """Interpret admitted same-byte documents; never run or replace native verification."""
+) -> tuple[dict[str, object], dict[Key, dict[str, Any]], str]:
     _require(
         _object(execution).get("schema") == "goppi.paired_run_exchange.execution.v1",
         "TRAJECTORY_UNSUPPORTED_VALUE",
@@ -698,7 +738,7 @@ def analyze_goppi_trajectory(
         _object(execution.get("claims")).get("outcome_harness_binding"),
         OUTCOME_HARNESS_BINDINGS,
     )
-    return {
+    report: dict[str, object] = {
         "schema": RESULT_SCHEMA,
         "state": "analyzed",
         "policy": REVIEW_POLICY,
@@ -731,6 +771,30 @@ def analyze_goppi_trajectory(
             "revert_authorized": False,
         },
     }
+    return report, joined, runner_profile
+
+
+def analyze_goppi_trajectory(
+    execution: dict[str, Any],
+    rows: tuple[dict[str, Any], ...],
+    trajectory: dict[str, Any],
+    identities: Mapping[str, tuple[str, int]],
+) -> dict[str, object]:
+    """Interpret admitted same-byte documents; never run or replace native verification."""
+    return _analysis(execution, rows, trajectory, identities)[0]
+
+
+def _outcome_action_tasks(comparisons: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    kind = _OUTCOME_ACTION_TASK_KIND
+    scope = [
+        {"comparison_id": item["id"], "arms": ["baseline", "candidate"]}
+        for item in comparisons
+        if item["comparability"]["state"] == "comparable"
+        and item["difference"]["state"] == "observed"
+        and item["difference"]["outcome_changed"] is True
+        and item["difference"]["tool_status_deltas"] == []
+    ]
+    return [_task(kind, scope, OUTCOME_ACTION_TASK_EVIDENCE[kind])] if scope else []
 
 
 def analyze_goppi_trajectory_actions(
@@ -741,32 +805,101 @@ def analyze_goppi_trajectory_actions(
 ) -> dict[str, object]:
     """Add source-review tasks for observed outcome changes without tool-count changes."""
     report = analyze_goppi_trajectory(execution, rows, trajectory, identities)
-    comparisons = cast(list[dict[str, Any]], report["comparisons"])
-    kind = _OUTCOME_ACTION_TASK_KIND
-    scope = [
-        {"comparison_id": item["id"], "arms": ["baseline", "candidate"]}
-        for item in comparisons
-        if item["comparability"]["state"] == "comparable"
-        and item["difference"]["state"] == "observed"
-        and item["difference"]["outcome_changed"] is True
-        and item["difference"]["tool_status_deltas"] == []
+    tasks = [
+        *cast(list[dict[str, Any]], report["next_verification_tasks"]),
+        *_outcome_action_tasks(cast(list[dict[str, Any]], report["comparisons"])),
     ]
-    tasks = list(cast(list[dict[str, Any]], report["next_verification_tasks"]))
-    if scope:
-        owner, evidence = OUTCOME_ACTION_TASK_EVIDENCE[kind]
-        tasks.append(
-            {
-                "id": _identity("task:", {"kind": kind, "scope": scope}),
-                "kind": kind,
-                "scope": scope,
-                "owner": owner,
-                "required_evidence": evidence,
-                "execution_authorized": False,
-            }
-        )
     return {
         **report,
         "schema": OUTCOME_ACTIONS_SCHEMA,
         "policy": OUTCOME_ACTIONS_POLICY,
         "next_verification_tasks": sorted(tasks, key=lambda task: task["kind"]),
+    }
+
+
+def _verdict_stages(
+    execution: dict[str, Any], stages: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    """Mark each recorded stage's producer verdict; evaluated stages export only a digest."""
+    recorded = {
+        _object(raw).get("stage"): _object(raw)
+        for raw in _array(execution.get("stages"), len(STAGES))
+    }
+    result: list[dict[str, Any]] = []
+    digests: list[dict[str, str]] = []
+    for stage in stages:
+        entry = {**stage, "verdict_state": STAGE_VERDICT_STATES[stage["execution_status"]]}
+        if stage["execution_status"] == "evaluated":
+            digest = _digest(recorded[stage["stage"]].get("decision_digest"))
+            entry["decision_digest"] = digest
+            digests.append({"stage": stage["stage"], "decision_digest": digest})
+        result.append(entry)
+    return result, digests
+
+
+def _runner(profile: str, joined: dict[Key, dict[str, Any]]) -> dict[str, object]:
+    declared = [item["context"]["runner_model"] for item in joined.values()]
+    models = Counter(cast(str, model) for model in declared if model is not None)
+    return {
+        "profile": profile,
+        "models": [
+            {"runner_model": model, "paired_rows": count} for model, count in sorted(models.items())
+        ],
+        "model_unrecorded_rows": declared.count(None),
+    }
+
+
+def review_goppi_trajectory(
+    execution: dict[str, Any],
+    rows: tuple[dict[str, Any], ...],
+    trajectory: dict[str, Any],
+    identities: Mapping[str, tuple[str, int]],
+    *,
+    outcome_actions: bool = False,
+) -> dict[str, object]:
+    """Current review: the same comparisons plus producer cycle, verdict and runner claims.
+
+    No verifier report is accepted here; an adapter that accepts one replaces the trust
+    state. A stopped cycle whose export lacks a stage cannot show whether it was planned,
+    and without a closed stage the export records no reason for the stop.
+    """
+    report, joined, runner_profile = _analysis(execution, rows, trajectory, identities)
+    status = _enum(_object(execution.get("source")).get("cycle_status"), CYCLE_STATUSES)
+    stages, digests = _verdict_stages(execution, cast(list[dict[str, Any]], report["stages"]))
+    recorded = {stage["stage"] for stage in stages}
+    absent = [name for name in STAGES if name not in recorded]
+    stopped = status == "stopped"
+    closed = any(stage["execution_status"] == "closed" for stage in stages)
+    tasks = list(cast(list[dict[str, Any]], report["next_verification_tasks"]))
+    if outcome_actions:
+        tasks.extend(_outcome_action_tasks(cast(list[dict[str, Any]], report["comparisons"])))
+    if stopped and absent:
+        kind = "obtain_stopped_cycle_stage_record"
+        cycle_run_id = cast(dict[str, str], report["source_context"])["cycle_run_id"]
+        scope = [{"cycle_run_id": cycle_run_id, "stage": name} for name in absent]
+        tasks.append(_task(kind, scope, CYCLE_TASK_EVIDENCE[kind]))
+    if digests:
+        kind = "obtain_evaluated_stage_verdict"
+        tasks.append(_task(kind, list(digests), CYCLE_TASK_EVIDENCE[kind]))
+    applies = (stopped and bool(absent), stopped and not closed, bool(digests))
+    limits = [
+        *CURRENT_INTERPRETATION_LIMITS,
+        *(limit for limit, applied in zip(CYCLE_LIMITS, applies, strict=True) if applied),
+    ]
+    binding = cast(dict[str, Any], report["trust_scope"])["outcome_harness_binding"]
+    return {
+        **report,
+        "schema": OUTCOME_ACTIONS_SCHEMA_V3 if outcome_actions else RESULT_SCHEMA_V3,
+        "policy": OUTCOME_ACTIONS_POLICY_V2 if outcome_actions else REVIEW_POLICY_V2,
+        "cycle": {"status": status, "stages_absent_from_export": absent},
+        "runner": _runner(runner_profile, joined),
+        "trust_scope": {
+            **VERIFIER_REPORT_NOT_PERFORMED,
+            "source_authentication_independently_verified": False,
+            "producer_projection_independently_verified": False,
+            "outcome_harness_binding": binding,
+        },
+        "stages": stages,
+        "next_verification_tasks": sorted(tasks, key=lambda task: task["kind"]),
+        "interpretation_limits": limits,
     }

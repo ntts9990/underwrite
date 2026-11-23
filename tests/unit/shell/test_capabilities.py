@@ -129,9 +129,9 @@ def test_outcome_actions_profile_advertises_direct_view_only(
         if profile["name"] == "goppi-paired-trajectory-v1|outcome-actions"
     )
     assert selected["required_inputs"] == ["exchange", "view"]
-    assert selected["output_schemas"] == ["goppi_trajectory_outcome_actions.v2"]
+    assert selected["output_schemas"] == ["goppi_trajectory_outcome_actions.v3"]
     assert all(
-        "goppi_trajectory_outcome_actions.v2" not in profile["output_schemas"]
+        "goppi_trajectory_outcome_actions.v3" not in profile["output_schemas"]
         for profile in records["profiles"]
     )
 

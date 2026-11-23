@@ -1,4 +1,4 @@
-"""Card: trajectory-consumer | Paper: goppi paired trajectory v2 | Stage: producer-bridge.
+"""Card: trajectory-consumer | Paper: goppi paired trajectory v3 | Stage: producer-bridge.
 
 Describe an exported trajectory through a configured offline verifier port.
 """
@@ -12,8 +12,8 @@ from typing import cast
 from underwrite.cli.evidence import EvidenceError, ReportOutput, run_cli
 from underwrite.instrument.evidence.goppi_trajectory import (
     MAX_REPORT_BYTES,
-    OUTCOME_ACTIONS_SCHEMA_V2,
-    RESULT_SCHEMA_V2,
+    OUTCOME_ACTIONS_SCHEMA_V3,
+    RESULT_SCHEMA_V3,
     TrajectoryError,
 )
 from underwrite.instrument.ingest.goppi_trajectory import (
@@ -23,8 +23,8 @@ from underwrite.instrument.ingest.goppi_trajectory import (
 from underwrite.instrument.ingest.goppi_verifier import VerifierError
 from underwrite.instrument.ingest.local_capture import CaptureError
 
-RESULT_SCHEMA = RESULT_SCHEMA_V2
-OUTCOME_ACTIONS_SCHEMA = OUTCOME_ACTIONS_SCHEMA_V2
+RESULT_SCHEMA = RESULT_SCHEMA_V3
+OUTCOME_ACTIONS_SCHEMA = OUTCOME_ACTIONS_SCHEMA_V3
 
 
 def configure(parser: argparse.ArgumentParser) -> None:

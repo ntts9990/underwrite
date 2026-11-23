@@ -3,30 +3,44 @@
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 from _schema_compose import nullable, object_schema, reference, tagged
 
 from underwrite.instrument.evidence.goppi_trajectory import (
+    ABSENT_STAGE_LIMIT,
     AVAILABILITIES,
+    CAPTURE_PROFILE_BY_RUNNER,
     CLOSED_STAGE_CLASSIFICATIONS,
     CLOSED_STAGE_REASONS,
+    CURRENT_INTERPRETATION_LIMITS,
+    CYCLE_LIMITS,
+    CYCLE_STATUSES,
+    CYCLE_TASK_EVIDENCE,
+    DIGEST_ONLY_VERDICT_LIMIT,
     INTERPRETATION_LIMITS,
     MAX_ROWS,
     MAX_SPANS_PER_UNIT,
     MEMBERS,
     OUTCOME_ACTION_TASK_EVIDENCE,
     OUTCOME_ACTIONS_POLICY,
+    OUTCOME_ACTIONS_POLICY_V2,
     OUTCOME_ACTIONS_SCHEMA,
-    OUTCOME_ACTIONS_SCHEMA_V2,
+    OUTCOME_ACTIONS_SCHEMA_V3,
     OUTCOME_HARNESS_BINDINGS,
     OUTCOME_REASONS,
     RESULT_SCHEMA,
     RESULT_SCHEMA_V2,
+    RESULT_SCHEMA_V3,
     REVIEW_POLICY,
+    REVIEW_POLICY_V2,
+    STAGE_VERDICT_STATES,
     STAGES,
+    STOP_REASON_LIMIT,
     TASK_EVIDENCE,
     UNAVAILABLE_REASONS,
 )
@@ -34,6 +48,17 @@ from underwrite.instrument.evidence.goppi_trajectory import (
 JSON = dict[str, Any]
 ROOT = Path(__file__).resolve().parents[1]
 V2 = 2
+V3 = 3
+SCHEMAS = {
+    (False, 1): RESULT_SCHEMA,
+    (True, 1): OUTCOME_ACTIONS_SCHEMA,
+    # The direct-only v2 outcome-actions output is retired; v2 review remains readable.
+    (False, V2): RESULT_SCHEMA_V2,
+    (False, V3): RESULT_SCHEMA_V3,
+    (True, V3): OUTCOME_ACTIONS_SCHEMA_V3,
+}
+STOPPED_TASK = "obtain_stopped_cycle_stage_record"
+VERDICT_TASK = "obtain_evaluated_stage_verdict"
 
 
 def array(items: JSON, maximum: int = MAX_ROWS) -> JSON:
@@ -52,22 +77,128 @@ def enum(values: tuple[str, ...]) -> JSON:
     return {"enum": list(values)}
 
 
+def enum_values(values: Sequence[Sequence[str]]) -> JSON:
+    """Exact ordered arrays; each admitted combination is listed explicitly."""
+    return {"enum": [list(value) for value in values]}
+
+
 def integer(maximum: int = MAX_ROWS) -> JSON:
     return {"type": "integer", "minimum": 0, "maximum": maximum}
 
 
-def build(*, outcome_actions: bool = False, version: int = 1) -> JSON:
-    if version not in (1, V2):
-        raise ValueError("UNSUPPORTED_GOPPI_TRAJECTORY_CONTRACT_VERSION")
-    schema = (
-        OUTCOME_ACTIONS_SCHEMA_V2 if outcome_actions else RESULT_SCHEMA_V2
-    ) if version == V2 else (
-        OUTCOME_ACTIONS_SCHEMA if outcome_actions else RESULT_SCHEMA
+def _all(*schemas: JSON) -> JSON:
+    return {"allOf": list(schemas)}
+
+
+def _stages_contain(name: str | None = None, status: str | None = None) -> JSON:
+    item: JSON = {"required": [], "properties": {}}
+    for field, value in (("stage", name), ("execution_status", status)):
+        if value is not None:
+            item["required"].append(field)
+            item["properties"][field] = const(value)
+    return {"required": ["stages"], "properties": {"stages": {"contains": item}}}
+
+
+def _cycle(status: str | None = None, absent: str | None = None) -> JSON:
+    fields: JSON = {}
+    if status is not None:
+        fields["status"] = const(status)
+    if absent is not None:
+        fields["stages_absent_from_export"] = {"contains": const(absent)}
+    cycle = {"required": list(fields), "properties": fields}
+    return {"required": ["cycle"], "properties": {"cycle": cycle}}
+
+
+def _task(kind: str, stage: str | None = None) -> JSON:
+    item: JSON = {"required": ["kind"], "properties": {"kind": const(kind)}}
+    if stage is not None:
+        item["required"].append("scope")
+        item["properties"]["scope"] = {
+            "contains": {"required": ["stage"], "properties": {"stage": const(stage)}}
+        }
+    return {"contains": item}
+
+
+def _when(condition: JSON, present: JSON) -> JSON:
+    """Require every listed array rule exactly when the condition holds."""
+    return {
+        "if": condition,
+        "then": {"properties": present},
+        "else": {"properties": {name: {"not": rule} for name, rule in present.items()}},
+    }
+
+
+def _cycle_bindings() -> list[JSON]:
+    """Bind conditional limits, cycle tasks and the stages they name to the stage facts.
+
+    Digest equality and runner row sums cannot be expressed here; the pure owner keeps them.
+    """
+    stopped = _cycle(status="stopped")
+    evaluated = _stages_contain(status="evaluated")
+    closed = _stages_contain(status="closed")
+    stopped_with_absent = _all(
+        stopped,
+        {"properties": {"cycle": {"properties": {"stages_absent_from_export": {"minItems": 1}}}}},
     )
-    policy = OUTCOME_ACTIONS_POLICY if outcome_actions else REVIEW_POLICY
+    bindings: list[JSON] = []
+    for name in STAGES:
+        bindings.append(
+            {
+                "if": _stages_contain(name),
+                "then": {"not": _cycle(absent=name)},
+                "else": _cycle(absent=name),
+            }
+        )
+        bindings.append(
+            _when(
+                _all(stopped, _cycle(absent=name)),
+                {"next_verification_tasks": _task(STOPPED_TASK, name)},
+            )
+        )
+        bindings.append(
+            _when(
+                _stages_contain(name, "evaluated"),
+                {"next_verification_tasks": _task(VERDICT_TASK, name)},
+            )
+        )
+    bindings.extend(
+        [
+            _when(
+                stopped_with_absent,
+                {
+                    "interpretation_limits": {"contains": const(ABSENT_STAGE_LIMIT)},
+                    "next_verification_tasks": _task(STOPPED_TASK),
+                },
+            ),
+            _when(
+                _all(stopped, {"not": closed}),
+                {"interpretation_limits": {"contains": const(STOP_REASON_LIMIT)}},
+            ),
+            _when(
+                evaluated,
+                {
+                    "interpretation_limits": {"contains": const(DIGEST_ONLY_VERDICT_LIMIT)},
+                    "next_verification_tasks": _task(VERDICT_TASK),
+                },
+            ),
+        ]
+    )
+    return bindings
+
+
+def build(*, outcome_actions: bool = False, version: int = 1) -> JSON:
+    if (outcome_actions, version) not in SCHEMAS:
+        raise ValueError("UNSUPPORTED_GOPPI_TRAJECTORY_CONTRACT_VERSION")
+    schema = SCHEMAS[(outcome_actions, version)]
+    if version == V3:
+        policy = OUTCOME_ACTIONS_POLICY_V2 if outcome_actions else REVIEW_POLICY_V2
+    else:
+        policy = OUTCOME_ACTIONS_POLICY if outcome_actions else REVIEW_POLICY
     task_evidence = (
         {**TASK_EVIDENCE, **OUTCOME_ACTION_TASK_EVIDENCE} if outcome_actions else TASK_EVIDENCE
     )
+    if version == V3:
+        task_evidence = {**task_evidence, **CYCLE_TASK_EVIDENCE}
     digest = {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
     boolean = {"type": "boolean"}
     null = {"type": "null"}
@@ -254,15 +385,26 @@ def build(*, outcome_actions: bool = False, version: int = 1) -> JSON:
         "primary_repeat_pairs": integer(),
         "capture_counts": reference("coverage"),
     }
+    evaluated_verdict: JSON = {}
+    closed_verdict: JSON = {}
+    if version == V3:
+        evaluated_verdict = {
+            "verdict_state": const(STAGE_VERDICT_STATES["evaluated"]),
+            "decision_digest": digest,
+        }
+        closed_verdict = {"verdict_state": const(STAGE_VERDICT_STATES["closed"])}
     definitions["stage"] = tagged(
         [
-            object_schema({**stage_fields, "execution_status": const("evaluated")}),
+            object_schema(
+                {**stage_fields, "execution_status": const("evaluated"), **evaluated_verdict}
+            ),
             object_schema(
                 {
                     **stage_fields,
                     "execution_status": const("closed"),
                     "reason_code": enum(CLOSED_STAGE_REASONS),
                     "classification": enum(CLOSED_STAGE_CLASSIFICATIONS),
+                    **closed_verdict,
                 }
             ),
         ],
@@ -280,11 +422,20 @@ def build(*, outcome_actions: bool = False, version: int = 1) -> JSON:
         ),
         "execution_authorized": const(False),
     }
+    cycle_scopes = {
+        STOPPED_TASK: array(
+            object_schema({"cycle_run_id": digest, "stage": enum(STAGES)}), len(STAGES)
+        ),
+        VERDICT_TASK: array(
+            object_schema({"stage": enum(STAGES), "decision_digest": digest}), len(STAGES)
+        ),
+    }
     definitions["task"] = tagged(
         [
             object_schema(
                 {
                     **task_fields,
+                    **({"scope": cycle_scopes[kind]} if kind in cycle_scopes else {}),
                     "kind": const(kind),
                     "owner": const(owner),
                     "required_evidence": const(evidence),
@@ -349,7 +500,7 @@ def build(*, outcome_actions: bool = False, version: int = 1) -> JSON:
                     ],
                     field="verifier_report_state",
                 )
-                if version == V2
+                if version >= V2
                 else tagged(
                     [
                         object_schema(
@@ -401,6 +552,48 @@ def build(*, outcome_actions: bool = False, version: int = 1) -> JSON:
             ),
         }
     )
+    if version == V3:
+        properties = result["properties"]
+        disclosed: JSON = {}
+        for name, value in properties.items():
+            disclosed[name] = value
+            if name == "source_context":
+                disclosed["cycle"] = object_schema(
+                    {
+                        "status": enum(CYCLE_STATUSES),
+                        "stages_absent_from_export": {
+                            "type": "array",
+                            "items": enum(STAGES),
+                            "maxItems": len(STAGES),
+                            "uniqueItems": True,
+                        },
+                    }
+                )
+                disclosed["runner"] = object_schema(
+                    {
+                        "profile": enum(tuple(CAPTURE_PROFILE_BY_RUNNER)),
+                        "models": array(
+                            object_schema(
+                                {
+                                    "runner_model": text(128),
+                                    "paired_rows": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": MAX_ROWS,
+                                    },
+                                }
+                            )
+                        ),
+                        "model_unrecorded_rows": integer(),
+                    }
+                )
+        disclosed["interpretation_limits"] = enum_values(
+            [
+                [*CURRENT_INTERPRETATION_LIMITS, *itertools.compress(CYCLE_LIMITS, flags)]
+                for flags in itertools.product((False, True), repeat=len(CYCLE_LIMITS))
+            ]
+        )
+        result = {**object_schema(disclosed), "allOf": _cycle_bindings()}
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": f"urn:underwrite:contract:{schema}",
@@ -413,13 +606,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
-    contracts = (
-        (RESULT_SCHEMA, False, 1),
-        (OUTCOME_ACTIONS_SCHEMA, True, 1),
-        (RESULT_SCHEMA_V2, False, V2),
-        (OUTCOME_ACTIONS_SCHEMA_V2, True, V2),
-    )
-    for schema, outcome_actions, version in contracts:
+    for (outcome_actions, version), schema in SCHEMAS.items():
         path = ROOT / "contracts" / f"{schema}.schema.json"
         rendered = (
             json.dumps(

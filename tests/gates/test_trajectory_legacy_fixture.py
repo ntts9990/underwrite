@@ -57,7 +57,7 @@ def test_prechange_trajectory_records_and_contracts_are_frozen(tmp_path: Path) -
             assert path.stat().st_size == expected["bytes"]
             assert _sha256(path) == expected["sha256"]
         reopened = cast(dict[str, Any], run_read_trajectory(tmp_path, identifier))
-        assert reopened["schema"] == "trajectory_record_read.v2"
+        assert reopened["schema"] == "trajectory_record_read.v3"
         assert reopened["record_layout"] == "trajectory-record.v1"
         assert "analysis" not in reopened and "verifier_report_history" not in reopened
         assert reopened["historical_analysis"]["state"] == record["analysis_state"]
@@ -74,6 +74,11 @@ def test_prechange_trajectory_records_and_contracts_are_frozen(tmp_path: Path) -
             "limitations": ["verifier_identity_not_recorded"],
         }
         assert reopened["native_verification_performed_now"] is False
+        assert reopened["analysis_limitations"] == (
+            ["retained_analysis_omits_cycle_status_stage_verdicts_and_runner"]
+            if record["analysis_state"] == "result"
+            else []
+        )
 
     for name, expected in ledger["contracts"].items():
         assert _sha256(ROOT / "contracts" / f"{name}.schema.json") == expected

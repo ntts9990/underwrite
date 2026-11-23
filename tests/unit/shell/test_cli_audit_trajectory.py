@@ -32,7 +32,7 @@ class StubVerifier:
         return json.dumps(verifier_response(snapshot)).encode()
 
 
-def test_outcome_actions_cli_matches_python_except_verifier_source_and_keeps_default_v2(
+def test_outcome_actions_cli_matches_python_except_verifier_source_and_keeps_default_v3(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     def factory(_: Path | None) -> StubVerifier:
@@ -53,11 +53,11 @@ def test_outcome_actions_cli_matches_python_except_verifier_source_and_keeps_def
     assert api["trust_scope"]["verifier_source"] == "caller_supplied_python_port"
     api["trust_scope"]["verifier_source"] = "operator_configured_executable"
     assert cli == api
-    assert cli["schema"] == "goppi_trajectory_outcome_actions.v2"
+    assert cli["schema"] == "goppi_trajectory_outcome_actions.v3"
     assert cli["authority"]["execution_authorized"] is False
     assert cli["trust_scope"]["authenticity"] == "verifier_reported_content_digest_only"
     assert main(["audit-trajectory", "--exchange", str(EXCHANGE), "--json"]) == 0
-    assert json.loads(capsys.readouterr().out)["schema"] == "goppi_trajectory_review.v2"
+    assert json.loads(capsys.readouterr().out)["schema"] == "goppi_trajectory_review.v3"
 
 
 def test_default_cli_does_not_require_optional_outcome_actions_contract(
@@ -70,13 +70,13 @@ def test_default_cli_does_not_require_optional_outcome_actions_contract(
 
     def validator(name: str) -> Any:
         loaded.append(name)
-        if name == "goppi_trajectory_outcome_actions.v2":
+        if name == "goppi_trajectory_outcome_actions.v3":
             raise SchemaConfigurationError("MISSING_OUTCOME_ACTIONS_CONTRACT")
         return original_cli_validator(name)
 
     def ingest_validator(name: str) -> Any:
         loaded.append(name)
-        if name == "goppi_trajectory_outcome_actions.v2":
+        if name == "goppi_trajectory_outcome_actions.v3":
             raise SchemaConfigurationError("MISSING_OUTCOME_ACTIONS_CONTRACT")
         return original_ingest_validator(name)
 
@@ -87,8 +87,8 @@ def test_default_cli_does_not_require_optional_outcome_actions_contract(
     monkeypatch.setattr(ingest, "packaged_validator", ingest_validator)
     monkeypatch.setattr(ingest, "GoppiCliVerifier", factory)
     assert main(["audit-trajectory", "--exchange", str(EXCHANGE), "--json"]) == 0
-    assert json.loads(capsys.readouterr().out)["schema"] == "goppi_trajectory_review.v2"
-    assert "goppi_trajectory_outcome_actions.v2" not in loaded
+    assert json.loads(capsys.readouterr().out)["schema"] == "goppi_trajectory_review.v3"
+    assert "goppi_trajectory_outcome_actions.v3" not in loaded
     assert len(verifier.snapshots) == 1
 
     assert main([
@@ -97,7 +97,7 @@ def test_default_cli_does_not_require_optional_outcome_actions_contract(
     streams = capsys.readouterr()
     assert streams.out == ""
     assert json.loads(streams.err)["code"] == "SCHEMA_CONFIGURATION_ERROR"
-    assert "goppi_trajectory_outcome_actions.v2" in loaded
+    assert "goppi_trajectory_outcome_actions.v3" in loaded
     assert len(verifier.snapshots) == 1
 
 

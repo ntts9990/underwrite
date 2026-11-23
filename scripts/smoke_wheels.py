@@ -4527,12 +4527,23 @@ def _trajectory_pilot(cli: Path, work: Path) -> None:
     report = _cli_json(cli, args, work / "trajectory-review.json", work)
     populations = cast(dict[str, object], report["populations"])
     manifest = json.loads((exchange / "paired/manifest.json").read_bytes())
-    wheel.require(report["schema"] == "goppi_trajectory_review.v2", "trajectory output contract")
+    wheel.require(report["schema"] == "goppi_trajectory_review.v3", "trajectory output contract")
     wheel.require(populations["paired_rows"] == manifest["row_count"], "trajectory row population")
     tasks = cast(list[dict[str, object]], report["next_verification_tasks"])
     wheel.require(
         "inspect_tool_status_difference" in {task["kind"] for task in tasks},
         "trajectory tool difference missing",
+    )
+    execution_source = json.loads((exchange / "paired/execution.json").read_bytes())["source"]
+    runner = cast(dict[str, object], report["runner"])
+    wheel.require(
+        cast(dict[str, object], report["cycle"])["status"] == execution_source["cycle_status"]
+        and runner["profile"] == execution_source["runner"]["profile"]
+        and runner["model_unrecorded_rows"] == 0
+        and "obtain_evaluated_stage_verdict" in {task["kind"] for task in tasks}
+        and "evaluated_stage_verdicts_are_digest_only"
+        in cast(list[str], report["interpretation_limits"]),
+        "trajectory cycle, verdict or runner disclosure missing",
     )
     code = (
         "import json,sys; from pathlib import Path; "
@@ -4549,13 +4560,13 @@ def _trajectory_pilot(cli: Path, work: Path) -> None:
         cli, [*args, "--view", "outcome-actions"], work / "trajectory-outcome-actions.json", work
     )
     wheel.require(
-        actions["schema"] == "goppi_trajectory_outcome_actions.v2",
+        actions["schema"] == "goppi_trajectory_outcome_actions.v3",
         "trajectory outcome-actions output contract",
     )
     installed_contract = (
         "import hashlib,json,sys; from importlib.resources import files; "
         "from underwrite.instrument.ingest.schema import packaged_validator; "
-        "name='goppi_trajectory_outcome_actions.v2'; "
+        "name='goppi_trajectory_outcome_actions.v3'; "
         "packaged_validator(name).validate(json.load(open(sys.argv[1],encoding='utf-8'))); "
         "print(hashlib.sha256(files('underwrite').joinpath('_contracts',"
         "name+'.schema.json').read_bytes()).hexdigest())"
@@ -4572,7 +4583,7 @@ def _trajectory_pilot(cli: Path, work: Path) -> None:
     wheel.require(
         checked.stdout.strip()
         == hashlib.sha256(
-            (wheel.ROOT / "contracts/goppi_trajectory_outcome_actions.v2.schema.json").read_bytes()
+            (wheel.ROOT / "contracts/goppi_trajectory_outcome_actions.v3.schema.json").read_bytes()
         ).hexdigest(),
         "trajectory installed contract differs from authored contract",
     )
@@ -4704,7 +4715,7 @@ def _trajectory_record_pilot(
     )
     analysis = cast(dict[str, object], captured["analysis"])
     storage = cast(dict[str, object], captured["storage"])
-    wheel.require(captured["schema"] == "trajectory_record.v2", "trajectory record contract")
+    wheel.require(captured["schema"] == "trajectory_record.v3", "trajectory record contract")
     wheel.require(analysis["report"] == expected, "trajectory retention changed analysis")
     wheel.require(storage["state"] == "saved", "trajectory retention failed")
     hashes = {
@@ -4794,7 +4805,7 @@ def _trajectory_record_pilot(
     wheel.require("trajectory-records" not in str(selected), "MCP retained read leaked store path")
     interpretation = cast(dict[str, object], reopened["verification_interpretation"])
     wheel.require(
-        reopened["schema"] == "trajectory_record_read.v2"
+        reopened["schema"] == "trajectory_record_read.v3"
         and interpretation["state"] == "current_report_only"
         and interpretation["verifier_identity_verified"] is False
         and interpretation["current_native_verification"] == "not_performed",

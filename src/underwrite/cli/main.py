@@ -338,9 +338,9 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 "audit-trajectory",
                 ("exchange", "root", "id"),
                 (),
-                ("trajectory_record.v2",),
+                (record_trajectory.SCHEMA_V3,),
             ),
-            profile("read-trajectory", ("root", "id"), (), ("trajectory_record_read.v2",)),
+            profile("read-trajectory", ("root", "id"), (), (record_trajectory.READ_SCHEMA_V3,)),
             profile(
                 "read-trajectory|summary",
                 ("root", "id", "view"),

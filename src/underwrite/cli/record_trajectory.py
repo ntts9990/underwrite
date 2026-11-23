@@ -1,4 +1,4 @@
-"""Card: trajectory-record | Paper: trajectory_record.v2 | Stage: storage-capture.
+"""Card: trajectory-record | Paper: trajectory_record.v3 | Stage: storage-capture.
 
 Retain one captured exchange and reopen its analysis without executing its producer.
 """
@@ -34,6 +34,7 @@ from underwrite.instrument.evidence.goppi_trajectory import (
     MEMBERS,
     RESULT_SCHEMA,
     RESULT_SCHEMA_V2,
+    RESULT_SCHEMA_V3,
     TrajectoryError,
 )
 from underwrite.instrument.ingest.goppi_trajectory import (
@@ -62,8 +63,8 @@ from underwrite.service.records import (
 
 SCHEMA = "trajectory_record.v1"
 READ_SCHEMA = "trajectory_record_read.v1"
-SCHEMA_V2 = "trajectory_record.v2"
-READ_SCHEMA_V2 = "trajectory_record_read.v2"
+SCHEMA_V3 = "trajectory_record.v3"
+READ_SCHEMA_V3 = "trajectory_record_read.v3"
 SUMMARY_SCHEMA = "trajectory_record_read_summary.v1"
 COMMAND = "records audit-trajectory"
 READ_COMMAND = "records read-trajectory"
@@ -78,6 +79,7 @@ INVOCATION_NAME = "invocation.json"
 RESULT_NAME = "analysis/trajectory.json"
 ERROR_NAME = "analysis/error.json"
 FILE_COUNT = len(MEMBERS) + 3
+RETAINED_ANALYSIS_LIMITATION = "retained_analysis_omits_cycle_status_stage_verdicts_and_runner"
 
 
 @dataclass(frozen=True)
@@ -85,6 +87,7 @@ class _Contracts:
     aggregate: Validator
     storage: Validator
     analysis: Validator
+    retained_analyses: Mapping[str, Validator]
     history: Validator
     evidence_error: Validator
     record_error: Validator
@@ -94,19 +97,30 @@ class _Contracts:
 
 def _contracts(layout: str) -> _Contracts:
     if layout == LAYOUT:
-        schema, analysis, history = SCHEMA, RESULT_SCHEMA, HISTORY_SCHEMA
+        schema, analysis, prior, history = SCHEMA, RESULT_SCHEMA, (), HISTORY_SCHEMA
     else:
-        schema, analysis, history = SCHEMA_V2, RESULT_SCHEMA_V2, HISTORY_SCHEMA_V2
+        # The v2 file layout is unchanged; a stored analysis names its own generation.
+        schema, analysis, prior, history = (
+            SCHEMA_V3,
+            RESULT_SCHEMA_V3,
+            (RESULT_SCHEMA_V2,),
+            HISTORY_SCHEMA_V2,
+        )
     aggregate = packaged_validator(schema)
+    current = cast(Validator, packaged_validator(analysis))
     return _Contracts(
         cast(Validator, aggregate),
         storage_validator(aggregate),
-        cast(Validator, packaged_validator(analysis)),
+        current,
+        {
+            analysis: current,
+            **{name: cast(Validator, packaged_validator(name)) for name in prior},
+        },
         cast(Validator, packaged_validator(history)),
         cast(Validator, packaged_validator("evidence_error.v1")),
         cast(Validator, packaged_validator("record_error.v1")),
         cast(Validator, packaged_validator("record_verification.v1")),
-        cast(Validator, packaged_validator(READ_SCHEMA_V2)),
+        cast(Validator, packaged_validator(READ_SCHEMA_V3)),
     )
 
 
@@ -255,7 +269,7 @@ def run_record_trajectory(
     validate(contracts.history, history, EvidenceError, "INTERNAL_ERROR")
     files = _files(captured, analysis, history)
     envelope: dict[str, Any] = {
-        "schema": SCHEMA_V2,
+        "schema": SCHEMA_V3,
         "command": COMMAND,
         "source": {"state": "captured", "source_members": history["source_members"]},
         "analysis": analysis,
@@ -420,6 +434,25 @@ def _interpretation(layout: str, history: Mapping[str, Any]) -> dict[str, object
     }
 
 
+def _retained_validator(
+    contracts: _Contracts, state: str, document: Mapping[str, object]
+) -> Validator:
+    """Select a stored analysis contract by exact schema; others meet the current one."""
+    if state != "result":
+        return contracts.evidence_error
+    generation = document.get("schema")
+    if type(generation) is str and generation in contracts.retained_analyses:
+        return contracts.retained_analyses[generation]
+    return contracts.analysis
+
+
+def _analysis_limitations(analysis: Mapping[str, Any]) -> list[str]:
+    """A retained result from before the current review lacks cycle and runner disclosure."""
+    if analysis["state"] == "result" and analysis["report"]["schema"] != RESULT_SCHEMA_V3:
+        return [RETAINED_ANALYSIS_LIMITATION]
+    return []
+
+
 def _reopen_trajectory(root: Path, identifier: str) -> _ReopenedTrajectory:
     """Validate retained analysis and all stored bytes without assembling an output view."""
     identifier = _identifier(identifier)
@@ -441,13 +474,8 @@ def _reopen_trajectory(root: Path, identifier: str) -> _ReopenedTrajectory:
             MAX_REPORT_BYTES,
             snapshot.digest,
         )
-        validate(
-            contracts.analysis if state == "result" else contracts.evidence_error,
-            document,
-            EvidenceError,
-            "INVALID_INPUT",
-            "/record",
-        )
+        validator = _retained_validator(contracts, state, document)
+        validate(validator, document, EvidenceError, "INVALID_INPUT", "/record")
         analysis = {"state": state, "report" if state == "result" else "error": document}
         _bindings(layout, analysis, history, sources)
         verification = verify_record(root, identifier)
@@ -477,7 +505,7 @@ def run_read_trajectory(root: Path, identifier: str) -> dict[str, object]:
     """Read retained analysis under its exact layout; verify current stored bytes only."""
     reopened = _reopen_trajectory(root, identifier)
     envelope: dict[str, object] = {
-        "schema": READ_SCHEMA_V2,
+        "schema": READ_SCHEMA_V3,
         "command": READ_COMMAND,
         "record_id": reopened.identifier,
         "manifest_digest": reopened.snapshot.digest,
@@ -486,6 +514,7 @@ def run_read_trajectory(root: Path, identifier: str) -> dict[str, object]:
         "native_verification_performed_now": False,
         "record_layout": reopened.layout,
         "verification_interpretation": _interpretation(reopened.layout, reopened.history),
+        "analysis_limitations": _analysis_limitations(reopened.analysis),
     }
     if reopened.layout == LAYOUT:
         envelope["historical_analysis"] = reopened.analysis
@@ -649,7 +678,7 @@ def main(argv: list[str]) -> int:
             as_json=args.json,
         ),
         ReportOutput(
-            SCHEMA_V2,
+            SCHEMA_V3,
             OUTPUT_MAX_BYTES,
             lambda result: cast(int, result["exit_code"]),
             render_human,
@@ -668,7 +697,7 @@ def main_read(argv: list[str]) -> int:
             else run_read_trajectory(args.root, args.id)
         ),
         ReportOutput(
-            lambda args: SUMMARY_SCHEMA if args.view == "summary" else READ_SCHEMA_V2,
+            lambda args: SUMMARY_SCHEMA if args.view == "summary" else READ_SCHEMA_V3,
             OUTPUT_MAX_BYTES,
             human=lambda result: (
                 (

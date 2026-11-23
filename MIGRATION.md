@@ -138,6 +138,56 @@ compatible current measurement record; a generic legacy read is not one. No
 existing store is rewritten. Published 0.2.0 keeps its original APIs and v2
 acceptance; check the running installation's capabilities, not metadata alone.
 
+## Unreleased checkout: trajectory cycle, stage-verdict and runner disclosure
+
+`audit-trajectory` now returns `goppi_trajectory_review.v3`, or
+`goppi_trajectory_outcome_actions.v3` with `--view outcome-actions`.
+`records audit-trajectory` returns `trajectory_record.v3` and
+`records read-trajectory` returns `trajectory_record_read.v3`. The v2 results
+omitted the export's cycle status, the fact that an evaluated stage exports only
+a decision digest rather than a verdict, and the declared runner. They also built
+verification tasks only from comparisons. A result from a stopped cycle could
+therefore read like a completed analysis.
+
+Every v2 field keeps its meaning. v3 adds `cycle`, `runner`, a per-stage
+`verdict_state` (with `decision_digest` for evaluated stages), cycle-level tasks
+and conditional interpretation limits. The policies become
+`goppi.descriptive-paired-trajectory.v2` and
+`goppi.descriptive-paired-trajectory-outcome-actions.v2`. `interpretation_limits`
+is no longer one constant list. It is the previous list plus
+`cycle_status_stage_verdicts_and_runner_are_producer_claims`, followed, when they
+apply, by `stopped_cycle_absent_stages_may_be_unrecorded`,
+`stopped_cycle_stop_reason_not_exported` and
+`evaluated_stage_verdicts_are_digest_only` in that order. A consumer that compares
+it with fixed arrays must accept every such ordered combination. Cycle status,
+stage verdicts and the runner model are producer claims, not acceptance results.
+Because v3 reads them, an export whose `cycle_status` or evaluated-stage
+`decision_digest` is missing or malformed now yields a typed diagnostic instead of
+a result; both fields are required by the export's own schema.
+
+Migrate v2 consumers to v3; no option requests a v2 result. The direct-only
+`goppi_trajectory_outcome_actions.v2` and the `trajectory_record.v2` and
+`trajectory_record_read.v2` envelopes are removed from the package, because
+nothing produces or reads them. `goppi_trajectory_review.v2` stays packaged for
+stored analyses. Records keep the `trajectory-record.v2` file layout, and the
+reader selects the contract of each stored analysis by its exact schema. A record
+saved before this change reopens with its original v2 analysis and no new fields;
+read v3 adds `analysis_limitations` with
+`retained_analysis_omits_cycle_status_stage_verdicts_and_runner` for such a result
+and for a v1 result. To obtain the new disclosures, analyze the original export
+again under a new record ID; stored bytes are never rewritten.
+
+The pure Python `analyze_goppi_trajectory` and `analyze_goppi_trajectory_actions`
+functions keep their v1 output. `review_goppi_trajectory` returns the current v3
+shape with `verifier_report_state: not_performed`, and `audit_goppi_trajectory`
+returns v3 after accepting a verifier report. The removed constants
+`goppi_trajectory.OUTCOME_ACTIONS_SCHEMA_V2`, `record_trajectory.SCHEMA_V2` and
+`record_trajectory.READ_SCHEMA_V2` are replaced by `OUTCOME_ACTIONS_SCHEMA_V3`,
+`SCHEMA_V3` and `READ_SCHEMA_V3`; an old import fails rather than aliasing v2.
+The Goppi export and verifier response contracts are unchanged: v3 reads only
+fields already present in the export. Published 0.2.0 still emits v1; check the
+installation's capabilities.
+
 ## Released history: migration from 0.1.1 to 0.2.0
 
 The remainder describes the **published 0.2.0 release**, including historical
@@ -256,9 +306,9 @@ underwrite records read-trajectory \
   --root PRIVATE_STORE --id trajectory-001 --json
 ```
 
-New `trajectory_record.v2` separates analysis, the configured verifier's report
-history, and storage. `trajectory_record_read.v2` returns that history with
-current whole-record integrity checks. It also reads old v1 records by exact
+The current checkout's `trajectory_record.v3` separates analysis, the configured
+verifier's report history, and storage. `trajectory_record_read.v3` returns that
+history with current whole-record integrity checks. It also reads old v1 records by exact
 layout, retaining their original labels only under historical fields; effective
 interpretation is `legacy_unattributed_report` or `legacy_not_performed`, never
 fresh native verification. Reopening does not need Goppi and reports
@@ -267,14 +317,14 @@ reports up to their supported 8 MiB bound; generic `records read-json` keeps its
 1 MiB selected-file limit. See [storage](STORAGE.md) for retention and error handling.
 
 The optional direct `audit-trajectory --view outcome-actions` projection returns
-`goppi_trajectory_outcome_actions.v2`. It groups comparable source-outcome changes
+`goppi_trajectory_outcome_actions.v3`. It groups comparable source-outcome changes
 whose recorded tool-status counts did not change into a calling-agent inspection
-task. The default review is `goppi_trajectory_review.v2`; old v1 authored
+task. The default review is `goppi_trajectory_review.v3`; old v1 authored
 contracts and stored records remain byte-stable. This view has no dedicated retained-record route;
 it does not establish cause, retry benefit, improvement, or approval.
 
 A working adopted Goppi offline verifier is needed for its own content-closure
-check. Underwrite v2 records only that a configured verifier report was accepted;
+check. Underwrite records only that a configured verifier report was accepted;
 it does not independently establish executable identity or actual closure work.
 The accepted source implementation and npm package
 are distinct: on 2026-10-18, accepted Goppi main declared package version `0.1.0`,

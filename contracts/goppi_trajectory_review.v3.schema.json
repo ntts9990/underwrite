@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:underwrite:contract:goppi_trajectory_outcome_actions.v2",
+  "$id": "urn:underwrite:contract:goppi_trajectory_review.v3",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -9,6 +9,8 @@
     "policy",
     "input_members",
     "source_context",
+    "cycle",
+    "runner",
     "trust_scope",
     "populations",
     "capture_counts",
@@ -20,13 +22,13 @@
   ],
   "properties": {
     "schema": {
-      "const": "goppi_trajectory_outcome_actions.v2"
+      "const": "goppi_trajectory_review.v3"
     },
     "state": {
       "const": "analyzed"
     },
     "policy": {
-      "const": "goppi.descriptive-paired-trajectory-outcome-actions.v1"
+      "const": "goppi.descriptive-paired-trajectory.v2"
     },
     "input_members": {
       "type": "array",
@@ -83,6 +85,82 @@
         "execution_identity_digest": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "cycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "stages_absent_from_export"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "completed",
+            "stopped"
+          ]
+        },
+        "stages_absent_from_export": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "same_batch",
+              "held_in",
+              "held_out"
+            ]
+          },
+          "maxItems": 3,
+          "uniqueItems": true
+        }
+      }
+    },
+    "runner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "models",
+        "model_unrecorded_rows"
+      ],
+      "properties": {
+        "profile": {
+          "enum": [
+            "deterministic_node_conformance",
+            "pi_0_84_4",
+            "pi_1_3_0",
+            "pi_1_5_0"
+          ]
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "runner_model",
+              "paired_rows"
+            ],
+            "properties": {
+              "runner_model": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "paired_rows": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10000
+              }
+            }
+          },
+          "maxItems": 10000
+        },
+        "model_unrecorded_rows": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
         }
       }
     },
@@ -287,19 +365,118 @@
       "items": {
         "$ref": "#/$defs/task"
       },
-      "maxItems": 6
+      "maxItems": 7
     },
     "interpretation_limits": {
-      "const": [
-        "source_outcomes_are_producer_claims",
-        "content_identity_is_not_independent_provenance",
-        "source_authentication_and_private_projection_not_independently_verified",
-        "tool_frequencies_do_not_align_individual_calls",
-        "call_relationships_not_captured",
-        "causality_and_retry_effects_not_established",
-        "repeated_rows_are_not_independent_cases",
-        "metadata_may_identify_sources_not_anonymized",
-        "snapshot_checks_do_not_establish_original_directory_privacy"
+      "enum": [
+        [
+          "source_outcomes_are_producer_claims",
+          "content_identity_is_not_independent_provenance",
+          "source_authentication_and_private_projection_not_independently_verified",
+          "tool_frequencies_do_not_align_individual_calls",
+          "call_relationships_not_captured",
+          "causality_and_retry_effects_not_established",
+          "repeated_rows_are_not_independent_cases",
+          "metadata_may_identify_sources_not_anonymized",
+          "snapshot_checks_do_not_establish_original_directory_privacy",
+          "cycle_status_stage_verdicts_and_runner_are_producer_claims"
+        ],
+        [
+          "source_outcomes_are_producer_claims",
+          "content_identity_is_not_independent_provenance",
+          "source_authentication_and_private_projection_not_independently_verified",
+          "tool_frequencies_do_not_align_individual_calls",
+          "call_relationships_not_captured",
+          "causality_and_retry_effects_not_established",
+          "repeated_rows_are_not_independent_cases",
+          "metadata_may_identify_sources_not_anonymized",
+          "snapshot_checks_do_not_establish_original_directory_privacy",
+          "cycle_status_stage_verdicts_and_runner_are_producer_claims",
+          "evaluated_stage_verdicts_are_digest_only"
+        ],
+        [
+          "source_outcomes_are_producer_claims",
+          "content_identity_is_not_independent_provenance",
+          "source_authentication_and_private_projection_not_independently_verified",
+          "tool_frequencies_do_not_align_individual_calls",
+          "call_relationships_not_captured",
+          "causality_and_retry_effects_not_established",
+          "repeated_rows_are_not_independent_cases",
+          "metadata_may_identify_sources_not_anonymized",
+          "snapshot_checks_do_not_establish_original_directory_privacy",
+          "cycle_status_stage_verdicts_and_runner_are_producer_claims",
+          "stopped_cycle_stop_reason_not_exported"
+        ],
+        [
+          "source_outcomes_are_producer_claims",
+          "content_identity_is_not_independent_provenance",
+          "source_authentication_and_private_projection_not_independently_verified",
+          "tool_frequencies_do_not_align_individual_calls",
+          "call_relationships_not_captured",
+          "causality_and_retry_effects_not_established",
+          "repeated_rows_are_not_independent_cases",
+          "metadata_may_identify_sources_not_anonymized",
+          "snapshot_checks_do_not_establish_original_directory_privacy",
+          "cycle_status_stage_verdicts_and_runner_are_producer_claims",
+          "stopped_cycle_stop_reason_not_exported",
+          "evaluated_stage_verdicts_are_digest_only"
+        ],
+        [
+          "source_outcomes_are_producer_claims",
+          "content_identity_is_not_independent_provenance",
+          "source_authentication_and_private_projection_not_independently_verified",
+          "tool_frequencies_do_not_align_individual_calls",
+          "call_relationships_not_captured",
+          "causality_and_retry_effects_not_established",
+          "repeated_rows_are_not_independent_cases",
+          "metadata_may_identify_sources_not_anonymized",
+          "snapshot_checks_do_not_establish_original_directory_privacy",
+          "cycle_status_stage_verdicts_and_runner_are_producer_claims",
+          "stopped_cycle_absent_stages_may_be_unrecorded"
+        ],
+        [
+          "source_outcomes_are_producer_claims",
+          "content_identity_is_not_independent_provenance",
+          "source_authentication_and_private_projection_not_independently_verified",
+          "tool_frequencies_do_not_align_individual_calls",
+          "call_relationships_not_captured",
+          "causality_and_retry_effects_not_established",
+          "repeated_rows_are_not_independent_cases",
+          "metadata_may_identify_sources_not_anonymized",
+          "snapshot_checks_do_not_establish_original_directory_privacy",
+          "cycle_status_stage_verdicts_and_runner_are_producer_claims",
+          "stopped_cycle_absent_stages_may_be_unrecorded",
+          "evaluated_stage_verdicts_are_digest_only"
+        ],
+        [
+          "source_outcomes_are_producer_claims",
+          "content_identity_is_not_independent_provenance",
+          "source_authentication_and_private_projection_not_independently_verified",
+          "tool_frequencies_do_not_align_individual_calls",
+          "call_relationships_not_captured",
+          "causality_and_retry_effects_not_established",
+          "repeated_rows_are_not_independent_cases",
+          "metadata_may_identify_sources_not_anonymized",
+          "snapshot_checks_do_not_establish_original_directory_privacy",
+          "cycle_status_stage_verdicts_and_runner_are_producer_claims",
+          "stopped_cycle_absent_stages_may_be_unrecorded",
+          "stopped_cycle_stop_reason_not_exported"
+        ],
+        [
+          "source_outcomes_are_producer_claims",
+          "content_identity_is_not_independent_provenance",
+          "source_authentication_and_private_projection_not_independently_verified",
+          "tool_frequencies_do_not_align_individual_calls",
+          "call_relationships_not_captured",
+          "causality_and_retry_effects_not_established",
+          "repeated_rows_are_not_independent_cases",
+          "metadata_may_identify_sources_not_anonymized",
+          "snapshot_checks_do_not_establish_original_directory_privacy",
+          "cycle_status_stage_verdicts_and_runner_are_producer_claims",
+          "stopped_cycle_absent_stages_may_be_unrecorded",
+          "stopped_cycle_stop_reason_not_exported",
+          "evaluated_stage_verdicts_are_digest_only"
+        ]
       ]
     },
     "authority": {
@@ -327,6 +504,963 @@
       }
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "stages"
+        ],
+        "properties": {
+          "stages": {
+            "contains": {
+              "required": [
+                "stage"
+              ],
+              "properties": {
+                "stage": {
+                  "const": "same_batch"
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": [
+            "cycle"
+          ],
+          "properties": {
+            "cycle": {
+              "required": [
+                "stages_absent_from_export"
+              ],
+              "properties": {
+                "stages_absent_from_export": {
+                  "contains": {
+                    "const": "same_batch"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "required": [
+          "cycle"
+        ],
+        "properties": {
+          "cycle": {
+            "required": [
+              "stages_absent_from_export"
+            ],
+            "properties": {
+              "stages_absent_from_export": {
+                "contains": {
+                  "const": "same_batch"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "allOf": [
+          {
+            "required": [
+              "cycle"
+            ],
+            "properties": {
+              "cycle": {
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "const": "stopped"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "required": [
+              "cycle"
+            ],
+            "properties": {
+              "cycle": {
+                "required": [
+                  "stages_absent_from_export"
+                ],
+                "properties": {
+                  "stages_absent_from_export": {
+                    "contains": {
+                      "const": "same_batch"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "then": {
+        "properties": {
+          "next_verification_tasks": {
+            "contains": {
+              "required": [
+                "kind",
+                "scope"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "obtain_stopped_cycle_stage_record"
+                },
+                "scope": {
+                  "contains": {
+                    "required": [
+                      "stage"
+                    ],
+                    "properties": {
+                      "stage": {
+                        "const": "same_batch"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "next_verification_tasks": {
+            "not": {
+              "contains": {
+                "required": [
+                  "kind",
+                  "scope"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "obtain_stopped_cycle_stage_record"
+                  },
+                  "scope": {
+                    "contains": {
+                      "required": [
+                        "stage"
+                      ],
+                      "properties": {
+                        "stage": {
+                          "const": "same_batch"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "stages"
+        ],
+        "properties": {
+          "stages": {
+            "contains": {
+              "required": [
+                "stage",
+                "execution_status"
+              ],
+              "properties": {
+                "stage": {
+                  "const": "same_batch"
+                },
+                "execution_status": {
+                  "const": "evaluated"
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "next_verification_tasks": {
+            "contains": {
+              "required": [
+                "kind",
+                "scope"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "obtain_evaluated_stage_verdict"
+                },
+                "scope": {
+                  "contains": {
+                    "required": [
+                      "stage"
+                    ],
+                    "properties": {
+                      "stage": {
+                        "const": "same_batch"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "next_verification_tasks": {
+            "not": {
+              "contains": {
+                "required": [
+                  "kind",
+                  "scope"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "obtain_evaluated_stage_verdict"
+                  },
+                  "scope": {
+                    "contains": {
+                      "required": [
+                        "stage"
+                      ],
+                      "properties": {
+                        "stage": {
+                          "const": "same_batch"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "stages"
+        ],
+        "properties": {
+          "stages": {
+            "contains": {
+              "required": [
+                "stage"
+              ],
+              "properties": {
+                "stage": {
+                  "const": "held_in"
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": [
+            "cycle"
+          ],
+          "properties": {
+            "cycle": {
+              "required": [
+                "stages_absent_from_export"
+              ],
+              "properties": {
+                "stages_absent_from_export": {
+                  "contains": {
+                    "const": "held_in"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "required": [
+          "cycle"
+        ],
+        "properties": {
+          "cycle": {
+            "required": [
+              "stages_absent_from_export"
+            ],
+            "properties": {
+              "stages_absent_from_export": {
+                "contains": {
+                  "const": "held_in"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "allOf": [
+          {
+            "required": [
+              "cycle"
+            ],
+            "properties": {
+              "cycle": {
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "const": "stopped"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "required": [
+              "cycle"
+            ],
+            "properties": {
+              "cycle": {
+                "required": [
+                  "stages_absent_from_export"
+                ],
+                "properties": {
+                  "stages_absent_from_export": {
+                    "contains": {
+                      "const": "held_in"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "then": {
+        "properties": {
+          "next_verification_tasks": {
+            "contains": {
+              "required": [
+                "kind",
+                "scope"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "obtain_stopped_cycle_stage_record"
+                },
+                "scope": {
+                  "contains": {
+                    "required": [
+                      "stage"
+                    ],
+                    "properties": {
+                      "stage": {
+                        "const": "held_in"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "next_verification_tasks": {
+            "not": {
+              "contains": {
+                "required": [
+                  "kind",
+                  "scope"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "obtain_stopped_cycle_stage_record"
+                  },
+                  "scope": {
+                    "contains": {
+                      "required": [
+                        "stage"
+                      ],
+                      "properties": {
+                        "stage": {
+                          "const": "held_in"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "stages"
+        ],
+        "properties": {
+          "stages": {
+            "contains": {
+              "required": [
+                "stage",
+                "execution_status"
+              ],
+              "properties": {
+                "stage": {
+                  "const": "held_in"
+                },
+                "execution_status": {
+                  "const": "evaluated"
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "next_verification_tasks": {
+            "contains": {
+              "required": [
+                "kind",
+                "scope"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "obtain_evaluated_stage_verdict"
+                },
+                "scope": {
+                  "contains": {
+                    "required": [
+                      "stage"
+                    ],
+                    "properties": {
+                      "stage": {
+                        "const": "held_in"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "next_verification_tasks": {
+            "not": {
+              "contains": {
+                "required": [
+                  "kind",
+                  "scope"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "obtain_evaluated_stage_verdict"
+                  },
+                  "scope": {
+                    "contains": {
+                      "required": [
+                        "stage"
+                      ],
+                      "properties": {
+                        "stage": {
+                          "const": "held_in"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "stages"
+        ],
+        "properties": {
+          "stages": {
+            "contains": {
+              "required": [
+                "stage"
+              ],
+              "properties": {
+                "stage": {
+                  "const": "held_out"
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": [
+            "cycle"
+          ],
+          "properties": {
+            "cycle": {
+              "required": [
+                "stages_absent_from_export"
+              ],
+              "properties": {
+                "stages_absent_from_export": {
+                  "contains": {
+                    "const": "held_out"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "required": [
+          "cycle"
+        ],
+        "properties": {
+          "cycle": {
+            "required": [
+              "stages_absent_from_export"
+            ],
+            "properties": {
+              "stages_absent_from_export": {
+                "contains": {
+                  "const": "held_out"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "allOf": [
+          {
+            "required": [
+              "cycle"
+            ],
+            "properties": {
+              "cycle": {
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "const": "stopped"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "required": [
+              "cycle"
+            ],
+            "properties": {
+              "cycle": {
+                "required": [
+                  "stages_absent_from_export"
+                ],
+                "properties": {
+                  "stages_absent_from_export": {
+                    "contains": {
+                      "const": "held_out"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "then": {
+        "properties": {
+          "next_verification_tasks": {
+            "contains": {
+              "required": [
+                "kind",
+                "scope"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "obtain_stopped_cycle_stage_record"
+                },
+                "scope": {
+                  "contains": {
+                    "required": [
+                      "stage"
+                    ],
+                    "properties": {
+                      "stage": {
+                        "const": "held_out"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "next_verification_tasks": {
+            "not": {
+              "contains": {
+                "required": [
+                  "kind",
+                  "scope"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "obtain_stopped_cycle_stage_record"
+                  },
+                  "scope": {
+                    "contains": {
+                      "required": [
+                        "stage"
+                      ],
+                      "properties": {
+                        "stage": {
+                          "const": "held_out"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "stages"
+        ],
+        "properties": {
+          "stages": {
+            "contains": {
+              "required": [
+                "stage",
+                "execution_status"
+              ],
+              "properties": {
+                "stage": {
+                  "const": "held_out"
+                },
+                "execution_status": {
+                  "const": "evaluated"
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "next_verification_tasks": {
+            "contains": {
+              "required": [
+                "kind",
+                "scope"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "obtain_evaluated_stage_verdict"
+                },
+                "scope": {
+                  "contains": {
+                    "required": [
+                      "stage"
+                    ],
+                    "properties": {
+                      "stage": {
+                        "const": "held_out"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "next_verification_tasks": {
+            "not": {
+              "contains": {
+                "required": [
+                  "kind",
+                  "scope"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "obtain_evaluated_stage_verdict"
+                  },
+                  "scope": {
+                    "contains": {
+                      "required": [
+                        "stage"
+                      ],
+                      "properties": {
+                        "stage": {
+                          "const": "held_out"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "allOf": [
+          {
+            "required": [
+              "cycle"
+            ],
+            "properties": {
+              "cycle": {
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "const": "stopped"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "cycle": {
+                "properties": {
+                  "stages_absent_from_export": {
+                    "minItems": 1
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "then": {
+        "properties": {
+          "interpretation_limits": {
+            "contains": {
+              "const": "stopped_cycle_absent_stages_may_be_unrecorded"
+            }
+          },
+          "next_verification_tasks": {
+            "contains": {
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "obtain_stopped_cycle_stage_record"
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "interpretation_limits": {
+            "not": {
+              "contains": {
+                "const": "stopped_cycle_absent_stages_may_be_unrecorded"
+              }
+            }
+          },
+          "next_verification_tasks": {
+            "not": {
+              "contains": {
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "obtain_stopped_cycle_stage_record"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "allOf": [
+          {
+            "required": [
+              "cycle"
+            ],
+            "properties": {
+              "cycle": {
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "const": "stopped"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "not": {
+              "required": [
+                "stages"
+              ],
+              "properties": {
+                "stages": {
+                  "contains": {
+                    "required": [
+                      "execution_status"
+                    ],
+                    "properties": {
+                      "execution_status": {
+                        "const": "closed"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "then": {
+        "properties": {
+          "interpretation_limits": {
+            "contains": {
+              "const": "stopped_cycle_stop_reason_not_exported"
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "interpretation_limits": {
+            "not": {
+              "contains": {
+                "const": "stopped_cycle_stop_reason_not_exported"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "stages"
+        ],
+        "properties": {
+          "stages": {
+            "contains": {
+              "required": [
+                "execution_status"
+              ],
+              "properties": {
+                "execution_status": {
+                  "const": "evaluated"
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "interpretation_limits": {
+            "contains": {
+              "const": "evaluated_stage_verdicts_are_digest_only"
+            }
+          },
+          "next_verification_tasks": {
+            "contains": {
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "obtain_evaluated_stage_verdict"
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "interpretation_limits": {
+            "not": {
+              "contains": {
+                "const": "evaluated_stage_verdicts_are_digest_only"
+              }
+            }
+          },
+          "next_verification_tasks": {
+            "not": {
+              "contains": {
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "obtain_evaluated_stage_verdict"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "coverage": {
       "type": "object",
@@ -1131,7 +2265,9 @@
               "case_stage_repeat_pairs",
               "primary_repeat_pairs",
               "capture_counts",
-              "execution_status"
+              "execution_status",
+              "verdict_state",
+              "decision_digest"
             ],
             "properties": {
               "stage": {
@@ -1176,6 +2312,13 @@
               },
               "execution_status": {
                 "const": "evaluated"
+              },
+              "verdict_state": {
+                "const": "digest_only"
+              },
+              "decision_digest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
               }
             }
           }
@@ -1202,7 +2345,8 @@
               "capture_counts",
               "execution_status",
               "reason_code",
-              "classification"
+              "classification",
+              "verdict_state"
             ],
             "properties": {
               "stage": {
@@ -1260,6 +2404,9 @@
                   "indeterminate",
                   "rejected"
                 ]
+              },
+              "verdict_state": {
+                "const": "producer_reported"
               }
             }
           }
@@ -1279,7 +2426,8 @@
             "check_outcome_comparability",
             "obtain_verifier_process_linkage",
             "obtain_call_relationships",
-            "inspect_outcome_change_without_tool_status_change"
+            "obtain_evaluated_stage_verdict",
+            "obtain_stopped_cycle_stage_record"
           ]
         }
       },
@@ -1623,7 +2771,7 @@
           "if": {
             "properties": {
               "kind": {
-                "const": "inspect_outcome_change_without_tool_status_change"
+                "const": "obtain_evaluated_stage_verdict"
               }
             }
           },
@@ -1649,39 +2797,100 @@
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
-                    "comparison_id",
-                    "arms"
+                    "stage",
+                    "decision_digest"
                   ],
                   "properties": {
-                    "comparison_id": {
-                      "type": "string",
-                      "pattern": "^comparison:[0-9a-f]{64}$"
+                    "stage": {
+                      "enum": [
+                        "same_batch",
+                        "held_in",
+                        "held_out"
+                      ]
                     },
-                    "arms": {
-                      "type": "array",
-                      "items": {
-                        "enum": [
-                          "baseline",
-                          "candidate"
-                        ]
-                      },
-                      "maxItems": 2
+                    "decision_digest": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
                     }
                   }
                 },
-                "maxItems": 10000
+                "maxItems": 3
               },
               "execution_authorized": {
                 "const": false
               },
               "kind": {
-                "const": "inspect_outcome_change_without_tool_status_change"
+                "const": "obtain_evaluated_stage_verdict"
               },
               "owner": {
-                "const": "calling_agent"
+                "const": "goppi"
               },
               "required_evidence": {
-                "const": "selected baseline/candidate source outcome claims and retained comparison context review"
+                "const": "producer stage verdict value bound to each listed decision digest"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "obtain_stopped_cycle_stage_record"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "scope",
+              "execution_authorized",
+              "kind",
+              "owner",
+              "required_evidence"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^task:[0-9a-f]{64}$"
+              },
+              "scope": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "cycle_run_id",
+                    "stage"
+                  ],
+                  "properties": {
+                    "cycle_run_id": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    },
+                    "stage": {
+                      "enum": [
+                        "same_batch",
+                        "held_in",
+                        "held_out"
+                      ]
+                    }
+                  }
+                },
+                "maxItems": 3
+              },
+              "execution_authorized": {
+                "const": false
+              },
+              "kind": {
+                "const": "obtain_stopped_cycle_stage_record"
+              },
+              "owner": {
+                "const": "goppi"
+              },
+              "required_evidence": {
+                "const": "producer plan and execution status for listed stages absent from the stopped cycle"
               }
             }
           }

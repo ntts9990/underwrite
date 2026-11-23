@@ -230,8 +230,10 @@ full and can contain identifying metadata. Use a private store and backup policy
 No source paths are reopened between analysis and storage. Duplicate IDs are
 refused rather than overwritten.
 
-The `trajectory_record.v2` response keeps source capture, analysis,
-configured-verifier report history, and storage separate. Exit 0 means a result
+The `trajectory_record.v3` response keeps source capture, analysis,
+configured-verifier report history, and storage separate. A saved result
+analysis is `goppi_trajectory_review.v3`, which also reports the export's cycle
+status, stage verdict states and declared runner as producer claims. Exit 0 means a result
 was saved and its stored bytes verified; exit 2 means
 a supported diagnostic was saved, or an earlier typed refusal occurred without
 publication; exit 3 means storage or stored-byte verification failed. Safely
@@ -245,8 +247,13 @@ record. A storage failure with `published_record: null` does not prove absence:
 inspect the requested ID with `records show` and `records verify` before retrying.
 
 `records read-trajectory` verifies the complete record and binds the result,
-source identities, and retained report history to the same manifest. Old v1
-records remain readable by exact layout: their native labels are historical,
+source identities, and retained report history to the same manifest. Its full
+result is `trajectory_record_read.v3`. Records still use the
+`trajectory-record.v2` file layout. A result saved before the v3 review keeps its
+original `goppi_trajectory_review.v2` analysis, selected by that exact schema and
+returned unchanged; `analysis_limitations` then states that it omits the cycle
+status, stage verdict states and runner. Reanalysis needs the original export and
+a new ID. Old v1 records remain readable by exact layout: their native labels are historical,
 while the effective interpretation is `legacy_unattributed_report` or
 `legacy_not_performed`. Its
 `current_storage_verification` is a new stored-byte check, while

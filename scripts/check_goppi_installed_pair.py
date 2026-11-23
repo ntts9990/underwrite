@@ -39,7 +39,7 @@ ARTIFACT_ROLES = (
 CONTRACTS = {
     "fixture_pins": "underwrite.goppi_trajectory_fixture_pins.v1",
     "native_verification": "goppi.paired_run_verification_result.v2",
-    "underwrite_review": "goppi_trajectory_review.v2",
+    "underwrite_review": "goppi_trajectory_review.v3",
 }
 TRUST_LIMITS = {
     "goppi_native_verification": "separately_performed",
@@ -66,6 +66,8 @@ REVIEW_TRUST = {
     "source_authentication_independently_verified": False,
     "producer_projection_independently_verified": False,
 }
+# The pinned export records a stopped cycle whose three supported stages are all present.
+REVIEW_CYCLE: dict[str, object] = {"status": "stopped", "stages_absent_from_export": []}
 REVIEW_AUTHORITY = {
     "human_review": "required",
     "execution_authorized": False,
@@ -402,6 +404,7 @@ def validate_review(review: dict[str, Any]) -> None:
         review.get("schema") == CONTRACTS["underwrite_review"]
         and review.get("state") == "analyzed"
         and review.get("trust_scope") == REVIEW_TRUST
+        and review.get("cycle") == REVIEW_CYCLE
         and review.get("authority") == REVIEW_AUTHORITY
         and all(populations.get(key) == value for key, value in POPULATIONS.items())
         and len(review.get("comparisons", [])) == POPULATIONS["case_stage_repeat_pairs"]

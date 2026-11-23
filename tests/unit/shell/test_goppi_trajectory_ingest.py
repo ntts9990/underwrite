@@ -58,7 +58,7 @@ def test_snapshot_is_private_cleaned_and_captured_once(
     monkeypatch.setattr(local_capture, "read_at", observed)
     verifier = StubVerifier()
     report = cast(dict[str, Any], app.audit_goppi_trajectory(exchange, verifier=verifier))
-    assert report["schema"] == "goppi_trajectory_review.v2"
+    assert report["schema"] == "goppi_trajectory_review.v3"
     assert report["trust_scope"]["verifier_report_state"] == "report_accepted"
     assert report["trust_scope"]["verifier_source"] == "caller_supplied_python_port"
     assert len(reads) == len(app.MEMBERS) * 2
@@ -97,7 +97,7 @@ def test_nonverifying_port_cannot_promote_stale_manifest_to_native_closure(
     )
 
     assert outcome.error is None and outcome.report is not None
-    assert outcome.report["schema"] == "goppi_trajectory_review.v2"
+    assert outcome.report["schema"] == "goppi_trajectory_review.v3"
     trust = cast(dict[str, Any], outcome.report["trust_scope"])
     assert trust["verifier_report_state"] == "report_accepted"
     assert trust["verifier_source"] == "caller_supplied_python_port"
@@ -109,6 +109,54 @@ def test_nonverifying_port_cannot_promote_stale_manifest_to_native_closure(
     history = outcome.verification_history
     assert history["verifier_report_state"] == "report_accepted"
     assert history["verifier_identity_verified"] is False
+
+
+@pytest.mark.parametrize("view", ["review", "outcome-actions"])
+def test_report_discloses_verifier_bound_cycle_status_runner_and_stage_verdicts(
+    exchange: Path, view: str
+) -> None:
+    execution_path = exchange / "paired/execution.json"
+    execution = json.loads(execution_path.read_bytes())
+    execution["stages"] = [s for s in execution["stages"] if s["stage"] != "held_out"]
+    execution_path.write_text(json.dumps(execution))
+    rows_path = exchange / "paired/rows.jsonl"
+    rows = [json.loads(line) for line in rows_path.read_text().splitlines()]
+    kept = [row for row in rows if row["stage"] != "held_out"]
+    rows_path.write_text("".join(json.dumps(row) + "\n" for row in kept))
+    manifest_path = exchange / "paired/manifest.json"
+    manifest = json.loads(manifest_path.read_bytes())
+    manifest["row_count"] = len(kept)
+    manifest_path.write_text(json.dumps(manifest))
+    trajectory_path = exchange / "trajectory/trajectory.json"
+    trajectory = json.loads(trajectory_path.read_bytes())
+    trajectory["units"] = [u for u in trajectory["units"] if u["unit"]["stage"] != "held_out"]
+    trajectory["availability_counts"].update(retained=len(kept), total=len(kept))
+    trajectory_path.write_text(json.dumps(trajectory))
+    responses: list[dict[str, Any]] = []
+    verifier = StubVerifier(responses.append)
+
+    report = cast(
+        dict[str, Any], app.audit_goppi_trajectory(exchange, verifier=verifier, view=view)
+    )
+    assert responses[0]["data"]["cycle_status"] == "stopped"
+    assert report["cycle"] == {"status": "stopped", "stages_absent_from_export": ["held_out"]}
+    assert report["runner"]["profile"] == execution["source"]["runner"]["profile"]
+    assert report["runner"]["models"] == [
+        {
+            "runner_model": trajectory["units"][0]["context"]["runner_model"],
+            "paired_rows": len(kept),
+        }
+    ]
+    assert [stage["verdict_state"] for stage in report["stages"]] == ["digest_only"] * 2
+    kinds = [task["kind"] for task in report["next_verification_tasks"]]
+    assert {"obtain_stopped_cycle_stage_record", "obtain_evaluated_stage_verdict"} <= set(kinds)
+    assert report["interpretation_limits"][-3:] == [
+        "stopped_cycle_absent_stages_may_be_unrecorded",
+        "stopped_cycle_stop_reason_not_exported",
+        "evaluated_stage_verdicts_are_digest_only",
+    ]
+    assert report["trust_scope"]["verifier_report_state"] == "report_accepted"
+    assert report["trust_scope"]["verifier_source"] == "caller_supplied_python_port"
 
 
 def test_conflicting_verifier_sources_refuse_before_capturing_input(
@@ -322,7 +370,7 @@ def test_outcome_actions_contract_loaded_before_source_capture(
 
     def validator(name: str) -> object:
         loaded.append(name)
-        if name == "goppi_trajectory_outcome_actions.v2":
+        if name == "goppi_trajectory_outcome_actions.v3":
             raise SchemaConfigurationError(reason)
         return original(name)
 
@@ -335,7 +383,7 @@ def test_outcome_actions_contract_loaded_before_source_capture(
         app.audit_goppi_trajectory(
             Path("/not-read"), verifier=StubVerifier(), view="outcome-actions"
         )
-    assert "goppi_trajectory_outcome_actions.v2" in loaded
+    assert "goppi_trajectory_outcome_actions.v3" in loaded
 
 
 def test_final_output_limit_before_return(exchange: Path, monkeypatch: pytest.MonkeyPatch) -> None:

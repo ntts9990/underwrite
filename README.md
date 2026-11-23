@@ -306,8 +306,9 @@ for exact input requirements.
 
 The linked trajectory guide also covers development-checkout contracts. Published
 `underwrite==0.2.0` returns `goppi_trajectory_review.v1` and retains
-`trajectory_record.v1`; the current checkout returns v2 and adds
-`--view outcome-actions`. Check `capabilities --json` on the executable you use
+`trajectory_record.v1`; the current checkout returns v3, which also reports the
+export's cycle status, stage verdict states and declared runner as producer
+claims, and adds `--view outcome-actions`. Check `capabilities --json` on the executable you use
 before selecting a view or interpreting a verifier label. Both paths still need
 a compatible Goppi source build for the paired export and offline verifier.
 
