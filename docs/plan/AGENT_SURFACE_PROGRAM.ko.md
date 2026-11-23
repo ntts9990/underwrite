@@ -307,6 +307,137 @@ A1은 MCP 없이도 CLI 사용자에게 이득이다. 결과 해석이 쉬워지
   initialize/initialized, tools/list, tools/call뿐이다. 네트워크 listener,
   상주 프로세스, 모델 호출, 쓰기 도구를 추가하지 않는다.
 
+### A3 오프라인 평가 준비
+
+- `fixtures/agent-surface/selection-intents.v1.json`은 개발용 8개와 보류 평가용
+  8개 의도를 사전 등록한다. 각 묶음은 현재 읽기 전용 도구 일곱 개를 한 번씩
+  요구하고, 기본 MCP에 없는 verifier 실행·지급 승인을 요구하는 거부 사례를 하나씩
+  포함한다. 두 묶음의 `intent_group`은 중복되지 않는다. 파일을 읽는 요청은
+  상대 경로 `inputs/evidence-v1.json`, `inputs/evidence-v2.json`,
+  `inputs/baseline-exchange`, `inputs/trajectory-store`와 저장 기록 ID `legacy.v1`을
+  명시한다. 실제 trial 전에 이 경로에 합성 자료를 놓고 일곱 도구의 성공 호출을
+  확인한다. 기존 v1 예제, baseline 예제의 v2 투영, 검증용 legacy 기록은
+  모델 성능의 정답이나 producer 인증 자료가 아니다.
+- `fixtures/agent-surface/tool-catalog-seven.v1.json`은 첫 실제 평가에서 모델이
+  본 일곱 도구의 정확한 metadata를 digest와 함께 동결한다. v1 채점기는 이를
+  사용하므로 이후 `tools/list`가 늘거나 설명이 바뀌어도 원점수를 재현할 수 있다.
+  새 catalog는 새 suite·채점 범위로 평가하며 이 snapshot을 갱신하지 않는다.
+- `scripts/evaluate_agent_surface.py --prompts --split development`는 사례 ID와
+  요청 문장만 내보낸다. `--split held_out`도 같은 방식으로 정답 도구·해석 label을
+  숨기고 사례 ID는 의미 없는 `dNN`/`hNN` 형식이다. **현재 held_out은 후보
+  묶음이지 블라인드 성능 증거가 아니다.** 답안 파일이 저장소에 있으므로 실제 모델
+  실험에서는 이를 모델의 작업공간·검색 범위에서 분리하고, 의도 재작성의 의미상
+  독립성을 사람 검토로 확인해야 한다. 문자열·그룹 중복 검사는 이 검토를 대신하지 않는다.
+- 채점 입력은 `underwrite.agent_surface_selection_trial.v1`의 prompt export에서
+  복사한 `suite_digest`·`catalog_digest`와 사례별 `calls`와
+  닫힌 `claims` 목록이다. 현재 사례당 허용 호출은 0 또는 1이며, 반복 호출도
+  관측으로 받아 한도 초과를 센다. 채점기는 첫 호출 적합성, 호출 수·사전 한도,
+  금지 도구 호출, 필수 해석 주장 포함, 금지 주장 부재를 나눠 센다. 안전한 추가
+  한계는 허용하며 같은 도구의 금지 주장 정책은 사례 사이에서 같아야 한다.
+  누락 trial은 실패로 기록한다. 인자·도구 결과·자연어 설명은 실제 실행 trace가
+  아니라 제출자의 구조화 자기 보고이므로 자동 검증하지 않는다.
+- 예: `python scripts/evaluate_agent_surface.py --trial /path/to/trial.json`.
+  채점 결과의 `trial_source`는 `caller_supplied_unverified`,
+  `model_executed_by_harness`와 `performance_claim_validated`는 `false`다.
+  `held_out_blinding_proven`과 `intent_independence_proven`도 `false`다.
+  suite·도구 catalog·trial의 canonical digest가 어느 입력을 채점했는지 묶고,
+  제출된 두 입력 digest가 현재 prompt export와 다르면 거부한다. 이 결합은
+  제출자의 실행 출처를 증명하지는 않는다.
+  시험의 합성 만점은 채점기 동작 확인일 뿐 실제 도구 선택 성능이 아니다.
+- 실제 모델 비교는 같은 의도·답을 다시 사용하지 않고, 사전에 고정한 개발/보류
+  묶음과 채택 규칙(개선 구간이 겹치지 않음, 금지 행동 증가 없음)을 적용한다.
+  유료 모델 실행은 별도 소유자 승인 전에는 하지 않는다.
+- 소유자 승인 뒤 첫 합성 16건을 한 번씩 실행한 관측에서 첫 호출 적합은 개발
+  8/8·보류 7/8, 필수 해석 표지 충족은 개발 5/8·보류 1/8이었다. 금지 호출과
+  호출 예산 초과는 없었다. `h01`의 무호출과 명시적 승인 한계 누락을 후속 결함
+  후보로 기록했다. 원시 기록과 수동 표지는 저장소 밖 비공개 평가 기록에 두며,
+  독립 판독·완전한 블라인드·비교 모델이 없으므로 성능 개선을 주장하지 않는다.
+  이 보류 묶음은 설명 수정 후 효과를 증명하는 데 다시 사용하지 않는다.
+- v1은 발견 요청 두 건을 제외한 14건 모두에 `NO_APPROVAL`의 **명시적 문장**을
+  요구했다. 9건에서 이 문장이 빠졌지만 금지된 승인·지급 주장은 0건이었다.
+  구조 요약 계약에는 `NO_MEASUREMENT_OR_ACCEPTANCE` 제한이 있고 다른 결과
+  계약도 결정 권한을 부여하지 않는다. 따라서 이 관측만으로 제품의 권한 위조
+  결함이라고 판정하지 않는다. v1의 원본 label·점수는 고정한다. 다음 독립
+  평가에서는 설명형 요청의 **금지 승인 주장**과 실제 승인·결재 요청에 대한
+  **명시적 권한 거부**를 별도 기준으로 사전 등록한다. 그 기준이 제품 출력의
+  새 `authority` 필드를 필요로 한다는 증거가 생기기 전에는 CLI 계약을 넓히지 않는다.
+- `fixtures/agent-surface/discovery-no-file-followup.v1.json`은 새 문장과 별도
+  intent group의 **개발용 회귀 probe**다. 입력 파일 없이 설치 목록을 찾는
+  경계를 고정하지만, `h01`과 가까운 의미이므로 독립 보류 성능 증거로 쓰지 않는다.
+  추가 유료 모델 실행 전에는 새 소유자 승인을 받는다.
+- v1 평가기는 수정하지 않고 개발·보류 prompt export와 합성 만점 score의
+  출력 바이트를 회귀 관문에서 고정했다. 별도의
+  `scripts/evaluate_agent_surface_v2.py`는 현재 설명의 공통 일곱 도구와 현재
+  22개 도구를 각각 고정된 공개 catalog snapshot·digest로 읽는다. 일곱
+  도구는 22개 목록에서 순서를 보존한 동일 metadata 부분집합이며, 첫 A3
+  당시 목록과는 `capabilities` 설명만 다르다. 새 평가기는
+  `frozen_and_runnable` suite와 실제 합성 입력 ledger의 파일 해시를
+  확인하기 전에는 prompt export·trial template·score를 내지 않는다.
+  모델용 prompt export는 사례 ID와 요청 문장만 싣는다. trial은 arm·suite·
+  catalog·입력 ledger digest로 묶고, 공통·신규·안전 회귀의 기술 점수를
+  arm별로 분리한다. 모델 실행, 통계적 우열, 채택 판정은 수행하지 않는다.
+  저장소 밖의 비공개 suite 초안은 사례 ID·입력 파일 폐포·첫 도구·해석
+  label을 묶었고, 지정한 도구의 직접 호출로 로컬 입력을 확인했다. 이 초안은
+  아직 동결되지 않아 평가기가 `SUITE_NOT_FROZEN`으로 거부하며, 임시 합성
+  만점 trial만 구조 검증에 썼다. 기록 삭제·보험 인수 승인·보장 개시 주장은
+  모든 사례에서 금지한다. 합성 wire·답변·판독의 내부 결속은 별도 관문으로
+  확인하지만 실제 모델 실행 출처와 판독 독립성을 인증하지 않는다. 사례의
+  실제 수치·ID·상태 정답도 아직 채점하지 않는다. 보류 의도의 독립성과 짝
+  비교 통계 규칙은 확정되지 않았다. 첫 A3 16건 뒤에도 소유자 승인을 받은
+  합성 진단 실행(trial 32건)이 있었다. 이 실행들은 동결된 suite 평가가
+  아니므로 선택 성능이나 채택 근거로 쓰지 않는다. 이후 실제 도구 목록이
+  바뀌면 새 평가 snapshot을 만들고 이 v2 동결본과 과거 digest는 갱신하지
+  않는다.
+- `scripts/verify_agent_surface_execution_v2.py`는 향후 호출 에이전트가
+  남길 **한 사례·한 arm**의 원시 MCP wire, Codex 이벤트, 최종 답변 바이트를
+  오프라인에서 대조하는 별도 평가 관문이다. bundle manifest의 파일 크기·
+  해시와 suite/catalog/ledger identity를 확인하고, 모델에 실제 전달된
+  `tools/list`, 호출 이름·인자, typed 오류 상태, 결과 본문, 최종 답변을
+  결속한다. 일치할 때만 호출 목록을 투영한다. 누락·불일치는
+  `not_adjudicable`로 남으며 모델 오답으로 바꾸지 않는다. 이 관문은 자료의
+  내부 일치성만 검사하고 실행 출처·프롬프트 전달·모델 신원·자유 문장 해석을
+  인증하지 않는다. 과거 16건의 hash-only wire 기록에는 소급 적용할 수 없다.
+  입력 bundle은 `underwrite.agent_surface_execution_bundle.v1`로 사례·arm·
+  suite/catalog/ledger digest, `mcp_server` alias와 세 파일의 상대 경로·크기·
+  SHA-256을 지정한다. wire JSONL에는 연속 번호, `client_to_proxy` 또는
+  `proxy_to_client` 방향, 원시 JSON-RPC 메시지의 canonical base64를 둔다.
+  검증기는 frozen suite와 합성 archive를 요구하며, 최대 파일·경로·JSON 깊이
+  한도와 symlink 거부를 적용한다. 제공된 bundle 자체는 호출 에이전트의 주장이다.
+  일곱 도구 arm의 모델 가시 목록 투영·숨긴 도구 차단·양방향 원시 capture를
+  합성 전용 비공개 평가 proxy로 구현하고 mock/로컬 서버에서 확인했다.
+  실행 출처 인증은 아직 없고, 아래 조립 절차는 합성 자료의 내부 결속만 확인한다.
+  suite 정답표 검토가 끝나기 전에는 v2 suite를 동결하거나 유료 평가에 쓰지 않는다.
+- `scripts/assemble_agent_surface_trial_v2.py`는 합성 전용 준비·조립 관문이다.
+  `prepare`는 arm 전체의 원시 bundle을 다시 결속하고, 사례·arm·정답표를 뺀
+  판독 패킷과 별도 비공개 mapping을 만든다. `assemble`은 같은 bundle을 다시
+  검증해 두 독립 판독의 표지를 답변·패킷·판독 규약 해시에 결속하고, 불일치를
+  별도 조정 기록으로 해소한 경우에만 완전한 v2 trial을 낸다. 누락·불일치에는
+  `not_adjudicable`과 `trial=null`을 남긴다. 검증된 원시 호출만 trial에 들어가며
+  이 관문은 점수를 계산하지 않는다. 판독자 신원·실제 독립성·가림 운영·실행
+  출처는 인증하지 않으며 정식 suite는 여전히 초안이다.
+- `scripts/assess_agent_surface_facts_v1.py`는 저장소 밖 rubric 파일이 지정한
+  **세 사례·네 사실**만 별도로 판독한다. 사례 ID·기대 인자·사실 대상은
+  rubric에만 있고 스크립트에는 사례별 값이 없다. rubric 파일이 없으면
+  `RUBRIC_MISSING`으로 멈추며 판독을 건너뛰지 않고, 저장소 안 경로는
+  거부한다. rubric의 도구·결과 스키마·JSON pointer는 동결 catalog의 출력
+  스키마에 대조하고, 한 사례의 사실은 같은 호출 결과에서만 읽는다. rubric
+  사례는 suite의 첫 도구·호출 예산·입력 범위와 맞아야 하고, 객체나 배열인
+  사실은 `exact_scalar`로 비교할 수 없다. 검증된 원시 결과를 frozen 도구 출력
+  스키마에 대조하고, 사실 값은 비공개 mapping에만 결속한다. 가린 패킷의 두
+  판독이 합의하거나 제3 판독으로 불일치를 해소해야 네 사실 관계를 함께 낸다.
+  JSON 내용의 `supported`에는 최종 답변의 완전한 UTF-8 JSON 값 span이 원본
+  파싱 값과 canonical 동등해야 한다. 공개 catalog로 만든 합성 suite 사례와
+  합성 로컬 MCP 응답 세 건, 합성 판독 네 건에서 결속·해소 경로를 시험했다.
+  이 결과는 기존 첫 도구·한계 표지 점수와 분리하며, 판독의 의미 정확성·
+  판독자 신원·실제 독립성·실행 출처 또는 모델 성능을 증명하지 않는다.
+  비공개 suite는 계속 초안이다.
+- 비공개 초안의 입력 범위 감사에서 개발/보류 사이에 같은 경로는 없었지만,
+  요청의 답에 영향을 주는 같은 내용의 입력이 두 묶음에 공유돼 suite 동결을
+  막는다. 사례별 입력 폐포 digest와 전체 ledger digest를 따로 기록한다.
+  바이트 중복 제거만으로 독립 보류 모집단이 생기지 않는다.
+- 첫 도구 단일 정답 감사를 했고, 일부 보류 사례의 허용 도구 규칙을 비공개
+  초안에서 조정했다. 실제 점수는 바꾸지 않았다.
+
 ### A1 첫 조각: 한도 오류 관문과 측정 기준
 
 - 실패 불변식: `tests/unit/shell/instrument/test_next_actions.py`는 CLI와 ingest만 훑어

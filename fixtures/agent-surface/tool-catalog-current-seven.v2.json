@@ -1,0 +1,3345 @@
+{
+  "schema": "underwrite.agent_surface_catalog_snapshot.v1",
+  "tools": [
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "List installed command and codec capabilities. Use when: you need the installed commands, profiles and codec selectors. No input file is required. Do not use when: you need to inspect an artifact or evaluate its evidence.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "name": "underwrite_capabilities",
+      "outputSchema": {
+        "$defs": {
+          "codec": {
+            "additionalProperties": false,
+            "properties": {
+              "classification": {
+                "enum": [
+                  "native",
+                  "external"
+                ]
+              },
+              "commands": {
+                "$ref": "#/$defs/string_set"
+              },
+              "format": {
+                "$ref": "#/$defs/schema_name"
+              },
+              "format_version": {
+                "$ref": "#/$defs/schema_name"
+              },
+              "output_schema": {
+                "$ref": "#/$defs/schema_name"
+              },
+              "required_inputs": {
+                "$ref": "#/$defs/string_set"
+              }
+            },
+            "required": [
+              "format",
+              "format_version",
+              "classification",
+              "commands",
+              "output_schema",
+              "required_inputs"
+            ],
+            "type": "object"
+          },
+          "command": {
+            "additionalProperties": false,
+            "properties": {
+              "aliases": {
+                "$ref": "#/$defs/string_set"
+              },
+              "command": {
+                "$ref": "#/$defs/name"
+              },
+              "profiles": {
+                "items": {
+                  "$ref": "#/$defs/profile"
+                },
+                "maxItems": 32,
+                "minItems": 1,
+                "type": "array",
+                "uniqueItems": true
+              }
+            },
+            "required": [
+              "command",
+              "aliases",
+              "profiles"
+            ],
+            "type": "object"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9._|-]*(?![\\s\\S])",
+            "type": "string"
+          },
+          "profile": {
+            "additionalProperties": false,
+            "properties": {
+              "input_schemas": {
+                "$ref": "#/$defs/schema_set"
+              },
+              "name": {
+                "$ref": "#/$defs/name"
+              },
+              "output_schemas": {
+                "$ref": "#/$defs/schema_set"
+              },
+              "required_inputs": {
+                "$ref": "#/$defs/string_set"
+              }
+            },
+            "required": [
+              "name",
+              "required_inputs",
+              "input_schemas",
+              "output_schemas"
+            ],
+            "type": "object"
+          },
+          "schema_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])",
+            "type": "string"
+          },
+          "schema_set": {
+            "items": {
+              "$ref": "#/$defs/schema_name"
+            },
+            "maxItems": 16,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "string_set": {
+            "items": {
+              "$ref": "#/$defs/name"
+            },
+            "maxItems": 16,
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "$id": "urn:underwrite:contract:capabilities.v1",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Installed command and exact codec capabilities derived from runtime registrations.",
+        "properties": {
+          "codecs": {
+            "items": {
+              "$ref": "#/$defs/codec"
+            },
+            "maxItems": 64,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "commands": {
+            "items": {
+              "$ref": "#/$defs/command"
+            },
+            "maxItems": 32,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "schema": {
+            "const": "capabilities.v1"
+          }
+        },
+        "required": [
+          "schema",
+          "commands",
+          "codecs"
+        ],
+        "title": "capabilities.v1",
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Screen one external common-result file with content-minimized output. Use when: you have a local evidence_result.v1 file and need a content-minimized structural summary. Do not use when: you need producer verification, measurement or approval.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "type": "object"
+      },
+      "name": "underwrite_inspect_result_v1",
+      "outputSchema": {
+        "$id": "urn:underwrite:contract:common_result_inspection.v3",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "else": {
+              "properties": {
+                "availability_counts": {
+                  "type": "null"
+                },
+                "checks": {
+                  "properties": {
+                    "item_invariants": {
+                      "const": "not_applicable"
+                    }
+                  }
+                },
+                "declared_population": {
+                  "type": "null"
+                }
+              }
+            },
+            "if": {
+              "properties": {
+                "declared_processing": {
+                  "properties": {
+                    "state": {
+                      "const": "analyzed"
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "availability_counts": {
+                  "type": "object"
+                },
+                "checks": {
+                  "properties": {
+                    "item_invariants": {
+                      "const": "valid"
+                    }
+                  }
+                },
+                "declared_population": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        ],
+        "description": "Content-minimized structural screening of the exact selected common-result input; source claims and verification references remain unchecked.",
+        "properties": {
+          "availability_counts": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "abstained": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "error": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "missing": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "observed": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "total": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "observed",
+                  "missing",
+                  "error",
+                  "abstained",
+                  "total"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "checks": {
+            "additionalProperties": false,
+            "properties": {
+              "contract_shape": {
+                "const": "valid"
+              },
+              "item_invariants": {
+                "enum": [
+                  "valid",
+                  "not_applicable"
+                ]
+              },
+              "producer_authentication": {
+                "const": "not_checked"
+              },
+              "source_bytes": {
+                "const": "not_checked"
+              },
+              "verification_refs": {
+                "const": "not_reperformed"
+              }
+            },
+            "required": [
+              "contract_shape",
+              "item_invariants",
+              "source_bytes",
+              "producer_authentication",
+              "verification_refs"
+            ],
+            "type": "object"
+          },
+          "declared_population": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "observed_count": {
+                    "description": "Number of parsed source records in the declared unit, including records whose outcome is missing or errored. This is not a count of successful measurements.",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "planned_count": {
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "unit": {
+                    "enum": [
+                      "run",
+                      "case",
+                      "row",
+                      "metric_occurrence"
+                    ]
+                  }
+                },
+                "required": [
+                  "unit",
+                  "observed_count",
+                  "planned_count"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "declared_processing": {
+            "additionalProperties": false,
+            "oneOf": [
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "none"
+                  },
+                  "reason": {
+                    "type": "null"
+                  },
+                  "state": {
+                    "const": "analyzed"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "supply_input"
+                  },
+                  "reason": {
+                    "const": "MISSING_INPUT"
+                  },
+                  "state": {
+                    "const": "insufficient"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "select_format"
+                  },
+                  "reason": {
+                    "const": "AMBIGUOUS_FORMAT"
+                  },
+                  "state": {
+                    "const": "insufficient"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "repair_export"
+                  },
+                  "reason": {
+                    "const": "INVALID_STRUCTURE"
+                  },
+                  "state": {
+                    "const": "insufficient"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "bind_source"
+                  },
+                  "reason": {
+                    "const": "UNBOUND_SOURCE"
+                  },
+                  "state": {
+                    "const": "insufficient"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "provide_supported_export"
+                  },
+                  "reason": {
+                    "const": "UNSUPPORTED_FORMAT"
+                  },
+                  "state": {
+                    "const": "unsupported"
+                  }
+                }
+              }
+            ],
+            "properties": {
+              "next_action": {
+                "enum": [
+                  "none",
+                  "supply_input",
+                  "select_format",
+                  "provide_supported_export",
+                  "repair_export",
+                  "bind_source"
+                ]
+              },
+              "reason": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "enum": [
+                      "MISSING_INPUT",
+                      "AMBIGUOUS_FORMAT",
+                      "UNSUPPORTED_FORMAT",
+                      "INVALID_STRUCTURE",
+                      "UNBOUND_SOURCE"
+                    ]
+                  }
+                ]
+              },
+              "state": {
+                "enum": [
+                  "analyzed",
+                  "insufficient",
+                  "unsupported"
+                ]
+              }
+            },
+            "required": [
+              "state",
+              "reason",
+              "next_action"
+            ],
+            "type": "object"
+          },
+          "limitations": {
+            "const": [
+              "SOURCE_CLAIMS_UNVERIFIED",
+              "SOURCE_BYTES_NOT_CHECKED",
+              "BUNDLE_BINDING_NOT_CHECKED",
+              "VERIFICATION_REFS_NOT_REPERFORMED",
+              "ITEM_INVARIANTS_LIMITED",
+              "NO_MEASUREMENT_OR_ACCEPTANCE",
+              "RAW_HASH_AND_COUNTS_LINKABLE"
+            ]
+          },
+          "schema": {
+            "const": "common_result_inspection.v3"
+          },
+          "selected_result": {
+            "additionalProperties": false,
+            "properties": {
+              "format": {
+                "enum": [
+                  "evidence_result.v1",
+                  "evidence_result.v2"
+                ]
+              },
+              "raw_hash": {
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "format",
+              "raw_hash"
+            ],
+            "type": "object"
+          },
+          "verification_entry_count": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "schema",
+          "selected_result",
+          "declared_processing",
+          "declared_population",
+          "availability_counts",
+          "checks",
+          "verification_entry_count",
+          "limitations"
+        ],
+        "title": "common_result_inspection.v3",
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Screen one external common-result file with content-minimized output. Use when: you have a local evidence_result.v2 file and need a content-minimized structural summary. Do not use when: you need producer verification, measurement or approval.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "type": "object"
+      },
+      "name": "underwrite_inspect_result_v2",
+      "outputSchema": {
+        "$id": "urn:underwrite:contract:common_result_inspection.v3",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "else": {
+              "properties": {
+                "availability_counts": {
+                  "type": "null"
+                },
+                "checks": {
+                  "properties": {
+                    "item_invariants": {
+                      "const": "not_applicable"
+                    }
+                  }
+                },
+                "declared_population": {
+                  "type": "null"
+                }
+              }
+            },
+            "if": {
+              "properties": {
+                "declared_processing": {
+                  "properties": {
+                    "state": {
+                      "const": "analyzed"
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "availability_counts": {
+                  "type": "object"
+                },
+                "checks": {
+                  "properties": {
+                    "item_invariants": {
+                      "const": "valid"
+                    }
+                  }
+                },
+                "declared_population": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        ],
+        "description": "Content-minimized structural screening of the exact selected common-result input; source claims and verification references remain unchecked.",
+        "properties": {
+          "availability_counts": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "abstained": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "error": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "missing": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "observed": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "total": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "observed",
+                  "missing",
+                  "error",
+                  "abstained",
+                  "total"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "checks": {
+            "additionalProperties": false,
+            "properties": {
+              "contract_shape": {
+                "const": "valid"
+              },
+              "item_invariants": {
+                "enum": [
+                  "valid",
+                  "not_applicable"
+                ]
+              },
+              "producer_authentication": {
+                "const": "not_checked"
+              },
+              "source_bytes": {
+                "const": "not_checked"
+              },
+              "verification_refs": {
+                "const": "not_reperformed"
+              }
+            },
+            "required": [
+              "contract_shape",
+              "item_invariants",
+              "source_bytes",
+              "producer_authentication",
+              "verification_refs"
+            ],
+            "type": "object"
+          },
+          "declared_population": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "observed_count": {
+                    "description": "Number of parsed source records in the declared unit, including records whose outcome is missing or errored. This is not a count of successful measurements.",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "planned_count": {
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "unit": {
+                    "enum": [
+                      "run",
+                      "case",
+                      "row",
+                      "metric_occurrence"
+                    ]
+                  }
+                },
+                "required": [
+                  "unit",
+                  "observed_count",
+                  "planned_count"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "declared_processing": {
+            "additionalProperties": false,
+            "oneOf": [
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "none"
+                  },
+                  "reason": {
+                    "type": "null"
+                  },
+                  "state": {
+                    "const": "analyzed"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "supply_input"
+                  },
+                  "reason": {
+                    "const": "MISSING_INPUT"
+                  },
+                  "state": {
+                    "const": "insufficient"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "select_format"
+                  },
+                  "reason": {
+                    "const": "AMBIGUOUS_FORMAT"
+                  },
+                  "state": {
+                    "const": "insufficient"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "repair_export"
+                  },
+                  "reason": {
+                    "const": "INVALID_STRUCTURE"
+                  },
+                  "state": {
+                    "const": "insufficient"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "bind_source"
+                  },
+                  "reason": {
+                    "const": "UNBOUND_SOURCE"
+                  },
+                  "state": {
+                    "const": "insufficient"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "provide_supported_export"
+                  },
+                  "reason": {
+                    "const": "UNSUPPORTED_FORMAT"
+                  },
+                  "state": {
+                    "const": "unsupported"
+                  }
+                }
+              }
+            ],
+            "properties": {
+              "next_action": {
+                "enum": [
+                  "none",
+                  "supply_input",
+                  "select_format",
+                  "provide_supported_export",
+                  "repair_export",
+                  "bind_source"
+                ]
+              },
+              "reason": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "enum": [
+                      "MISSING_INPUT",
+                      "AMBIGUOUS_FORMAT",
+                      "UNSUPPORTED_FORMAT",
+                      "INVALID_STRUCTURE",
+                      "UNBOUND_SOURCE"
+                    ]
+                  }
+                ]
+              },
+              "state": {
+                "enum": [
+                  "analyzed",
+                  "insufficient",
+                  "unsupported"
+                ]
+              }
+            },
+            "required": [
+              "state",
+              "reason",
+              "next_action"
+            ],
+            "type": "object"
+          },
+          "limitations": {
+            "const": [
+              "SOURCE_CLAIMS_UNVERIFIED",
+              "SOURCE_BYTES_NOT_CHECKED",
+              "BUNDLE_BINDING_NOT_CHECKED",
+              "VERIFICATION_REFS_NOT_REPERFORMED",
+              "ITEM_INVARIANTS_LIMITED",
+              "NO_MEASUREMENT_OR_ACCEPTANCE",
+              "RAW_HASH_AND_COUNTS_LINKABLE"
+            ]
+          },
+          "schema": {
+            "const": "common_result_inspection.v3"
+          },
+          "selected_result": {
+            "additionalProperties": false,
+            "properties": {
+              "format": {
+                "enum": [
+                  "evidence_result.v1",
+                  "evidence_result.v2"
+                ]
+              },
+              "raw_hash": {
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "format",
+              "raw_hash"
+            ],
+            "type": "object"
+          },
+          "verification_entry_count": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "schema",
+          "selected_result",
+          "declared_processing",
+          "declared_population",
+          "availability_counts",
+          "checks",
+          "verification_entry_count",
+          "limitations"
+        ],
+        "title": "common_result_inspection.v3",
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Audit exact goppi baseline exchange v2 as descriptive common evidence. Use when: you have a completed local Goppi baseline exchange v2 directory and need descriptive common evidence. Do not use when: you need paired trajectory verification, a measured effect or approval.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "exchange": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "exchange"
+        ],
+        "type": "object"
+      },
+      "name": "underwrite_audit_baseline",
+      "outputSchema": {
+        "$defs": {
+          "coordinate": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "index": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "kind": {
+                    "const": "run"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "index"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "index": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "kind": {
+                    "const": "case"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "index"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "index": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "kind": {
+                    "const": "row"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "index"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "case_index": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "kind": {
+                    "const": "metric_occurrence"
+                  },
+                  "metric_index": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "case_index",
+                  "metric_index"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "hash": {
+            "pattern": "^sha256:[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "identity": {
+            "additionalProperties": false,
+            "properties": {
+              "digest": {
+                "$ref": "#/$defs/hash"
+              },
+              "id": {
+                "$ref": "#/$defs/token"
+              },
+              "version": {
+                "$ref": "#/$defs/version"
+              }
+            },
+            "required": [
+              "id",
+              "version",
+              "digest"
+            ],
+            "type": "object"
+          },
+          "item": {
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "oneOf": [
+                  {
+                    "properties": {
+                      "availability": {
+                        "const": "observed"
+                      },
+                      "next_action": {
+                        "const": "none"
+                      },
+                      "reason": {
+                        "type": "null"
+                      },
+                      "value": {
+                        "type": [
+                          "number",
+                          "boolean"
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "availability": {
+                        "const": "missing"
+                      },
+                      "next_action": {
+                        "enum": [
+                          "inspect_source",
+                          "supply_plan",
+                          "supply_applicability",
+                          "supply_definition",
+                          "supply_label",
+                          "rerun_source"
+                        ]
+                      },
+                      "reason": {
+                        "const": "SOURCE_MISSING"
+                      },
+                      "value": {
+                        "type": "null"
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "availability": {
+                        "const": "error"
+                      },
+                      "next_action": {
+                        "enum": [
+                          "inspect_source",
+                          "rerun_source"
+                        ]
+                      },
+                      "reason": {
+                        "const": "SOURCE_ERROR"
+                      },
+                      "value": {
+                        "type": "null"
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "availability": {
+                        "const": "abstained"
+                      },
+                      "next_action": {
+                        "enum": [
+                          "inspect_source",
+                          "supply_applicability",
+                          "supply_definition"
+                        ]
+                      },
+                      "reason": {
+                        "const": "SOURCE_ABSTAINED"
+                      },
+                      "value": {
+                        "type": "null"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "if": {
+                  "properties": {
+                    "origin": {
+                      "const": "computed"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "method": {
+                      "$ref": "#/$defs/identity"
+                    },
+                    "metric": {
+                      "properties": {
+                        "semantic_binding": {
+                          "const": "bound"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "permitted_effect": {
+                      "const": "advisory"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "metric": {
+                      "properties": {
+                        "semantic_binding": {
+                          "const": "bound"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ],
+            "properties": {
+              "applicability": {
+                "enum": [
+                  "applicable",
+                  "not_applicable",
+                  "unknown"
+                ]
+              },
+              "availability": {
+                "enum": [
+                  "observed",
+                  "missing",
+                  "error",
+                  "abstained"
+                ]
+              },
+              "coordinate": {
+                "$ref": "#/$defs/coordinate"
+              },
+              "method": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/$defs/identity"
+                  }
+                ]
+              },
+              "metric": {
+                "$ref": "#/$defs/metric_binding"
+              },
+              "next_action": {
+                "enum": [
+                  "none",
+                  "inspect_source",
+                  "supply_plan",
+                  "supply_applicability",
+                  "supply_definition",
+                  "supply_label",
+                  "rerun_source"
+                ]
+              },
+              "origin": {
+                "enum": [
+                  "source_claim",
+                  "computed"
+                ]
+              },
+              "permitted_effect": {
+                "enum": [
+                  "descriptive",
+                  "advisory"
+                ]
+              },
+              "policy": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/$defs/identity"
+                  }
+                ]
+              },
+              "reason": {
+                "enum": [
+                  null,
+                  "SOURCE_MISSING",
+                  "SOURCE_ERROR",
+                  "SOURCE_ABSTAINED"
+                ]
+              },
+              "value": {
+                "type": [
+                  "number",
+                  "boolean",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "coordinate",
+              "metric",
+              "applicability",
+              "availability",
+              "value",
+              "reason",
+              "next_action",
+              "origin",
+              "method",
+              "policy",
+              "permitted_effect"
+            ],
+            "type": "object"
+          },
+          "metric_binding": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "semantic_binding": {
+                    "const": "unbound"
+                  },
+                  "source_metric_index": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "semantic_binding",
+                  "source_metric_index"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "$ref": "#/$defs/token"
+                  },
+                  "namespace": {
+                    "$ref": "#/$defs/token"
+                  },
+                  "semantic_binding": {
+                    "const": "bound"
+                  },
+                  "semantic_digest": {
+                    "$ref": "#/$defs/hash"
+                  },
+                  "version": {
+                    "$ref": "#/$defs/version"
+                  }
+                },
+                "required": [
+                  "semantic_binding",
+                  "namespace",
+                  "id",
+                  "version",
+                  "semantic_digest"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "population": {
+            "additionalProperties": false,
+            "properties": {
+              "observed_count": {
+                "description": "Number of parsed source records in the declared unit, including records whose outcome is missing or errored. This is not a count of successful measurements.",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "planned_count": {
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "unit": {
+                "enum": [
+                  "run",
+                  "case",
+                  "row",
+                  "metric_occurrence"
+                ]
+              }
+            },
+            "required": [
+              "unit",
+              "observed_count",
+              "planned_count"
+            ],
+            "type": "object"
+          },
+          "token": {
+            "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$",
+            "type": "string"
+          },
+          "verification": {
+            "additionalProperties": false,
+            "oneOf": [
+              {
+                "properties": {
+                  "method": {
+                    "const": "sha256"
+                  },
+                  "target": {
+                    "const": "source_bytes"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "method": {
+                    "const": "manifest_binding"
+                  },
+                  "target": {
+                    "const": "bundle_binding"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "method": {
+                    "const": "schema_validation"
+                  },
+                  "target": {
+                    "const": "contract_shape"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "method": {
+                    "const": "canonical_digest"
+                  },
+                  "target": {
+                    "const": "semantic_digest"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "method": {
+                    "const": "inventory_comparison"
+                  },
+                  "target": {
+                    "const": "planned_population"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "method": {
+                    "const": "deterministic_replay"
+                  },
+                  "target": {
+                    "const": "calculation"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "method": {
+                    "const": "independent_review"
+                  },
+                  "target": {
+                    "const": "label"
+                  }
+                }
+              }
+            ],
+            "properties": {
+              "evidence_ref": {
+                "$ref": "#/$defs/token"
+              },
+              "method": {
+                "enum": [
+                  "sha256",
+                  "manifest_binding",
+                  "schema_validation",
+                  "canonical_digest",
+                  "inventory_comparison",
+                  "deterministic_replay",
+                  "independent_review"
+                ]
+              },
+              "scope": {
+                "oneOf": [
+                  {
+                    "const": "artifact"
+                  },
+                  {
+                    "$ref": "#/$defs/coordinate"
+                  }
+                ]
+              },
+              "target": {
+                "enum": [
+                  "source_bytes",
+                  "bundle_binding",
+                  "contract_shape",
+                  "semantic_digest",
+                  "planned_population",
+                  "calculation",
+                  "label"
+                ]
+              }
+            },
+            "required": [
+              "target",
+              "method",
+              "scope",
+              "evidence_ref"
+            ],
+            "type": "object"
+          },
+          "version": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+            "type": "string"
+          }
+        },
+        "$id": "urn:underwrite:contract:evidence_result.v2",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "else": {
+              "properties": {
+                "population": {
+                  "$ref": "#/$defs/population"
+                },
+                "source": {
+                  "type": "object"
+                }
+              }
+            },
+            "if": {
+              "properties": {
+                "processing": {
+                  "properties": {
+                    "state": {
+                      "enum": [
+                        "insufficient",
+                        "unsupported"
+                      ]
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "items": {
+                  "maxItems": 0
+                },
+                "population": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "source": {
+                  "type": "null"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "verification": {
+                  "maxItems": 0
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "processing": {
+                  "properties": {
+                    "reason": {
+                      "enum": [
+                        "MISSING_INPUT",
+                        "AMBIGUOUS_FORMAT",
+                        "UNBOUND_SOURCE"
+                      ]
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "source": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "population": {
+                  "properties": {
+                    "unit": {
+                      "const": "run"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "items": {
+                  "items": {
+                    "properties": {
+                      "coordinate": {
+                        "properties": {
+                          "kind": {
+                            "const": "run"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "population": {
+                  "properties": {
+                    "unit": {
+                      "const": "case"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "items": {
+                  "items": {
+                    "properties": {
+                      "coordinate": {
+                        "properties": {
+                          "kind": {
+                            "const": "case"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "population": {
+                  "properties": {
+                    "unit": {
+                      "const": "row"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "items": {
+                  "items": {
+                    "properties": {
+                      "coordinate": {
+                        "properties": {
+                          "kind": {
+                            "const": "row"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "population": {
+                  "properties": {
+                    "unit": {
+                      "const": "metric_occurrence"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "items": {
+                  "items": {
+                    "properties": {
+                      "coordinate": {
+                        "properties": {
+                          "kind": {
+                            "const": "metric_occurrence"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "description": "Artifact-scoped descriptive evidence with separate producer-version claim, applied reader and owner-declaration byte identity; no decision authority.",
+        "properties": {
+          "declaration_source": {
+            "description": "One separately captured owner declaration, if supplied. Its hash identifies bytes but does not authenticate the owner or declared meaning.",
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "authority": {
+                    "const": "owner_asserted_unverified"
+                  },
+                  "format": {
+                    "$ref": "#/$defs/token"
+                  },
+                  "raw_hash": {
+                    "$ref": "#/$defs/hash"
+                  }
+                },
+                "required": [
+                  "format",
+                  "raw_hash",
+                  "authority"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "items": {
+            "items": {
+              "$ref": "#/$defs/item"
+            },
+            "type": "array"
+          },
+          "population": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/$defs/population"
+              }
+            ]
+          },
+          "processing": {
+            "additionalProperties": false,
+            "oneOf": [
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "none"
+                  },
+                  "reason": {
+                    "type": "null"
+                  },
+                  "state": {
+                    "const": "analyzed"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "supply_input"
+                  },
+                  "reason": {
+                    "const": "MISSING_INPUT"
+                  },
+                  "state": {
+                    "const": "insufficient"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "select_format"
+                  },
+                  "reason": {
+                    "const": "AMBIGUOUS_FORMAT"
+                  },
+                  "state": {
+                    "const": "insufficient"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "repair_export"
+                  },
+                  "reason": {
+                    "const": "INVALID_STRUCTURE"
+                  },
+                  "state": {
+                    "const": "insufficient"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "bind_source"
+                  },
+                  "reason": {
+                    "const": "UNBOUND_SOURCE"
+                  },
+                  "state": {
+                    "const": "insufficient"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "provide_supported_export"
+                  },
+                  "reason": {
+                    "const": "UNSUPPORTED_FORMAT"
+                  },
+                  "state": {
+                    "const": "unsupported"
+                  }
+                }
+              }
+            ],
+            "properties": {
+              "next_action": {
+                "enum": [
+                  "none",
+                  "supply_input",
+                  "select_format",
+                  "provide_supported_export",
+                  "repair_export",
+                  "bind_source"
+                ]
+              },
+              "reason": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "enum": [
+                      "MISSING_INPUT",
+                      "AMBIGUOUS_FORMAT",
+                      "UNSUPPORTED_FORMAT",
+                      "INVALID_STRUCTURE",
+                      "UNBOUND_SOURCE"
+                    ]
+                  }
+                ]
+              },
+              "state": {
+                "enum": [
+                  "analyzed",
+                  "insufficient",
+                  "unsupported"
+                ]
+              }
+            },
+            "required": [
+              "state",
+              "reason",
+              "next_action"
+            ],
+            "type": "object"
+          },
+          "schema": {
+            "const": "evidence_result.v2"
+          },
+          "source": {
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "else": {
+                  "properties": {
+                    "producer_version": {
+                      "type": "null"
+                    }
+                  }
+                },
+                "if": {
+                  "properties": {
+                    "producer_version_state": {
+                      "const": "declared"
+                    }
+                  },
+                  "required": [
+                    "producer_version_state"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "producer_version": {
+                      "$ref": "#/$defs/version"
+                    }
+                  }
+                }
+              }
+            ],
+            "description": "Null only when no source identity can be established. Producer version is a declaration or unknown, not authenticated by this contract.",
+            "properties": {
+              "format": {
+                "$ref": "#/$defs/token"
+              },
+              "identity": {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "const": "single_file"
+                      },
+                      "raw_hash": {
+                        "$ref": "#/$defs/hash"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "raw_hash"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "const": "bound_bundle"
+                      },
+                      "manifest_raw_hash": {
+                        "$ref": "#/$defs/hash",
+                        "description": "Raw bytes of a bundle manifest. Its hash alone does not establish that member bytes match the manifest, or authenticate the producer."
+                      },
+                      "members": {
+                        "additionalProperties": {
+                          "$ref": "#/$defs/hash"
+                        },
+                        "description": "Each unique role names one member's raw-byte hash. Duplicate JSON keys must be rejected during decoding before schema validation.",
+                        "minProperties": 2,
+                        "propertyNames": {
+                          "$ref": "#/$defs/token"
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "manifest_raw_hash",
+                      "members"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              "producer_version": {
+                "description": "A source-declared package version or null; not authenticated.",
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/$defs/version"
+                  }
+                ]
+              },
+              "producer_version_state": {
+                "enum": [
+                  "unknown",
+                  "declared"
+                ]
+              },
+              "reader_profile": {
+                "description": "Applied local reader rule, not producer version; null if none.",
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/$defs/token"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "format",
+              "producer_version",
+              "producer_version_state",
+              "reader_profile",
+              "identity"
+            ],
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "verification": {
+            "description": "Scoped assertions only. Consumers must resolve and reperform evidence_ref; schema-valid entries do not establish producer authentication or independent review.",
+            "items": {
+              "$ref": "#/$defs/verification"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "schema",
+          "source",
+          "processing",
+          "population",
+          "items",
+          "verification",
+          "declaration_source"
+        ],
+        "title": "evidence_result.v2",
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Screen one external common-result file with content-minimized output. Use when: you have a local evidence_result.v1 file and need item action and declared-binding counts. Do not use when: you need producer verification or to execute those actions.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "type": "object"
+      },
+      "name": "underwrite_inspect_result_v1_actions",
+      "outputSchema": {
+        "$id": "urn:underwrite:contract:common_result_inspection_actions.v3",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "else": {
+              "properties": {
+                "availability_counts": {
+                  "type": "null"
+                },
+                "checks": {
+                  "properties": {
+                    "item_invariants": {
+                      "const": "not_applicable"
+                    }
+                  }
+                },
+                "declared_population": {
+                  "type": "null"
+                },
+                "declared_semantic_binding_counts": {
+                  "type": "null"
+                },
+                "item_next_action_counts": {
+                  "type": "null"
+                }
+              }
+            },
+            "if": {
+              "properties": {
+                "declared_processing": {
+                  "properties": {
+                    "state": {
+                      "const": "analyzed"
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "availability_counts": {
+                  "type": "object"
+                },
+                "checks": {
+                  "properties": {
+                    "item_invariants": {
+                      "const": "valid"
+                    }
+                  }
+                },
+                "declared_population": {
+                  "type": "object"
+                },
+                "declared_semantic_binding_counts": {
+                  "type": "object"
+                },
+                "item_next_action_counts": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        ],
+        "description": "Content-minimized screening with source-declared action and semantic-binding histograms over the exact selected common-result input; no decision authority.",
+        "properties": {
+          "availability_counts": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "abstained": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "error": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "missing": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "observed": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "total": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "observed",
+                  "missing",
+                  "error",
+                  "abstained",
+                  "total"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "checks": {
+            "additionalProperties": false,
+            "properties": {
+              "contract_shape": {
+                "const": "valid"
+              },
+              "item_invariants": {
+                "enum": [
+                  "valid",
+                  "not_applicable"
+                ]
+              },
+              "producer_authentication": {
+                "const": "not_checked"
+              },
+              "source_bytes": {
+                "const": "not_checked"
+              },
+              "verification_refs": {
+                "const": "not_reperformed"
+              }
+            },
+            "required": [
+              "contract_shape",
+              "item_invariants",
+              "source_bytes",
+              "producer_authentication",
+              "verification_refs"
+            ],
+            "type": "object"
+          },
+          "declared_population": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "observed_count": {
+                    "description": "Number of parsed source records in the declared unit, including records whose outcome is missing or errored. This is not a count of successful measurements.",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "planned_count": {
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "unit": {
+                    "enum": [
+                      "run",
+                      "case",
+                      "row",
+                      "metric_occurrence"
+                    ]
+                  }
+                },
+                "required": [
+                  "unit",
+                  "observed_count",
+                  "planned_count"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "declared_processing": {
+            "additionalProperties": false,
+            "oneOf": [
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "none"
+                  },
+                  "reason": {
+                    "type": "null"
+                  },
+                  "state": {
+                    "const": "analyzed"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "supply_input"
+                  },
+                  "reason": {
+                    "const": "MISSING_INPUT"
+                  },
+                  "state": {
+                    "const": "insufficient"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "select_format"
+                  },
+                  "reason": {
+                    "const": "AMBIGUOUS_FORMAT"
+                  },
+                  "state": {
+                    "const": "insufficient"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "repair_export"
+                  },
+                  "reason": {
+                    "const": "INVALID_STRUCTURE"
+                  },
+                  "state": {
+                    "const": "insufficient"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "bind_source"
+                  },
+                  "reason": {
+                    "const": "UNBOUND_SOURCE"
+                  },
+                  "state": {
+                    "const": "insufficient"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "provide_supported_export"
+                  },
+                  "reason": {
+                    "const": "UNSUPPORTED_FORMAT"
+                  },
+                  "state": {
+                    "const": "unsupported"
+                  }
+                }
+              }
+            ],
+            "properties": {
+              "next_action": {
+                "enum": [
+                  "none",
+                  "supply_input",
+                  "select_format",
+                  "provide_supported_export",
+                  "repair_export",
+                  "bind_source"
+                ]
+              },
+              "reason": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "enum": [
+                      "MISSING_INPUT",
+                      "AMBIGUOUS_FORMAT",
+                      "UNSUPPORTED_FORMAT",
+                      "INVALID_STRUCTURE",
+                      "UNBOUND_SOURCE"
+                    ]
+                  }
+                ]
+              },
+              "state": {
+                "enum": [
+                  "analyzed",
+                  "insufficient",
+                  "unsupported"
+                ]
+              }
+            },
+            "required": [
+              "state",
+              "reason",
+              "next_action"
+            ],
+            "type": "object"
+          },
+          "declared_semantic_binding_counts": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "bound": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "unbound": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "unbound",
+                  "bound"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "item_next_action_counts": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "inspect_source": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "none": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "rerun_source": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "supply_applicability": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "supply_definition": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "supply_label": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "supply_plan": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "none",
+                  "inspect_source",
+                  "supply_plan",
+                  "supply_applicability",
+                  "supply_definition",
+                  "supply_label",
+                  "rerun_source"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "limitations": {
+            "const": [
+              "SOURCE_CLAIMS_UNVERIFIED",
+              "SOURCE_BYTES_NOT_CHECKED",
+              "BUNDLE_BINDING_NOT_CHECKED",
+              "VERIFICATION_REFS_NOT_REPERFORMED",
+              "ITEM_INVARIANTS_LIMITED",
+              "NO_MEASUREMENT_OR_ACCEPTANCE",
+              "RAW_HASH_AND_COUNTS_LINKABLE"
+            ]
+          },
+          "schema": {
+            "const": "common_result_inspection_actions.v3"
+          },
+          "selected_result": {
+            "additionalProperties": false,
+            "properties": {
+              "format": {
+                "enum": [
+                  "evidence_result.v1",
+                  "evidence_result.v2"
+                ]
+              },
+              "raw_hash": {
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "format",
+              "raw_hash"
+            ],
+            "type": "object"
+          },
+          "verification_entry_count": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "schema",
+          "selected_result",
+          "declared_processing",
+          "declared_population",
+          "availability_counts",
+          "checks",
+          "verification_entry_count",
+          "limitations",
+          "item_next_action_counts",
+          "declared_semantic_binding_counts"
+        ],
+        "title": "common_result_inspection_actions.v3",
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Screen one external common-result file with content-minimized output. Use when: you have a local evidence_result.v2 file and need item action and declared-binding counts. Do not use when: you need producer verification or to execute those actions.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "type": "object"
+      },
+      "name": "underwrite_inspect_result_v2_actions",
+      "outputSchema": {
+        "$id": "urn:underwrite:contract:common_result_inspection_actions.v3",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "else": {
+              "properties": {
+                "availability_counts": {
+                  "type": "null"
+                },
+                "checks": {
+                  "properties": {
+                    "item_invariants": {
+                      "const": "not_applicable"
+                    }
+                  }
+                },
+                "declared_population": {
+                  "type": "null"
+                },
+                "declared_semantic_binding_counts": {
+                  "type": "null"
+                },
+                "item_next_action_counts": {
+                  "type": "null"
+                }
+              }
+            },
+            "if": {
+              "properties": {
+                "declared_processing": {
+                  "properties": {
+                    "state": {
+                      "const": "analyzed"
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "availability_counts": {
+                  "type": "object"
+                },
+                "checks": {
+                  "properties": {
+                    "item_invariants": {
+                      "const": "valid"
+                    }
+                  }
+                },
+                "declared_population": {
+                  "type": "object"
+                },
+                "declared_semantic_binding_counts": {
+                  "type": "object"
+                },
+                "item_next_action_counts": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        ],
+        "description": "Content-minimized screening with source-declared action and semantic-binding histograms over the exact selected common-result input; no decision authority.",
+        "properties": {
+          "availability_counts": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "abstained": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "error": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "missing": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "observed": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "total": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "observed",
+                  "missing",
+                  "error",
+                  "abstained",
+                  "total"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "checks": {
+            "additionalProperties": false,
+            "properties": {
+              "contract_shape": {
+                "const": "valid"
+              },
+              "item_invariants": {
+                "enum": [
+                  "valid",
+                  "not_applicable"
+                ]
+              },
+              "producer_authentication": {
+                "const": "not_checked"
+              },
+              "source_bytes": {
+                "const": "not_checked"
+              },
+              "verification_refs": {
+                "const": "not_reperformed"
+              }
+            },
+            "required": [
+              "contract_shape",
+              "item_invariants",
+              "source_bytes",
+              "producer_authentication",
+              "verification_refs"
+            ],
+            "type": "object"
+          },
+          "declared_population": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "observed_count": {
+                    "description": "Number of parsed source records in the declared unit, including records whose outcome is missing or errored. This is not a count of successful measurements.",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "planned_count": {
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "unit": {
+                    "enum": [
+                      "run",
+                      "case",
+                      "row",
+                      "metric_occurrence"
+                    ]
+                  }
+                },
+                "required": [
+                  "unit",
+                  "observed_count",
+                  "planned_count"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "declared_processing": {
+            "additionalProperties": false,
+            "oneOf": [
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "none"
+                  },
+                  "reason": {
+                    "type": "null"
+                  },
+                  "state": {
+                    "const": "analyzed"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "supply_input"
+                  },
+                  "reason": {
+                    "const": "MISSING_INPUT"
+                  },
+                  "state": {
+                    "const": "insufficient"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "select_format"
+                  },
+                  "reason": {
+                    "const": "AMBIGUOUS_FORMAT"
+                  },
+                  "state": {
+                    "const": "insufficient"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "repair_export"
+                  },
+                  "reason": {
+                    "const": "INVALID_STRUCTURE"
+                  },
+                  "state": {
+                    "const": "insufficient"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "bind_source"
+                  },
+                  "reason": {
+                    "const": "UNBOUND_SOURCE"
+                  },
+                  "state": {
+                    "const": "insufficient"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "next_action": {
+                    "const": "provide_supported_export"
+                  },
+                  "reason": {
+                    "const": "UNSUPPORTED_FORMAT"
+                  },
+                  "state": {
+                    "const": "unsupported"
+                  }
+                }
+              }
+            ],
+            "properties": {
+              "next_action": {
+                "enum": [
+                  "none",
+                  "supply_input",
+                  "select_format",
+                  "provide_supported_export",
+                  "repair_export",
+                  "bind_source"
+                ]
+              },
+              "reason": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "enum": [
+                      "MISSING_INPUT",
+                      "AMBIGUOUS_FORMAT",
+                      "UNSUPPORTED_FORMAT",
+                      "INVALID_STRUCTURE",
+                      "UNBOUND_SOURCE"
+                    ]
+                  }
+                ]
+              },
+              "state": {
+                "enum": [
+                  "analyzed",
+                  "insufficient",
+                  "unsupported"
+                ]
+              }
+            },
+            "required": [
+              "state",
+              "reason",
+              "next_action"
+            ],
+            "type": "object"
+          },
+          "declared_semantic_binding_counts": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "bound": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "unbound": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "unbound",
+                  "bound"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "item_next_action_counts": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "inspect_source": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "none": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "rerun_source": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "supply_applicability": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "supply_definition": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "supply_label": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "supply_plan": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "none",
+                  "inspect_source",
+                  "supply_plan",
+                  "supply_applicability",
+                  "supply_definition",
+                  "supply_label",
+                  "rerun_source"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "limitations": {
+            "const": [
+              "SOURCE_CLAIMS_UNVERIFIED",
+              "SOURCE_BYTES_NOT_CHECKED",
+              "BUNDLE_BINDING_NOT_CHECKED",
+              "VERIFICATION_REFS_NOT_REPERFORMED",
+              "ITEM_INVARIANTS_LIMITED",
+              "NO_MEASUREMENT_OR_ACCEPTANCE",
+              "RAW_HASH_AND_COUNTS_LINKABLE"
+            ]
+          },
+          "schema": {
+            "const": "common_result_inspection_actions.v3"
+          },
+          "selected_result": {
+            "additionalProperties": false,
+            "properties": {
+              "format": {
+                "enum": [
+                  "evidence_result.v1",
+                  "evidence_result.v2"
+                ]
+              },
+              "raw_hash": {
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "format",
+              "raw_hash"
+            ],
+            "type": "object"
+          },
+          "verification_entry_count": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "schema",
+          "selected_result",
+          "declared_processing",
+          "declared_population",
+          "availability_counts",
+          "checks",
+          "verification_entry_count",
+          "limitations",
+          "item_next_action_counts",
+          "declared_semantic_binding_counts"
+        ],
+        "title": "common_result_inspection_actions.v3",
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Reopen a retained Goppi trajectory as a bounded stored-byte and history summary. Use when: you need current record integrity and historical verifier state without rerunning Goppi. Do not use when: you need full analysis details, fresh native verification, original export audit or approval.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "root": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "root",
+          "id"
+        ],
+        "type": "object"
+      },
+      "name": "underwrite_records_read_trajectory",
+      "outputSchema": {
+        "$defs": {
+          "available_populations": {
+            "properties": {
+              "case_stage_repeat_pairs": {
+                "type": "integer"
+              },
+              "paired_rows": {
+                "type": "integer"
+              },
+              "primary_repeat_pairs": {
+                "type": "integer"
+              },
+              "stage_case_slots": {
+                "type": "integer"
+              },
+              "unique_source_case_ids": {
+                "type": "integer"
+              }
+            }
+          },
+          "digest": {
+            "pattern": "^sha256:[0-9a-f]{64}(?![\\s\\S])",
+            "type": "string"
+          },
+          "missing_populations": {
+            "properties": {
+              "case_stage_repeat_pairs": {
+                "type": "null"
+              },
+              "paired_rows": {
+                "type": "null"
+              },
+              "primary_repeat_pairs": {
+                "type": "null"
+              },
+              "stage_case_slots": {
+                "type": "null"
+              },
+              "unique_source_case_ids": {
+                "type": "null"
+              }
+            }
+          },
+          "population_field": {
+            "enum": [
+              "paired_rows",
+              "case_stage_repeat_pairs",
+              "unique_source_case_ids",
+              "stage_case_slots",
+              "primary_repeat_pairs"
+            ]
+          },
+          "population_value": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "populations": {
+            "additionalProperties": false,
+            "properties": {
+              "case_stage_repeat_pairs": {
+                "$ref": "#/$defs/population_value"
+              },
+              "paired_rows": {
+                "$ref": "#/$defs/population_value"
+              },
+              "primary_repeat_pairs": {
+                "$ref": "#/$defs/population_value"
+              },
+              "stage_case_slots": {
+                "$ref": "#/$defs/population_value"
+              },
+              "unique_source_case_ids": {
+                "$ref": "#/$defs/population_value"
+              }
+            },
+            "required": [
+              "paired_rows",
+              "case_stage_repeat_pairs",
+              "unique_source_case_ids",
+              "stage_case_slots",
+              "primary_repeat_pairs"
+            ],
+            "type": "object"
+          },
+          "record_id": {
+            "maxLength": 96,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,95}(?![\\s\\S])",
+            "type": "string"
+          }
+        },
+        "$id": "urn:underwrite:contract:trajectory_record_read_summary.v1",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "analysis_state": {
+                  "const": "result"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "detail_state": {
+                  "properties": {
+                    "analysis_diagnostic": {
+                      "const": "not_applicable"
+                    }
+                  }
+                },
+                "missingness": {
+                  "properties": {
+                    "missing_population_fields": {
+                      "maxItems": 0
+                    },
+                    "population_state": {
+                      "const": "available"
+                    }
+                  }
+                },
+                "populations": {
+                  "$ref": "#/$defs/available_populations"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "analysis_state": {
+                  "const": "error"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "detail_state": {
+                  "properties": {
+                    "analysis_diagnostic": {
+                      "const": "intentionally_omitted_use_full_view"
+                    }
+                  }
+                },
+                "missingness": {
+                  "properties": {
+                    "missing_population_fields": {
+                      "const": [
+                        "paired_rows",
+                        "case_stage_repeat_pairs",
+                        "unique_source_case_ids",
+                        "stage_case_slots",
+                        "primary_repeat_pairs"
+                      ]
+                    },
+                    "population_state": {
+                      "const": "not_available_analysis_error"
+                    }
+                  }
+                },
+                "populations": {
+                  "$ref": "#/$defs/missing_populations"
+                }
+              }
+            }
+          }
+        ],
+        "description": "Content-minimized trajectory record reopen result. Current stored-byte verification is distinct from retained historical verifier claims.",
+        "properties": {
+          "analysis_state": {
+            "enum": [
+              "result",
+              "error"
+            ]
+          },
+          "authority": {
+            "additionalProperties": false,
+            "properties": {
+              "execution_authorized": {
+                "const": false
+              },
+              "human_review": {
+                "const": "required"
+              },
+              "merge_authorized": {
+                "const": false
+              },
+              "revert_authorized": {
+                "const": false
+              }
+            },
+            "required": [
+              "human_review",
+              "execution_authorized",
+              "merge_authorized",
+              "revert_authorized"
+            ],
+            "type": "object"
+          },
+          "command": {
+            "const": "records read-trajectory"
+          },
+          "current_storage_verification": {
+            "additionalProperties": false,
+            "properties": {
+              "files_checked": {
+                "const": 10
+              },
+              "findings_count": {
+                "const": 0
+              },
+              "links_checked": {
+                "const": 0
+              },
+              "scope": {
+                "const": "stored_bytes_and_direct_links"
+              },
+              "status": {
+                "const": "verified"
+              }
+            },
+            "required": [
+              "status",
+              "scope",
+              "files_checked",
+              "links_checked",
+              "findings_count"
+            ],
+            "type": "object"
+          },
+          "detail_state": {
+            "additionalProperties": false,
+            "properties": {
+              "analysis_diagnostic": {
+                "enum": [
+                  "not_applicable",
+                  "intentionally_omitted_use_full_view"
+                ]
+              },
+              "comparison_details": {
+                "const": "intentionally_omitted"
+              },
+              "full_view": {
+                "const": "records read-trajectory --view full"
+              },
+              "outcome_details": {
+                "const": "intentionally_omitted"
+              },
+              "outcome_missingness_state": {
+                "const": "intentionally_omitted"
+              }
+            },
+            "required": [
+              "outcome_details",
+              "comparison_details",
+              "outcome_missingness_state",
+              "analysis_diagnostic",
+              "full_view"
+            ],
+            "type": "object"
+          },
+          "historical_verifier_claim": {
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "state": {
+                      "const": "not_performed"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "reported_scope": {
+                      "const": "not_performed"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "state": {
+                      "const": "report_accepted"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "reported_scope": {
+                      "const": "report_only_content_closure"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "state": {
+                      "const": "legacy_unattributed_report"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "reported_scope": {
+                      "const": "legacy_self_consistent_content_closure"
+                    }
+                  }
+                }
+              }
+            ],
+            "properties": {
+              "producer_projection_independently_verified": {
+                "const": false
+              },
+              "reported_scope": {
+                "enum": [
+                  "not_performed",
+                  "report_only_content_closure",
+                  "legacy_self_consistent_content_closure"
+                ]
+              },
+              "source_authentication_independently_verified": {
+                "const": false
+              },
+              "state": {
+                "enum": [
+                  "not_performed",
+                  "report_accepted",
+                  "legacy_unattributed_report"
+                ]
+              },
+              "verifier_identity_verified": {
+                "const": false
+              }
+            },
+            "required": [
+              "state",
+              "reported_scope",
+              "verifier_identity_verified",
+              "source_authentication_independently_verified",
+              "producer_projection_independently_verified"
+            ],
+            "type": "object"
+          },
+          "limitations": {
+            "const": [
+              "storage_verification_establishes_current_stored_byte_integrity_only",
+              "historical_verifier_evidence_was_not_executed_now",
+              "verifier_identity_is_not_verified",
+              "source_authentication_and_producer_projection_are_not_independently_verified",
+              "population_counts_are_retained_analysis_claims",
+              "outcome_comparison_and_missingness_details_are_omitted_use_full_view"
+            ]
+          },
+          "manifest_digest": {
+            "$ref": "#/$defs/digest"
+          },
+          "missingness": {
+            "additionalProperties": false,
+            "properties": {
+              "missing_population_fields": {
+                "items": {
+                  "$ref": "#/$defs/population_field"
+                },
+                "maxItems": 5,
+                "type": "array",
+                "uniqueItems": true
+              },
+              "population_state": {
+                "enum": [
+                  "available",
+                  "not_available_analysis_error"
+                ]
+              }
+            },
+            "required": [
+              "population_state",
+              "missing_population_fields"
+            ],
+            "type": "object"
+          },
+          "native_verification_performed_now": {
+            "const": false
+          },
+          "populations": {
+            "$ref": "#/$defs/populations"
+          },
+          "record_id": {
+            "$ref": "#/$defs/record_id"
+          },
+          "record_layout": {
+            "enum": [
+              "trajectory-record.v1",
+              "trajectory-record.v2"
+            ]
+          },
+          "schema": {
+            "const": "trajectory_record_read_summary.v1"
+          },
+          "view": {
+            "const": "summary"
+          }
+        },
+        "required": [
+          "schema",
+          "command",
+          "view",
+          "record_id",
+          "manifest_digest",
+          "record_layout",
+          "analysis_state",
+          "current_storage_verification",
+          "historical_verifier_claim",
+          "populations",
+          "missingness",
+          "detail_state",
+          "native_verification_performed_now",
+          "authority",
+          "limitations"
+        ],
+        "title": "trajectory_record_read_summary.v1",
+        "type": "object"
+      }
+    }
+  ]
+}
