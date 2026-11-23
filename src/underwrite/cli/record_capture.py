@@ -4,15 +4,18 @@ Shared response admission, rendering, and storage of captured producer evidence.
 
 from __future__ import annotations
 
+import argparse
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
 
 from jsonschema import Draft202012Validator
 from underwrite_core.canonical import canonical_bytes
 
-from underwrite.cli.evidence import EvidenceError, output_line_size
+from underwrite.cli.evidence import EvidenceError, output_limit_error, output_line_size
 from underwrite.cli.local_json import Validator, validate
 from underwrite.cli.records import record_error_candidates, record_error_payload
+from underwrite.service._record_format import FormatError, record_id
 from underwrite.service.records import (
     CapturedRecordFile,
     CapturedRecordSpec,
@@ -22,6 +25,31 @@ from underwrite.service.records import (
 )
 
 STORAGE_FAILURE_EXIT = 3
+
+
+def new_record_id_argument(value: str) -> str:
+    """Validate a new record ID with the shared record CLI argument wording."""
+    try:
+        return record_id(value)
+    except FormatError:
+        raise argparse.ArgumentTypeError("valid new record ID required") from None
+
+
+def analysis_exit_code(analysis: Mapping[str, object]) -> int:
+    """Project a completed component error exit without inventing another status."""
+    state = analysis.get("state")
+    if state == "result":
+        if "error" in analysis:
+            raise EvidenceError("INTERNAL_ERROR", "INTERNAL_ERROR")
+        return 0
+    error = analysis.get("error")
+    if state != "error" or not isinstance(error, Mapping):
+        raise EvidenceError("INTERNAL_ERROR", "INTERNAL_ERROR")
+    error = cast(Mapping[str, object], error)
+    exit_code = error.get("exit_code")
+    if type(exit_code) is not int or exit_code <= 0:
+        raise EvidenceError("INTERNAL_ERROR", "INTERNAL_ERROR")
+    return exit_code
 
 
 def analysis_record_file(
@@ -43,7 +71,7 @@ def analysis_record_file(
     )
     encoded = canonical_bytes(document) + b"\n"
     if len(encoded) > max_bytes:
-        raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
+        raise output_limit_error()
     return CapturedRecordFile(
         result_name if result else "analysis/error.json",
         "result" if result else "log",
@@ -157,7 +185,7 @@ def admit_record_response(  # noqa: PLR0913 - explicit producer contracts and ou
                 ),
             )
     if (maximum if as_json else human_maximum) > max_bytes:
-        raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
+        raise output_limit_error()
 
 
 def finalize_captured_record(  # noqa: PLR0913 - explicit validators preserve producer contracts

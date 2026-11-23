@@ -15,6 +15,7 @@ from underwrite.cli.local_json import Validator
 from underwrite.cli.record_capture import (
     STORAGE_FAILURE_EXIT,
     admit_record_response,
+    analysis_exit_code,
     analysis_record_file,
     finalize_captured_record,
     render_record_response,
@@ -167,7 +168,7 @@ def _files(
         "arguments": arguments,
         "sources": envelope["sources"],
         "analysis_state": analysis["state"],
-        "analysis_exit_code": 0 if result else 2,
+        "analysis_exit_code": analysis_exit_code(analysis),
         "analysis_exit_code_scope": "component_contract_not_os_process",
         "aggregate_outcome_location": "command_output",
     }
@@ -221,7 +222,7 @@ def run_record_bound_deepeval(
         "command": COMMAND,
         "sources": sources,
         "analysis": analysis,
-        "exit_code": 0 if analysis["state"] == "result" else 2,
+        "exit_code": analysis_exit_code(analysis),
     }
     try:
         files = _files(paths, root, identifier, captured, envelope, contracts)

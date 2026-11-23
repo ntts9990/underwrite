@@ -21,6 +21,7 @@ from underwrite.acceptance.classify import (
     classify_evidence,
 )
 from underwrite.acceptance.lifecycle import STATES, LifecycleError, project_lifecycle
+from underwrite.error_contract.registry import ACCEPTANCE_ROOT_ACTIONS, acceptance_projection
 from underwrite.measurement_contract.read import ReadBinding, validate_event_read
 from underwrite.measurement_contract.semantics import ContractError
 
@@ -57,11 +58,7 @@ LIMITATIONS: Final = (
     "supplied_calculations_not_independently_verified",
 )
 # A refusal's next action follows from which input its location points into.
-REFUSAL_ACTIONS: Final = {
-    "candidate": "CORRECT_CANDIDATE",
-    "claims": "CORRECT_CLAIMS",
-    "reads": "CORRECT_READ",
-}
+REFUSAL_ACTIONS: Final = ACCEPTANCE_ROOT_ACTIONS
 _CANDIDATE_KEYS = frozenset(
     {"schema", "candidate_id", "kind", "basis", "current_state", "claims_digest", "hard_failures"}
 )
@@ -85,7 +82,7 @@ class AcceptanceRefusal(ValueError):
         self.code = code
         self.reason = code if reason is None else reason
         self.location = location
-        self.next_action = REFUSAL_ACTIONS[location.split("/")[1]]
+        self.next_action = acceptance_projection(code, location).next_action
         self.fields: Mapping[str, object] = {} if fields is None else fields
         super().__init__(f"{code}: {self.reason} at {location}")
 

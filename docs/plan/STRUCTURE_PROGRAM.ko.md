@@ -1,6 +1,6 @@
 # 구조 프로그램 (첫 판)
 
-작성: 2026-11-16. 코드 기준: `1d344a8`. 상태: **S0(측정 스크립트)과 S1(쓰이지 않는 상수 정리) 완료. S2부터 남음.**
+작성: 2026-11-16. 코드 기준: `1d344a8`. 상태: **S0(측정 스크립트)과 S1(쓰이지 않는 상수 정리) 완료. S2 첫 조각 진행, 나머지 남음.**
 
 ## 0. 이 문서의 위치
 
@@ -64,7 +64,7 @@
 | 신호 | 측정 | 비고 |
 | --- | --- | --- |
 | 같은 이름의 모듈 수준 사적 helper | `_text` 17모듈, `_object` 16, `_identifier` 9(`cli/record_*.py` 7, `instrument/evidence/langfuse_*.py` 2), `_contracts` 8, `_analysis_text` 8, `_error` 7. 3모듈 이상 이름 42개 | 이름이 같다고 같은 owner는 아니다. 의미를 먼저 비교한다 |
-| 오류 코드 literal | **하한** 444개, 104모듈(`scripts/structure_metrics.py`: 이름이 `Error`로 끝나거나 `_fail`·`_error`·`_invalid`로 시작하는 호출의 첫 인자 가운데 대문자 코드 모양 문자열). `require(cond, "CODE")`처럼 둘째 이후 인자에 있는 코드는 세지 않는다 | [에이전트 표면 프로그램](AGENT_SURFACE_PROGRAM.ko.md) A1과 같은 대상 |
+| 오류 호출의 대문자 literal 후보 | 675개, 108모듈(`scripts/structure_metrics.py`: `Error` 생성자와 오류·`require` helper의 모든 위치·키워드 인자에서 6자 이상인 대문자 문자열). 범주 code뿐 아니라 세부 reason과 action도 포함 | [에이전트 표면 프로그램](AGENT_SURFACE_PROGRAM.ko.md) A1과 같은 대상 |
 | goppi 소비 모듈 | `evidence` 4개, `ingest` 5개. 경로·한도·decode helper를 모듈마다 둠 | 형식마다 의미가 다르므로 공통 helper만 후보 |
 | `cli/record_*.py` | 7모듈이 `_identifier`·`_contracts`·`_analysis_text`·`_files`를 반복 | `cli/record_capture.py`가 이미 일부 owner |
 | 쓰이지 않는 상수(삭제 전 위치) | `tests/gates/test_layers.py:16-18`(`INIT_CHECK_SCRIPT`, `EXEMPTIONS_PATH`, `PURE_LAYER_EXEMPTION_KEY`), `tests/unit/shell/test_cli_drift.py:24-25`(`EXEMPTIONS_PATH`, `SCHEMA_PATH`). 이 가운데 `scripts/init_check.py`와 `rules/exemptions.json`은 파일도 없음. `test_cli_drift.py:425` 주석도 없는 `rules/exemptions.json`을 가리킴 | S1에서 지움(0) |
@@ -78,7 +78,7 @@ uv run --frozen --no-sync python scripts/structure_metrics.py
 ```
 
 `scripts/structure_metrics.py`는 패키지별 파일·줄 수, 큰 모듈, 단위 간선과 순환, 3모듈 이상에서 반복되는
-모듈 수준 사적 helper 이름, 단위 간선 목록, 오류 코드 하한을 `underwrite.structure_metrics.v1` JSON으로 낸다.
+모듈 수준 사적 helper 이름, 단위 간선 목록, 오류 호출의 대문자 literal 후보 수를 `underwrite.structure_metrics.v1` JSON으로 낸다.
 측정만 하고 관문은 아니다. 이 문서의 숫자는 이 스크립트의 출력이다.
 
 ## 3. 목표 경계
@@ -114,8 +114,8 @@ uv run --frozen --no-sync python scripts/structure_metrics.py
 | import-linter 위반 | 0 | 0 유지 | 있음 |
 | 단위 순환 | 0 | 0 유지 | `.importlinter` layers 계약(독립 형제)이 이미 막음. 새 관문 없음 |
 | 쓰이지 않는 상수(1.4절) | 5 | 0 | S1에서 0. 일반 검사는 막을 사례가 다시 생길 때 검토 |
-| registry 밖 오류 코드 literal | 하한 444. A1에서 모든 인자 위치를 세는 방법으로 기준값을 다시 정함 | 줄어들기만 | 에이전트 표면 A1에서 registry와 함께 |
-| 같은 의미의 중복 helper | S2에서 의미 검토 뒤 확정(이름 반복 42개는 참고값) | 줄어들기만 | S2 |
+| registry 밖 공개 오류 범주 코드 literal 인자 | 최초 617개·71모듈, evidence 출력 상한 투영 공통화 뒤 597개·71모듈. 세부 reason과 같은 문자열이라도 공개 범주 코드와 일치하면 각 인자 발생을 센다 | 줄어들기만 | 에이전트 표면 A1의 `test_structure_metrics.py` 래칫 |
+| 같은 의미의 중복 helper | S2에서 의미 검토 뒤 확정(이름 반복 42개는 참고값). 기록 CLI `_identifier`는 9모듈 → 3모듈 | 줄어들기만 | S2 |
 
 장부 값은 `scripts/structure_metrics.py`가 낸다. 관문은 막을 대상이 생기는 조각(A1, S2)에서 preflight 선택기 안에 둔다. 줄었을 때만 기준값을 낮춘다.
 예외는 커밋에 근거를 적고 이 표를 같은 PR에서 고친다.
@@ -131,6 +131,28 @@ uv run --frozen --no-sync python scripts/structure_metrics.py
 | **S4 큰 모듈** | `goppi_p7_handoff.py`처럼 변경 이유가 둘 이상인 모듈만 의미 단위로 나눔 | 모듈마다 변경 이유 하나. 시험 통과, 출력 불변 |
 
 S0과 S1은 작고 독립적이라 먼저 한다. S2와 S3은 같은 파일을 많이 열므로 갈래 영향표(병렬 조각마다 고칠 파일, 겹침, 통합 순서를 적는 표. CONTRIBUTING의 maintainer delivery loop 3단계)에서 통합 순서를 정한다.
+
+S2 첫 조각에서는 여섯 `record_*` CLI의 **동일한 새 기록 ID argparse 변환**만
+`cli/record_capture.py`의 `new_record_id_argument`로 모았다. 정상 ID와 잘못된 ID의
+parser 동작을 먼저 고정했고, 직접 Python API의 `record_id()` 재검사와 기존
+`FormatError` 변환은 그대로 둔다. `record_trajectory._identifier`는
+`EvidenceError`를 내며 내부 읽기에도 쓰이므로 합치지 않았다. 순수 Langfuse
+식별자 검사도 JSON 의미가 달라 분리한다. 구조 측정의 `_identifier` 반복은
+9모듈에서 3모듈로 줄었고, 이는 같은 이름 6개를 제거한 결과이지 모든
+식별자 의미를 한 owner로 합쳤다는 뜻은 아니다.
+
+나머지 이름도 의미로 분류했다. `_text` 17모듈은 타입·길이·공백·NFC·제어문자
+검사와 producer별 오류 코드가 서로 다르다. 특히 Langfuse 일반 텍스트는 NFC
+정규화 결과를 반환하지만 식별자는 비정규화를 거부한다. `_object` 16모듈은
+정확한 키 집합, 필수/허용 집합, 부분 집합, 크기 제한과 예외 타입이 다르다.
+이 둘은 이번에 합치지 않았다. 향후 동일한 순수 검사 primitive가 필요해도
+각 도메인의 오류 코드·위치 투영은 기존 owner에 남기는 별도 조각으로 검토한다.
+
+S3 첫 조각에서는 `evidence_error.v1`의 출력 상한 오류를 이미 소유한
+`cli/evidence.output_limit_error()`로 동일한 기본 문맥의 생성 10곳을 모았다.
+각 생성자는 공개 범주 코드와 같은 reason literal 두 인자를 사용하므로
+측정된 registry 밖 literal 인자 발생은 617개에서 597개로 줄었다. 다른 오류
+봉투의 같은 코드와 세부 reason은 옮기지 않았고, 관문 상한도 597로 낮췄다.
 
 ## 6. 동작 보존 계약
 

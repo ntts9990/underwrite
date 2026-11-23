@@ -104,9 +104,17 @@ class _Capture:
     def __init__(self, reader: RootReader, root: Path, policy: CapturePolicy) -> None:
         self.reader, self.root, self.policy = reader, root, policy
         self.artifacts: dict[str, CapturedBytes] = {}
+        self.locations: dict[str, str] = {}
 
-    def read(self, path: Path, name: str, claim: dict[str, object] | None = None) -> CapturedBytes:
-        location = "/" + name
+    def read(
+        self,
+        path: Path,
+        name: str,
+        claim: dict[str, object] | None = None,
+        *,
+        location: str | None = None,
+    ) -> CapturedBytes:
+        location = location or "/" + name
         if claim is not None and "bytes" in claim:
             size = claim["bytes"]
             if type(size) is not int or size < 0:
@@ -125,10 +133,13 @@ class _Capture:
             if "bytes" in claim and claim["bytes"] != item.size:
                 raise _fail("HANDOFF_SIZE_MISMATCH", location)
         self.artifacts[name] = item
+        self.locations[name] = location
         return item
 
     def obj(self, name: str) -> dict[str, object]:
-        return decode_captured_object(self.artifacts[name], max_depth=32, location="/" + name)
+        return decode_captured_object(
+            self.artifacts[name], max_depth=32, location=self.locations.get(name, "/" + name)
+        )
 
     def manifest(
         self, doc: dict[str, object], allowed: frozenset[str] | None, base: Path, prefix: str
@@ -157,8 +168,9 @@ class _Capture:
         if allowed is None and (type(doc.get("count")) is not int or doc["count"] != len(claims)):
             raise _fail("HANDOFF_MANIFEST_COUNT_MISMATCH", "/" + prefix)
         self._check_claim_budget(claims, prefix)
-        for path, entry in claims.items():
-            self.read(base / path, prefix + "/" + path, entry)
+        for index, (path, entry) in enumerate(claims.items()):
+            location = None if allowed is not None else f"/{prefix}/files/{index}"
+            self.read(base / path, prefix + "/" + path, entry, location=location)
 
     def _check_claim_budget(self, claims: dict[str, dict[str, object]], prefix: str) -> None:
         new_claims = [

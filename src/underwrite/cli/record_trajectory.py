@@ -14,9 +14,16 @@ from typing import Any, cast
 from underwrite_core.canonical import canonical_bytes
 
 from underwrite.cli.audit_trajectory import trajectory_cli_error
-from underwrite.cli.evidence import EvidenceError, ReportOutput, output_line_size, run_cli
+from underwrite.cli.evidence import (
+    EvidenceError,
+    ReportOutput,
+    output_limit_error,
+    output_line_size,
+    run_cli,
+)
 from underwrite.cli.local_json import Validator, decode_document, validate
 from underwrite.cli.record_capture import (
+    analysis_exit_code,
     finalize_captured_record,
     render_record_response,
     saved_record,
@@ -152,7 +159,7 @@ def _layout(state: str) -> dict[str, tuple[str, str, int]]:
 def _bounded_json(document: object, maximum: int) -> bytes:
     raw = canonical_bytes(document) + b"\n"
     if len(raw) > maximum:
-        raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
+        raise output_limit_error()
     return raw
 
 
@@ -238,7 +245,7 @@ def run_record_trajectory(
         "source": {"state": "captured", "source_members": history["source_members"]},
         "analysis": analysis,
         "verifier_report_history": history,
-        "exit_code": 0 if outcome.error is None else 2,
+        "exit_code": analysis_exit_code(analysis),
     }
     spec = CapturedRecordSpec(
         identifier,
@@ -457,7 +464,7 @@ def run_read_trajectory(root: Path, identifier: str) -> dict[str, object]:
         envelope["verifier_report_history"] = history
     validate(contracts.reopen, envelope, EvidenceError, "INTERNAL_ERROR")
     if output_line_size(canonical_bytes(envelope)) > OUTPUT_MAX_BYTES:
-        raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
+        raise output_limit_error()
     return envelope
 
 

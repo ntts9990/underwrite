@@ -9,10 +9,12 @@ from typing import Any, cast
 
 from underwrite_core.canonical import CanonicalizationError, canonical_bytes, digest_bytes
 
-from underwrite.cli.evidence import EvidenceError, ReportOutput, run_cli
+from underwrite.cli.evidence import EvidenceError, ReportOutput, output_limit_error, run_cli
 from underwrite.cli.local_json import Validator, validate
 from underwrite.cli.record_capture import (
+    analysis_exit_code,
     finalize_captured_record,
+    new_record_id_argument,
     render_record_response,
     storage_validator,
 )
@@ -65,17 +67,12 @@ def _contracts() -> _Contracts:
     )
 
 
-def _identifier(value: str) -> str:
-    try:
-        return record_id(value)
-    except FormatError:
-        raise argparse.ArgumentTypeError("valid new record ID required") from None
-
-
 def configure(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--exchange", type=Path, required=True, metavar="DIR")
     parser.add_argument("--root", type=Path, required=True, help="Explicit private record root.")
-    parser.add_argument("--id", type=_identifier, required=True, help="New immutable record ID.")
+    parser.add_argument(
+        "--id", type=new_record_id_argument, required=True, help="New immutable record ID."
+    )
     parser.add_argument("--json", action="store_true", help=f"Emit {SCHEMA} JSON.")
     parser.description = (
         "Audit and retain the exact five baseline exchange files, result or finite diagnostic, "
@@ -124,18 +121,18 @@ def _files(
     except CanonicalizationError:
         raise EvidenceError("INTERNAL_ERROR", "INTERNAL_ERROR") from None
     if len(encoded) > RECORD_READ_MAX_BYTES:
-        raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
+        raise output_limit_error()
     invocation = {
         "command": COMMAND,
         "profile": PROFILE,
         "execution_mode": "in_process",
         "record_id": identifier,
         "analysis_state": analysis["state"],
-        "analysis_exit_code": 0 if result else 2,
+        "analysis_exit_code": analysis_exit_code(analysis),
     }
     invocation_bytes = canonical_bytes(invocation) + b"\n"
     if len(invocation_bytes) > INVOCATION_MAX_BYTES:
-        raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
+        raise output_limit_error()
     return (
         *(
             CapturedRecordFile("source/" + name, "source", captured[name].data)
@@ -200,7 +197,7 @@ def run_record_baseline(
         "command": COMMAND,
         "source": source,
         "analysis": analysis,
-        "exit_code": 0 if analysis["state"] == "result" else 2,
+        "exit_code": analysis_exit_code(analysis),
     }
     files = _files(captured, analysis, identifier)
     spec = CapturedRecordSpec(

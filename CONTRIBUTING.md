@@ -168,8 +168,8 @@ contract, including failure and interpretation boundaries, before refactoring.
 | Concern | Existing owner | Maintain the boundary |
 | --- | --- | --- |
 | Bounded local input | `_fileio.read_descriptor`, `_json.decode_json` (re-exported by ingest transport), `cli.local_json.read_source`, `inspection.read_at`, `local_capture.RootReader` | Reuse strict decoding and descriptor reads; captured-byte flows must not reopen source paths for storage |
-| CLI results and errors | `cli/evidence.py`, `service/_record_errors.py` and its CLI/schema projections | Reuse the emitter and owned diagnostics; distinguish analysis, storage, and process exits |
-| Composed record responses | `cli/record_capture.py` | Share storage-subdocument validator construction, response admission, storage verification and storage wording; retain producer-specific analysis, input selection and meaning in their command adapters |
+| CLI results and errors | `error_contract/registry.py` for common, record, measurement, and evidence failure meaning, with the remaining CLI/schema projections | Reuse the emitter and owned diagnostics; distinguish analysis, storage, and process exits |
+| Composed record responses | `cli/record_capture.py` | Share storage-subdocument validator construction, response admission, component-error exit projection, storage verification and storage wording; retain producer-specific analysis, input selection and meaning in their command adapters |
 | Paired calculation and review | `instrument/evidence/paired_review.evaluate_paired_review` | Calculate once; presentations project results rather than derive new verdicts |
 | Measurement meaning and read binding | `measurement_contract` | Share semantic identity and read invariants below independent pure domains; measurement owns statistics, acceptance owns claim binding and classification |
 | Event policy preparation and validation | `measurement/event_policy` | Prepared and supplied policies use one validator; preparation leaves assumptions unknown and requires explicit consumer choices |

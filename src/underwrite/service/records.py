@@ -19,7 +19,7 @@ from typing import Final, NamedTuple, NoReturn, cast
 from underwrite_core.canonical import canonical_bytes, digest_bytes
 
 from underwrite._fileio import TransportError, read_descriptor
-from underwrite.service._record_errors import ERROR_SPECS
+from underwrite.error_contract.registry import RECORD_PROJECTIONS
 from underwrite.service._record_format import (
     MAX_FILE_BYTES,
     MAX_FILES,
@@ -43,7 +43,7 @@ _FILE_MODE: Final = 0o600
 _READ_SIZE: Final = 1024 * 1024
 RECORD_MAX_FILES: Final = MAX_FILES
 RECORD_READ_MAX_BYTES: Final = 1024 * 1024
-ERROR_CODES: Final = frozenset(ERROR_SPECS)
+ERROR_CODES: Final = frozenset(RECORD_PROJECTIONS)
 
 
 class RecordSnapshot(NamedTuple):

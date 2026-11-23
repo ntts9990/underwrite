@@ -86,6 +86,13 @@ def test_success_exact_sources_actual_read_and_readback(
     assert report["storage"]["verification"]["files_checked"] == len((1, 2, 3, 4))
 
 
+def test_composed_measurement_uses_component_error_exit() -> None:
+    from underwrite.cli.record_capture import analysis_exit_code
+
+    assert analysis_exit_code({"state": "result"}) == 0
+    assert analysis_exit_code({"state": "error", "error": {"exit_code": 1}}) == 1
+
+
 @pytest.mark.parametrize(
     ("obs", "pol", "phase"),
     [

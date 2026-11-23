@@ -30,8 +30,12 @@ from underwrite.cli.measurement_flow import (
 from underwrite.cli.measurement_flow import (
     OUTPUT_MAX_BYTES as MEASUREMENT_OUTPUT_MAX_BYTES,
 )
+from underwrite.error_contract.registry import (
+    ACCEPTANCE_ACTIONS,
+    ACCEPTANCE_EXIT_CODE,
+    acceptance_projection,
+)
 from underwrite.instrument.evidence.split import assign_split
-from underwrite.instrument.ingest.application import NEXT_ACTIONS
 from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
 
 CANDIDATE_MAX_BYTES = 64 * 1024
@@ -46,12 +50,7 @@ MAX_READS = MAX_CLAIMS_PER_BASIS
 OUTPUT_MAX_BYTES = MEASUREMENT_OUTPUT_MAX_BYTES
 _INVALID = {"candidate": "INVALID_CANDIDATE", "claims": "INVALID_CLAIMS", "reads": "INVALID_READ"}
 # Codes whose next action does not follow from the refused input (dc.REFUSAL_ACTIONS).
-_ACTIONS = {
-    **NEXT_ACTIONS,
-    "READ_COUNT_EXCEEDED": "REDUCE_INPUT_SIZE",
-    "INPUT_LIMIT_EXCEEDED": "REDUCE_INPUT_SIZE",
-    "OUTPUT_LIMIT_EXCEEDED": "REDUCE_INPUT_SIZE",
-}
+_ACTIONS = ACCEPTANCE_ACTIONS
 
 
 class AcceptError(ValueError):
@@ -64,15 +63,15 @@ class AcceptError(ValueError):
         location: str = "",
         fields: Mapping[str, object] | None = None,
     ) -> None:
-        action = _ACTIONS.get(code) or dc.REFUSAL_ACTIONS[location.split("/")[1]]
+        projection = acceptance_projection(code, location)
         self.payload: dict[str, object] = {
             "schema": "acceptance_error.v1",
             "code": code,
             "reason": reason,
             "location": location,
-            "next_action": action,
+            "next_action": projection.next_action,
             "retryable": False,
-            "exit_code": 2,
+            "exit_code": projection.exit_code,
             **(fields or {}),
         }
         super().__init__(code)
@@ -189,4 +188,4 @@ def main(argv: list[str]) -> int:
         sys.stdout.write(output)
         return 0
     sys.stderr.write(canonical_bytes(error.payload).decode() + "\n")
-    return 2
+    return ACCEPTANCE_EXIT_CODE

@@ -15,6 +15,7 @@ from underwrite_core.canonical import canonical_bytes, content_digest
 
 from underwrite.cli import audit_promptfoo, compare_declarations
 from underwrite.cli.evidence import run_cli
+from underwrite.instrument.evidence.declarations import DeclarationError
 from underwrite.instrument.ingest.accounting import audit_case
 
 ROOT = repo_root(Path(__file__).resolve())
@@ -223,6 +224,21 @@ def test_report_output_limit_is_typed(tmp_path: Path, capsys: pytest.CaptureFixt
     streams = capsys.readouterr()
     assert code == ERROR_EXIT and streams.out == ""
     assert json.loads(streams.err)["code"] == "OUTPUT_LIMIT_EXCEEDED"
+
+
+def test_unregistered_declaration_exception_text_is_not_an_error_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    baseline, candidate, manifest_path, _ = _inputs(tmp_path)
+
+    def unsafe(*args: object) -> None:
+        raise DeclarationError("PRIVATE\nINSTRUCTION")
+
+    monkeypatch.setattr(compare_declarations, "compare_declarations", unsafe)
+    code, error, stdout, stderr = _run(baseline, candidate, manifest_path, capsys)
+    assert code == ERROR_EXIT and stdout == ""
+    assert error["reason"] == "INVALID_DECLARATION"
+    assert "PRIVATE" not in stderr
 
 
 @pytest.mark.parametrize("kind", ["audit", "manifest"])

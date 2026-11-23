@@ -11,10 +11,9 @@ from typing import NoReturn, cast
 from underwrite_core.canonical import CanonicalizationError, canonical_bytes
 
 from underwrite.cli.local_json import read_document, validate
-from underwrite.instrument.ingest.application import NEXT_ACTIONS
+from underwrite.error_contract.registry import RECORD_PROJECTIONS
 from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
 from underwrite.instrument.ingest.transport import DecodeError, decode_json
-from underwrite.service._record_errors import ERROR_SPECS
 from underwrite.service.records import (
     RecordError,
     RecordSnapshot,
@@ -29,10 +28,6 @@ SPEC_MAX_BYTES = 256 * 1024
 SPEC_MAX_DEPTH = 16
 OUTPUT_MAX_BYTES = 2 * 1024 * 1024
 
-_ERRORS: dict[str, tuple[str, str]] = {
-    code: (reason, NEXT_ACTIONS[code] if action is None else action)
-    for code, (reason, action) in ERROR_SPECS.items()
-}
 DOCUMENT_MAX_DEPTH = 32
 
 _SERVICE_LOCATIONS = frozenset(
@@ -42,15 +37,16 @@ _SERVICE_LOCATIONS = frozenset(
 
 class _CliError(ValueError):
     def __init__(self, code: str, location: str = "") -> None:
-        reason, next_action = _ERRORS[code]
+        projection = RECORD_PROJECTIONS[code]
+        self.exit_code = projection.exit_code
         self.payload: dict[str, object] = {
             "schema": "record_error.v1",
             "code": code,
-            "reason": reason,
+            "reason": projection.reason,
             "location": location,
-            "next_action": next_action,
+            "next_action": projection.next_action,
             "retryable": False,
-            "exit_code": 2,
+            "exit_code": self.exit_code,
         }
         super().__init__(code)
 
@@ -151,7 +147,7 @@ def _input_error(code: str, reason: str, location: str) -> Exception:
 def _service_error(error: RecordError) -> _CliError:
     code = getattr(error, "code", None)
     location = getattr(error, "location", None)
-    if type(code) is not str or code not in _ERRORS:
+    if type(code) is not str or code not in RECORD_PROJECTIONS:
         return _CliError("INTERNAL_ERROR")
     if type(location) is not str or location not in _SERVICE_LOCATIONS:
         return _CliError("INTERNAL_ERROR")
@@ -167,7 +163,7 @@ def record_error_candidates() -> tuple[dict[str, object], ...]:
     """Return finite formatter-owned variants for composed-response admission."""
     return tuple(
         record_error_payload(RecordError(code, location))
-        for code in sorted(_ERRORS)
+        for code in sorted(RECORD_PROJECTIONS)
         for location in sorted(_SERVICE_LOCATIONS)
     )
 
@@ -273,7 +269,7 @@ def _emit_error(error: _CliError, *, as_json: bool) -> int:
     encoded = canonical_bytes(error.payload).decode("utf-8")
     output = encoded if as_json else "Record command failed: " + encoded
     sys.stderr.write(output + "\n")
-    return 2
+    return error.exit_code
 
 
 def _capture_command(argv: list[str]) -> int | None:  # noqa: PLR0911 - lazy command dispatch

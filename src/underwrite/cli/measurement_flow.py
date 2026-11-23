@@ -6,7 +6,7 @@ from collections.abc import Callable
 from typing import Any, Literal
 
 from underwrite.cli.local_json import Validator, validate
-from underwrite.instrument.ingest.application import NEXT_ACTIONS
+from underwrite.error_contract.registry import measurement_projection
 from underwrite.instrument.ingest.schema import SchemaConfigurationError, packaged_validator
 from underwrite.measurement.event_read import (
     EVENT_READ_REASONS,
@@ -21,28 +21,22 @@ OBSERVATION_MAX_DEPTH = 64
 POLICY_MAX_BYTES = 64 * 1024
 POLICY_MAX_DEPTH = 16
 OUTPUT_MAX_BYTES = 1024 * 1024
-_ACTIONS = {
-    **NEXT_ACTIONS,
-    "INVALID_OBSERVATION": "CORRECT_OBSERVATION",
-    "INVALID_POLICY": "PROVIDE_COMPLETE_POLICY",
-    "UNSUPPORTED_PROFILE": "USE_SUPPORTED_PROFILE",
-    "INPUT_LIMIT_EXCEEDED": "REDUCE_INPUT_SIZE",
-    "OUTPUT_LIMIT_EXCEEDED": "REDUCE_INPUT_SIZE",
-}
 
 
 class MeasurementError(ValueError):
     """Only fixed internal codes/reasons reach this shell error envelope."""
 
     def __init__(self, code: str, reason: str, location: str = "") -> None:
+        projection = measurement_projection(code)
+        self.exit_code = projection.exit_code
         self.payload: dict[str, object] = {
             "schema": "measurement_error.v1",
             "code": code,
             "reason": reason,
             "location": location,
-            "next_action": _ACTIONS[code],
+            "next_action": projection.next_action,
             "retryable": False,
-            "exit_code": 2,
+            "exit_code": self.exit_code,
         }
         super().__init__(code)
 

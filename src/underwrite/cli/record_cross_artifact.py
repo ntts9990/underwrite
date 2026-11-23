@@ -8,10 +8,12 @@ from typing import Any, cast
 
 from underwrite_core.canonical import CanonicalizationError, canonical_bytes, digest_bytes
 
-from underwrite.cli.evidence import EvidenceError, ReportOutput, run_cli
+from underwrite.cli.evidence import EvidenceError, ReportOutput, output_limit_error, run_cli
 from underwrite.cli.local_json import Validator, validate
 from underwrite.cli.record_capture import (
+    analysis_exit_code,
     finalize_captured_record,
+    new_record_id_argument,
     render_record_response,
     storage_validator,
 )
@@ -40,13 +42,6 @@ SOURCE_NAMES = (
 )
 
 
-def _identifier(value: str) -> str:
-    try:
-        return record_id(value)
-    except FormatError:
-        raise argparse.ArgumentTypeError("valid new record ID required") from None
-
-
 def configure(parser: argparse.ArgumentParser) -> None:
     parser.description = (
         "Capture and retain a strict owner-mapped C55 and Promptfoo review. "
@@ -58,7 +53,7 @@ def configure(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--promptfoo", type=Path, required=True, metavar="FILE")
     parser.add_argument("--correspondence", type=Path, required=True, metavar="FILE")
     parser.add_argument("--root", type=Path, required=True, metavar="ROOT")
-    parser.add_argument("--id", type=_identifier, required=True, metavar="NEW_ID")
+    parser.add_argument("--id", type=new_record_id_argument, required=True, metavar="NEW_ID")
     parser.add_argument("--json", action="store_true", help=f"Emit {SCHEMA} JSON.")
 
 
@@ -81,7 +76,7 @@ def _bounded_json(document: object, maximum: int) -> bytes:
     except CanonicalizationError:
         raise EvidenceError("INTERNAL_ERROR", "INTERNAL_ERROR") from None
     if len(raw) > maximum:
-        raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
+        raise output_limit_error()
     return raw
 
 
@@ -186,7 +181,7 @@ def run_record_review(  # noqa: PLR0913 - four explicit source paths and record 
                 {
                     "command": COMMAND,
                     "analysis_state": analysis["state"],
-                    "analysis_exit_code": 0 if analysis["state"] == "result" else 2,
+                    "analysis_exit_code": analysis_exit_code(analysis),
                     "execution_mode": "in_process",
                 },
                 INVOCATION_MAX_BYTES,
@@ -199,7 +194,7 @@ def run_record_review(  # noqa: PLR0913 - four explicit source paths and record 
         "command": COMMAND,
         "source": source,
         "analysis": analysis,
-        "exit_code": 0 if analysis["state"] == "result" else 2,
+        "exit_code": analysis_exit_code(analysis),
     }
     spec = CapturedRecordSpec(
         record_id=identifier,
