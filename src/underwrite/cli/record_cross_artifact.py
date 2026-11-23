@@ -8,7 +8,7 @@ from typing import Any, cast
 
 from underwrite_core.canonical import CanonicalizationError, canonical_bytes, digest_bytes
 
-from underwrite.cli.evidence import EvidenceError, ReportOutput, run_cli
+from underwrite.cli.evidence import EvidenceError, ReportOutput, output_limit_error, run_cli
 from underwrite.cli.local_json import Validator, validate
 from underwrite.cli.record_capture import (
     analysis_exit_code,
@@ -76,7 +76,7 @@ def _bounded_json(document: object, maximum: int) -> bytes:
     except CanonicalizationError:
         raise EvidenceError("INTERNAL_ERROR", "INTERNAL_ERROR") from None
     if len(raw) > maximum:
-        raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
+        raise output_limit_error()
     return raw
 
 

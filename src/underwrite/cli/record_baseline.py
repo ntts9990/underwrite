@@ -9,7 +9,7 @@ from typing import Any, cast
 
 from underwrite_core.canonical import CanonicalizationError, canonical_bytes, digest_bytes
 
-from underwrite.cli.evidence import EvidenceError, ReportOutput, run_cli
+from underwrite.cli.evidence import EvidenceError, ReportOutput, output_limit_error, run_cli
 from underwrite.cli.local_json import Validator, validate
 from underwrite.cli.record_capture import (
     analysis_exit_code,
@@ -121,7 +121,7 @@ def _files(
     except CanonicalizationError:
         raise EvidenceError("INTERNAL_ERROR", "INTERNAL_ERROR") from None
     if len(encoded) > RECORD_READ_MAX_BYTES:
-        raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
+        raise output_limit_error()
     invocation = {
         "command": COMMAND,
         "profile": PROFILE,
@@ -132,7 +132,7 @@ def _files(
     }
     invocation_bytes = canonical_bytes(invocation) + b"\n"
     if len(invocation_bytes) > INVOCATION_MAX_BYTES:
-        raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
+        raise output_limit_error()
     return (
         *(
             CapturedRecordFile("source/" + name, "source", captured[name].data)

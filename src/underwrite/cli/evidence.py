@@ -183,7 +183,7 @@ def run_cli(
             + json.dumps(report, ensure_ascii=True, sort_keys=True, indent=2)
         )
         if output_line_size(output) > specification.max_bytes:
-            raise EvidenceError("OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED")
+            raise output_limit_error()
         exit_code = (
             specification.exit_status(report) if specification.exit_status is not None else 0
         )

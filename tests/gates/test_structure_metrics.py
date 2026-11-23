@@ -9,6 +9,9 @@ import pytest
 
 from scripts import structure_metrics
 
+MAX_REGISTERED_ERROR_LITERAL_SITES = 597
+MAX_DYNAMIC_EVIDENCE_ERROR_FORWARDING_SITES = 42
+
 
 def _write(root: Path, relative: str, text: str) -> None:
     path = root / relative
@@ -36,7 +39,10 @@ def tree(tmp_path: Path) -> Path:
         tmp_path,
         f"{app}/instrument/ingest/read.py",
         "from ..evidence import judge\n\n\n"
-        "def _text():\n    raise ReadError('READ_FAILED', 'detail')\n\n\n"
+        "def _text():\n"
+        "    raise ReadError('READ_FAILED', 'DETAIL_REASON', action='CHECK_SOURCE')\n"
+        "    require(False, 'REQUIRED_REASON')\n"
+        "    _refuse('REFUSED_REASON')\n\n\n"
         "def _fail():\n    return _fail('lowercase')\n",
     )
     # `from .. import name` names a submodule; one helper in two modules stays below the floor.
@@ -64,7 +70,7 @@ def test_measure_counts_packages_edges_helpers_and_codes(tree: Path) -> None:
 
     assert result["packages"] == {
         "cli": {"files": 2, "lines": 3},
-        "instrument": {"files": 3, "lines": 11},
+        "instrument": {"files": 3, "lines": 13},
         "service": {"files": 1, "lines": 3},
         "underwrite": {"files": 1, "lines": 0},
         "underwrite_core": {"files": 1, "lines": 1},
@@ -79,13 +85,76 @@ def test_measure_counts_packages_edges_helpers_and_codes(tree: Path) -> None:
     }
     assert (edges["distinct"], edges["import_sites"], edges["cycles"]) == (4, 5, [])
     assert result["repeated_private_helpers"] == [{"name": "_text", "modules": 3}]
-    assert result["error_code_estimate"] == {"distinct": 2, "modules": 2}
+    assert result["error_code_estimate"] == {"distinct": 6, "modules": 2}
 
 
 def test_cycles_report_only_mutually_reachable_units() -> None:
     edges = {"a": {"b"}, "b": {"c"}, "c": {"a"}, "d": {"a"}}
     assert structure_metrics.cycles(edges) == [["a", "b", "c"]]
     assert structure_metrics.cycles({"a": {"b"}, "b": set()}) == []
+
+
+def test_registered_error_literal_sites_count_occurrences(tree: Path) -> None:
+    _write(
+        tree,
+        "contracts/artifact_inspection_error.v1.schema.json",
+        '{"properties":{"code":{"enum":["READ_FAILED"]}}}',
+    )
+    source = tree / "src/underwrite/instrument/ingest/read.py"
+    source.write_text(source.read_text() + "\nReadError('READ_FAILED')\n", encoding="utf-8")
+    assert structure_metrics.measure(tree)["registered_error_literal_sites"] == {
+        "sites": 2,
+        "modules": 1,
+    }
+
+
+def test_registered_error_literal_sites_do_not_increase() -> None:
+    measured = structure_metrics.measure(structure_metrics.ROOT)["registered_error_literal_sites"]
+    assert measured["sites"] <= MAX_REGISTERED_ERROR_LITERAL_SITES
+
+
+def test_dynamic_evidence_error_forwarding_counts_new_cli_site(tree: Path) -> None:
+    before = structure_metrics.measure(tree)["dynamic_evidence_error_forwarding"]
+    _write(
+        tree,
+        "src/underwrite/cli/forward.py",
+        "def forward(exc):\n"
+        "    return EvidenceError('INVALID_INPUT', exc.reason, location=exc.location)\n",
+    )
+
+    assert before == {"sites": 0, "modules": 0}
+    assert structure_metrics.measure(tree)["dynamic_evidence_error_forwarding"] == {
+        "sites": 1,
+        "modules": 1,
+    }
+
+
+def test_dynamic_forwarding_counts_other_adapter_and_import_alias(tree: Path) -> None:
+    _write(
+        tree,
+        "src/underwrite/agent_surface/forward.py",
+        "from underwrite.cli.evidence import EvidenceError as E\n"
+        "def forward(exc):\n"
+        "    return E('INVALID_INPUT', exc.reason, exc.location)\n",
+    )
+    _write(
+        tree,
+        "src/underwrite/service/forward.py",
+        "from underwrite.cli.evidence import EvidenceError\n"
+        "def forward(exc):\n"
+        "    return EvidenceError('INVALID_INPUT', exc.reason, exc.location)\n",
+    )
+    assert structure_metrics.measure(tree)["dynamic_evidence_error_forwarding"] == {
+        "sites": 2,
+        "modules": 2,
+    }
+
+
+def test_dynamic_evidence_error_forwarding_does_not_increase() -> None:
+    measured = structure_metrics.measure(structure_metrics.ROOT)[
+        "dynamic_evidence_error_forwarding"
+    ]
+    assert measured["sites"] <= MAX_DYNAMIC_EVIDENCE_ERROR_FORWARDING_SITES
 
 
 def test_cli_prints_versioned_json(tree: Path, capsys: pytest.CaptureFixture[str]) -> None:
