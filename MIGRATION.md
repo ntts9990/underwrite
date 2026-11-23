@@ -81,6 +81,14 @@ Migrate consumers from inspection/action output v1/v2 to v3. Views, error channe
 exit meanings and unchecked source-claim limits remain the same. Unknown future
 schemas refuse, and invalid installed output contracts fail before input reads.
 
+The additive `compare-results --baseline FILE --candidate FILE --json` command
+emits `common_result_marginal_comparison.v1` in the development checkout. It
+does not migrate or rewrite saved inspection reports. Existing summary/actions
+v3 CLI/API/MCP outputs and the default MCP catalog remain unchanged. Consumers
+of the new result must distinguish its computed arithmetic from
+`item_correspondence: not_established` and
+`semantic_comparability: unestablished`; no item transition is established.
+
 `audit-baseline` now emits `evidence_result.v2`; baseline capture returns
 `baseline_record.v2`. The Goppi exchange wire remains v2 with the same five source
 members, same hashes and seven saved files. Software producer version remains

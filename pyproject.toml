@@ -53,6 +53,7 @@ source-include = [
     "contracts/evidence_result.v2.schema.json",
     "contracts/common_result_inspection_actions.v3.schema.json",
     "contracts/common_result_inspection.v3.schema.json",
+    "contracts/common_result_marginal_comparison.v1.schema.json",
     "contracts/deepeval_bound_record.v2.schema.json",
     "contracts/measurement_semantics.v1.schema.json",
     "contracts/measurement_policy.v3.schema.json",
