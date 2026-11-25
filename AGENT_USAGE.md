@@ -1424,6 +1424,28 @@ capture profile, and offers `--view outcome-actions`; the published 0.2.0 does n
 include those checkout changes. Inspect the selected executable's
 `capabilities --json` before using the v3 interpretation or action view described
 below.
+
+The checkout also consumes the final Goppi PR #342 family only when
+`paired/execution.json` is execution.v2, `paired/rows.jsonl` contains row.v2, and
+`trajectory/trajectory.json` is document.v2. That family returns review and
+outcome-action v4 and is retained/read under trajectory record v4; the existing
+v1 input family keeps review and record v3 and its verifier-response v2 contract.
+The v3 verifier-response contract accepts both response format labels but is
+selected only for execution.v2. The consumer requires its paired and trajectory
+`format` fields to match the selected input family exactly. A mixed family or
+mismatched verifier response is rejected; it does not retry as v1.
+
+Execution.v2 build and split declarations remain self-reported. `not_measured`
+build identity, `indeterminate` stage classification, and `not_run` stage state
+remain separate. For installation-pair acceptance, Underwrite independently
+recomputes Goppi's directory digest from the pinned tarball and installed tree,
+excluding only each package's top-level `node_modules`; it requires those two
+trees to match. The fixture's `export_build.dirHash` is synthetic, so its match
+status is reported separately and does not determine whether installation
+succeeded.
+The `capabilities --json` profiles name that family
+`goppi-paired-trajectory-execution-v2` (and its `|outcome-actions` view).
+
 Use the complete outer directory containing `paired/` and `trajectory/`; a bare
 paired export is not evidence of zero tool calls. Goppi must already be installed
 with offline trajectory verification support. Underwrite does not install it or
@@ -1555,6 +1577,11 @@ report and history only under historical fields, with an effective
 `legacy_unattributed_report` or `legacy_not_performed` interpretation. It needs
 neither the original export nor Goppi and reports
 `native_verification_performed_now: false`.
+
+An execution.v2 / row.v2 / trajectory.v2 result is stored and reopened as
+`trajectory_record.v4` / `trajectory_record_read.v4` with the
+`trajectory-record.v4` metadata layout. Its retained review stays review v4;
+older v2 and v3 analyses remain readable under their own embedded schemas.
 It supports the trajectory report's 8 MiB bound; generic `records read-json`
 keeps its 1 MiB selected-file limit. See [storage and recovery](STORAGE.md#retain-a-goppi-paired-trajectory)
 for diagnostic states and raw-source recovery.

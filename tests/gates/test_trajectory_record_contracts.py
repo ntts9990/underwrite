@@ -15,7 +15,16 @@ import pytest
 from jsonschema import ValidationError
 
 from underwrite.cli.local_json import Validator
-from underwrite.cli.record_trajectory import LAYOUT, LAYOUT_V2, READ_SCHEMA_V3, SCHEMA_V3
+from underwrite.cli.record_trajectory import (
+    LAYOUT,
+    LAYOUT_V2,
+    LAYOUT_V4,
+    READ_SCHEMA_V3,
+    READ_SCHEMA_V4,
+    SCHEMA_V3,
+    SCHEMA_V4,
+)
+from underwrite.instrument.evidence.goppi_trajectory import MEMBERS
 from underwrite.instrument.ingest.goppi_trajectory import HISTORY_SCHEMA, HISTORY_SCHEMA_V2
 from underwrite.instrument.ingest.schema import packaged_validator
 
@@ -37,6 +46,7 @@ def test_generated_trajectory_record_contracts_match_authored_owners(
         HISTORY_SCHEMA_V2: module.build_history_v2(),
         **module.build_envelopes(ROOT),
         **module.build_envelopes_v3(ROOT),
+        **module.build_envelopes_v4(ROOT),
     }
     for schema_name, schema in expected.items():
         authored = ROOT / "contracts" / (schema_name + ".schema.json")
@@ -320,6 +330,27 @@ def _current_review() -> dict[str, Any]:
     return report
 
 
+def _execution_v2_review() -> dict[str, Any]:
+    from underwrite.instrument.evidence.goppi_trajectory import analyze_goppi_trajectory
+
+    fixture = ROOT / "fixtures/conformance/goppi-execution-v2/paired-exchange-v2"
+    execution = json.loads((fixture / "paired/execution.json").read_bytes())
+    rows = tuple(
+        json.loads(line) for line in (fixture / "paired/rows.jsonl").read_text().splitlines()
+    )
+    trajectory = json.loads((fixture / "trajectory/trajectory.json").read_bytes())
+    identities = {
+        name: (
+            "sha256:" + hashlib.sha256((fixture / name).read_bytes()).hexdigest(),
+            (fixture / name).stat().st_size,
+        )
+        for name in MEMBERS
+    }
+    report = cast(dict[str, Any], analyze_goppi_trajectory(execution, rows, trajectory, identities))
+    report["trust_scope"].update(ACCEPTED_TRUST)
+    return report
+
+
 ACCEPTED_TRUST = {
     "verifier_report_state": "report_accepted",
     "verifier_source": "operator_configured_executable",
@@ -369,6 +400,50 @@ def test_record_v3_retains_only_current_review_analysis() -> None:
     prior["analysis"] = {"state": "result", "report": _prior_review()}
     with pytest.raises(ValidationError):
         validator.validate(prior)
+
+
+def test_record_v4_accepts_execution_v2_review_and_report_only_history() -> None:
+    validator = cast(Validator, packaged_validator(SCHEMA_V4))
+    verification = _verification()
+    envelope: dict[str, object] = {
+        "schema": SCHEMA_V4,
+        "command": "records audit-trajectory",
+        "source": {"state": "captured", "source_members": _source_members()},
+        "analysis": {"state": "result", "report": _execution_v2_review()},
+        "verifier_report_history": _history_v2("report_accepted"),
+        "storage": {
+            "state": "saved",
+            "record_id": verification["record_id"],
+            "manifest_digest": verification["manifest_digest"],
+            "verification": verification,
+        },
+        "exit_code": 0,
+    }
+    validator.validate(envelope)
+
+
+@pytest.mark.parametrize(
+    ("generation", "limitations"),
+    [
+        ("v4", []),
+        ("v3", []),
+        ("v2", ["retained_analysis_omits_cycle_status_stage_verdicts_and_runner"]),
+    ],
+)
+def test_read_v4_dispatches_retained_v2_and_v3_analysis_by_schema(
+    generation: str, limitations: list[str]
+) -> None:
+    envelope = _read_envelope(LAYOUT_V2, "report_accepted")
+    envelope["schema"] = READ_SCHEMA_V4
+    envelope["record_layout"] = LAYOUT_V4
+    report = {
+        "v4": _execution_v2_review,
+        "v3": _current_review,
+        "v2": _prior_review,
+    }[generation]()
+    envelope["analysis"] = {"state": "result", "report": report}
+    envelope["analysis_limitations"] = limitations
+    cast(Validator, packaged_validator(READ_SCHEMA_V4)).validate(envelope)
 
 
 @pytest.mark.parametrize("generation", ["prior", "current"])

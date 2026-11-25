@@ -19,6 +19,9 @@ from underwrite.instrument.ingest.local_capture import CaptureError
 from underwrite.instrument.ingest.schema import SchemaConfigurationError
 
 FIXTURE = Path(__file__).parents[3] / "fixtures/conformance/goppi-trajectory/exchange"
+V2_FIXTURE = (
+    Path(__file__).parents[3] / "fixtures/conformance/goppi-execution-v2/paired-exchange-v2"
+)
 PRIVATE_DIRECTORY_MODE = 0o700
 
 
@@ -45,6 +48,15 @@ def exchange(tmp_path: Path) -> Path:
     return Path(shutil.copytree(FIXTURE, tmp_path / "exchange"))
 
 
+@pytest.fixture
+def v2_exchange(tmp_path: Path) -> Path:
+    target = tmp_path / "exchange-v2"
+    target.mkdir()
+    for family in ("paired", "trajectory"):
+        shutil.copytree(V2_FIXTURE / family, target / family)
+    return target
+
+
 def test_snapshot_is_private_cleaned_and_captured_once(
     exchange: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -63,6 +75,168 @@ def test_snapshot_is_private_cleaned_and_captured_once(
     assert report["trust_scope"]["verifier_source"] == "caller_supplied_python_port"
     assert len(reads) == len(app.MEMBERS) * 2
     assert len(set(reads)) == len(reads)
+    assert not verifier.snapshots[0].exists()
+
+
+def test_v2_verifier_format_is_bound_to_v2_execution_and_trajectory(
+    v2_exchange: Path,
+) -> None:
+    verifier = StubVerifier()
+    report = cast(dict[str, Any], app.audit_goppi_trajectory(v2_exchange, verifier=verifier))
+    assert report["schema"] == "goppi_trajectory_review.v4"
+    assert report["trust_scope"]["verifier_report_state"] == "report_accepted"
+    assert report["producer_declarations"]["builds"]["identity_assurance"] == "self_reported"
+    assert not verifier.snapshots[0].exists()
+
+
+def test_v1_rejects_v2_verifier_response_with_legacy_unsupported_code(exchange: Path) -> None:
+    def mismatch(response: dict[str, Any]) -> None:
+        response["data"]["format"] = "v2"
+        response["data"]["trajectory"]["format"] = "v2"
+
+    verifier = StubVerifier(mismatch)
+    with pytest.raises(app.TrajectoryInputError) as caught:
+        app.audit_goppi_trajectory(exchange, verifier=verifier)
+    assert (
+        caught.value.code,
+        caught.value.reason,
+        caught.value.location,
+    ) == ("UNSUPPORTED_FORMAT", "GOPPI_VERIFIER_RESPONSE_UNSUPPORTED", "")
+    assert caught.value.__suppress_context__
+    assert not verifier.snapshots[0].exists()
+
+
+@pytest.mark.parametrize(
+    ("member", "field", "location"),
+    [
+        ("trajectory/manifest.json", "paired_manifest_digest", "/trajectory/manifest.json"),
+        ("trajectory/manifest.json", "paired_manifest_sha256", "/trajectory/manifest.json"),
+        ("trajectory/trajectory.json", "paired_manifest_digest", "/trajectory/trajectory.json"),
+        ("trajectory/trajectory.json", "paired_manifest_sha256", "/trajectory/trajectory.json"),
+    ],
+)
+def test_v2_manifest_crosslinks_are_checked_before_verifier(
+    v2_exchange: Path, member: str, field: str, location: str
+) -> None:
+    path = v2_exchange / member
+    document = json.loads(path.read_bytes())
+    document[field] = "sha256:" + "0" * 64
+    path.write_text(json.dumps(document))
+    verifier = StubVerifier()
+    with pytest.raises(app.TrajectoryInputError) as caught:
+        app.audit_goppi_trajectory(v2_exchange, verifier=verifier)
+    assert (
+        caught.value.code,
+        caught.value.reason,
+        caught.value.location,
+    ) == ("INPUT_BINDING_MISMATCH", "GOPPI_VERIFIER_BINDING_MISMATCH", location)
+    assert verifier.snapshots == []
+
+
+def test_v2_manifest_requires_a_valid_paired_digest_before_verifier(v2_exchange: Path) -> None:
+    path = v2_exchange / "paired/manifest.json"
+    document = json.loads(path.read_bytes())
+    document["content_digest"] = "not-a-digest"
+    path.write_text(json.dumps(document))
+    verifier = StubVerifier()
+    with pytest.raises(app.TrajectoryInputError) as caught:
+        app.audit_goppi_trajectory(v2_exchange, verifier=verifier)
+    assert (
+        caught.value.code,
+        caught.value.reason,
+        caught.value.location,
+    ) == (
+        "INVALID_INPUT",
+        "GOPPI_VERIFIER_BINDING_MISMATCH",
+        "/paired/manifest.json/content_digest",
+    )
+    assert verifier.snapshots == []
+
+
+@pytest.mark.parametrize(
+    ("member", "schema", "location"),
+    [
+        (
+            "paired/execution.json",
+            "goppi.paired_run_exchange.execution.v3",
+            "/paired/execution.json/schema",
+        ),
+        (
+            "trajectory/trajectory.json",
+            "goppi.paired_trajectory_exchange.document.v1",
+            "/trajectory/schema",
+        ),
+        (
+            "paired/manifest.json",
+            "goppi.paired_run_exchange.manifest.v2",
+            "/paired/manifest.json/schema",
+        ),
+        (
+            "trajectory/manifest.json",
+            "goppi.paired_trajectory_exchange.manifest.v2",
+            "/trajectory/manifest.json/schema",
+        ),
+    ],
+)
+def test_v2_source_schema_refusal_keeps_unsupported_format_diagnostic(
+    v2_exchange: Path, member: str, schema: str, location: str
+) -> None:
+    path = v2_exchange / member
+    document = json.loads(path.read_bytes())
+    document["schema"] = schema
+    path.write_text(json.dumps(document))
+    verifier = StubVerifier()
+    with pytest.raises(app.TrajectoryInputError) as caught:
+        app.audit_goppi_trajectory(v2_exchange, verifier=verifier)
+    assert (
+        caught.value.code,
+        caught.value.reason,
+        caught.value.location,
+    ) == ("UNSUPPORTED_FORMAT", "TRAJECTORY_UNSUPPORTED_VALUE", location)
+    assert verifier.snapshots == []
+
+
+@pytest.mark.parametrize(
+    "field", ["projection_binding_checked", "source_authentication_checked"]
+)
+def test_v2_verifier_admission_refuses_false_trajectory_crosslink_claims(
+    v2_exchange: Path, field: str
+) -> None:
+    path = v2_exchange / "trajectory/trajectory.json"
+    document = json.loads(path.read_bytes())
+    document["producer_claims"][field] = False
+    path.write_text(json.dumps(document))
+    verifier = StubVerifier()
+    from underwrite.instrument.evidence.goppi_trajectory import TrajectoryError
+
+    with pytest.raises(TrajectoryError, match="TRAJECTORY_BINDING_MISMATCH"):
+        app.audit_goppi_trajectory(v2_exchange, verifier=verifier)
+    assert len(verifier.snapshots) == 1
+    assert not verifier.snapshots[0].exists()
+
+
+def test_response_v3_contract_is_packaged_and_admits_both_families() -> None:
+    contract = app.RESPONSE_SCHEMA
+    authored = Path(__file__).parents[3] / "contracts" / f"{contract}.schema.json"
+    packaged = Path(__file__).parents[3] / "src/underwrite/_contracts" / f"{contract}.schema.json"
+    assert authored.read_bytes() == packaged.read_bytes()
+    schema = json.loads(authored.read_bytes())
+    data = schema["properties"]["data"]["properties"]
+    assert data["format"]["enum"] == ["v1", "v2"]
+    assert data["trajectory"]["properties"]["format"]["enum"] == ["v1", "v2"]
+
+
+@pytest.mark.parametrize("field", ["format", "trajectory_format"])
+def test_v2_verifier_response_cannot_claim_v1(v2_exchange: Path, field: str) -> None:
+    def mismatch(response: dict[str, Any]) -> None:
+        if field == "format":
+            response["data"]["format"] = "v1"
+        else:
+            response["data"]["trajectory"]["format"] = "v1"
+
+    verifier = StubVerifier(mismatch)
+    with pytest.raises(app.TrajectoryInputError, match="GOPPI_VERIFIER_BINDING_MISMATCH"):
+        app.audit_goppi_trajectory(v2_exchange, verifier=verifier)
     assert not verifier.snapshots[0].exists()
 
 

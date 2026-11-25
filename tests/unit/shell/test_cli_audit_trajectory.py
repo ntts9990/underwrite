@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any, cast
 
@@ -19,7 +20,19 @@ from underwrite.instrument.ingest.goppi_verifier import VerifierError
 from underwrite.instrument.ingest.schema import SchemaConfigurationError
 
 EXCHANGE = repo_root(Path(__file__).resolve()) / "fixtures/conformance/goppi-trajectory/exchange"
+V2_FIXTURE = (
+    repo_root(Path(__file__).resolve())
+    / "fixtures/conformance/goppi-execution-v2/paired-exchange-v2"
+)
 ERROR_EXIT = 2
+
+
+def _v2_exchange(tmp_path: Path) -> Path:
+    target = tmp_path / "exchange-v2"
+    target.mkdir()
+    for family in ("paired", "trajectory"):
+        shutil.copytree(V2_FIXTURE / family, target / family)
+    return target
 
 
 class StubVerifier:
@@ -39,9 +52,12 @@ def test_outcome_actions_cli_matches_python_except_verifier_source_and_keeps_def
         return StubVerifier()
 
     monkeypatch.setattr(ingest, "GoppiCliVerifier", factory)
-    assert main([
-        "audit-trajectory", "--exchange", str(EXCHANGE), "--view", "outcome-actions", "--json"
-    ]) == 0
+    assert (
+        main(
+            ["audit-trajectory", "--exchange", str(EXCHANGE), "--view", "outcome-actions", "--json"]
+        )
+        == 0
+    )
     streams = capsys.readouterr()
     assert streams.err == ""
     cli = json.loads(streams.out)
@@ -58,6 +74,54 @@ def test_outcome_actions_cli_matches_python_except_verifier_source_and_keeps_def
     assert cli["trust_scope"]["authenticity"] == "verifier_reported_content_digest_only"
     assert main(["audit-trajectory", "--exchange", str(EXCHANGE), "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["schema"] == "goppi_trajectory_review.v3"
+
+
+def test_execution_v2_cli_emits_v4_report_with_source_limits(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def factory(_: Path | None) -> StubVerifier:
+        return StubVerifier()
+
+    monkeypatch.setattr(ingest, "GoppiCliVerifier", factory)
+    exchange = _v2_exchange(tmp_path)
+    assert main(["audit-trajectory", "--exchange", str(exchange), "--json"]) == 0
+    streams = capsys.readouterr()
+    assert streams.err == ""
+    result = json.loads(streams.out)
+    assert result["schema"] == "goppi_trajectory_review.v4"
+    assert result["trust_scope"]["verifier_report_state"] == "report_accepted"
+    assert result["producer_declarations"]["builds"]["identity_assurance"] == "self_reported"
+    assert result["producer_declarations"]["builds"]["independently_verified"] is False
+    assert result["producer_declarations"]["split"]["commitment_recomputed"] is False
+    held_out = next(stage for stage in result["stages"] if stage["stage"] == "held_out")
+    assert held_out["execution_status"] == "not_run"
+    assert held_out["classification"] == "not_evaluated"
+    assert held_out["not_run_reason"] == "earlier_stage_partial_stop"
+    assert (
+        main(
+            [
+                "audit-trajectory",
+                "--exchange",
+                str(exchange),
+                "--view",
+                "outcome-actions",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    action_result = json.loads(capsys.readouterr().out)
+    assert action_result["schema"] == "goppi_trajectory_outcome_actions.v4"
+    assert main(["capabilities", "--json"]) == 0
+    commands = json.loads(capsys.readouterr().out)["commands"]
+    descriptor = next(item for item in commands if item["command"] == "audit-trajectory")
+    assert descriptor["profiles"][0]["output_schemas"] == ["goppi_trajectory_review.v3"]
+    assert descriptor["profiles"][2]["output_schemas"] == ["goppi_trajectory_review.v3"]
+    assert descriptor["profiles"][3]["output_schemas"] == ["goppi_trajectory_outcome_actions.v3"]
+    assert descriptor["profiles"][4]["output_schemas"] == ["goppi_trajectory_review.v4"]
+    assert descriptor["profiles"][5]["output_schemas"] == ["goppi_trajectory_outcome_actions.v4"]
 
 
 def test_default_cli_does_not_require_optional_outcome_actions_contract(
@@ -91,9 +155,12 @@ def test_default_cli_does_not_require_optional_outcome_actions_contract(
     assert "goppi_trajectory_outcome_actions.v3" not in loaded
     assert len(verifier.snapshots) == 1
 
-    assert main([
-        "audit-trajectory", "--exchange", str(EXCHANGE), "--view", "outcome-actions", "--json"
-    ]) == ERROR_EXIT
+    assert (
+        main(
+            ["audit-trajectory", "--exchange", str(EXCHANGE), "--view", "outcome-actions", "--json"]
+        )
+        == ERROR_EXIT
+    )
     streams = capsys.readouterr()
     assert streams.out == ""
     assert json.loads(streams.err)["code"] == "SCHEMA_CONFIGURATION_ERROR"

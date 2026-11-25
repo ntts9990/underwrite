@@ -1,0 +1,173 @@
+{
+  "schema": "goppi.build_dir_hash_vector.v1",
+  "files": [
+    {
+      "name": "B",
+      "content": "upper\n",
+      "sha256": "e83189db38554920ea572093f9ad32facf682f28ccecdac085c1511735a2b492"
+    },
+    {
+      "name": "README.md",
+      "content": "# Synthetic build tree\n",
+      "sha256": "cad25d4a7546638181f0c2d0c44e19311984a57dcb7520d6a3c99063bbb6a8a4"
+    },
+    {
+      "name": "a-b",
+      "content": "dash\n",
+      "sha256": "f8359416cedbf4b44bd1cab71b791b4121e3b33748187c530e70207af87c3f39"
+    },
+    {
+      "name": "a.b",
+      "content": "dot\n",
+      "sha256": "5ddbce254c08372e429a250112c6f4593868687ab01e9a126193e5a83560362b"
+    },
+    {
+      "name": "a/b",
+      "content": "slash\n",
+      "sha256": "8578a26bad9cf662e6e0cd91540eea63fb2ed5b5b2cebc471364c137b12931e6"
+    },
+    {
+      "name": "dist/cli.mjs",
+      "content": "#!/usr/bin/env node\nexport {}\n",
+      "sha256": "34eb3b37885bb2fcfb5a3cb01d80304d1b51a655cc696f565cd3e31fa5cba4ab"
+    },
+    {
+      "name": "docs/-dash.md",
+      "content": "hyphen inside\n",
+      "sha256": "90f723bcb9641b82770e2ba696307eb9f2c4699200d32ba3460bc5bba50388d9"
+    },
+    {
+      "name": "docs/.keep",
+      "content": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "package.json",
+      "content": "{\"name\":\"goppi\",\"version\":\"0.1.0\"}\n",
+      "sha256": "1a4001715c8e80b48306cff95ea9d26d7e58a55be4becf1a734223e051bec958"
+    }
+  ],
+  "dir_hash": "4700ec2d5679e5454bf7eaa5eb59429cc0ff452e736f4828bbc91695c64df7d4",
+  "h1": "h1:RwDsLVZ55UVL9+ql61lCnMD/RS5zb0gou8kWlcZN99Q=",
+  "archive_target_dir_hash": "e4187de9434a21aca84991d590fd4ed8efd91048445452db02cd020e385387e0",
+  "rejection_file_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "rejections": [
+    {
+      "case": "a space in a name",
+      "names": [
+        "docs/a b.md"
+      ],
+      "code": "DIR_HASH_NAME_INVALID"
+    },
+    {
+      "case": "a name outside ASCII",
+      "names": [
+        "docs/é.md"
+      ],
+      "code": "DIR_HASH_NAME_INVALID"
+    },
+    {
+      "case": "a newline in a name",
+      "names": [
+        "docs/a\nb.md"
+      ],
+      "code": "DIR_HASH_NAME_INVALID"
+    },
+    {
+      "case": "a backslash in a name",
+      "names": [
+        "docs\\a.md"
+      ],
+      "code": "DIR_HASH_NAME_INVALID"
+    },
+    {
+      "case": "a quote in a name",
+      "names": [
+        "docs/a'b.md"
+      ],
+      "code": "DIR_HASH_NAME_INVALID"
+    },
+    {
+      "case": "a .. segment",
+      "names": [
+        "docs/../a.md"
+      ],
+      "code": "DIR_HASH_NAME_INVALID"
+    },
+    {
+      "case": "a . segment",
+      "names": [
+        "./a.md"
+      ],
+      "code": "DIR_HASH_NAME_INVALID"
+    },
+    {
+      "case": "an empty segment",
+      "names": [
+        "docs//a.md"
+      ],
+      "code": "DIR_HASH_NAME_INVALID"
+    },
+    {
+      "case": "an absolute name",
+      "names": [
+        "/a.md"
+      ],
+      "code": "DIR_HASH_NAME_INVALID"
+    },
+    {
+      "case": "a first segment that starts with a hyphen",
+      "names": [
+        "-a.md"
+      ],
+      "code": "DIR_HASH_NAME_INVALID"
+    },
+    {
+      "case": "a top-level node_modules",
+      "names": [
+        "node_modules/zod/index.js"
+      ],
+      "code": "DIR_HASH_NAME_INVALID"
+    },
+    {
+      "case": "one name twice",
+      "names": [
+        "docs/a.md",
+        "docs/a.md"
+      ],
+      "code": "DIR_HASH_NAME_DUPLICATE"
+    },
+    {
+      "case": "two files that differ only in case",
+      "names": [
+        "README.md",
+        "readme.md"
+      ],
+      "code": "DIR_HASH_PATH_COLLISION"
+    },
+    {
+      "case": "two directories that differ only in case",
+      "names": [
+        "Docs/a.md",
+        "docs/b.md"
+      ],
+      "code": "DIR_HASH_PATH_COLLISION"
+    },
+    {
+      "case": "a file and a directory that differ only in case",
+      "names": [
+        "Docs/a.md",
+        "docs"
+      ],
+      "code": "DIR_HASH_PATH_COLLISION"
+    },
+    {
+      "case": "a file and a directory with one name",
+      "names": [
+        "docs",
+        "docs/a.md"
+      ],
+      "code": "DIR_HASH_PATH_COLLISION"
+    }
+  ]
+}

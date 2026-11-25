@@ -1,0 +1,1 @@
+Source: Goppi pull request #342, merge `c10de743abe62b70b352b09adb9fa372b943284c`, tree `7b8f225ec1d4fc5a20f69e3f7a890efd78f4a8c5`. Handoff SHA-256: `e2a6213000b34ea75ab3b06ffa7786b9e2e9d8510730d56a7fe614741a7cba4e`. The source `SHA256SUMS` and tarball checksums were verified before copying.

@@ -13,7 +13,9 @@ from underwrite.cli.evidence import EvidenceError, ReportOutput, run_cli
 from underwrite.instrument.evidence.goppi_trajectory import (
     MAX_REPORT_BYTES,
     OUTCOME_ACTIONS_SCHEMA_V3,
+    OUTCOME_ACTIONS_SCHEMA_V4,
     RESULT_SCHEMA_V3,
+    RESULT_SCHEMA_V4,
     TrajectoryError,
 )
 from underwrite.instrument.ingest.goppi_trajectory import (
@@ -92,7 +94,9 @@ def main(argv: list[str]) -> int:
         produce,
         ReportOutput(
             lambda args: (
-                OUTCOME_ACTIONS_SCHEMA if args.view == "outcome-actions" else RESULT_SCHEMA
+                (OUTCOME_ACTIONS_SCHEMA, OUTCOME_ACTIONS_SCHEMA_V4)
+                if args.view == "outcome-actions"
+                else (RESULT_SCHEMA, RESULT_SCHEMA_V4)
             ),
             max_bytes=MAX_REPORT_BYTES,
         ),

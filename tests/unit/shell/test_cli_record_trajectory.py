@@ -33,6 +33,9 @@ DIAGNOSTIC_EXIT = 2
 STORAGE_EXIT = 3
 
 FIXTURE = Path(__file__).parents[3] / "fixtures/conformance/goppi-trajectory/exchange"
+V2_FIXTURE = (
+    Path(__file__).parents[3] / "fixtures/conformance/goppi-execution-v2/paired-exchange-v2"
+)
 
 
 @pytest.mark.parametrize("record", [False, True])
@@ -40,9 +43,9 @@ def test_missing_verifier_points_to_executable_option_through_cli(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], record: bool
 ) -> None:
     argv = ["records", "audit-trajectory"] if record else ["audit-trajectory"]
-    argv.extend([
-        "--exchange", str(FIXTURE), "--goppi-executable", str(tmp_path / "missing"), "--json"
-    ])
+    argv.extend(
+        ["--exchange", str(FIXTURE), "--goppi-executable", str(tmp_path / "missing"), "--json"]
+    )
     if record:
         argv.extend(["--root", str(tmp_path / "store"), "--id", "missing-verifier"])
     assert main.main(argv) == DIAGNOSTIC_EXIT
@@ -67,11 +70,24 @@ def test_failed_verifier_process_never_publishes_record(
     executable.write_text(f"#!{sys.executable}\n{failure}\n")
     executable.chmod(0o700)
     store = tmp_path / "store"
-    assert main.main([
-        "records", "audit-trajectory", "--exchange", str(FIXTURE),
-        "--goppi-executable", str(executable), "--root", str(store),
-        "--id", "failed-process", "--json",
-    ]) == DIAGNOSTIC_EXIT
+    assert (
+        main.main(
+            [
+                "records",
+                "audit-trajectory",
+                "--exchange",
+                str(FIXTURE),
+                "--goppi-executable",
+                str(executable),
+                "--root",
+                str(store),
+                "--id",
+                "failed-process",
+                "--json",
+            ]
+        )
+        == DIAGNOSTIC_EXIT
+    )
     streams = capsys.readouterr()
     assert streams.out == ""
     error = json.loads(streams.err)
@@ -89,10 +105,24 @@ def test_records_audit_trajectory_rejects_view_before_capture_and_store(
         pytest.fail("record view usage error must precede capture and verifier effects")
 
     monkeypatch.setattr(command, "capture_goppi_trajectory", forbidden)
-    assert main.main([
-        "records", "audit-trajectory", "--exchange", str(FIXTURE),
-        "--view", "outcome-actions", "--root", str(root), "--id", "sample", "--json",
-    ]) == DIAGNOSTIC_EXIT
+    assert (
+        main.main(
+            [
+                "records",
+                "audit-trajectory",
+                "--exchange",
+                str(FIXTURE),
+                "--view",
+                "outcome-actions",
+                "--root",
+                str(root),
+                "--id",
+                "sample",
+                "--json",
+            ]
+        )
+        == DIAGNOSTIC_EXIT
+    )
     streams = capsys.readouterr()
     assert streams.out == ""
     error = json.loads(streams.err)
@@ -120,6 +150,15 @@ def exchange(tmp_path: Path) -> Path:
     return Path(shutil.copytree(FIXTURE, tmp_path / "exchange"))
 
 
+@pytest.fixture
+def v2_exchange(tmp_path: Path) -> Path:
+    target = tmp_path / "exchange-v2"
+    target.mkdir()
+    for family in ("paired", "trajectory"):
+        shutil.copytree(V2_FIXTURE / family, target / family)
+    return target
+
+
 def _run(exchange: Path, root: Path, verifier: Stub | None = None) -> dict[str, Any]:
     return cast(
         dict[str, Any],
@@ -129,6 +168,26 @@ def _run(exchange: Path, root: Path, verifier: Stub | None = None) -> dict[str, 
 
 def _assert_schema(value: dict[str, Any]) -> None:
     cast(Validator, packaged_validator(value["schema"])).validate(value)
+
+
+def test_v2_exchange_record_reopens_v4_analysis(v2_exchange: Path, tmp_path: Path) -> None:
+    root = tmp_path / "store"
+    result = cast(
+        dict[str, Any],
+        command.run_record_trajectory(v2_exchange, root, "execution-v2", verifier=Stub()),
+    )
+    _assert_schema(result)
+    analysis = cast(dict[str, Any], result["analysis"])
+    report = cast(dict[str, Any], analysis["report"])
+    assert report["schema"] == "goppi_trajectory_review.v4"
+    assert report["producer_declarations"]["builds"]["identity_assurance"] == "self_reported"
+
+    reopened = cast(dict[str, Any], command.run_read_trajectory(root, "execution-v2"))
+    reopened_analysis = cast(dict[str, Any], reopened["analysis"])
+    reopened_report = cast(dict[str, Any], reopened_analysis["report"])
+    assert reopened_report["schema"] == "goppi_trajectory_review.v4"
+    assert reopened["schema"] == command.READ_SCHEMA_V4
+    assert reopened_report["stages"][-1]["classification"] == "not_evaluated"
 
 
 @pytest.mark.parametrize("configured", [None, Path("/configured/goppi")])
@@ -155,9 +214,7 @@ def test_python_executable_selection_is_operator_configured_and_path_free(
     history = result["verifier_report_history"]
     assert history["verifier_source"] == "operator_configured_executable"
     invocation = json.loads(
-        read_record_file(
-            tmp_path / "store", "sample", command.INVOCATION_NAME
-        ).data
+        read_record_file(tmp_path / "store", "sample", command.INVOCATION_NAME).data
     )
     assert invocation == {
         "command": command.COMMAND,
@@ -510,9 +567,7 @@ def test_summary_marks_populations_missing_when_retained_analysis_is_diagnostic(
             "primary_repeat_pairs",
         ],
     }
-    assert summary["detail_state"]["analysis_diagnostic"] == (
-        "intentionally_omitted_use_full_view"
-    )
+    assert summary["detail_state"]["analysis_diagnostic"] == ("intentionally_omitted_use_full_view")
     assert b"private malformed payload" not in canonical_bytes(summary)
 
 
@@ -595,9 +650,7 @@ def test_diagnostic_saved_and_reopened_with_honest_history(
     expected = "not_performed" if stage == "before_native" else "report_accepted"
     assert result["verifier_report_history"]["verifier_report_state"] == expected
     assert stub.calls == (0 if stage == "before_native" else 1)
-    invocation = json.loads(
-        read_record_file(root, "sample", command.INVOCATION_NAME).data
-    )
+    invocation = json.loads(read_record_file(root, "sample", command.INVOCATION_NAME).data)
     assert invocation["verifier_report_state"] == expected
     assert invocation["configured_verifier_source"] == (
         None if stage == "before_native" else "caller_supplied_python_port"

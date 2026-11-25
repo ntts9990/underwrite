@@ -12,7 +12,7 @@ import sys
 import tarfile
 import time
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import pytest
 from _script_loader import load_module_from_path
@@ -170,6 +170,179 @@ def test_native_missing_trajectory_reason_is_exact() -> None:
         check.validate_missing(native, audit)
 
 
+V2_PRE_VERIFIER_REFUSAL_NAMES = {
+    "malformed-assignment-commitment",
+    "malformed-export-build",
+    "missing-execution-binding",
+    "missing-export-build",
+    "not-run-stage-build",
+    "not-run-stage-rows",
+    "runner-default-level-mismatch",
+    "split-salt-limit-mismatch",
+    "unknown-classification",
+    "unknown-not-run-reason",
+}
+V2_AFTER_VERIFIER_REFUSAL_NAMES = {
+    "missing-trajectory-binding",
+    "runner-model-mismatch",
+    "trajectory-assignment-mismatch",
+}
+
+
+def test_v2_refusal_expectations_pin_exact_fixture_set_and_public_errors() -> None:
+    fixture_root = ROOT / "fixtures/conformance/goppi-execution-v2/paired-exchange-v2-rejections"
+    fixture_names = {
+        path.name for path in fixture_root.iterdir() if path.is_dir()
+    }
+    expected_names = V2_PRE_VERIFIER_REFUSAL_NAMES | V2_AFTER_VERIFIER_REFUSAL_NAMES
+    assert fixture_names == expected_names == set(check.V2_REFUSAL_EXPECTATIONS)
+    assert len(fixture_names) == check.V2_REFUSAL_CASES
+    check.validate_v2_refusal_case_names(sorted(expected_names))
+    assert check.V2_PRE_VERIFIER_REFUSAL == check.V2RefusalExpectation(
+        phase="pre_verifier",
+        code="INPUT_BINDING_MISMATCH",
+        reason="GOPPI_VERIFIER_BINDING_MISMATCH",
+        location="/trajectory/manifest.json",
+        exit_code=2,
+        next_action="CORRECT_INPUT_BINDING",
+        retryable=False,
+    )
+    assert check.V2_AFTER_VERIFIER_REFUSAL == check.V2RefusalExpectation(
+        phase="after_verifier",
+        code="INVALID_INPUT",
+        reason="GOPPI_VERIFIER_REFUSED",
+        location="/exchange",
+        exit_code=2,
+        next_action="CORRECT_INPUT",
+        retryable=False,
+    )
+    assert {
+        name
+        for name, expected in check.V2_REFUSAL_EXPECTATIONS.items()
+        if expected.phase == "pre_verifier"
+    } == V2_PRE_VERIFIER_REFUSAL_NAMES
+    assert {
+        name
+        for name, expected in check.V2_REFUSAL_EXPECTATIONS.items()
+        if expected.phase == "after_verifier"
+    } == V2_AFTER_VERIFIER_REFUSAL_NAMES
+    assert all(
+        check.V2_REFUSAL_EXPECTATIONS[name] == check.V2_PRE_VERIFIER_REFUSAL
+        for name in V2_PRE_VERIFIER_REFUSAL_NAMES
+    )
+    assert all(
+        check.V2_REFUSAL_EXPECTATIONS[name] == check.V2_AFTER_VERIFIER_REFUSAL
+        for name in V2_AFTER_VERIFIER_REFUSAL_NAMES
+    )
+
+
+@pytest.mark.parametrize("mutation", ["missing", "extra", "duplicate"])
+def test_v2_refusal_case_set_rejects_fixture_drift(mutation: str) -> None:
+    names = sorted(check.V2_REFUSAL_EXPECTATIONS)
+    if mutation == "missing":
+        names.pop()
+    elif mutation == "extra":
+        names.append("unrecognized-refusal")
+    else:
+        names.append(names[0])
+    with pytest.raises(check.Failure, match="FIXTURE_V2_REFUSAL_SET_DRIFT"):
+        check.validate_v2_refusal_case_names(names)
+
+
+@pytest.mark.parametrize("case_name", sorted(check.V2_REFUSAL_EXPECTATIONS))
+def test_v2_underwrite_refusal_validates_each_case_contract(case_name: str) -> None:
+    expected = check.V2_REFUSAL_EXPECTATIONS[case_name]
+    payload = {
+        "schema": "evidence_error.v1",
+        "code": expected.code,
+        "reason": expected.reason,
+        "location": expected.location,
+        "exit_code": expected.exit_code,
+        "next_action": expected.next_action,
+        "retryable": expected.retryable,
+    }
+    result = subprocess.CompletedProcess(
+        [], expected.exit_code, b"", json.dumps(payload).encode()
+    )
+    assert check.validate_v2_underwrite_refusal(result, case_name) == expected.phase
+
+
+@pytest.mark.parametrize(
+    ("case_name", "expected_phase"),
+    [
+        ("malformed-assignment-commitment", "pre_verifier"),
+        ("missing-trajectory-binding", "after_verifier"),
+    ],
+)
+def test_v2_refusal_report_marks_phase_as_inferred(
+    case_name: str, expected_phase: Literal["pre_verifier", "after_verifier"]
+) -> None:
+    record = check.v2_refusal_check_record(case_name, expected_phase)
+    assert record == {
+        "name": "refusal_v2:" + case_name,
+        "expected_phase": expected_phase,
+        "phase_basis": "inferred_from_exact_public_error_contract",
+        "status": "passed",
+    }
+    assert "phase" not in record
+
+
+@pytest.mark.parametrize(
+    "case_name", ["malformed-assignment-commitment", "missing-trajectory-binding"]
+)
+@pytest.mark.parametrize("field", ["code", "reason", "location", "exit_code", "next_action"])
+def test_v2_underwrite_refusal_rejects_each_public_error_field_drift(
+    case_name: str, field: str
+) -> None:
+    expected = check.V2_REFUSAL_EXPECTATIONS[case_name]
+    payload = {
+        "schema": "evidence_error.v1",
+        "code": expected.code,
+        "reason": expected.reason,
+        "location": expected.location,
+        "exit_code": expected.exit_code,
+        "next_action": expected.next_action,
+        "retryable": expected.retryable,
+    }
+    result_exit_code = expected.exit_code
+    if field == "exit_code":
+        payload[field] = expected.exit_code + 1
+        result_exit_code += 1
+    else:
+        payload[field] = "DRIFT"
+    result = subprocess.CompletedProcess(
+        [], result_exit_code, b"", json.dumps(payload).encode()
+    )
+    with pytest.raises(check.Failure, match="UNDERWRITE_V2_REFUSAL_DRIFT"):
+        check.validate_v2_underwrite_refusal(result, case_name)
+
+
+@pytest.mark.parametrize("field", ["schema", "status", "code", "exit_code", "storage_code"])
+def test_v2_native_refusal_requires_exact_command_and_storage_error(field: str) -> None:
+    payload: dict[str, Any] = {
+        "schema": "goppi.command_result.v1",
+        "status": "refused",
+        "code": "COMMAND_FAILED",
+        "exit_code": 3,
+        "data": {"storage_code": "PAIRED_VERIFY_EXCHANGE_INVALID"},
+    }
+    valid = subprocess.CompletedProcess([], 3, json.dumps(payload).encode(), b"")
+    check.validate_v2_native_refusal(valid, "malformed-assignment-commitment")
+    result_exit_code = 3
+    if field == "storage_code":
+        payload["data"][field] = "DRIFT"
+    elif field == "exit_code":
+        payload[field] = 4
+        result_exit_code = 4
+    else:
+        payload[field] = "DRIFT"
+    result = subprocess.CompletedProcess(
+        [], result_exit_code, json.dumps(payload).encode(), b""
+    )
+    with pytest.raises(check.Failure, match="NATIVE_V2_REFUSAL_DRIFT"):
+        check.validate_v2_native_refusal(result, "malformed-assignment-commitment")
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
@@ -179,12 +352,19 @@ def test_native_missing_trajectory_reason_is_exact() -> None:
         "goppi_package",
         "unexpected_tarball",
         "bytes_not_matched",
-        "malformed_digest",
-        "extra_field",
+            "malformed_digest",
+            "extra_field",
+            "package_tree",
     ],
 )
 def test_success_summary_requires_contract_and_resolution_identities(mutation: str) -> None:
     tarball = "sha256:" + "c" * 64
+    tree_files = {"package.json": (2, "a" * 64), "dist/cli.mjs": (2, "b" * 64)}
+    tree_hash = check._dir_hash(tree_files)
+    file_records = [
+        {"path": name, "bytes": size, "sha256": "sha256:" + digest}
+        for name, (size, digest) in sorted(tree_files.items())
+    ]
     summary: dict[str, Any] = {
         "artifacts": {"goppi_tarball": {"bytes": 1, "sha256": tarball}},
         "contracts": dict(check.CONTRACTS),
@@ -198,6 +378,21 @@ def test_success_summary_requires_contract_and_resolution_identities(mutation: s
             "cli_sha256": "sha256:" + "e" * 64,
             "installed_bytes_match_tarball": True,
         },
+        "package_tree": {
+            "algorithm": "goppi_dirHash_sha256_summary_v1",
+            "export_build_dir_hash": "sha256:" + "f" * 64,
+            "tarball": {
+                "dir_hash": tree_hash,
+                "matches_export_build_digest": False,
+                "files": file_records,
+            },
+            "installed": {
+                "dir_hash": tree_hash,
+                "matches_export_build_digest": False,
+                "files": copy.deepcopy(file_records),
+            },
+            "tarball_matches_installed_tree": True,
+        },
     }
     check.validate_success_summary(summary)
     if mutation == "contract":
@@ -210,6 +405,8 @@ def test_success_summary_requires_contract_and_resolution_identities(mutation: s
         summary["goppi_package"]["cli_sha256"] = "e" * 64
     elif mutation == "extra_field":
         summary["goppi_package"]["package_name"] = "example-producer"
+    elif mutation == "package_tree":
+        summary["package_tree"]["tarball_matches_installed_tree"] = False
     else:
         del summary[mutation]
     with pytest.raises(check.Failure):
@@ -270,6 +467,41 @@ def _tarball(path: Path, members: Members) -> Path:
                 info.size = len(data)
                 archive.addfile(info, io.BytesIO(data))
     return path
+
+
+def test_pinned_dir_hash_vector_excludes_only_top_level_node_modules(tmp_path: Path) -> None:
+    vector_path = ROOT / "fixtures/conformance/goppi-execution-v2/build-dir-hash/vector.json"
+    vector = json.loads(vector_path.read_bytes())
+    vector_files = {
+        item["name"]: (len(item["content"].encode()), item["sha256"])
+        for item in vector["files"]
+    }
+    assert check._dir_hash(vector_files) == vector["dir_hash"]
+
+    manifest = _manifest(name="goppi", bin="dist/cli.js")
+    members: Members = [
+        ("package/package.json", manifest),
+        ("package/dist/cli.js", CLI),
+        ("package/dist/node_modules/bundled.mjs", b"nested dependency"),
+        ("package/node_modules/ignored.mjs", b"top-level excluded"),
+    ]
+    tarball = _tarball(tmp_path / "goppi.tgz", members)
+    package = check.package_cli(tarball)
+    installed = tmp_path / "installed"
+    (installed / "dist/node_modules").mkdir(parents=True)
+    (installed / "node_modules").mkdir()
+    (installed / "package.json").write_bytes(manifest)
+    (installed / "dist/cli.js").write_bytes(CLI)
+    (installed / "dist/node_modules/bundled.mjs").write_bytes(b"nested dependency")
+    (installed / "node_modules/ignored.mjs").write_bytes(b"top-level excluded")
+
+    compared = check.compare_package_trees(tarball, installed, package, "a" * 64)
+    names = {item["path"] for item in compared["tarball"]["files"]}
+    assert "node_modules/ignored.mjs" not in names
+    assert "dist/node_modules/bundled.mjs" in names
+    assert compared["tarball_matches_installed_tree"] is True
+    assert compared["tarball"]["matches_export_build_digest"] is False
+    assert compared["installed"]["dir_hash"] == compared["tarball"]["dir_hash"]
 
 
 def _manifest(**fields: object) -> bytes:
@@ -785,7 +1017,15 @@ def test_installed_files_are_verified_again_after_the_checks(
 ) -> None:
     package, npm_root, directory = _installed(tmp_path)
     cli = directory / "dist/cli.js"
-    pair = check.InstalledPair(cli, tmp_path / "underwrite", package, npm_root)
+    pair = check.InstalledPair(
+        tmp_path,
+        tmp_path / "node",
+        cli,
+        tmp_path / "underwrite",
+        {},
+        package,
+        npm_root,
+    )
     checks = [{"name": "complete_exchange", "status": "passed"}]
 
     def exercise(*_: object) -> list[dict[str, str]]:
@@ -795,10 +1035,10 @@ def test_installed_files_are_verified_again_after_the_checks(
 
     monkeypatch.setattr(check, "exercise", exercise)
     if not tamper:
-        assert check.checked_exercise(tmp_path, tmp_path, tmp_path, pair, {}) == checks
+        assert check.checked_exercise(tmp_path, tmp_path, pair.node, pair, {}) == checks
         return
     with pytest.raises(check.Failure) as caught:
-        check.checked_exercise(tmp_path, tmp_path, tmp_path, pair, {})
+        check.checked_exercise(tmp_path, tmp_path, pair.node, pair, {})
     assert (caught.value.reason, caught.value.phase) == (
         "GOPPI_CLI_CHANGED_DURING_CHECKS",
         "verification",

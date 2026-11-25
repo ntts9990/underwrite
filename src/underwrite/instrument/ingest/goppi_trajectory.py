@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, cast
+from typing import Any, Literal, NoReturn, cast
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
@@ -17,13 +18,17 @@ from underwrite_core.canonical import CanonicalizationError, canonical_bytes
 
 from underwrite.instrument.evidence.goppi_trajectory import (
     DIAGNOSTIC_CODES,
+    EXECUTION_FORMAT_V1,
+    EXECUTION_FORMAT_V2,
     MAX_REPORT_BYTES,
     MAX_ROWS,
     MAX_SPANS_PER_UNIT,
     MAX_UNITS,
     MEMBERS,
     OUTCOME_ACTIONS_SCHEMA_V3,
+    OUTCOME_ACTIONS_SCHEMA_V4,
     RESULT_SCHEMA_V3,
+    RESULT_SCHEMA_V4,
     VERIFIER_REPORT_NOT_PERFORMED,
     TrajectoryError,
     review_goppi_trajectory,
@@ -48,7 +53,11 @@ MAX_FAMILY_BYTES = 64 * 1024 * 1024
 MAX_DOCUMENT_BYTES = 1024 * 1024
 MAX_MANIFEST_BYTES = 64 * 1024
 MAX_DEPTH = 32
-RESPONSE_SCHEMA = "goppi_trajectory_verifier_response.v2"
+_SHA256 = re.compile(r"sha256:[0-9a-f]{64}\Z")
+RESPONSE_SCHEMA_V1_FAMILY = "goppi_trajectory_verifier_response.v2"
+RESPONSE_SCHEMA_V2_FAMILY = "goppi_trajectory_verifier_response.v3"
+# Backwards-compatible import name: v2 execution-family response contract.
+RESPONSE_SCHEMA = RESPONSE_SCHEMA_V2_FAMILY
 HISTORY_SCHEMA = "trajectory_verification_history.v1"
 HISTORY_SCHEMA_V2 = "trajectory_verification_history.v2"
 CAPTURE_POLICY = CapturePolicy(len(MEMBERS), MAX_FAMILY_BYTES, 128 * 1024 * 1024, 2)
@@ -80,6 +89,36 @@ class TrajectoryInputError(ValueError):
     def __init__(self, code: str, reason: str, location: str = "") -> None:
         self.code, self.reason, self.location = code, reason, location
         super().__init__(reason)
+
+
+def _unsupported_format(
+    reason: Literal["GOPPI_VERIFIER_RESPONSE_UNSUPPORTED", "TRAJECTORY_UNSUPPORTED_VALUE"],
+    location: str = "",
+    *,
+    suppress_context: bool = False,
+) -> NoReturn:
+    error = TrajectoryInputError("UNSUPPORTED_FORMAT", reason, location)
+    if suppress_context:
+        raise error from None
+    raise error
+
+
+def _require_schema(document: Mapping[str, object], expected: str, location: str) -> None:
+    if document.get("schema") != expected:
+        _unsupported_format("TRAJECTORY_UNSUPPORTED_VALUE", location)
+
+
+_MANIFEST_BINDING_FAILURES = {
+    "invalid_digest": ("INVALID_INPUT", "GOPPI_VERIFIER_BINDING_MISMATCH"),
+    "crosslink_mismatch": ("INPUT_BINDING_MISMATCH", "GOPPI_VERIFIER_BINDING_MISMATCH"),
+}
+
+
+def _manifest_binding_error(
+    failure: Literal["invalid_digest", "crosslink_mismatch"], location: str
+) -> NoReturn:
+    code, reason = _MANIFEST_BINDING_FAILURES[failure]
+    raise TrajectoryInputError(code, reason, location)
 
 
 def trajectory_member_limits() -> dict[str, int]:
@@ -160,9 +199,7 @@ def _validate(validator: Draft202012Validator, value: object, *, response: bool)
         validator.validate(value)  # pyright: ignore[reportUnknownMemberType]
     except ValidationError:
         if response:
-            raise TrajectoryInputError(
-                "UNSUPPORTED_FORMAT", "GOPPI_VERIFIER_RESPONSE_UNSUPPORTED"
-            ) from None
+            _unsupported_format("GOPPI_VERIFIER_RESPONSE_UNSUPPORTED", suppress_context=True)
         raise SchemaConfigurationError("TRAJECTORY_RESULT_CONTRACT_FAILED") from None
     except Exception as exc:
         raise SchemaConfigurationError("TRAJECTORY_SCHEMA_EVALUATION_FAILED") from exc
@@ -174,6 +211,7 @@ def _response(
     snapshot: Path,
     documents: Mapping[str, dict[str, object]],
     row_count: int,
+    format_version: int,
 ) -> None:
     if type(raw) is not bytes or len(raw) > STDOUT_MAX_BYTES:
         raise TrajectoryInputError("OUTPUT_LIMIT_EXCEEDED", "GOPPI_VERIFIER_OUTPUT_LIMIT")
@@ -191,7 +229,7 @@ def _response(
         *_object(companion["availability_counts"]).values(),
     )
     if any(type(value) is not int for value in integer_values):
-        raise TrajectoryInputError("UNSUPPORTED_FORMAT", "GOPPI_VERIFIER_RESPONSE_UNSUPPORTED")
+        _unsupported_format("GOPPI_VERIFIER_RESPONSE_UNSUPPORTED")
     execution = documents["paired/execution.json"]
     trajectory = documents["trajectory/trajectory.json"]
     bindings = (
@@ -204,6 +242,8 @@ def _response(
         (data["cycle_status"], _object(execution.get("source")).get("cycle_status")),
         (companion["availability_counts"], trajectory.get("availability_counts")),
         (companion["capture_profile"], trajectory.get("profile")),
+        (data["format"], f"v{format_version}"),
+        (companion["format"], f"v{format_version}"),
     )
     if any(not _same_binding(actual, expected) for actual, expected in bindings):
         raise TrajectoryInputError("INPUT_BINDING_MISMATCH", "GOPPI_VERIFIER_BINDING_MISMATCH")
@@ -256,29 +296,102 @@ class TrajectoryAnalysis:
             raise ValueError("TRAJECTORY_ANALYSIS_REQUIRES_ONE_OUTCOME")
 
 
-def _result_schema(view: str) -> str:
+def _result_schema(view: str, *, format_version: int) -> str:
     if view == "review":
-        return RESULT_SCHEMA_V3
+        return (
+            RESULT_SCHEMA_V4
+            if format_version == EXECUTION_FORMAT_V2
+            else RESULT_SCHEMA_V3
+        )
     if view == "outcome-actions":
-        return OUTCOME_ACTIONS_SCHEMA_V3
+        return (
+            OUTCOME_ACTIONS_SCHEMA_V4
+            if format_version == EXECUTION_FORMAT_V2
+            else OUTCOME_ACTIONS_SCHEMA_V3
+        )
     raise TrajectoryInputError("UNSUPPORTED_PROFILE", "TRAJECTORY_VIEW_UNSUPPORTED", "/view")
 
 
 @dataclass(frozen=True)
 class _Contracts:
-    result: Draft202012Validator
-    response: Draft202012Validator
+    results: Mapping[str, Draft202012Validator]
+    responses: Mapping[int, Draft202012Validator]
     history: Draft202012Validator
 
 
 def _contracts(
     view: str = "review",
 ) -> _Contracts:
+    results = {
+        _result_schema(view, format_version=version): packaged_validator(
+            _result_schema(view, format_version=version)
+        )
+        for version in (1, 2)
+    }
     return _Contracts(
-        result=packaged_validator(_result_schema(view)),
-        response=packaged_validator(RESPONSE_SCHEMA),
+        results=results,
+        responses={
+            EXECUTION_FORMAT_V1: packaged_validator(RESPONSE_SCHEMA_V1_FAMILY),
+            EXECUTION_FORMAT_V2: packaged_validator(RESPONSE_SCHEMA_V2_FAMILY),
+        },
         history=packaged_validator(HISTORY_SCHEMA_V2),
     )
+
+
+def _exchange_format_version(documents: Mapping[str, dict[str, object]]) -> int:
+    execution_schema = documents["paired/execution.json"].get("schema")
+    if execution_schema == "goppi.paired_run_exchange.execution.v1":
+        return EXECUTION_FORMAT_V1
+    if execution_schema == "goppi.paired_run_exchange.execution.v2":
+        _require_schema(
+            documents["trajectory/trajectory.json"],
+            "goppi.paired_trajectory_exchange.document.v2",
+            "/trajectory/schema",
+        )
+        return EXECUTION_FORMAT_V2
+    _unsupported_format(
+        "TRAJECTORY_UNSUPPORTED_VALUE", "/paired/execution.json/schema"
+    )
+
+
+def _v2_manifest_bindings(
+    documents: Mapping[str, dict[str, object]], captured: Mapping[str, CapturedBytes]
+) -> None:
+    paired = documents["paired/manifest.json"]
+    trajectory_manifest = documents["trajectory/manifest.json"]
+    trajectory = documents["trajectory/trajectory.json"]
+    _require_schema(
+        paired,
+        "goppi.paired_run_exchange.manifest.v1",
+        "/paired/manifest.json/schema",
+    )
+    _require_schema(
+        trajectory_manifest,
+        "goppi.paired_trajectory_exchange.manifest.v1",
+        "/trajectory/manifest.json/schema",
+    )
+    pair_digest = paired.get("content_digest")
+    pair_sha256 = captured["paired/manifest.json"].sha256
+    if type(pair_digest) is not str or _SHA256.fullmatch(pair_digest) is None:
+        _manifest_binding_error("invalid_digest", "/paired/manifest.json/content_digest")
+    for document, location in (
+        (trajectory_manifest, "/trajectory/manifest.json"),
+        (trajectory, "/trajectory/trajectory.json"),
+    ):
+        if (
+            document.get("paired_manifest_digest") != pair_digest
+            or document.get("paired_manifest_sha256") != pair_sha256
+        ):
+            _manifest_binding_error("crosslink_mismatch", location)
+
+
+def _manifest_bindings(
+    format_version: int,
+    documents: Mapping[str, dict[str, object]],
+    captured: Mapping[str, CapturedBytes],
+) -> None:
+    if format_version == EXECUTION_FORMAT_V2:
+        _v2_manifest_bindings(documents, captured)
 
 
 def _validated_capture(captured: Mapping[str, CapturedBytes]) -> Mapping[str, CapturedBytes]:
@@ -439,6 +552,8 @@ def _audit_captured_goppi_trajectory(
         }
         rows = _rows(captured["paired/rows.jsonl"])
         trajectory = documents["trajectory/trajectory.json"]
+        format_version = _exchange_format_version(documents)
+        _manifest_bindings(format_version, documents, captured)
         _resource_limits(trajectory)
     except (CaptureError, TrajectoryInputError) as exc:
         if not trajectory_diagnostic_history_matches(exc.code, exc.reason, "not_performed"):
@@ -449,7 +564,14 @@ def _audit_captured_goppi_trajectory(
             snapshot = Path(temporary).resolve()
             _write_snapshot(snapshot, captured)
             raw = verifier.verify(snapshot)
-            _response(raw, contracts.response, snapshot, documents, len(rows))
+            _response(
+                raw,
+                contracts.responses[format_version],
+                snapshot,
+                documents,
+                len(rows),
+                format_version,
+            )
             _check_snapshot(snapshot, captured)
     except VerifierError as exc:
         raise TrajectoryInputError(exc.code, exc.reason) from None
@@ -476,7 +598,10 @@ def _audit_captured_goppi_trajectory(
     _object(report["trust_scope"]).update(
         _verifier_report_fields("report_accepted", verifier_source)
     )
-    _validate(contracts.result, report, response=False)
+    result_schema = report.get("schema")
+    if type(result_schema) is not str or result_schema not in contracts.results:
+        raise SchemaConfigurationError("TRAJECTORY_RESULT_CONTRACT_UNAVAILABLE")
+    _validate(contracts.results[result_schema], report, response=False)
     try:
         size = len(canonical_bytes(report)) + 1
     except CanonicalizationError:

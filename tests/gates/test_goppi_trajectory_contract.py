@@ -24,6 +24,7 @@ from underwrite.instrument.evidence.goppi_trajectory import (
     RESULT_SCHEMA,
     RESULT_SCHEMA_V2,
     RESULT_SCHEMA_V3,
+    RESULT_SCHEMA_V4,
     analyze_goppi_trajectory,
     review_goppi_trajectory,
 )
@@ -31,6 +32,7 @@ from underwrite.instrument.ingest.schema import packaged_validator
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "fixtures/conformance/goppi-trajectory/exchange"
+FIXTURE_V2 = ROOT / "fixtures/conformance/goppi-execution-v2/paired-exchange-v2"
 
 
 @pytest.fixture
@@ -114,6 +116,16 @@ def test_schema_is_generated_from_policy_vocabulary(monkeypatch: pytest.MonkeyPa
         assert module.build(outcome_actions=outcome_actions, version=3) == json.loads(
             (ROOT / "contracts" / f"{schema}.schema.json").read_bytes()
         )
+    for outcome_actions, schema in (
+        (False, RESULT_SCHEMA_V4),
+        (True, "goppi_trajectory_outcome_actions.v4"),
+    ):
+        assert module.build(outcome_actions=outcome_actions, version=4) == json.loads(
+            (ROOT / "contracts" / f"{schema}.schema.json").read_bytes()
+        )
+    assert module.build_verifier_response_v3() == json.loads(
+        (ROOT / "contracts/goppi_trajectory_verifier_response.v3.schema.json").read_bytes()
+    )
     # The direct-only v2 outcome-actions output has no remaining writer or reader.
     with pytest.raises(ValueError, match="UNSUPPORTED_GOPPI_TRAJECTORY_CONTRACT_VERSION"):
         module.build(outcome_actions=True, version=2)
@@ -163,6 +175,174 @@ def test_v1_schema_bytes_remain_pinned() -> None:
     assert hashlib.sha256(actions_raw).hexdigest() == (
         "c3ff3787340fc4cc2c8fb1c6709831375431ff1acb3f70ff10618cf50469af5c"
     )
+
+
+def test_execution_v2_result_uses_v4_and_preserves_self_reported_limits() -> None:
+    execution = json.loads((FIXTURE_V2 / "paired/execution.json").read_bytes())
+    rows = tuple(
+        json.loads(line) for line in (FIXTURE_V2 / "paired/rows.jsonl").read_text().splitlines()
+    )
+    trajectory = json.loads((FIXTURE_V2 / "trajectory/trajectory.json").read_bytes())
+    identities = {
+        path: (
+            "sha256:" + hashlib.sha256((FIXTURE_V2 / path).read_bytes()).hexdigest(),
+            (FIXTURE_V2 / path).stat().st_size,
+        )
+        for path in MEMBERS
+    }
+    result = cast(
+        dict[str, Any], analyze_goppi_trajectory(execution, rows, trajectory, identities)
+    )
+    cast(Validator, packaged_validator(RESULT_SCHEMA_V4)).validate(result)
+    assert result["schema"] == "goppi_trajectory_review.v4"
+    assert result["producer_declarations"]["builds"]["export"]["dir_hash"] == (
+        "4700ec2d5679e5454bf7eaa5eb59429cc0ff452e736f4828bbc91695c64df7d4"
+    )
+    assert result["producer_declarations"]["builds"]["independently_verified"] is False
+    assert next(stage for stage in result["stages"] if stage["stage"] == "held_in")[
+        "classification"
+    ] == "indeterminate"
+    not_run = next(stage for stage in result["stages"] if stage["stage"] == "held_out")
+    assert not_run["execution_status"] == "not_run"
+    assert not_run["stage_run_id"] is None
+    assert not_run["verdict_state"] == "not_measured"
+
+
+def test_execution_v2_unavailable_build_result_validates_against_v4_schema() -> None:
+    execution = json.loads((FIXTURE_V2 / "paired/execution.json").read_bytes())
+    rows = tuple(
+        json.loads(line) for line in (FIXTURE_V2 / "paired/rows.jsonl").read_text().splitlines()
+    )
+    trajectory = json.loads((FIXTURE_V2 / "trajectory/trajectory.json").read_bytes())
+    identities = {
+        path: (
+            "sha256:" + hashlib.sha256((FIXTURE_V2 / path).read_bytes()).hexdigest(),
+            (FIXTURE_V2 / path).stat().st_size,
+        )
+        for path in MEMBERS
+    }
+    execution["export_build"].update(
+        build_digest=None,
+        build_digest_unavailable_reason="package_unverifiable",
+    )
+    execution["stages"][0]["stage_build"] = {
+        "record_state": "not_recorded",
+        "package_name": None,
+        "package_version": None,
+        "build_digest": None,
+        "build_digest_unavailable_reason": None,
+        "identity_assurance": None,
+    }
+
+    report = cast(
+        dict[str, Any], analyze_goppi_trajectory(execution, rows, trajectory, identities)
+    )
+    cast(Validator, packaged_validator(RESULT_SCHEMA_V4)).validate(report)
+    builds = report["producer_declarations"]["builds"]
+    assert builds["export"]["state"] == "not_measured"
+    assert builds["export"]["unavailable_reason"] == "package_unverifiable"
+    assert builds["stages"][0]["record"]["state"] == "not_measured"
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "evaluated_run_id",
+        "closed_run_id",
+        "not_run_run_id",
+        "not_run_build",
+        "build_missing",
+        "build_duplicate",
+        "build_mismatch",
+    ],
+)
+def test_v4_schema_binds_stage_ids_and_builds_to_execution_status(mutation: str) -> None:
+    execution = json.loads((FIXTURE_V2 / "paired/execution.json").read_bytes())
+    rows = tuple(
+        json.loads(line) for line in (FIXTURE_V2 / "paired/rows.jsonl").read_text().splitlines()
+    )
+    trajectory = json.loads((FIXTURE_V2 / "trajectory/trajectory.json").read_bytes())
+    identities = {
+        path: (
+            "sha256:" + hashlib.sha256((FIXTURE_V2 / path).read_bytes()).hexdigest(),
+            (FIXTURE_V2 / path).stat().st_size,
+        )
+        for path in MEMBERS
+    }
+    report = cast(
+        dict[str, Any], analyze_goppi_trajectory(execution, rows, trajectory, identities)
+    )
+    validator = cast(Validator, packaged_validator(RESULT_SCHEMA_V4))
+    if mutation == "evaluated_run_id":
+        next(stage for stage in report["stages"] if stage["execution_status"] == "evaluated")[
+            "stage_run_id"
+        ] = None
+    elif mutation == "closed_run_id":
+        next(stage for stage in report["stages"] if stage["execution_status"] == "closed")[
+            "stage_run_id"
+        ] = None
+    elif mutation == "not_run_run_id":
+        next(stage for stage in report["stages"] if stage["execution_status"] == "not_run")[
+            "stage_run_id"
+        ] = "sha256:" + "a" * 64
+    elif mutation == "not_run_build":
+        next(
+            item
+            for item in report["producer_declarations"]["builds"]["stages"]
+            if item["execution_status"] == "not_run"
+        )["record"] = {
+            "state": "not_measured",
+            "record_state": "not_recorded",
+            "package_name": None,
+            "package_version": None,
+            "identity_assurance": None,
+            "dir_hash": None,
+            "unavailable_reason": None,
+        }
+    elif mutation == "build_missing":
+        report["producer_declarations"]["builds"]["stages"].pop()
+    elif mutation == "build_duplicate":
+        builds = report["producer_declarations"]["builds"]["stages"]
+        builds[-1] = copy.deepcopy(builds[0])
+    else:
+        next(
+            item
+            for item in report["producer_declarations"]["builds"]["stages"]
+            if item["stage"] == "held_in"
+        )["execution_status"] = "evaluated"
+    with pytest.raises(ValidationError):
+        validator.validate(report)
+
+
+@pytest.mark.parametrize(
+    "mutation", ["runner_profile", "runner_default_level", "synthetic_split_limit"]
+)
+def test_v4_schema_binds_runner_and_split_declaration_conditions(mutation: str) -> None:
+    execution = json.loads((FIXTURE_V2 / "paired/execution.json").read_bytes())
+    rows = tuple(
+        json.loads(line) for line in (FIXTURE_V2 / "paired/rows.jsonl").read_text().splitlines()
+    )
+    trajectory = json.loads((FIXTURE_V2 / "trajectory/trajectory.json").read_bytes())
+    identities = {
+        path: (
+            "sha256:" + hashlib.sha256((FIXTURE_V2 / path).read_bytes()).hexdigest(),
+            (FIXTURE_V2 / path).stat().st_size,
+        )
+        for path in MEMBERS
+    }
+    report = cast(
+        dict[str, Any], analyze_goppi_trajectory(execution, rows, trajectory, identities)
+    )
+    validator = cast(Validator, packaged_validator(RESULT_SCHEMA_V4))
+    if mutation == "runner_profile":
+        report["producer_declarations"]["runner"]["profile"] = "pi_1_3_0"
+    elif mutation == "runner_default_level":
+        report["producer_declarations"]["runner"]["thinking_level_source"] = "runner_default"
+        report["producer_declarations"]["runner"]["thinking_level"] = "low"
+    else:
+        report["producer_declarations"]["split"]["limitations"] = []
+    with pytest.raises(ValidationError):
+        validator.validate(report)
 
 
 def _v2_report(

@@ -12,14 +12,18 @@ from _schema_compose import embed_contracts, nullable, object_schema, reference,
 from underwrite.cli.record_trajectory import (
     LAYOUT,
     LAYOUT_V2,
+    LAYOUT_V4,
     READ_SCHEMA_V3,
+    READ_SCHEMA_V4,
     RETAINED_ANALYSIS_LIMITATION,
     SCHEMA_V3,
+    SCHEMA_V4,
 )
 from underwrite.instrument.evidence.goppi_trajectory import (
     MEMBERS,
     RESULT_SCHEMA_V2,
     RESULT_SCHEMA_V3,
+    RESULT_SCHEMA_V4,
 )
 from underwrite.instrument.ingest.goppi_trajectory import (
     HISTORY_SCHEMA,
@@ -324,6 +328,23 @@ def _retained_report() -> dict[str, Any]:
     }
 
 
+def _retained_report_v4() -> dict[str, Any]:
+    generations = {
+        RESULT_SCHEMA_V4: "goppi_trajectory_review",
+        RESULT_SCHEMA_V3: "prior_v3_goppi_trajectory_review",
+        RESULT_SCHEMA_V2: "prior_goppi_trajectory_review",
+    }
+    return {
+        "type": "object",
+        "required": ["schema"],
+        "properties": {"schema": {"enum": list(generations)}},
+        "allOf": [
+            {"if": {"properties": {"schema": {"const": name}}}, "then": reference(definition)}
+            for name, definition in generations.items()
+        ],
+    }
+
+
 def build_envelopes_v3(root: Path) -> dict[str, dict[str, Any]]:
     definitions, _ = embed_contracts(
         root,
@@ -475,6 +496,165 @@ def build_envelopes_v3(root: Path) -> dict[str, dict[str, Any]]:
     return {SCHEMA_V3: record, READ_SCHEMA_V3: read}
 
 
+
+def build_envelopes_v4(root: Path) -> dict[str, dict[str, Any]]:
+    definitions, _ = embed_contracts(
+        root,
+        (
+            "goppi_trajectory_review",
+            "trajectory_verification_history",
+            "evidence_error",
+            "record_error",
+            "record_verification",
+        ),
+        versions={
+            "goppi_trajectory_review": "v4",
+            "trajectory_verification_history": "v2",
+        },
+    )
+    prior, _ = embed_contracts(
+        root,
+        ("goppi_trajectory_review",),
+        versions={"goppi_trajectory_review": "v2"},
+        namespaces={"goppi_trajectory_review": "prior_goppi_trajectory_review"},
+    )
+    definitions.update(prior)
+    prior_v3, _ = embed_contracts(
+        root,
+        ("goppi_trajectory_review",),
+        versions={"goppi_trajectory_review": "v3"},
+        namespaces={"goppi_trajectory_review": "prior_v3_goppi_trajectory_review"},
+    )
+    definitions.update(prior_v3)
+    historical, _ = embed_contracts(
+        root,
+        ("goppi_trajectory_review", "trajectory_verification_history"),
+        namespaces={
+            "goppi_trajectory_review": "historical_goppi_trajectory_review",
+            "trajectory_verification_history": "historical_trajectory_verification_history",
+        },
+    )
+    definitions.update(historical)
+    definitions["analysis"] = _analysis("goppi_trajectory_review")
+    definitions["retained_report"] = _retained_report_v4()
+    definitions["retained_analysis"] = _analysis("retained_report")
+    definitions["historical_analysis"] = _analysis("historical_goppi_trajectory_review")
+    definitions["source"] = object_schema(
+        {
+            "state": {"const": "captured"},
+            "source_members": reference("trajectory_verification_history__source_members"),
+        }
+    )
+    identity = {
+        "record_id": reference("record_verification__record_id"),
+        "manifest_digest": reference("record_verification__digest"),
+    }
+    verification = _verification()
+    definitions["storage"] = tagged(
+        [
+            object_schema({"state": {"const": "saved"}, **identity, "verification": verification}),
+            object_schema(
+                {
+                    "state": {"const": "error"},
+                    "error": reference("record_error"),
+                    "published_record": nullable(object_schema(identity)),
+                }
+            ),
+        ]
+    )
+
+    record = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:underwrite:contract:" + SCHEMA_V4,
+        **object_schema(
+            {
+                "schema": {"const": SCHEMA_V4},
+                "command": {"const": "records audit-trajectory"},
+                "source": reference("source"),
+                "analysis": reference("analysis"),
+                "verifier_report_history": reference("trajectory_verification_history"),
+                "storage": reference("storage"),
+                "exit_code": {"enum": [0, 2, 3]},
+            }
+        ),
+        "$defs": definitions,
+        "allOf": [
+            {
+                "if": {"properties": {"storage": {"properties": {"state": {"const": "error"}}}}},
+                "then": {"properties": {"exit_code": {"const": 3}}},
+                "else": {
+                    "if": {
+                        "properties": {"analysis": {"properties": {"state": {"const": "error"}}}}
+                    },
+                    "then": {"properties": {"exit_code": {"const": 2}}},
+                    "else": {"properties": {"exit_code": {"const": 0}}},
+                },
+            }
+        ],
+    }
+
+    limitations = {"enum": [[], [RETAINED_ANALYSIS_LIMITATION]]}
+    read_common = {
+        "schema": {"const": READ_SCHEMA_V4},
+        "command": {"const": "records read-trajectory"},
+        **identity,
+        "source": reference("source"),
+        "current_storage_verification": verification,
+        "native_verification_performed_now": {"const": False},
+    }
+    current_read = object_schema(
+        {
+            **read_common,
+            "record_layout": {"const": LAYOUT_V4},
+            "analysis": reference("retained_analysis"),
+            "verifier_report_history": reference("trajectory_verification_history"),
+            "verification_interpretation": _interpretation(historical=False),
+            "analysis_limitations": limitations,
+        }
+    )
+    current_read["allOf"] = [
+        *_history_interpretation_binding(
+            "verifier_report_history",
+            "verifier_report_state",
+            (
+                ("not_performed", "current_not_performed"),
+                ("report_accepted", "current_report_only"),
+            ),
+        ),
+        _analysis_limitations_binding("analysis", prior_only=True),
+    ]
+    historical_read = object_schema(
+        {
+            **read_common,
+            "record_layout": {"const": LAYOUT},
+            "historical_analysis": reference("historical_analysis"),
+            "historical_native_verification_history": reference(
+                "historical_trajectory_verification_history"
+            ),
+            "verification_interpretation": _interpretation(historical=True),
+            "analysis_limitations": limitations,
+        }
+    )
+    historical_read["allOf"] = [
+        *_history_interpretation_binding(
+            "historical_native_verification_history",
+            "state",
+            (
+                ("not_performed", "legacy_not_performed"),
+                ("verified", "legacy_unattributed_report"),
+            ),
+        ),
+        _analysis_limitations_binding("historical_analysis", prior_only=False),
+    ]
+    read = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:underwrite:contract:" + READ_SCHEMA_V4,
+        **tagged([historical_read, current_read], field="record_layout"),
+        "$defs": definitions,
+    }
+    return {SCHEMA_V4: record, READ_SCHEMA_V4: read}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
@@ -490,6 +670,7 @@ def main() -> None:
             history_path.write_text(history_raw)
     schemas.update(build_envelopes(ROOT))
     schemas.update(build_envelopes_v3(ROOT))
+    schemas.update(build_envelopes_v4(ROOT))
     for name, schema in schemas.items():
         path = ROOT / "contracts" / (name + ".schema.json")
         raw = json.dumps(schema, ensure_ascii=False, indent=2) + "\n"

@@ -64,7 +64,7 @@ Node 패키지/CLI, 저장소와 릴리즈는 분리한다. Git submodule이나 
 | 순서 | 사용자 결과 | 검증과 중단 경계 |
 | --- | --- | --- |
 | **I1. 개발본 선택형 경로 명시** | 호환되는 Goppi 소스 빌드를 가진 사용자가 export 다음의 Underwrite 명령과 한계를 안다. | 공개 npm `0.0.1`에는 export/verify 명령이 없으므로 README의 일반 설치 예제로 제시하지 않는다. 에이전트 안내에 개발본 전용 `export-paired → audit-trajectory`와 검증기 요구, 결과의 신뢰 한계, 다른 생산자 지원을 적는다. 새 명령이나 자동 설치는 만들지 않는다. |
-| **I2. 설치 산출물 쌍 수용 검사** | 같은 저장소 체크아웃이 없어도, 특정 Goppi tarball과 Underwrite/core wheel 쌍의 호환 여부를 재현한다. | 임시 외부 디렉터리에 정확한 패키지를 설치하고 원본 해시·패키지 해시·계약 ID를 기록한다. 정상 완전 export와 잘못된/누락된 export, 검증기 거부를 실제 진입점으로 검사한다. provider 실행 없음. 기존 wheel smoke의 Goppi stub을 네이티브 검증으로 오인하지 않는다. 일상 CI의 필수 새 도구체인으로 만들지 않는다. |
+| **I2. 설치 산출물 쌍 수용 검사** | 같은 저장소 체크아웃이 없어도, 특정 Goppi tarball과 Underwrite/core wheel 쌍의 호환 여부를 재현한다. 최종 Goppi PR #342 execution.v2 교환과 거부 fixture를 소비하고 execution.v1 회귀를 유지한다. | 임시 외부 디렉터리에 정확한 패키지를 설치하고 원본 해시·파일별 SHA-256·dirHash·계약 ID를 기록한다. tarball과 설치본은 최상위 `node_modules`만 제외해 각각 재계산하고 서로 대조한다. golden의 build digest는 합성 고정값이므로 일치 여부를 결과에 기록하되 출처 증명으로 승격하지 않는다. 정상 완전 export와 잘못된/누락된 export, 검증기 거부를 실제 진입점으로 검사한다. provider 실행 없음. 기존 wheel smoke의 Goppi stub을 네이티브 검증으로 오인하지 않는다. 일상 CI의 필수 새 도구체인으로 만들지 않는다. |
 | **I3. 마찰 관측 후 선택** | 문서+설치 쌍만으로 충분한지 확인한다. | 실제 첫 사용에서 반복되는 단계가 남을 때에만 기존 CLI를 호출하는 얇은 편의 경로를 고려한다. 상태·원본·권한 의미를 재정의하거나 양쪽 앱을 상호 필수 의존성으로 만들면 중단한다. |
 
 공개 퍼스트파티 사용 경로는 Goppi가 호환되는 exporter/verifier를 실제로

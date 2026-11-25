@@ -17,6 +17,9 @@ def verifier_response(snapshot: Path) -> dict[str, Any]:
     trajectory_manifest = json.loads((snapshot / "trajectory/manifest.json").read_bytes())
     trajectory = json.loads((snapshot / "trajectory/trajectory.json").read_bytes())
     execution = json.loads((snapshot / "paired/execution.json").read_bytes())
+    format_version = (
+        "v2" if execution.get("schema") == "goppi.paired_run_exchange.execution.v2" else "v1"
+    )
     return {
         "schema": "goppi.command_result.v1",
         "command": "run",
@@ -32,7 +35,7 @@ def verifier_response(snapshot: Path) -> dict[str, Any]:
             "layout": "paired_trajectory_handoff",
             "input": str(snapshot),
             "paired_output": str(snapshot / "paired"),
-            "format": "v1",
+            "format": format_version,
             "format_scope": "terminal_native_paired_run",
             "cycle_status": execution["source"]["cycle_status"],
             "row_count": paired["row_count"],
@@ -40,7 +43,7 @@ def verifier_response(snapshot: Path) -> dict[str, Any]:
             "trajectory": {
                 "status": "valid",
                 "output": str(snapshot / "trajectory"),
-                "format": "v1",
+                "format": format_version,
                 "manifest_digest": trajectory_manifest["content_digest"],
                 "availability_counts": trajectory["availability_counts"],
                 "capture_profile": trajectory["profile"],
