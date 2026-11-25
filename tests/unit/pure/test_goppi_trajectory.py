@@ -17,20 +17,43 @@ from underwrite.instrument.evidence.goppi_trajectory import (
     MAX_SPANS_PER_UNIT,
     MAX_UNITS,
     MEMBERS,
+    RESULT_SCHEMA_V4,
     TrajectoryError,
     analyze_goppi_trajectory,
+    analyze_goppi_trajectory_v2,
 )
 
 FIXTURE = Path(__file__).resolve().parents[3] / "fixtures/conformance/goppi-trajectory"
+V2_FIXTURE = Path(__file__).resolve().parents[3] / "fixtures/conformance/goppi-execution-v2"
 Documents = tuple[
     dict[str, Any], tuple[dict[str, Any], ...], dict[str, Any], dict[str, tuple[str, int]]
 ]
 EXPECTED_OUTCOME_ACTION_SCOPES = 64
+V2_PAIRED_ROWS = 48
+V2_REFUSAL_FIXTURES = 13
 
 
 @pytest.fixture
 def documents() -> Documents:
     root = FIXTURE / "exchange"
+    identities = {
+        path: (
+            "sha256:" + hashlib.sha256((root / path).read_bytes()).hexdigest(),
+            (root / path).stat().st_size,
+        )
+        for path in MEMBERS
+    }
+    return (
+        json.loads((root / "paired/execution.json").read_bytes()),
+        tuple(json.loads(line) for line in (root / "paired/rows.jsonl").read_text().splitlines()),
+        json.loads((root / "trajectory/trajectory.json").read_bytes()),
+        identities,
+    )
+
+
+@pytest.fixture
+def v2_documents() -> Documents:
+    root = V2_FIXTURE / "paired-exchange-v2"
     identities = {
         path: (
             "sha256:" + hashlib.sha256((root / path).read_bytes()).hexdigest(),
@@ -122,6 +145,205 @@ def test_default_trajectory_report_keeps_pinned_v1_bytes(documents: Documents) -
     assert hashlib.sha256(canonical_bytes(analyze(documents))).hexdigest() == (
         "303c37e3d86e439af3344dc99d9035ad37f75acfd1d26e732875dafc38438980"
     )
+
+
+def test_execution_v2_keeps_build_split_and_stage_states_separate(
+    v2_documents: Documents,
+) -> None:
+    report = analyze_goppi_trajectory(*v2_documents)
+    declarations = cast(dict[str, Any], report["producer_declarations"])
+    builds = cast(dict[str, Any], declarations["builds"])
+    export = cast(dict[str, Any], builds["export"])
+    stage_builds = cast(list[dict[str, Any]], builds["stages"])
+    split = cast(dict[str, Any], declarations["split"])
+    stages = cast(list[dict[str, Any]], report["stages"])
+    populations = cast(dict[str, int], report["populations"])
+
+    assert report["schema"] == RESULT_SCHEMA_V4
+    assert populations["paired_rows"] == V2_PAIRED_ROWS
+    assert export["state"] == "self_reported"
+    assert export["dir_hash"] == "4700ec2d5679e5454bf7eaa5eb59429cc0ff452e736f4828bbc91695c64df7d4"
+    assert builds["identity_assurance"] == "self_reported"
+    assert builds["independently_verified"] is False
+    assert builds["cross_stage_comparability"] == "not_inferred_from_digest_equality"
+    assert stage_builds[-1] == {
+        "stage": "held_out",
+        "execution_status": "not_run",
+        "record": None,
+    }
+    held_out = next(stage for stage in stages if stage["stage"] == "held_out")
+    held_in = next(stage for stage in stages if stage["stage"] == "held_in")
+    assert held_out["execution_status"] == "not_run"
+    assert held_out["classification"] == "not_evaluated"
+    assert held_out["not_run_reason"] == "earlier_stage_partial_stop"
+    assert held_out["stage_run_id"] is None
+    assert held_in["execution_status"] == "closed"
+    assert held_in["classification"] == "indeterminate"
+    assert split["identity_assurance"] == "self_reported"
+    assert split["commitment_recomputed"] is False
+    assert split["limitations"] == ["split_salt_guessable"]
+    assert declarations["runner"]["identity_assurance"] == "declared"
+    assert declarations["runner"]["independently_verified"] is False
+
+
+def test_execution_v2_unavailable_build_is_not_measured(v2_documents: Documents) -> None:
+    execution, rows, trajectory, identities = v2_documents
+    execution["export_build"].update(
+        build_digest=None,
+        build_digest_unavailable_reason="package_unverifiable",
+    )
+    execution["stages"][0]["stage_build"] = {
+        "record_state": "not_recorded",
+        "package_name": None,
+        "package_version": None,
+        "build_digest": None,
+        "build_digest_unavailable_reason": None,
+        "identity_assurance": None,
+    }
+    report = analyze_goppi_trajectory(execution, rows, trajectory, identities)
+    declarations = cast(dict[str, Any], report["producer_declarations"])
+    builds = cast(dict[str, Any], declarations["builds"])
+    assert builds["export"]["state"] == "not_measured"
+    assert builds["export"]["unavailable_reason"] == "package_unverifiable"
+    assert builds["stages"][0]["record"]["state"] == "not_measured"
+
+
+@pytest.mark.parametrize("status", ["abstained", "indeterminate", "not_measured"])
+def test_execution_v2_does_not_promote_unknown_row_outcomes(
+    v2_documents: Documents, status: str
+) -> None:
+    v2_documents[1][0]["result"]["status"] = status
+    with pytest.raises(TrajectoryError, match="TRAJECTORY_UNSUPPORTED_VALUE"):
+        analyze_goppi_trajectory(*v2_documents)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "execution_family",
+        "trajectory_family",
+        "row_family",
+        "missing_stage",
+        "duplicate_stage",
+        "unexpected_execution_field",
+    ],
+)
+def test_execution_v2_refuses_family_mixing_and_open_shapes(
+    v2_documents: Documents, mutation: str
+) -> None:
+    execution, rows, trajectory, _ = v2_documents
+    if mutation == "execution_family":
+        execution["schema"] = "goppi.paired_run_exchange.execution.v1"
+    elif mutation == "trajectory_family":
+        trajectory["schema"] = "goppi.paired_trajectory_exchange.document.v1"
+    elif mutation == "row_family":
+        rows[0]["schema"] = "goppi.paired_run_exchange.row.v1"
+    elif mutation == "missing_stage":
+        execution["stages"].pop()
+    elif mutation == "duplicate_stage":
+        execution["stages"][1]["stage"] = execution["stages"][0]["stage"]
+    else:
+        execution["unrecognized"] = True
+    with pytest.raises(TrajectoryError):
+        analyze_goppi_trajectory(execution, rows, trajectory, v2_documents[3])
+
+
+@pytest.mark.parametrize(
+    ("entrypoint", "schema"),
+    [
+        ("v2", "goppi.paired_run_exchange.execution.v1"),
+        ("dispatcher", "goppi.paired_run_exchange.execution.v3"),
+    ],
+)
+def test_execution_family_refusal_keeps_unsupported_format_diagnostic(
+    v2_documents: Documents, entrypoint: str, schema: str
+) -> None:
+    execution, rows, trajectory, identities = v2_documents
+    execution["schema"] = schema
+    with pytest.raises(TrajectoryError) as caught:
+        if entrypoint == "v2":
+            analyze_goppi_trajectory_v2(execution, rows, trajectory, identities)
+        else:
+            analyze_goppi_trajectory(execution, rows, trajectory, identities)
+    assert (caught.value.code, caught.value.reason, caught.value.location) == (
+        "UNSUPPORTED_FORMAT",
+        "TRAJECTORY_UNSUPPORTED_VALUE",
+        "trajectory",
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("approval_created_by_exporter", True),
+        ("independently_regraded", True),
+        ("local_result_authentication_checked", False),
+        ("model_contacted_by_exporter", True),
+        ("network_contacted_by_exporter", True),
+        ("source_project_modified_by_exporter", True),
+        ("subordinate_content_and_crosslinks_checked", False),
+    ],
+)
+def test_execution_v2_refuses_changed_fixed_claims(
+    v2_documents: Documents, field: str, value: bool
+) -> None:
+    v2_documents[0]["claims"][field] = value
+    with pytest.raises(TrajectoryError, match="TRAJECTORY_BINDING_MISMATCH"):
+        analyze_goppi_trajectory(*v2_documents)
+
+
+@pytest.mark.parametrize(
+    "field", ["execution_attestation_digest", "measurement_receipt_digest"]
+)
+def test_execution_v2_requires_evaluated_stage_receipt_digests(
+    v2_documents: Documents, field: str
+) -> None:
+    v2_documents[0]["stages"][0][field] = None
+    with pytest.raises(TrajectoryError):
+        analyze_goppi_trajectory(*v2_documents)
+
+
+@pytest.mark.parametrize("field", ["paired_manifest_digest", "paired_manifest_sha256"])
+def test_execution_v2_requires_trajectory_manifest_digest_fields(
+    v2_documents: Documents, field: str
+) -> None:
+    v2_documents[2][field] = "invalid"
+    with pytest.raises(TrajectoryError):
+        analyze_goppi_trajectory(*v2_documents)
+
+
+@pytest.mark.parametrize(
+    "field", ["projection_binding_checked", "source_authentication_checked"]
+)
+def test_execution_v2_requires_positive_trajectory_crosslink_claims(
+    v2_documents: Documents, field: str
+) -> None:
+    v2_documents[2]["producer_claims"][field] = False
+    with pytest.raises(TrajectoryError, match="TRAJECTORY_BINDING_MISMATCH"):
+        analyze_goppi_trajectory(*v2_documents)
+
+
+def test_execution_v2_rejects_every_pinned_producer_refusal(v2_documents: Documents) -> None:
+    fixture_root = V2_FIXTURE / "paired-exchange-v2"
+    rejection_root = V2_FIXTURE / "paired-exchange-v2-rejections"
+    base = {path: (fixture_root / path).read_bytes() for path in MEMBERS}
+    cases = sorted(path for path in rejection_root.iterdir() if path.is_dir())
+    assert len(cases) == V2_REFUSAL_FIXTURES
+    for case in cases:
+        changed = dict(base)
+        for replacement in case.rglob("*"):
+            if replacement.is_file():
+                relative = replacement.relative_to(case).as_posix()
+                changed[relative] = replacement.read_bytes()
+        execution = json.loads(changed["paired/execution.json"])
+        rows = tuple(json.loads(line) for line in changed["paired/rows.jsonl"].splitlines())
+        trajectory = json.loads(changed["trajectory/trajectory.json"])
+        identities = {
+            path: ("sha256:" + hashlib.sha256(raw).hexdigest(), len(raw))
+            for path, raw in changed.items()
+        }
+        with pytest.raises(TrajectoryError):
+            analyze_goppi_trajectory(execution, rows, trajectory, identities)
 
 
 def test_pi15_trajectory_keeps_descriptive_and_authority_boundaries(documents: Documents) -> None:

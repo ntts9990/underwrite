@@ -26,16 +26,19 @@ from underwrite.instrument.evidence.goppi_trajectory import (
     MAX_ROWS,
     MAX_SPANS_PER_UNIT,
     MEMBERS,
+    NOT_RUN_REASONS,
     OUTCOME_ACTION_TASK_EVIDENCE,
     OUTCOME_ACTIONS_POLICY,
     OUTCOME_ACTIONS_POLICY_V2,
     OUTCOME_ACTIONS_SCHEMA,
     OUTCOME_ACTIONS_SCHEMA_V3,
+    OUTCOME_ACTIONS_SCHEMA_V4,
     OUTCOME_HARNESS_BINDINGS,
     OUTCOME_REASONS,
     RESULT_SCHEMA,
     RESULT_SCHEMA_V2,
     RESULT_SCHEMA_V3,
+    RESULT_SCHEMA_V4,
     REVIEW_POLICY,
     REVIEW_POLICY_V2,
     STAGE_VERDICT_STATES,
@@ -49,6 +52,7 @@ JSON = dict[str, Any]
 ROOT = Path(__file__).resolve().parents[1]
 V2 = 2
 V3 = 3
+V4 = 4
 SCHEMAS = {
     (False, 1): RESULT_SCHEMA,
     (True, 1): OUTCOME_ACTIONS_SCHEMA,
@@ -56,6 +60,8 @@ SCHEMAS = {
     (False, V2): RESULT_SCHEMA_V2,
     (False, V3): RESULT_SCHEMA_V3,
     (True, V3): OUTCOME_ACTIONS_SCHEMA_V3,
+    (False, V4): RESULT_SCHEMA_V4,
+    (True, V4): OUTCOME_ACTIONS_SCHEMA_V4,
 }
 STOPPED_TASK = "obtain_stopped_cycle_stage_record"
 VERDICT_TASK = "obtain_evaluated_stage_verdict"
@@ -186,18 +192,305 @@ def _cycle_bindings() -> list[JSON]:
     return bindings
 
 
+def _add_cycle_disclosures(result: JSON) -> JSON:
+    properties = result["properties"]
+    disclosed: JSON = {}
+    for name, value in properties.items():
+        disclosed[name] = value
+        if name == "source_context":
+            disclosed["cycle"] = object_schema(
+                {
+                    "status": enum(CYCLE_STATUSES),
+                    "stages_absent_from_export": {
+                        "type": "array",
+                        "items": enum(STAGES),
+                        "maxItems": len(STAGES),
+                        "uniqueItems": True,
+                    },
+                }
+            )
+            disclosed["runner"] = object_schema(
+                {
+                    "profile": enum(tuple(CAPTURE_PROFILE_BY_RUNNER)),
+                    "models": array(
+                        object_schema(
+                            {
+                                "runner_model": text(128),
+                                "paired_rows": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": MAX_ROWS,
+                                },
+                            }
+                        )
+                    ),
+                    "model_unrecorded_rows": integer(),
+                }
+            )
+    disclosed["interpretation_limits"] = enum_values(
+        [
+            [*CURRENT_INTERPRETATION_LIMITS, *itertools.compress(CYCLE_LIMITS, flags)]
+            for flags in itertools.product((False, True), repeat=len(CYCLE_LIMITS))
+        ]
+    )
+    return {**object_schema(disclosed), "allOf": _cycle_bindings()}
+
+
+def _v4_stage(stage_fields: JSON, digest: JSON) -> JSON:
+    v4_fields = {**stage_fields, "stage_run_id": nullable(digest)}
+    zero_coverage = {availability: const(0) for availability in AVAILABILITIES}
+    return tagged(
+        [
+            object_schema(
+                {
+                    **v4_fields,
+                    "execution_status": const("evaluated"),
+                    "stage_run_id": digest,
+                    "classification": enum(
+                        ("screened", "confirmed", "indeterminate", "rejected")
+                    ),
+                    "reason_code": const(None),
+                    "not_run_reason": const(None),
+                    "verdict_state": const(STAGE_VERDICT_STATES["evaluated"]),
+                    "decision_digest": digest,
+                }
+            ),
+            object_schema(
+                {
+                    **v4_fields,
+                    "execution_status": const("closed"),
+                    "stage_run_id": digest,
+                    "reason_code": enum(CLOSED_STAGE_REASONS),
+                    "classification": enum(CLOSED_STAGE_CLASSIFICATIONS),
+                    "not_run_reason": const(None),
+                    "verdict_state": const(STAGE_VERDICT_STATES["closed"]),
+                    "paired_rows": const(0),
+                    "case_stage_repeat_pairs": const(0),
+                    "primary_repeat_pairs": const(0),
+                    "capture_counts": object_schema(zero_coverage),
+                }
+            ),
+            object_schema(
+                {
+                    **v4_fields,
+                    "execution_status": const("not_run"),
+                    "stage_run_id": const(None),
+                    "classification": const("not_evaluated"),
+                    "reason_code": const(None),
+                    "not_run_reason": enum(NOT_RUN_REASONS),
+                    "verdict_state": const(STAGE_VERDICT_STATES["not_run"]),
+                    "paired_rows": const(0),
+                    "case_stage_repeat_pairs": const(0),
+                    "primary_repeat_pairs": const(0),
+                    "capture_counts": object_schema(zero_coverage),
+                }
+            ),
+        ],
+        field="execution_status",
+    )
+
+
+def _stage_contains(name: str, status: str | None = None) -> JSON:
+    properties: JSON = {"stage": const(name)}
+    required = ["stage"]
+    if status is not None:
+        properties["execution_status"] = const(status)
+        required.append("execution_status")
+    return {
+        "contains": {"required": required, "properties": properties},
+        "minContains": 1,
+        "maxContains": 1,
+    }
+
+
+def _add_v4_producer_declarations(definitions: dict[str, JSON], digest: JSON) -> None:
+    definitions["build_record"] = {
+        "oneOf": [
+            object_schema(
+                {
+                    "state": const("self_reported"),
+                    "record_state": const("recorded"),
+                    "package_name": const("goppi"),
+                    "package_version": text(128),
+                    "identity_assurance": const("self_reported"),
+                    "dir_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                    "unavailable_reason": const(None),
+                }
+            ),
+            object_schema(
+                {
+                    "state": const("not_measured"),
+                    "record_state": const("recorded"),
+                    "package_name": const("goppi"),
+                    "package_version": text(128),
+                    "identity_assurance": const("self_reported"),
+                    "dir_hash": const(None),
+                    "unavailable_reason": enum(
+                        ("source_checkout", "package_unverifiable", "package_changed_during_run")
+                    ),
+                }
+            ),
+            object_schema(
+                {
+                    "state": const("not_measured"),
+                    "record_state": const("not_recorded"),
+                    "package_name": const(None),
+                    "package_version": const(None),
+                    "identity_assurance": const(None),
+                    "dir_hash": const(None),
+                    "unavailable_reason": const(None),
+                }
+            ),
+        ],
+    }
+    definitions["stage_build"] = tagged(
+        [
+            object_schema(
+                {
+                    "stage": enum(STAGES),
+                    "execution_status": const("evaluated"),
+                    "record": reference("build_record"),
+                }
+            ),
+            object_schema(
+                {
+                    "stage": enum(STAGES),
+                    "execution_status": const("closed"),
+                    "record": reference("build_record"),
+                }
+            ),
+            object_schema(
+                {
+                    "stage": enum(STAGES),
+                    "execution_status": const("not_run"),
+                    "record": const(None),
+                }
+            ),
+        ],
+        field="execution_status",
+    )
+    declarations = object_schema(
+        {
+            "builds": object_schema(
+                {
+                    "identity_assurance": const("self_reported"),
+                    "independently_verified": const(False),
+                    "cross_stage_comparability": const("not_inferred_from_digest_equality"),
+                    "export": reference("build_record"),
+                    "stages": array(reference("stage_build"), len(STAGES)),
+                }
+            ),
+            "runner": object_schema(
+                {
+                    "identity_assurance": const("declared"),
+                    "independently_verified": const(False),
+                    "profile": enum(tuple(CAPTURE_PROFILE_BY_RUNNER)),
+                    "provider": nullable(text(128)),
+                    "model": nullable(text(128)),
+                    "thinking_level": nullable(text(128)),
+                    "thinking_level_source": nullable(enum(("plan", "runner_default"))),
+                }
+            ),
+            "split": object_schema(
+                {
+                    "identity_assurance": const("self_reported"),
+                    "commitment_recomputed": const(False),
+                    "salt_origin": enum(
+                        ("csprng_generated", "synthetic_fixture_fixed", "human_supplied")
+                    ),
+                    "limitations": array(enum(("split_salt_guessable",)), 1),
+                    "assignment_binding_profile": const("salted_length_prefixed_sha256_v1"),
+                    "assignment_digest": digest,
+                    "split_policy_digest": digest,
+                }
+            ),
+        }
+    )
+    builds = declarations["properties"]["builds"]
+    build_stages = builds["properties"]["stages"]
+    build_stages["minItems"] = len(STAGES)
+    builds["allOf"] = [
+        {"properties": {"stages": _stage_contains(stage)}} for stage in STAGES
+    ]
+    runner = declarations["properties"]["runner"]
+    runner["allOf"] = [
+        {
+            "if": {
+                "properties": {
+                    "profile": const("deterministic_node_conformance"),
+                }
+            },
+            "then": {
+                "properties": {
+                    field: const(None)
+                    for field in (
+                        "provider",
+                        "model",
+                        "thinking_level",
+                        "thinking_level_source",
+                    )
+                }
+            },
+        },
+        {
+            "if": {
+                "properties": {
+                    "profile": enum(
+                        tuple(
+                            profile
+                            for profile in CAPTURE_PROFILE_BY_RUNNER
+                            if profile != "deterministic_node_conformance"
+                        )
+                    ),
+                }
+            },
+            "then": {
+                "properties": {
+                    "provider": text(128),
+                    "model": text(128),
+                    "thinking_level": text(128),
+                    "thinking_level_source": enum(("plan", "runner_default")),
+                }
+            },
+        },
+        {
+            "if": {
+                "properties": {
+                    "thinking_level_source": const("runner_default"),
+                }
+            },
+            "then": {"properties": {"thinking_level": const("max")}},
+        },
+    ]
+    split = declarations["properties"]["split"]
+    split["allOf"] = [
+        {
+            "if": {
+                "properties": {"salt_origin": const("synthetic_fixture_fixed")}
+            },
+            "then": {
+                "properties": {
+                    "limitations": const(["split_salt_guessable"])
+                }
+            },
+            "else": {"properties": {"limitations": const([])}},
+        }
+    ]
+    definitions["producer_declarations"] = declarations
+
+
 def build(*, outcome_actions: bool = False, version: int = 1) -> JSON:
     if (outcome_actions, version) not in SCHEMAS:
         raise ValueError("UNSUPPORTED_GOPPI_TRAJECTORY_CONTRACT_VERSION")
     schema = SCHEMAS[(outcome_actions, version)]
-    if version == V3:
+    if version in (V3, V4):
         policy = OUTCOME_ACTIONS_POLICY_V2 if outcome_actions else REVIEW_POLICY_V2
     else:
         policy = OUTCOME_ACTIONS_POLICY if outcome_actions else REVIEW_POLICY
     task_evidence = (
         {**TASK_EVIDENCE, **OUTCOME_ACTION_TASK_EVIDENCE} if outcome_actions else TASK_EVIDENCE
     )
-    if version == V3:
+    if version in (V3, V4):
         task_evidence = {**task_evidence, **CYCLE_TASK_EVIDENCE}
     digest = {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
     boolean = {"type": "boolean"}
@@ -410,6 +703,8 @@ def build(*, outcome_actions: bool = False, version: int = 1) -> JSON:
         ],
         field="execution_status",
     )
+    if version == V4:
+        definitions["stage"] = _v4_stage(stage_fields, digest)
     task_fields = {
         "id": {"type": "string", "pattern": "^task:[0-9a-f]{64}$"},
         "scope": array(
@@ -552,54 +847,82 @@ def build(*, outcome_actions: bool = False, version: int = 1) -> JSON:
             ),
         }
     )
-    if version == V3:
-        properties = result["properties"]
-        disclosed: JSON = {}
-        for name, value in properties.items():
-            disclosed[name] = value
-            if name == "source_context":
-                disclosed["cycle"] = object_schema(
-                    {
-                        "status": enum(CYCLE_STATUSES),
-                        "stages_absent_from_export": {
-                            "type": "array",
-                            "items": enum(STAGES),
-                            "maxItems": len(STAGES),
-                            "uniqueItems": True,
-                        },
-                    }
-                )
-                disclosed["runner"] = object_schema(
-                    {
-                        "profile": enum(tuple(CAPTURE_PROFILE_BY_RUNNER)),
-                        "models": array(
-                            object_schema(
-                                {
-                                    "runner_model": text(128),
-                                    "paired_rows": {
-                                        "type": "integer",
-                                        "minimum": 1,
-                                        "maximum": MAX_ROWS,
-                                    },
+    if version in (V3, V4):
+        result = _add_cycle_disclosures(result)
+    if version == V4:
+        _add_v4_producer_declarations(definitions, digest)
+        result["properties"]["producer_declarations"] = reference("producer_declarations")
+        result["required"].append("producer_declarations")
+        result_stages = result["properties"]["stages"]
+        result_stages["minItems"] = len(STAGES)
+        result["allOf"] = [
+            *result.get("allOf", []),
+            *(
+                {"properties": {"stages": _stage_contains(stage)}} for stage in STAGES
+            ),
+            *(
+                {
+                    "if": {"properties": {"stages": _stage_contains(stage, status)}},
+                    "then": {
+                        "properties": {
+                            "producer_declarations": {
+                                "properties": {
+                                    "builds": {
+                                        "properties": {
+                                            "stages": _stage_contains(stage, status)
+                                        }
+                                    }
                                 }
-                            )
-                        ),
-                        "model_unrecorded_rows": integer(),
-                    }
-                )
-        disclosed["interpretation_limits"] = enum_values(
-            [
-                [*CURRENT_INTERPRETATION_LIMITS, *itertools.compress(CYCLE_LIMITS, flags)]
-                for flags in itertools.product((False, True), repeat=len(CYCLE_LIMITS))
-            ]
-        )
-        result = {**object_schema(disclosed), "allOf": _cycle_bindings()}
+                            }
+                        }
+                    },
+                }
+                for stage in STAGES
+                for status in ("evaluated", "closed", "not_run")
+            ),
+        ]
+        result["allOf"] = [
+            *result.get("allOf", []),
+            *[
+                {
+                    "if": {
+                        "required": ["producer_declarations", "runner"],
+                        "properties": {
+                            "producer_declarations": {
+                                "properties": {
+                                    "runner": {"properties": {"profile": const(profile)}}
+                                }
+                            }
+                        },
+                    },
+                    "then": {
+                        "properties": {"runner": {"properties": {"profile": const(profile)}}}
+                    },
+                }
+                for profile in CAPTURE_PROFILE_BY_RUNNER
+            ],
+        ]
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": f"urn:underwrite:contract:{schema}",
         **result,
         "$defs": definitions,
     }
+
+
+def build_verifier_response_v3() -> JSON:
+    """Bind the accepted response envelope to either exact exchange family at runtime."""
+    path = ROOT / "contracts/goppi_trajectory_verifier_response.v2.schema.json"
+    response = json.loads(path.read_bytes())
+    response["$id"] = "urn:underwrite:contract:goppi_trajectory_verifier_response.v3"
+    response["title"] = (
+        "Trusted consumed fields of the offline Goppi combined verifier response, "
+        "paired execution v1 or v2"
+    )
+    properties = response["properties"]["data"]["properties"]
+    properties["format"] = enum(("v1", "v2"))
+    properties["trajectory"]["properties"]["format"] = enum(("v1", "v2"))
+    return response
 
 
 def main() -> None:
@@ -621,6 +944,17 @@ def main() -> None:
                 raise SystemExit(f"STALE_GOPPI_TRAJECTORY_CONTRACT: {schema}")
         else:
             path.write_text(rendered)
+    response_path = ROOT / "contracts/goppi_trajectory_verifier_response.v3.schema.json"
+    response_rendered = (
+        json.dumps(build_verifier_response_v3(), indent=2, ensure_ascii=False) + "\n"
+    )
+    if args.check:
+        if not response_path.exists() or response_path.read_text() != response_rendered:
+            raise SystemExit(
+                "STALE_GOPPI_TRAJECTORY_CONTRACT: goppi_trajectory_verifier_response.v3"
+            )
+    else:
+        response_path.write_text(response_rendered)
 
 
 if __name__ == "__main__":

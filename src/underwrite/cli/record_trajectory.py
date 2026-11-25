@@ -35,6 +35,7 @@ from underwrite.instrument.evidence.goppi_trajectory import (
     RESULT_SCHEMA,
     RESULT_SCHEMA_V2,
     RESULT_SCHEMA_V3,
+    RESULT_SCHEMA_V4,
     TrajectoryError,
 )
 from underwrite.instrument.ingest.goppi_trajectory import (
@@ -65,12 +66,15 @@ SCHEMA = "trajectory_record.v1"
 READ_SCHEMA = "trajectory_record_read.v1"
 SCHEMA_V3 = "trajectory_record.v3"
 READ_SCHEMA_V3 = "trajectory_record_read.v3"
+SCHEMA_V4 = "trajectory_record.v4"
+READ_SCHEMA_V4 = "trajectory_record_read.v4"
 SUMMARY_SCHEMA = "trajectory_record_read_summary.v1"
 COMMAND = "records audit-trajectory"
 READ_COMMAND = "records read-trajectory"
 KIND = "goppi.trajectory-review"
 LAYOUT = "trajectory-record.v1"
 LAYOUT_V2 = "trajectory-record.v2"
+LAYOUT_V4 = "trajectory-record.v4"
 WRAPPER_MAX_BYTES = 64 * 1024
 OUTPUT_MAX_BYTES = MAX_REPORT_BYTES + WRAPPER_MAX_BYTES
 SUMMARY_OUTPUT_MAX_BYTES = 16 * 1024
@@ -98,6 +102,15 @@ class _Contracts:
 def _contracts(layout: str) -> _Contracts:
     if layout == LAYOUT:
         schema, analysis, prior, history = SCHEMA, RESULT_SCHEMA, (), HISTORY_SCHEMA
+        reopen = READ_SCHEMA_V3
+    elif layout == LAYOUT_V4:
+        schema, analysis, prior, history = (
+            SCHEMA_V4,
+            RESULT_SCHEMA_V4,
+            (RESULT_SCHEMA_V3, RESULT_SCHEMA_V2),
+            HISTORY_SCHEMA_V2,
+        )
+        reopen = READ_SCHEMA_V4
     else:
         # The v2 file layout is unchanged; a stored analysis names its own generation.
         schema, analysis, prior, history = (
@@ -106,6 +119,7 @@ def _contracts(layout: str) -> _Contracts:
             (RESULT_SCHEMA_V2,),
             HISTORY_SCHEMA_V2,
         )
+        reopen = READ_SCHEMA_V3
     aggregate = packaged_validator(schema)
     current = cast(Validator, packaged_validator(analysis))
     return _Contracts(
@@ -120,7 +134,7 @@ def _contracts(layout: str) -> _Contracts:
         cast(Validator, packaged_validator("evidence_error.v1")),
         cast(Validator, packaged_validator("record_error.v1")),
         cast(Validator, packaged_validator("record_verification.v1")),
-        cast(Validator, packaged_validator(READ_SCHEMA_V3)),
+        cast(Validator, packaged_validator(reopen)),
     )
 
 
@@ -193,11 +207,14 @@ def _bounded_json(document: object, maximum: int) -> bytes:
 
 
 def _files(
-    captured: Mapping[str, CapturedBytes], analysis: dict[str, Any], history: dict[str, object]
+    captured: Mapping[str, CapturedBytes],
+    analysis: dict[str, Any],
+    history: dict[str, object],
+    layout: str,
 ) -> tuple[CapturedRecordFile, ...]:
     state = analysis["state"]
     documents = {
-        INVOCATION_NAME: _invocation(LAYOUT_V2, state, history),
+        INVOCATION_NAME: _invocation(layout, state, history),
         HISTORY_NAME: history,
         RESULT_NAME if state == "result" else ERROR_NAME: analysis["report"]
         if state == "result"
@@ -243,9 +260,22 @@ def run_record_trajectory(
         validate_trajectory_verifier_selection(verifier, goppi_executable)
     except TrajectoryInputError as exc:
         raise trajectory_cli_error(exc) from None
-    contracts = _contracts(LAYOUT_V2)
     try:
         captured = capture_goppi_trajectory(exchange)
+        execution = decode_document(
+            captured["paired/execution.json"].data,
+            trajectory_member_limits()["paired/execution.json"],
+            32,
+            "/exchange/paired/execution.json",
+            "INVALID_INPUT",
+            EvidenceError,
+        )[0]
+        layout = (
+            LAYOUT_V4
+            if execution.get("schema") == "goppi.paired_run_exchange.execution.v2"
+            else LAYOUT_V2
+        )
+        contracts = _contracts(layout)
         outcome = audit_captured_goppi_trajectory(
             captured, verifier=verifier, goppi_executable=goppi_executable
         )
@@ -267,9 +297,9 @@ def run_record_trajectory(
     )
     history = outcome.verification_history
     validate(contracts.history, history, EvidenceError, "INTERNAL_ERROR")
-    files = _files(captured, analysis, history)
+    files = _files(captured, analysis, history, layout)
     envelope: dict[str, Any] = {
-        "schema": SCHEMA_V3,
+        "schema": SCHEMA_V4 if layout == LAYOUT_V4 else SCHEMA_V3,
         "command": COMMAND,
         "source": {"state": "captured", "source_members": history["source_members"]},
         "analysis": analysis,
@@ -280,7 +310,7 @@ def run_record_trajectory(
         identifier,
         KIND,
         "Goppi trajectory review",
-        _metadata(LAYOUT_V2, analysis["state"]),
+        _metadata(layout, analysis["state"]),
         (),
         None,
         {"status": "not_performed", "reference": None},
@@ -364,7 +394,7 @@ def _record_layout(snapshot: RecordSnapshot) -> str:
     metadata = manifest.get("metadata")
     _require(type(metadata) is dict)
     layout = cast(dict[str, Any], metadata).get("layout")
-    _require(layout in (LAYOUT, LAYOUT_V2))
+    _require(layout in (LAYOUT, LAYOUT_V2, LAYOUT_V4))
     return cast(str, layout)
 
 
@@ -448,7 +478,10 @@ def _retained_validator(
 
 def _analysis_limitations(analysis: Mapping[str, Any]) -> list[str]:
     """A retained result from before the current review lacks cycle and runner disclosure."""
-    if analysis["state"] == "result" and analysis["report"]["schema"] != RESULT_SCHEMA_V3:
+    if analysis["state"] == "result" and analysis["report"]["schema"] not in (
+        RESULT_SCHEMA_V3,
+        RESULT_SCHEMA_V4,
+    ):
         return [RETAINED_ANALYSIS_LIMITATION]
     return []
 
@@ -505,7 +538,7 @@ def run_read_trajectory(root: Path, identifier: str) -> dict[str, object]:
     """Read retained analysis under its exact layout; verify current stored bytes only."""
     reopened = _reopen_trajectory(root, identifier)
     envelope: dict[str, object] = {
-        "schema": READ_SCHEMA_V3,
+        "schema": READ_SCHEMA_V4 if reopened.layout == LAYOUT_V4 else READ_SCHEMA_V3,
         "command": READ_COMMAND,
         "record_id": reopened.identifier,
         "manifest_digest": reopened.snapshot.digest,
@@ -678,7 +711,7 @@ def main(argv: list[str]) -> int:
             as_json=args.json,
         ),
         ReportOutput(
-            SCHEMA_V3,
+            (SCHEMA_V3, SCHEMA_V4),
             OUTPUT_MAX_BYTES,
             lambda result: cast(int, result["exit_code"]),
             render_human,
@@ -697,7 +730,9 @@ def main_read(argv: list[str]) -> int:
             else run_read_trajectory(args.root, args.id)
         ),
         ReportOutput(
-            lambda args: SUMMARY_SCHEMA if args.view == "summary" else READ_SCHEMA_V3,
+            lambda args: SUMMARY_SCHEMA
+            if args.view == "summary"
+            else (READ_SCHEMA_V3, READ_SCHEMA_V4),
             OUTPUT_MAX_BYTES,
             human=lambda result: (
                 (
