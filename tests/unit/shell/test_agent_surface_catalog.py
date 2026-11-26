@@ -340,8 +340,14 @@ def test_stored_trajectory_tool_follows_records_read_profile() -> None:
     descriptor = next(row for row in cli_main.COMMAND_DESCRIPTORS if row.command == "records")
     profile = next(row for row in descriptor.profiles if row.name == "read-trajectory|summary")
     assert profile.required_inputs == ("root", "id", "view")
-    assert profile.output_schemas == ("trajectory_record_read_summary.v1",)
-    assert tool["outputSchema"] == packaged_validator(profile.output_schemas[0]).schema
+    assert profile.output_schemas == ("trajectory_record_read_summary.v2",)
+    full_schema = cast(dict[str, object], packaged_validator(profile.output_schemas[0]).schema)
+    definitions = cast(dict[str, object], full_schema["$defs"])
+    assert tool["outputSchema"] == definitions["mcp_output_schema"]
+    output_schema = cast(dict[str, object], tool["outputSchema"])
+    output_properties = cast(dict[str, object], output_schema["properties"])
+    assert "source_format" in output_properties
+    assert "analysis_limitations" in output_properties
     assert tool["inputSchema"] == {
         "type": "object",
         "properties": {

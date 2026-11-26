@@ -25,7 +25,13 @@ from underwrite.cli.record_trajectory import (
     SCHEMA_V4,
 )
 from underwrite.instrument.evidence.goppi_trajectory import MEMBERS
-from underwrite.instrument.ingest.goppi_trajectory import HISTORY_SCHEMA, HISTORY_SCHEMA_V2
+from underwrite.instrument.ingest.goppi_trajectory import (
+    HISTORY_SCHEMA,
+    HISTORY_SCHEMA_V2,
+    SOURCE_FORMAT_UNKNOWN,
+    SOURCE_FORMAT_V1,
+    SOURCE_FORMAT_V2,
+)
 from underwrite.instrument.ingest.schema import packaged_validator
 
 ROOT = Path(__file__).parents[2]
@@ -47,6 +53,7 @@ def test_generated_trajectory_record_contracts_match_authored_owners(
         **module.build_envelopes(ROOT),
         **module.build_envelopes_v3(ROOT),
         **module.build_envelopes_v4(ROOT),
+        module.SUMMARY_SCHEMA_V2: module.build_read_summary_v2(),
     }
     for schema_name, schema in expected.items():
         authored = ROOT / "contracts" / (schema_name + ".schema.json")
@@ -61,6 +68,20 @@ def test_generated_trajectory_record_contracts_match_authored_owners(
             assert "oneOf" not in definitions["analysis"]
             assert "anyOf" not in definitions["analysis"]
             assert definitions["analysis"]["properties"]["state"]["enum"] == ["result", "error"]
+
+
+def test_trajectory_record_read_summary_v1_contract_bytes_are_frozen() -> None:
+    raw = (ROOT / "contracts/trajectory_record_read_summary.v1.schema.json").read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == (
+        "73ac7bccd1ee58a33dfff87313ba7dffb3b24b1a8d25156c2aa59a7b4e1d981c"
+    )
+    schema = json.loads(raw)
+    assert schema["properties"]["record_layout"]["enum"] == [
+        "trajectory-record.v1",
+        "trajectory-record.v2",
+    ]
+    assert "source_format" not in schema["properties"]
+    assert "analysis_limitations" not in schema["properties"]
 
 
 @pytest.mark.parametrize(
@@ -202,13 +223,16 @@ def test_history_v2_accepts_only_the_two_closed_trust_combinations(state: str) -
 
 def _read_envelope(layout: str, history_state: str) -> dict[str, object]:
     verification = _verification()
+    source: dict[str, object] = {"state": "captured", "source_members": _source_members()}
+    if layout == LAYOUT_V4:
+        source["source_format"] = SOURCE_FORMAT_V2
     common: dict[str, object] = {
         "schema": READ_SCHEMA_V3,
         "command": "records read-trajectory",
         "record_id": verification["record_id"],
         "manifest_digest": verification["manifest_digest"],
         "record_layout": layout,
-        "source": {"state": "captured", "source_members": _source_members()},
+        "source": source,
         "current_storage_verification": verification,
         "native_verification_performed_now": False,
     }
@@ -351,6 +375,101 @@ def _execution_v2_review() -> dict[str, Any]:
     return report
 
 
+def _record_v4_result() -> dict[str, object]:
+    verification = _verification()
+    return {
+        "schema": SCHEMA_V4,
+        "command": "records audit-trajectory",
+        "source": {
+            "state": "captured",
+            "source_members": _source_members(),
+            "source_format": SOURCE_FORMAT_V2,
+        },
+        "analysis": {"state": "result", "report": _execution_v2_review()},
+        "verifier_report_history": _history_v2("report_accepted"),
+        "storage": {
+            "state": "saved",
+            "record_id": verification["record_id"],
+            "manifest_digest": verification["manifest_digest"],
+            "verification": verification,
+        },
+        "exit_code": 0,
+    }
+
+
+def _read_v4_result() -> dict[str, object]:
+    envelope = _read_envelope(LAYOUT_V2, "report_accepted")
+    envelope["schema"] = READ_SCHEMA_V4
+    envelope["record_layout"] = LAYOUT_V4
+    cast(dict[str, object], envelope["source"])["source_format"] = SOURCE_FORMAT_V2
+    envelope["analysis"] = {"state": "result", "report": _execution_v2_review()}
+    envelope["analysis_limitations"] = []
+    return envelope
+
+
+@pytest.mark.parametrize("contract", ["record", "read"])
+@pytest.mark.parametrize(
+    "mutation", ["unknown_result", "unknown_report_accepted", "v2_wrong_review_family"]
+)
+def test_v4_contract_rejects_source_format_analysis_and_history_mismatches(
+    contract: str, mutation: str
+) -> None:
+    envelope = _record_v4_result() if contract == "record" else _read_v4_result()
+    validator_name = SCHEMA_V4 if contract == "record" else READ_SCHEMA_V4
+    source = cast(dict[str, object], envelope["source"])
+    if mutation == "unknown_result":
+        source["source_format"] = SOURCE_FORMAT_UNKNOWN
+    elif mutation == "unknown_report_accepted":
+        source["source_format"] = SOURCE_FORMAT_UNKNOWN
+        envelope["analysis"] = _error_analysis()
+        envelope["verifier_report_history"] = _history_v2("report_accepted")
+        if contract == "record":
+            envelope["exit_code"] = 2
+        else:
+            envelope["verification_interpretation"] = {
+                "state": "current_report_only",
+                "verifier_identity_verified": False,
+                "current_native_verification": "not_performed",
+                "limitations": [],
+            }
+    else:
+        forged_report = _execution_v2_review()
+        forged_report["schema"] = "goppi_trajectory_review.v3"
+        cast(dict[str, object], envelope["analysis"])["report"] = forged_report
+
+    with pytest.raises(ValidationError):
+        cast(Validator, packaged_validator(validator_name)).validate(envelope)
+
+
+@pytest.mark.parametrize("contract", ["record", "read"])
+def test_v4_contract_accepts_unknown_malformed_execution_diagnostic(contract: str) -> None:
+    if contract == "record":
+        envelope = _record_v4_result()
+        envelope["source"] = {
+            "state": "captured",
+            "source_members": _source_members(),
+            "source_format": SOURCE_FORMAT_UNKNOWN,
+        }
+        envelope["analysis"] = _error_analysis()
+        envelope["verifier_report_history"] = _history_v2("not_performed")
+        envelope["exit_code"] = 2
+        validator_name = SCHEMA_V4
+    else:
+        envelope = _read_v4_result()
+        cast(dict[str, object], envelope["source"])["source_format"] = SOURCE_FORMAT_UNKNOWN
+        envelope["analysis"] = _error_analysis()
+        envelope["verifier_report_history"] = _history_v2("not_performed")
+        envelope["verification_interpretation"] = {
+            "state": "current_not_performed",
+            "verifier_identity_verified": False,
+            "current_native_verification": "not_performed",
+            "limitations": [],
+        }
+        validator_name = READ_SCHEMA_V4
+
+    cast(Validator, packaged_validator(validator_name)).validate(envelope)
+
+
 ACCEPTED_TRUST = {
     "verifier_report_state": "report_accepted",
     "verifier_source": "operator_configured_executable",
@@ -408,7 +527,11 @@ def test_record_v4_accepts_execution_v2_review_and_report_only_history() -> None
     envelope: dict[str, object] = {
         "schema": SCHEMA_V4,
         "command": "records audit-trajectory",
-        "source": {"state": "captured", "source_members": _source_members()},
+        "source": {
+            "state": "captured",
+            "source_members": _source_members(),
+            "source_format": SOURCE_FORMAT_V2,
+        },
         "analysis": {"state": "result", "report": _execution_v2_review()},
         "verifier_report_history": _history_v2("report_accepted"),
         "storage": {
@@ -420,30 +543,42 @@ def test_record_v4_accepts_execution_v2_review_and_report_only_history() -> None
         "exit_code": 0,
     }
     validator.validate(envelope)
+    for source_format in (
+        None,
+        SOURCE_FORMAT_V1,
+        "goppi.paired_run_exchange.execution.v3",
+    ):
+        invalid = deepcopy(envelope)
+        source = cast(dict[str, object], invalid["source"])
+        if source_format is None:
+            source.pop("source_format")
+        else:
+            source["source_format"] = source_format
+        with pytest.raises(ValidationError):
+            validator.validate(invalid)
+
+
+def test_read_v4_accepts_current_execution_v2_review() -> None:
+    cast(Validator, packaged_validator(READ_SCHEMA_V4)).validate(_read_v4_result())
 
 
 @pytest.mark.parametrize(
     ("generation", "limitations"),
     [
-        ("v4", []),
         ("v3", []),
         ("v2", ["retained_analysis_omits_cycle_status_stage_verdicts_and_runner"]),
     ],
 )
-def test_read_v4_dispatches_retained_v2_and_v3_analysis_by_schema(
+def test_read_v4_rejects_valid_prior_review_families_for_execution_v2(
     generation: str, limitations: list[str]
 ) -> None:
-    envelope = _read_envelope(LAYOUT_V2, "report_accepted")
-    envelope["schema"] = READ_SCHEMA_V4
-    envelope["record_layout"] = LAYOUT_V4
-    report = {
-        "v4": _execution_v2_review,
-        "v3": _current_review,
-        "v2": _prior_review,
-    }[generation]()
+    envelope = _read_v4_result()
+    report = _current_review() if generation == "v3" else _prior_review()
     envelope["analysis"] = {"state": "result", "report": report}
     envelope["analysis_limitations"] = limitations
-    cast(Validator, packaged_validator(READ_SCHEMA_V4)).validate(envelope)
+
+    with pytest.raises(ValidationError):
+        cast(Validator, packaged_validator(READ_SCHEMA_V4)).validate(envelope)
 
 
 @pytest.mark.parametrize("generation", ["prior", "current"])

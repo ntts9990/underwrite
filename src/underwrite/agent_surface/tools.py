@@ -438,12 +438,14 @@ def _stored_trajectory_tool(descriptor: CommandDescriptor) -> dict[str, object]:
     if (
         profile.required_inputs != ("root", "id", "view")
         or profile.input_schemas
-        or profile.output_schemas != ("trajectory_record_read_summary.v1",)
+        or profile.output_schemas != ("trajectory_record_read_summary.v2",)
     ):
         raise ValueError("TRAJECTORY_READ_TOOL_PROFILE_MISMATCH")
-    output_schema = cast(
+    summary_contract = cast(
         dict[str, object], packaged_validator(profile.output_schemas[0]).schema
     )
+    summary_definitions = cast(dict[str, object], summary_contract["$defs"])
+    output_schema = cast(dict[str, object], summary_definitions["mcp_output_schema"])
     return {
         "name": (
             "underwrite_"

@@ -103,10 +103,14 @@ the current boundary.
 The retained `records read-trajectory --view summary` profile is a separate
 read-only tool: it checks stored bytes and direct links without invoking Goppi
 or writing a record. It returns a bounded, content-minimized
-`trajectory_record_read_summary.v1` result validated by the CLI. The default
-full `trajectory_record_read.v3` result remains available through CLI only:
-its large success payload would be duplicated in MCP text and structured content.
-The compact summary can advertise its installed output schema in `tools/list`.
+`trajectory_record_read_summary.v1` result for legacy v1/v2 record layouts,
+preserving that contract's original bytes and output shape. Layout v4 returns
+`trajectory_record_read_summary.v2` with exact source-format and analysis-limit
+fields. The MCP tool advertises the v2 union schema, which accepts both summary
+versions. The default full `trajectory_record_read.v3` or `.v4` result remains
+available through CLI only: its large success payload would be duplicated in MCP
+text and structured content. The compact summary can advertise its installed
+output schema in `tools/list`.
 
 The `review-pair` MCP entry likewise uses an additive CLI `--view summary` profile.
 The full `paired_review.v1` includes bounded but untrusted declaration strings;

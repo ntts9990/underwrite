@@ -41,11 +41,14 @@ from underwrite.instrument.evidence.goppi_trajectory import (
 from underwrite.instrument.ingest.goppi_trajectory import (
     HISTORY_SCHEMA,
     HISTORY_SCHEMA_V2,
+    SOURCE_FORMAT_UNKNOWN,
+    SOURCE_FORMAT_V2,
     TrajectoryInputError,
     audit_captured_goppi_trajectory,
     capture_goppi_trajectory,
     trajectory_diagnostic_history_matches,
     trajectory_member_limits,
+    trajectory_source_format,
     validate_trajectory_verifier_selection,
 )
 from underwrite.instrument.ingest.goppi_verifier import TrajectoryVerifier, VerifierError
@@ -68,7 +71,9 @@ SCHEMA_V3 = "trajectory_record.v3"
 READ_SCHEMA_V3 = "trajectory_record_read.v3"
 SCHEMA_V4 = "trajectory_record.v4"
 READ_SCHEMA_V4 = "trajectory_record_read.v4"
-SUMMARY_SCHEMA = "trajectory_record_read_summary.v1"
+SUMMARY_SCHEMA_V1 = "trajectory_record_read_summary.v1"
+SUMMARY_SCHEMA_V2 = "trajectory_record_read_summary.v2"
+SUMMARY_SCHEMA = SUMMARY_SCHEMA_V1
 COMMAND = "records audit-trajectory"
 READ_COMMAND = "records read-trajectory"
 KIND = "goppi.trajectory-review"
@@ -143,6 +148,7 @@ class _ReopenedTrajectory:
     identifier: str
     snapshot: RecordSnapshot
     layout: str
+    source_format: str | None
     state: str
     sources: list[dict[str, Any]]
     history: dict[str, Any]
@@ -197,6 +203,23 @@ def _layout(state: str) -> dict[str, tuple[str, str, int]]:
         INVOCATION_NAME: ("log", "application/json", WRAPPER_MAX_BYTES),
         HISTORY_NAME: ("verification", "application/json", WRAPPER_MAX_BYTES),
     }
+
+
+def _source_format_from_bytes(raw: bytes) -> str:
+    try:
+        document, _ = decode_document(
+            raw,
+            trajectory_member_limits()["paired/execution.json"],
+            32,
+            "/record",
+            "INVALID_INPUT",
+            EvidenceError,
+        )
+    except EvidenceError as exc:
+        if exc.payload["code"] in ("INVALID_INPUT", "INPUT_LIMIT_EXCEEDED"):
+            return SOURCE_FORMAT_UNKNOWN
+        raise
+    return trajectory_source_format(document)
 
 
 def _bounded_json(document: object, maximum: int) -> bytes:
@@ -261,26 +284,19 @@ def run_record_trajectory(
     except TrajectoryInputError as exc:
         raise trajectory_cli_error(exc) from None
     try:
+        contracts_by_layout = {
+            LAYOUT_V2: _contracts(LAYOUT_V2),
+            LAYOUT_V4: _contracts(LAYOUT_V4),
+        }
         captured = capture_goppi_trajectory(exchange)
-        execution = decode_document(
-            captured["paired/execution.json"].data,
-            trajectory_member_limits()["paired/execution.json"],
-            32,
-            "/exchange/paired/execution.json",
-            "INVALID_INPUT",
-            EvidenceError,
-        )[0]
-        layout = (
-            LAYOUT_V4
-            if execution.get("schema") == "goppi.paired_run_exchange.execution.v2"
-            else LAYOUT_V2
-        )
-        contracts = _contracts(layout)
         outcome = audit_captured_goppi_trajectory(
             captured, verifier=verifier, goppi_executable=goppi_executable
         )
     except (CaptureError, TrajectoryInputError, TrajectoryError, VerifierError) as exc:
         raise trajectory_cli_error(exc) from None
+    source_format = outcome.source_format
+    layout = LAYOUT_V4 if source_format in (SOURCE_FORMAT_V2, SOURCE_FORMAT_UNKNOWN) else LAYOUT_V2
+    contracts = contracts_by_layout[layout]
     if outcome.error is not None:
         error = outcome.error
         analysis: dict[str, Any] = {
@@ -298,10 +314,16 @@ def run_record_trajectory(
     history = outcome.verification_history
     validate(contracts.history, history, EvidenceError, "INTERNAL_ERROR")
     files = _files(captured, analysis, history, layout)
+    source: dict[str, object] = {
+        "state": "captured",
+        "source_members": history["source_members"],
+    }
+    if layout == LAYOUT_V4:
+        source["source_format"] = source_format
     envelope: dict[str, Any] = {
         "schema": SCHEMA_V4 if layout == LAYOUT_V4 else SCHEMA_V3,
         "command": COMMAND,
-        "source": {"state": "captured", "source_members": history["source_members"]},
+        "source": source,
         "analysis": analysis,
         "verifier_report_history": history,
         "exit_code": analysis_exit_code(analysis),
@@ -415,6 +437,8 @@ def _bindings(
         )
     else:
         report = analysis["report"]
+        if layout == LAYOUT_V4:
+            _require(report["schema"] == RESULT_SCHEMA_V4)
         identities = report["input_members"]
         _require(all(type(item["bytes"]) is int for item in identities))
         expected = [
@@ -494,6 +518,20 @@ def _reopen_trajectory(root: Path, identifier: str) -> _ReopenedTrajectory:
         layout = _record_layout(snapshot)
         contracts = _contracts(layout)
         state, sources = _manifest(snapshot, identifier, layout)
+        source_format: str | None = None
+        if layout == LAYOUT_V4:
+            execution_file = read_record_file(
+                root,
+                identifier,
+                "source/paired/execution.json",
+                max_bytes=trajectory_member_limits()["paired/execution.json"],
+            )
+            _require(
+                execution_file.manifest_digest == snapshot.digest
+                and execution_file.record_id == identifier
+            )
+            source_format = _source_format_from_bytes(execution_file.data)
+            _require(source_format in (SOURCE_FORMAT_V2, SOURCE_FORMAT_UNKNOWN))
         history = _read_bound(root, identifier, HISTORY_NAME, WRAPPER_MAX_BYTES, snapshot.digest)
         validate(contracts.history, history, EvidenceError, "INVALID_INPUT", "/record")
         invocation = _read_bound(
@@ -525,6 +563,7 @@ def _reopen_trajectory(root: Path, identifier: str) -> _ReopenedTrajectory:
         identifier,
         snapshot,
         layout,
+        source_format,
         state,
         sources,
         history,
@@ -537,12 +576,16 @@ def _reopen_trajectory(root: Path, identifier: str) -> _ReopenedTrajectory:
 def run_read_trajectory(root: Path, identifier: str) -> dict[str, object]:
     """Read retained analysis under its exact layout; verify current stored bytes only."""
     reopened = _reopen_trajectory(root, identifier)
+    source: dict[str, object] = {"state": "captured", "source_members": reopened.sources}
+    if reopened.layout == LAYOUT_V4:
+        _require(reopened.source_format in (SOURCE_FORMAT_V2, SOURCE_FORMAT_UNKNOWN))
+        source["source_format"] = reopened.source_format
     envelope: dict[str, object] = {
         "schema": READ_SCHEMA_V4 if reopened.layout == LAYOUT_V4 else READ_SCHEMA_V3,
         "command": READ_COMMAND,
         "record_id": reopened.identifier,
         "manifest_digest": reopened.snapshot.digest,
-        "source": {"state": "captured", "source_members": reopened.sources},
+        "source": source,
         "current_storage_verification": reopened.verification,
         "native_verification_performed_now": False,
         "record_layout": reopened.layout,
@@ -561,14 +604,14 @@ def run_read_trajectory(root: Path, identifier: str) -> dict[str, object]:
     return envelope
 
 
-_POPULATION_FIELDS = (
+SUMMARY_POPULATION_FIELDS = (
     "paired_rows",
     "case_stage_repeat_pairs",
     "unique_source_case_ids",
     "stage_case_slots",
     "primary_repeat_pairs",
 )
-_SUMMARY_LIMITATIONS = [
+SUMMARY_LIMITATIONS = [
     "storage_verification_establishes_current_stored_byte_integrity_only",
     "historical_verifier_evidence_was_not_executed_now",
     "verifier_identity_is_not_verified",
@@ -610,11 +653,11 @@ def run_read_trajectory_summary(root: Path, identifier: str) -> dict[str, object
     retained = cast(dict[str, Any], report).get("populations") if has_populations else None
     populations = {
         field: cast(dict[str, Any], retained)[field] if type(retained) is dict else None
-        for field in _POPULATION_FIELDS
+        for field in SUMMARY_POPULATION_FIELDS
     }
     verification = reopened.verification
     summary: dict[str, object] = {
-        "schema": SUMMARY_SCHEMA,
+        "schema": SUMMARY_SCHEMA_V1,
         "command": READ_COMMAND,
         "view": "summary",
         "record_id": reopened.identifier,
@@ -632,7 +675,9 @@ def run_read_trajectory_summary(root: Path, identifier: str) -> dict[str, object
         "populations": populations,
         "missingness": {
             "population_state": "available" if has_populations else "not_available_analysis_error",
-            "missing_population_fields": [] if has_populations else list(_POPULATION_FIELDS),
+            "missing_population_fields": (
+                [] if has_populations else list(SUMMARY_POPULATION_FIELDS)
+            ),
         },
         "detail_state": {
             "outcome_details": "intentionally_omitted",
@@ -652,10 +697,15 @@ def run_read_trajectory_summary(root: Path, identifier: str) -> dict[str, object
             "merge_authorized": False,
             "revert_authorized": False,
         },
-        "limitations": _SUMMARY_LIMITATIONS,
+        "limitations": SUMMARY_LIMITATIONS,
     }
+    if reopened.layout == LAYOUT_V4:
+        _require(reopened.source_format in (SOURCE_FORMAT_V2, SOURCE_FORMAT_UNKNOWN))
+        summary["schema"] = SUMMARY_SCHEMA_V2
+        summary["source_format"] = reopened.source_format
+        summary["analysis_limitations"] = _analysis_limitations(reopened.analysis)
     validate(
-        cast(Validator, packaged_validator(SUMMARY_SCHEMA)),
+        cast(Validator, packaged_validator(cast(str, summary["schema"]))),
         summary,
         EvidenceError,
         "INTERNAL_ERROR",
@@ -730,14 +780,14 @@ def main_read(argv: list[str]) -> int:
             else run_read_trajectory(args.root, args.id)
         ),
         ReportOutput(
-            lambda args: SUMMARY_SCHEMA
+            lambda args: (SUMMARY_SCHEMA_V1, SUMMARY_SCHEMA_V2)
             if args.view == "summary"
             else (READ_SCHEMA_V3, READ_SCHEMA_V4),
             OUTPUT_MAX_BYTES,
             human=lambda result: (
                 (
                     "Retained trajectory summary reopened; stored bytes verified. "
-                    if result["schema"] == SUMMARY_SCHEMA
+                    if result["schema"] in (SUMMARY_SCHEMA_V1, SUMMARY_SCHEMA_V2)
                     else "Retained trajectory analysis reopened; stored bytes verified. "
                 )
                 + (

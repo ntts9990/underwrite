@@ -46,6 +46,9 @@ from underwrite.instrument.evidence.goppi_trajectory import (
     STOP_REASON_LIMIT,
     TASK_EVIDENCE,
     UNAVAILABLE_REASONS,
+    V2_COMPARABILITY_INTERVENTION_FIELD,
+    V2_COMPARABILITY_INTERVENTION_STATES,
+    V2_COMPARABILITY_INVARIANT_FIELDS,
 )
 
 JSON = dict[str, Any]
@@ -69,6 +72,39 @@ VERDICT_TASK = "obtain_evaluated_stage_verdict"
 
 def array(items: JSON, maximum: int = MAX_ROWS) -> JSON:
     return {"type": "array", "items": items, "maxItems": maximum}
+
+
+def _comparability_schema(version: int) -> JSON:
+    fields: JSON = {
+        "state": enum(("comparable", "unknown", "not_comparable")),
+        "reasons": array(
+            object_schema(
+                {
+                    "field": text(128),
+                    "reason": enum(("missing_context", "different_context")),
+                }
+            ),
+            64,
+        ),
+    }
+    if version == V4:
+        fields.update(
+            {
+                "intervention": object_schema(
+                    {
+                        "field": const(V2_COMPARABILITY_INTERVENTION_FIELD),
+                        "state": enum(V2_COMPARABILITY_INTERVENTION_STATES),
+                    }
+                ),
+                "held_constant": {
+                    "type": "array",
+                    "items": enum(V2_COMPARABILITY_INVARIANT_FIELDS),
+                    "maxItems": len(V2_COMPARABILITY_INVARIANT_FIELDS),
+                    "uniqueItems": True,
+                },
+            }
+        )
+    return object_schema(fields)
 
 
 def const(value: object) -> JSON:
@@ -651,20 +687,7 @@ def build(*, outcome_actions: bool = False, version: int = 1) -> JSON:
             "key": reference("key"),
             "baseline": reference("side"),
             "candidate": reference("side"),
-            "comparability": object_schema(
-                {
-                    "state": enum(("comparable", "unknown", "not_comparable")),
-                    "reasons": array(
-                        object_schema(
-                            {
-                                "field": text(128),
-                                "reason": enum(("missing_context", "different_context")),
-                            }
-                        ),
-                        64,
-                    ),
-                }
-            ),
+            "comparability": _comparability_schema(version),
             "difference": reference("difference"),
         }
     )

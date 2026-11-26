@@ -205,7 +205,9 @@ for item action and declared binding counts in those files, and
 `underwrite_audit_baseline` for descriptive evidence from a completed local
 Goppi baseline exchange v2 directory. `underwrite_records_read_trajectory`
 checks stored bytes and returns a bounded summary of a retained Goppi trajectory
-record without rerunning Goppi. `underwrite_review_pair` projects `review-pair
+record without rerunning Goppi. Legacy record layouts retain the original
+`trajectory_record_read_summary.v1` output; v4 summaries use v2 and include the
+exact source format and analysis limitations. `underwrite_review_pair` projects `review-pair
 --view summary --json` for a bound local input, policy, and review context. It
 returns declared condition counts and review limits without declaration text.
 `underwrite_review_artifacts` projects the strict `review-artifacts --view

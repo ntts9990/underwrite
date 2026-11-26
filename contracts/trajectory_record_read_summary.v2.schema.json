@@ -1,0 +1,975 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:underwrite:contract:trajectory_record_read_summary.v2",
+  "title": "trajectory_record_read_summary.v2",
+  "description": "Content-minimized trajectory record reopen result. Current stored-byte verification is distinct from retained historical verifier claims.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "command",
+    "view",
+    "record_id",
+    "manifest_digest",
+    "record_layout",
+    "analysis_state",
+    "current_storage_verification",
+    "historical_verifier_claim",
+    "populations",
+    "missingness",
+    "detail_state",
+    "native_verification_performed_now",
+    "authority",
+    "limitations"
+  ],
+  "properties": {
+    "schema": {
+      "enum": [
+        "trajectory_record_read_summary.v1",
+        "trajectory_record_read_summary.v2"
+      ]
+    },
+    "command": {
+      "const": "records read-trajectory"
+    },
+    "view": {
+      "const": "summary"
+    },
+    "record_id": {
+      "$ref": "#/$defs/record_id"
+    },
+    "manifest_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "record_layout": {
+      "enum": [
+        "trajectory-record.v1",
+        "trajectory-record.v2",
+        "trajectory-record.v4"
+      ]
+    },
+    "source_format": {
+      "enum": [
+        "goppi.paired_run_exchange.execution.v2",
+        "unknown"
+      ]
+    },
+    "analysis_state": {
+      "enum": [
+        "result",
+        "error"
+      ]
+    },
+    "analysis_limitations": {
+      "enum": [
+        [],
+        [
+          "retained_analysis_omits_cycle_status_stage_verdicts_and_runner"
+        ]
+      ]
+    },
+    "current_storage_verification": {
+      "const": {
+        "status": "verified",
+        "scope": "stored_bytes_and_direct_links",
+        "files_checked": 10,
+        "links_checked": 0,
+        "findings_count": 0
+      }
+    },
+    "historical_verifier_claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "reported_scope",
+        "verifier_identity_verified",
+        "source_authentication_independently_verified",
+        "producer_projection_independently_verified"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "not_performed",
+            "report_accepted",
+            "legacy_unattributed_report"
+          ]
+        },
+        "reported_scope": {
+          "enum": [
+            "not_performed",
+            "report_only_content_closure",
+            "legacy_self_consistent_content_closure"
+          ]
+        },
+        "verifier_identity_verified": {
+          "const": false
+        },
+        "source_authentication_independently_verified": {
+          "const": false
+        },
+        "producer_projection_independently_verified": {
+          "const": false
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "not_performed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reported_scope": {
+                "const": "not_performed"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "report_accepted"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reported_scope": {
+                "const": "report_only_content_closure"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "legacy_unattributed_report"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reported_scope": {
+                "const": "legacy_self_consistent_content_closure"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "populations": {
+      "$ref": "#/$defs/populations"
+    },
+    "missingness": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 2,
+      "properties": {
+        "population_state": {},
+        "missing_population_fields": {
+          "type": "array"
+        }
+      }
+    },
+    "detail_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 5,
+      "properties": {
+        "outcome_details": {
+          "const": "intentionally_omitted"
+        },
+        "comparison_details": {
+          "const": "intentionally_omitted"
+        },
+        "outcome_missingness_state": {
+          "const": "intentionally_omitted"
+        },
+        "analysis_diagnostic": {},
+        "full_view": {
+          "const": "records read-trajectory --view full"
+        }
+      }
+    },
+    "native_verification_performed_now": {
+      "const": false
+    },
+    "authority": {
+      "const": {
+        "human_review": "required",
+        "execution_authorized": false,
+        "merge_authorized": false,
+        "revert_authorized": false
+      }
+    },
+    "limitations": {
+      "const": [
+        "storage_verification_establishes_current_stored_byte_integrity_only",
+        "historical_verifier_evidence_was_not_executed_now",
+        "verifier_identity_is_not_verified",
+        "source_authentication_and_producer_projection_are_not_independently_verified",
+        "population_counts_are_retained_analysis_claims",
+        "outcome_comparison_and_missingness_details_are_omitted_use_full_view"
+      ]
+    }
+  },
+  "$defs": {
+    "record_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 96,
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,95}(?![\\s\\S])"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}(?![\\s\\S])"
+    },
+    "population_field": {
+      "enum": [
+        "paired_rows",
+        "case_stage_repeat_pairs",
+        "unique_source_case_ids",
+        "stage_case_slots",
+        "primary_repeat_pairs"
+      ]
+    },
+    "population_value": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 10000
+    },
+    "populations": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 5,
+      "patternProperties": {
+        "^(?:paired_rows|case_stage_repeat_pairs|unique_source_case_ids|stage_case_slots|primary_repeat_pairs)$": {
+          "$ref": "#/$defs/population_value"
+        }
+      }
+    },
+    "available_populations": {
+      "patternProperties": {
+        "^(?:paired_rows|case_stage_repeat_pairs|unique_source_case_ids|stage_case_slots|primary_repeat_pairs)$": {
+          "type": "integer"
+        }
+      }
+    },
+    "missing_populations": {
+      "patternProperties": {
+        "^(?:paired_rows|case_stage_repeat_pairs|unique_source_case_ids|stage_case_slots|primary_repeat_pairs)$": {
+          "type": "null"
+        }
+      }
+    },
+    "summary_legacy_fields_absent": {
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "source_format"
+            ]
+          },
+          {
+            "required": [
+              "analysis_limitations"
+            ]
+          }
+        ]
+      }
+    },
+    "mcp_output_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 15,
+      "properties": {
+        "schema": {
+          "enum": [
+            "trajectory_record_read_summary.v1",
+            "trajectory_record_read_summary.v2"
+          ]
+        },
+        "command": {
+          "const": "records read-trajectory"
+        },
+        "view": {
+          "const": "summary"
+        },
+        "record_id": {
+          "$ref": "#/$defs/record_id"
+        },
+        "manifest_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "record_layout": {
+          "enum": [
+            "trajectory-record.v1",
+            "trajectory-record.v2",
+            "trajectory-record.v4"
+          ]
+        },
+        "source_format": {
+          "enum": [
+            "goppi.paired_run_exchange.execution.v2",
+            "unknown"
+          ]
+        },
+        "analysis_state": {
+          "enum": [
+            "result",
+            "error"
+          ]
+        },
+        "analysis_limitations": {
+          "enum": [
+            [],
+            [
+              "retained_analysis_omits_cycle_status_stage_verdicts_and_runner"
+            ]
+          ]
+        },
+        "current_storage_verification": {
+          "const": {
+            "status": "verified",
+            "scope": "stored_bytes_and_direct_links",
+            "files_checked": 10,
+            "links_checked": 0,
+            "findings_count": 0
+          }
+        },
+        "historical_verifier_claim": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 5,
+          "properties": {
+            "state": {},
+            "reported_scope": {}
+          },
+          "patternProperties": {
+            "^(?:verifier_identity_verified|source_authentication_independently_verified|producer_projection_independently_verified)$": {
+              "const": false
+            }
+          },
+          "oneOf": [
+            {
+              "properties": {
+                "state": {
+                  "const": "not_performed"
+                },
+                "reported_scope": {
+                  "const": "not_performed"
+                }
+              }
+            },
+            {
+              "properties": {
+                "state": {
+                  "const": "report_accepted"
+                },
+                "reported_scope": {
+                  "const": "report_only_content_closure"
+                }
+              }
+            },
+            {
+              "properties": {
+                "state": {
+                  "const": "legacy_unattributed_report"
+                },
+                "reported_scope": {
+                  "const": "legacy_self_consistent_content_closure"
+                }
+              }
+            }
+          ]
+        },
+        "populations": {
+          "$ref": "#/$defs/populations"
+        },
+        "missingness": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 2,
+          "properties": {
+            "population_state": {},
+            "missing_population_fields": {
+              "type": "array"
+            }
+          }
+        },
+        "detail_state": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 5,
+          "properties": {
+            "outcome_details": {
+              "const": "intentionally_omitted"
+            },
+            "comparison_details": {
+              "const": "intentionally_omitted"
+            },
+            "outcome_missingness_state": {
+              "const": "intentionally_omitted"
+            },
+            "analysis_diagnostic": {},
+            "full_view": {
+              "const": "records read-trajectory --view full"
+            }
+          }
+        },
+        "native_verification_performed_now": {
+          "const": false
+        },
+        "authority": {
+          "const": {
+            "human_review": "required",
+            "execution_authorized": false,
+            "merge_authorized": false,
+            "revert_authorized": false
+          }
+        },
+        "limitations": {
+          "const": [
+            "storage_verification_establishes_current_stored_byte_integrity_only",
+            "historical_verifier_evidence_was_not_executed_now",
+            "verifier_identity_is_not_verified",
+            "source_authentication_and_producer_projection_are_not_independently_verified",
+            "population_counts_are_retained_analysis_claims",
+            "outcome_comparison_and_missingness_details_are_omitted_use_full_view"
+          ]
+        }
+      },
+      "$defs": {
+        "record_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,95}(?![\\s\\S])"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "population_value": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "populations": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 5,
+          "patternProperties": {
+            "^(?:paired_rows|case_stage_repeat_pairs|unique_source_case_ids|stage_case_slots|primary_repeat_pairs)$": {
+              "$ref": "#/$defs/population_value"
+            }
+          }
+        },
+        "available_populations": {
+          "patternProperties": {
+            "^(?:paired_rows|case_stage_repeat_pairs|unique_source_case_ids|stage_case_slots|primary_repeat_pairs)$": {
+              "type": "integer"
+            }
+          }
+        },
+        "missing_populations": {
+          "patternProperties": {
+            "^(?:paired_rows|case_stage_repeat_pairs|unique_source_case_ids|stage_case_slots|primary_repeat_pairs)$": {
+              "type": "null"
+            }
+          }
+        },
+        "legacy_summary_fields_absent": {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "source_format"
+                ]
+              },
+              {
+                "required": [
+                  "analysis_limitations"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "record_layout": {
+                "const": "trajectory-record.v1"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "properties": {
+                "historical_verifier_claim": {
+                  "properties": {
+                    "state": {
+                      "const": "report_accepted"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "not": {
+              "properties": {
+                "historical_verifier_claim": {
+                  "properties": {
+                    "state": {
+                      "const": "legacy_unattributed_report"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "analysis_state": {
+                "const": "result"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "missingness": {
+                "properties": {
+                  "population_state": {
+                    "const": "available"
+                  },
+                  "missing_population_fields": {
+                    "maxItems": 0
+                  }
+                }
+              },
+              "populations": {
+                "$ref": "#/$defs/available_populations"
+              },
+              "detail_state": {
+                "properties": {
+                  "analysis_diagnostic": {
+                    "const": "not_applicable"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "analysis_state": {
+                "const": "error"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "analysis_limitations": {
+                "const": []
+              },
+              "missingness": {
+                "properties": {
+                  "population_state": {
+                    "const": "not_available_analysis_error"
+                  },
+                  "missing_population_fields": {
+                    "const": [
+                      "paired_rows",
+                      "case_stage_repeat_pairs",
+                      "unique_source_case_ids",
+                      "stage_case_slots",
+                      "primary_repeat_pairs"
+                    ]
+                  }
+                }
+              },
+              "populations": {
+                "$ref": "#/$defs/missing_populations"
+              },
+              "detail_state": {
+                "properties": {
+                  "analysis_diagnostic": {
+                    "const": "intentionally_omitted_use_full_view"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "schema": {
+                "const": "trajectory_record_read_summary.v1"
+              }
+            }
+          },
+          "then": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/legacy_summary_fields_absent"
+              },
+              {
+                "properties": {
+                  "record_layout": {
+                    "enum": [
+                      "trajectory-record.v1",
+                      "trajectory-record.v2"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "else": {
+            "properties": {
+              "record_layout": {
+                "const": "trajectory-record.v4"
+              }
+            },
+            "required": [
+              "source_format",
+              "analysis_limitations"
+            ],
+            "minProperties": 17
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "analysis_state": {
+                "const": "result"
+              }
+            }
+          },
+          "then": {
+            "if": {
+              "properties": {
+                "record_layout": {
+                  "const": "trajectory-record.v1"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "historical_verifier_claim": {
+                  "properties": {
+                    "state": {
+                      "const": "legacy_unattributed_report"
+                    }
+                  }
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "historical_verifier_claim": {
+                  "properties": {
+                    "state": {
+                      "const": "report_accepted"
+                    }
+                  }
+                },
+                "analysis_limitations": {
+                  "const": []
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "source_format"
+            ],
+            "properties": {
+              "source_format": {
+                "const": "unknown"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "analysis_state": {
+                "const": "error"
+              },
+              "historical_verifier_claim": {
+                "properties": {
+                  "state": {
+                    "const": "not_performed"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "analysis_state": {
+            "const": "result"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "populations": {
+            "$ref": "#/$defs/available_populations"
+          },
+          "missingness": {
+            "properties": {
+              "population_state": {
+                "const": "available"
+              },
+              "missing_population_fields": {
+                "maxItems": 0
+              }
+            }
+          },
+          "detail_state": {
+            "properties": {
+              "analysis_diagnostic": {
+                "const": "not_applicable"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "analysis_state": {
+            "const": "error"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "analysis_limitations": {
+            "const": []
+          },
+          "populations": {
+            "$ref": "#/$defs/missing_populations"
+          },
+          "missingness": {
+            "properties": {
+              "population_state": {
+                "const": "not_available_analysis_error"
+              },
+              "missing_population_fields": {
+                "const": [
+                  "paired_rows",
+                  "case_stage_repeat_pairs",
+                  "unique_source_case_ids",
+                  "stage_case_slots",
+                  "primary_repeat_pairs"
+                ]
+              }
+            }
+          },
+          "detail_state": {
+            "properties": {
+              "analysis_diagnostic": {
+                "const": "intentionally_omitted_use_full_view"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "record_layout": {
+            "const": "trajectory-record.v1"
+          }
+        }
+      },
+      "then": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/summary_legacy_fields_absent"
+          },
+          {
+            "properties": {
+              "schema": {
+                "const": "trajectory_record_read_summary.v1"
+              },
+              "historical_verifier_claim": {
+                "properties": {
+                  "state": {
+                    "enum": [
+                      "not_performed",
+                      "legacy_unattributed_report"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "else": {
+        "if": {
+          "properties": {
+            "record_layout": {
+              "const": "trajectory-record.v2"
+            }
+          }
+        },
+        "then": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/summary_legacy_fields_absent"
+            },
+            {
+              "properties": {
+                "schema": {
+                  "const": "trajectory_record_read_summary.v1"
+                },
+                "historical_verifier_claim": {
+                  "properties": {
+                    "state": {
+                      "enum": [
+                        "not_performed",
+                        "report_accepted"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "else": {
+          "required": [
+            "source_format",
+            "analysis_limitations"
+          ],
+          "properties": {
+            "record_layout": {
+              "const": "trajectory-record.v4"
+            },
+            "schema": {
+              "const": "trajectory_record_read_summary.v2"
+            },
+            "source_format": {
+              "enum": [
+                "goppi.paired_run_exchange.execution.v2",
+                "unknown"
+              ]
+            },
+            "historical_verifier_claim": {
+              "properties": {
+                "state": {
+                  "enum": [
+                    "not_performed",
+                    "report_accepted"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "analysis_state": {
+            "const": "result"
+          }
+        }
+      },
+      "then": {
+        "if": {
+          "properties": {
+            "record_layout": {
+              "const": "trajectory-record.v1"
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "historical_verifier_claim": {
+              "properties": {
+                "state": {
+                  "const": "legacy_unattributed_report"
+                }
+              }
+            }
+          }
+        },
+        "else": {
+          "properties": {
+            "historical_verifier_claim": {
+              "properties": {
+                "state": {
+                  "const": "report_accepted"
+                }
+              }
+            },
+            "analysis_limitations": {
+              "const": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "source_format"
+        ],
+        "properties": {
+          "source_format": {
+            "const": "unknown"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "analysis_state": {
+            "const": "error"
+          },
+          "historical_verifier_claim": {
+            "properties": {
+              "state": {
+                "const": "not_performed"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
