@@ -2862,7 +2862,9 @@
           "additionalProperties": false,
           "required": [
             "state",
-            "reasons"
+            "reasons",
+            "intervention",
+            "held_constant"
           ],
           "properties": {
             "state": {
@@ -2896,6 +2898,63 @@
                 }
               },
               "maxItems": 64
+            },
+            "intervention": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "field",
+                "state"
+              ],
+              "properties": {
+                "field": {
+                  "const": "context.harness_identity_digest"
+                },
+                "state": {
+                  "enum": [
+                    "changed",
+                    "unchanged",
+                    "unknown"
+                  ]
+                }
+              }
+            },
+            "held_constant": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "context.approved_draft_digest",
+                  "context.assignment_digest",
+                  "context.baseline_snapshot_digest",
+                  "context.budget_policy_digest",
+                  "context.candidate_snapshot_digest",
+                  "context.config_digest",
+                  "context.declared_repeats",
+                  "context.evalset_digest",
+                  "context.execution_identity_digest",
+                  "context.plan_digest",
+                  "context.primary_policy_digest",
+                  "context.roster_count",
+                  "context.roster_digest",
+                  "context.runner_base_identity_digest",
+                  "context.runner_model",
+                  "context.runner_profile",
+                  "context.split_policy_digest",
+                  "context.verifier_profile_identity_digest",
+                  "context.verifier_runtime_digest",
+                  "outcome.value_kind",
+                  "primary_inference",
+                  "repeat_proof",
+                  "row.assignment_digest",
+                  "row.config_digest",
+                  "row.evalset_digest",
+                  "row.split_policy_digest",
+                  "verifier.verifier_digest",
+                  "verifier.verifier_id"
+                ]
+              },
+              "maxItems": 28,
+              "uniqueItems": true
             }
           }
         },

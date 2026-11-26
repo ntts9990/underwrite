@@ -8,12 +8,14 @@ import subprocess
 import sys
 import unicodedata
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from _repo_paths import repo_root
 from drivers.goppi_trajectory_verifier_stub import verifier_response
-from underwrite_core.canonical import canonical_bytes
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import ValidationError
+from underwrite_core.canonical import canonical_bytes, digest_bytes
 
 from underwrite.agent_surface.server import (
     MAX_REQUEST_BYTES,
@@ -21,7 +23,9 @@ from underwrite.agent_surface.server import (
     _json_text,  # pyright: ignore[reportPrivateUsage]
 )
 from underwrite.cli import capabilities, record_trajectory
+from underwrite.cli.local_json import Validator
 from underwrite.instrument.ingest.deepeval_binding import audit_deepeval_bound_file
+from underwrite.instrument.ingest.schema import packaged_validator
 from underwrite.service import records as record_service
 
 ROOT = repo_root(Path(__file__).resolve())
@@ -1310,7 +1314,10 @@ def test_records_read_json_tool_uses_record_error_owner_without_path_leak(
     assert "PRIVATE_ROOT_CANARY" not in json.dumps(result)
 
 
-def test_stored_trajectory_tool_reopens_bytes_without_running_verifier(tmp_path: Path) -> None:
+@pytest.mark.parametrize("source_generation", ["v1", "v2"])
+def test_stored_trajectory_tool_reopens_bytes_without_running_verifier(
+    tmp_path: Path, source_generation: str
+) -> None:
     class CaptureVerifier:
         calls = 0
 
@@ -1321,8 +1328,16 @@ def test_stored_trajectory_tool_reopens_bytes_without_running_verifier(tmp_path:
     store = tmp_path / "PRIVATE_CANARY-store"
     identifier = "trajectory.smoke-001"
     verifier = CaptureVerifier()
+    if source_generation == "v1":
+        exchange = ROOT / "fixtures/conformance/goppi-trajectory/exchange"
+    else:
+        source_exchange = ROOT / "fixtures/conformance/goppi-execution-v2/paired-exchange-v2"
+        exchange = tmp_path / "exchange-v2"
+        exchange.mkdir()
+        for family in ("paired", "trajectory"):
+            shutil.copytree(source_exchange / family, exchange / family)
     captured = record_trajectory.run_record_trajectory(
-        ROOT / "fixtures/conformance/goppi-trajectory/exchange",
+        exchange,
         store,
         identifier,
         verifier=verifier,
@@ -1374,14 +1389,294 @@ def test_stored_trajectory_tool_reopens_bytes_without_running_verifier(tmp_path:
     text = result["content"][0]["text"]
     assert text + "\n" == cli.stdout.decode()
     assert result["structuredContent"] == json.loads(text)
-    assert result["structuredContent"]["schema"] == "trajectory_record_read_summary.v1"
+    assert result["structuredContent"]["schema"] == (
+        record_trajectory.SUMMARY_SCHEMA_V2
+        if source_generation == "v2"
+        else record_trajectory.SUMMARY_SCHEMA
+    )
+    cast(Validator, packaged_validator(record_trajectory.SUMMARY_SCHEMA_V2)).validate(
+        result["structuredContent"]
+    )
+    summary = cast(dict[str, Any], result["structuredContent"])
+    tool_validator = _trajectory_summary_output_validator()
+    tool_validator.validate(summary)
+    package_validator = cast(
+        Validator, packaged_validator(record_trajectory.SUMMARY_SCHEMA_V2)
+    )
+    package_validator.validate(summary)
     assert result["structuredContent"]["native_verification_performed_now"] is False
+    if source_generation == "v2":
+        assert result["structuredContent"]["analysis_limitations"] == []
+        assert result["structuredContent"]["record_layout"] == "trajectory-record.v4"
+        assert result["structuredContent"]["source_format"] == (
+            "goppi.paired_run_exchange.execution.v2"
+        )
+    else:
+        assert "analysis_limitations" not in result["structuredContent"]
+        assert result["structuredContent"]["record_layout"] == "trajectory-record.v2"
+        assert "source_format" not in result["structuredContent"]
+    if summary["record_layout"] == record_trajectory.LAYOUT_V4:
+        _assert_v4_result_projection_mutations(
+            summary, tool_validator, package_validator
+        )
+    else:
+        _assert_legacy_result_projection_mutations(
+            summary, tool_validator, package_validator
+        )
     assert len(canonical_bytes(responses[1])) < 64 * 1024
     assert "PRIVATE_CANARY" not in text
     after = {
         path.relative_to(store): path.read_bytes() for path in store.rglob("*") if path.is_file()
     }
     assert before == after
+
+
+def _trajectory_summary_output_validator() -> Validator:
+    from underwrite.agent_surface.tools import catalog
+
+    schema = cast(dict[str, Any], next(
+        tool["outputSchema"]
+        for tool in catalog()
+        if tool["name"] == "underwrite_records_read_trajectory"
+    ))
+    return cast(Validator, Draft202012Validator(schema))
+
+
+def _assert_v4_result_projection_mutations(
+    summary: dict[str, Any],
+    validator: Validator,
+    package_validator: Validator,
+) -> None:
+    mutations: tuple[dict[str, Any], ...] = (
+        {"source_format": "unknown"},
+        {
+            "historical_verifier_claim": {
+                **summary["historical_verifier_claim"],
+                "state": "not_performed",
+                "reported_scope": "not_performed",
+            }
+        },
+        {
+            "historical_verifier_claim": {
+                **summary["historical_verifier_claim"],
+                "state": "legacy_unattributed_report",
+                "reported_scope": "legacy_self_consistent_content_closure",
+            }
+        },
+        {"current_storage_verification": {}},
+        {
+            "current_storage_verification": {
+                **summary["current_storage_verification"],
+                "status": "invented",
+            }
+        },
+        {"detail_state": {"analysis_diagnostic": "not_applicable"}},
+        {
+            "detail_state": {
+                **summary["detail_state"],
+                "private_extra": "forged",
+            }
+        },
+        {
+            "populations": {
+                **summary["populations"],
+                "paired_rows": None,
+            }
+        },
+        {
+            "populations": {
+                **summary["populations"],
+                "private_extra": 1,
+            }
+        },
+    )
+    for mutation in mutations:
+        _assert_summary_rejected_by_both(
+            {**summary, **mutation}, validator, package_validator
+        )
+    missing_required = dict(summary)
+    missing_required.pop("record_id")
+    _assert_summary_rejected_by_both(
+        missing_required, validator, package_validator
+    )
+
+
+def _assert_legacy_result_projection_mutations(
+    summary: dict[str, Any],
+    validator: Validator,
+    package_validator: Validator,
+) -> None:
+    field_mutations: tuple[tuple[str, object], ...] = (
+        ("source_format", "goppi.paired_run_exchange.execution.v2"),
+        ("analysis_limitations", []),
+    )
+    for field, value in field_mutations:
+        _assert_summary_rejected_by_both(
+            {**summary, field: value}, validator, package_validator
+        )
+    layout = summary["record_layout"]
+    invalid_claims = (
+        (
+            ("not_performed", "not_performed"),
+            ("legacy_unattributed_report", "legacy_self_consistent_content_closure"),
+        )
+        if layout == record_trajectory.LAYOUT_V2
+        else (
+            ("not_performed", "not_performed"),
+            ("report_accepted", "report_only_content_closure"),
+        )
+    )
+    for claim_state, reported_scope in invalid_claims:
+        invalid = {
+            **summary,
+            "historical_verifier_claim": {
+                **summary["historical_verifier_claim"],
+                "state": claim_state,
+                "reported_scope": reported_scope,
+            },
+        }
+        _assert_summary_rejected_by_both(invalid, validator, package_validator)
+
+
+def _assert_summary_rejected_by_both(
+    summary: dict[str, Any], advertised: Validator, packaged: Validator
+) -> None:
+    for validator in (advertised, packaged):
+        with pytest.raises(ValidationError):
+            validator.validate(summary)
+
+
+def test_stored_trajectory_compact_schema_accepts_v4_unknown_diagnostic(
+    tmp_path: Path,
+) -> None:
+    source_exchange = ROOT / "fixtures/conformance/goppi-execution-v2/paired-exchange-v2"
+    exchange = tmp_path / "exchange-v2"
+    exchange.mkdir()
+    for family in ("paired", "trajectory"):
+        shutil.copytree(source_exchange / family, exchange / family)
+    (exchange / "paired/execution.json").write_bytes(b"{PRIVATE_DIAGNOSTIC_CANARY\n")
+
+    store = tmp_path / "store"
+    record_trajectory.run_record_trajectory(exchange, store, "unknown-diagnostic")
+    summary = cast(
+        dict[str, Any],
+        record_trajectory.run_read_trajectory_summary(store, "unknown-diagnostic"),
+    )
+    assert summary["record_layout"] == "trajectory-record.v4"
+    assert summary["source_format"] == "unknown"
+    assert summary["analysis_state"] == "error"
+
+    tool_validator = _trajectory_summary_output_validator()
+    tool_validator.validate(summary)
+    package_validator = cast(
+        Validator, packaged_validator(record_trajectory.SUMMARY_SCHEMA_V2)
+    )
+    package_validator.validate(summary)
+
+    forged_result = {**summary, "analysis_state": "result"}
+    _assert_summary_rejected_by_both(
+        forged_result, tool_validator, package_validator
+    )
+    forged_population = {
+        **summary,
+        "populations": {**summary["populations"], "paired_rows": 0},
+    }
+    _assert_summary_rejected_by_both(
+        forged_population, tool_validator, package_validator
+    )
+    forged_report = {
+        **summary,
+        "historical_verifier_claim": {
+            **summary["historical_verifier_claim"],
+            "state": "report_accepted",
+            "reported_scope": "report_only_content_closure",
+        },
+    }
+    _assert_summary_rejected_by_both(
+        forged_report, tool_validator, package_validator
+    )
+
+
+def test_stored_trajectory_tool_rejects_rebound_v3_review_in_v4_record(
+    tmp_path: Path,
+) -> None:
+    class CaptureVerifier:
+        def verify(self, snapshot: Path) -> bytes:
+            return json.dumps(verifier_response(snapshot)).encode()
+
+    v2_source = ROOT / "fixtures/conformance/goppi-execution-v2/paired-exchange-v2"
+    v2_exchange = tmp_path / "exchange-v2"
+    v2_exchange.mkdir()
+    for family in ("paired", "trajectory"):
+        shutil.copytree(v2_source / family, v2_exchange / family)
+
+    store = tmp_path / "private-store"
+    verifier = CaptureVerifier()
+    identifier = "v4-legacy-review"
+    captured = cast(
+        dict[str, Any],
+        record_trajectory.run_record_trajectory(v2_exchange, store, identifier, verifier=verifier),
+    )
+    legacy = cast(
+        dict[str, Any],
+        record_trajectory.run_record_trajectory(
+            ROOT / "fixtures/conformance/goppi-trajectory/exchange",
+            tmp_path / "legacy-store",
+            "v3-review",
+            verifier=verifier,
+        ),
+    )
+    report = json.loads(json.dumps(legacy["analysis"]["report"]))
+    source_members = cast(list[dict[str, Any]], captured["source"]["source_members"])
+    report["input_members"] = [
+        {"path": item["name"], "sha256": item["raw_hash"], "bytes": item["bytes"]}
+        for item in source_members
+    ]
+    history = captured["verifier_report_history"]
+    for field in (
+        "verifier_report_state",
+        "verifier_source",
+        "verifier_identity_verified",
+        "response_snapshot_binding",
+        "snapshot_postcheck",
+        "content_closure",
+        "authenticity",
+        "source_authentication_independently_verified",
+        "producer_projection_independently_verified",
+    ):
+        report["trust_scope"][field] = history[field]
+    cast(Validator, packaged_validator(report["schema"])).validate(report)
+
+    record_dir = store / "records" / identifier
+    report_path = record_dir / "files/analysis/trajectory.json"
+    raw_report = canonical_bytes(report) + b"\n"
+    report_path.write_bytes(raw_report)
+    manifest_path = record_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_bytes())
+    entry = next(file for file in manifest["files"] if file["name"] == "analysis/trajectory.json")
+    entry.update(bytes=len(raw_report), sha256=digest_bytes(raw_report))
+    manifest_path.write_bytes(canonical_bytes(manifest))
+
+    responses, stderr = _transcript(
+        INITIALIZE,
+        INITIALIZED,
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "underwrite_records_read_trajectory",
+                "arguments": {"root": str(store), "id": identifier},
+            },
+        },
+    )
+    assert stderr == b""
+    result = responses[1]["result"]
+    assert result["isError"] is True and "structuredContent" not in result
+    refusal = json.loads(result["content"][0]["text"])
+    assert refusal["code"] == "INPUT_BINDING_MISMATCH"
+    assert refusal["reason"] == "TRAJECTORY_RECORD_BINDING_MISMATCH"
+    assert str(store) not in json.dumps(result)
 
 
 @pytest.mark.parametrize(

@@ -181,13 +181,104 @@ def test_v2_exchange_record_reopens_v4_analysis(v2_exchange: Path, tmp_path: Pat
     report = cast(dict[str, Any], analysis["report"])
     assert report["schema"] == "goppi_trajectory_review.v4"
     assert report["producer_declarations"]["builds"]["identity_assurance"] == "self_reported"
+    assert result["source"]["source_format"] == ingest.SOURCE_FORMAT_V2
 
     reopened = cast(dict[str, Any], command.run_read_trajectory(root, "execution-v2"))
     reopened_analysis = cast(dict[str, Any], reopened["analysis"])
     reopened_report = cast(dict[str, Any], reopened_analysis["report"])
     assert reopened_report["schema"] == "goppi_trajectory_review.v4"
     assert reopened["schema"] == command.READ_SCHEMA_V4
+    assert reopened["source"]["source_format"] == ingest.SOURCE_FORMAT_V2
     assert reopened_report["stages"][-1]["classification"] == "not_evaluated"
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        ("paired/execution.json", ingest.SOURCE_FORMAT_UNKNOWN, command.LAYOUT_V4),
+        ("paired/manifest.json", ingest.SOURCE_FORMAT_V1, command.LAYOUT_V2),
+        ("paired/rows.jsonl", ingest.SOURCE_FORMAT_V1, command.LAYOUT_V2),
+        ("paired/schema.json", ingest.SOURCE_FORMAT_V1, command.LAYOUT_V2),
+        ("trajectory/manifest.json", ingest.SOURCE_FORMAT_V1, command.LAYOUT_V2),
+        ("trajectory/schema.json", ingest.SOURCE_FORMAT_V1, command.LAYOUT_V2),
+        ("trajectory/trajectory.json", ingest.SOURCE_FORMAT_V1, command.LAYOUT_V2),
+    ],
+)
+def test_complete_capture_malformed_json_is_retained_as_safe_diagnostic(
+    exchange: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    case: tuple[str, str, str],
+) -> None:
+    member, source_format, layout = case
+    canary = b'{"PRIVATE_SOURCE_CANARY": malformed'
+    (exchange / member).write_bytes(canary)
+    root = tmp_path / "private-record-store"
+    verifier = Stub()
+
+    def configured_stub(_: Path | None) -> Stub:
+        return verifier
+
+    monkeypatch.setattr(ingest, "GoppiCliVerifier", configured_stub)
+    original_capture = command.capture_goppi_trajectory
+    capture_calls = 0
+
+    def capture_once(path: Path) -> Any:
+        nonlocal capture_calls
+        capture_calls += 1
+        return original_capture(path)
+
+    monkeypatch.setattr(command, "capture_goppi_trajectory", capture_once)
+    assert (
+        command.main(
+            [
+                "--exchange",
+                str(exchange),
+                "--root",
+                str(root),
+                "--id",
+                "malformed-source",
+                "--json",
+            ]
+        )
+        == DIAGNOSTIC_EXIT
+    )
+    streams = capsys.readouterr()
+    assert streams.err == ""
+    result = cast(dict[str, Any], json.loads(streams.out))
+    _assert_schema(result)
+    if layout == command.LAYOUT_V4:
+        assert result["source"]["source_format"] == source_format
+    else:
+        assert "source_format" not in result["source"]
+    assert result["analysis"]["state"] == "error"
+    assert result["analysis"]["error"]["code"] == "INVALID_INPUT"
+    assert result["analysis"]["error"]["reason"] == "CAPTURE_INVALID_JSON"
+    assert result["verifier_report_history"]["verifier_report_state"] == "not_performed"
+    assert capture_calls == 1
+    assert verifier.calls == 0
+    assert canary.decode() not in streams.out
+    assert str(exchange) not in streams.out
+    assert (
+        read_record_file(root, "malformed-source", f"source/{member}").data == canary
+    )
+    assert verify_record(root, "malformed-source")["valid"] is True
+    reopened = cast(dict[str, Any], command.run_read_trajectory(root, "malformed-source"))
+    assert reopened["analysis"] == result["analysis"]
+    if layout == command.LAYOUT_V4:
+        assert reopened["source"]["source_format"] == ingest.SOURCE_FORMAT_UNKNOWN
+    else:
+        assert reopened["record_layout"] == command.LAYOUT_V2
+        assert "source_format" not in reopened["source"]
+    published_digest = read_record(root, "malformed-source").digest
+    duplicate = cast(
+        dict[str, Any],
+        command.run_record_trajectory(exchange, root, "malformed-source", verifier=verifier),
+    )
+    assert duplicate["storage"]["state"] == "error"
+    assert duplicate["storage"]["error"]["code"] == "RECORD_EXISTS"
+    assert read_record(root, "malformed-source").digest == published_digest
 
 
 @pytest.mark.parametrize("configured", [None, Path("/configured/goppi")])
@@ -501,6 +592,44 @@ def test_summary_separates_current_storage_from_historical_verifier_claim(
     summary = cast(dict[str, Any], command.run_read_trajectory_summary(root, "sample"))
     _assert_schema(summary)
     assert summary["schema"] == command.SUMMARY_SCHEMA
+    assert summary["record_layout"] == command.LAYOUT_V2
+    assert "source_format" not in summary
+    assert "analysis_limitations" not in summary
+    assert set(summary) == {
+        "schema",
+        "command",
+        "view",
+        "record_id",
+        "manifest_digest",
+        "record_layout",
+        "analysis_state",
+        "current_storage_verification",
+        "historical_verifier_claim",
+        "populations",
+        "missingness",
+        "detail_state",
+        "native_verification_performed_now",
+        "authority",
+        "limitations",
+    }
+    cast(Validator, packaged_validator(command.SUMMARY_SCHEMA_V2)).validate(summary)
+    invalid_claim = deepcopy(summary)
+    invalid_claim["historical_verifier_claim"] = {
+        **invalid_claim["historical_verifier_claim"],
+        "state": "not_performed",
+        "reported_scope": "not_performed",
+    }
+    with pytest.raises(ValidationError):
+        cast(Validator, packaged_validator(command.SUMMARY_SCHEMA_V2)).validate(invalid_claim)
+    hybrid_fields: tuple[tuple[str, object], ...] = (
+        ("source_format", ingest.SOURCE_FORMAT_V2),
+        ("analysis_limitations", []),
+    )
+    for field, value in hybrid_fields:
+        hybrid = deepcopy(summary)
+        hybrid[field] = value
+        with pytest.raises(ValidationError):
+            cast(Validator, packaged_validator(command.SUMMARY_SCHEMA_V2)).validate(hybrid)
     assert summary["analysis_state"] == "result"
     assert summary["current_storage_verification"] == {
         "status": "verified",
@@ -550,6 +679,8 @@ def test_summary_marks_populations_missing_when_retained_analysis_is_diagnostic(
     summary = cast(dict[str, Any], command.run_read_trajectory_summary(root, "sample"))
     _assert_schema(summary)
     assert summary["analysis_state"] == "error"
+    assert "source_format" not in summary
+    assert "analysis_limitations" not in summary
     assert summary["populations"] == {
         "paired_rows": None,
         "case_stage_repeat_pairs": None,
@@ -571,6 +702,155 @@ def test_summary_marks_populations_missing_when_retained_analysis_is_diagnostic(
     assert b"private malformed payload" not in canonical_bytes(summary)
 
 
+@pytest.mark.parametrize(
+    ("malformed_member", "source_format", "analysis_state"),
+    [
+        (None, ingest.SOURCE_FORMAT_V2, "result"),
+        ("paired/rows.jsonl", ingest.SOURCE_FORMAT_V2, "error"),
+        ("paired/execution.json", ingest.SOURCE_FORMAT_UNKNOWN, "error"),
+    ],
+)
+def test_v4_summary_preserves_source_format_and_analysis_limitations(
+    v2_exchange: Path,
+    tmp_path: Path,
+    malformed_member: str | None,
+    source_format: str,
+    analysis_state: str,
+) -> None:
+    if malformed_member is not None:
+        (v2_exchange / malformed_member).write_bytes(b"PRIVATE_SUMMARY_DIAGNOSTIC_CANARY\n")
+    root = tmp_path / "store"
+    verifier = Stub()
+    retained = cast(
+        dict[str, Any],
+        command.run_record_trajectory(v2_exchange, root, "v4-summary", verifier=verifier),
+    )
+    assert retained["schema"] == command.SCHEMA_V4
+    assert retained["source"]["source_format"] == source_format
+    assert retained["analysis"]["state"] == analysis_state
+    assert verifier.calls == (0 if analysis_state == "error" else 1)
+
+    summary = cast(dict[str, Any], command.run_read_trajectory_summary(root, "v4-summary"))
+    _assert_schema(summary)
+    assert summary["schema"] == command.SUMMARY_SCHEMA_V2
+    assert summary["record_layout"] == command.LAYOUT_V4
+    assert summary["source_format"] == source_format
+    assert summary["analysis_state"] == analysis_state
+    assert summary["analysis_limitations"] == []
+    assert summary["limitations"] == command.SUMMARY_LIMITATIONS
+    assert summary["current_storage_verification"]["status"] == "verified"
+    assert summary["historical_verifier_claim"]["state"] == (
+        "report_accepted" if analysis_state == "result" else "not_performed"
+    )
+    if analysis_state == "result":
+        assert summary["populations"] == retained["analysis"]["report"]["populations"]
+        assert summary["missingness"] == {
+            "population_state": "available",
+            "missing_population_fields": [],
+        }
+    else:
+        assert all(value is None for value in summary["populations"].values())
+        assert summary["missingness"]["population_state"] == "not_available_analysis_error"
+    raw = canonical_bytes(summary)
+    assert len(raw) <= command.SUMMARY_OUTPUT_MAX_BYTES
+    assert b"PRIVATE_SUMMARY_DIAGNOSTIC_CANARY" not in raw
+    assert "analysis" not in summary and "verifier_report_history" not in summary
+
+
+@pytest.mark.parametrize("legacy_generation", ["v3", "v2"])
+def test_v4_reopen_rejects_rebound_legacy_review_in_full_and_summary(
+    exchange: Path,
+    v2_exchange: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    legacy_generation: str,
+) -> None:
+    identifier = "v4-legacy-review"
+    root = tmp_path / "v4-store"
+    captured = cast(
+        dict[str, Any],
+        command.run_record_trajectory(v2_exchange, root, identifier, verifier=Stub()),
+    )
+    if legacy_generation == "v3":
+        legacy_record = _run(exchange, tmp_path / "v3-store", Stub())
+        report = deepcopy(legacy_record["analysis"]["report"])
+    else:
+        fixture = Path(__file__).parents[3] / "tests/fixtures/trajectory-record-v2"
+        with tarfile.open(fixture / "prechange-records-v2.tar.gz", "r:gz") as archive:
+            member = archive.extractfile(
+                "records/prechange.v2/files/analysis/trajectory.json"
+            )
+            assert member is not None
+            report = json.loads(member.read())
+
+    source_members = cast(dict[str, Any], captured["source"])["source_members"]
+    report["input_members"] = [
+        {"path": item["name"], "sha256": item["raw_hash"], "bytes": item["bytes"]}
+        for item in source_members
+    ]
+    history = cast(dict[str, Any], captured["verifier_report_history"])
+    for field in (
+        "verifier_report_state",
+        "verifier_source",
+        "verifier_identity_verified",
+        "response_snapshot_binding",
+        "snapshot_postcheck",
+        "content_closure",
+        "authenticity",
+        "source_authentication_independently_verified",
+        "producer_projection_independently_verified",
+    ):
+        report["trust_scope"][field] = history[field]
+    _assert_schema(report)
+    assert report["schema"] == f"goppi_trajectory_review.{legacy_generation}"
+    assert report["input_members"] == [
+        {"path": item["name"], "sha256": item["raw_hash"], "bytes": item["bytes"]}
+        for item in source_members
+    ]
+
+    def replace_report(document: dict[str, Any]) -> None:
+        document.clear()
+        document.update(report)
+
+    _rewrite(root, command.RESULT_NAME, replace_report, identifier=identifier)
+    with pytest.raises(EvidenceError):
+        command.run_read_trajectory(root, identifier)
+    assert (
+        command.main_read(
+            ["--root", str(root), "--id", identifier, "--view", "summary", "--json"]
+        )
+        == DIAGNOSTIC_EXIT
+    )
+    streams = capsys.readouterr()
+    assert streams.out == ""
+    refusal = json.loads(streams.err)
+    assert refusal["code"] == "INPUT_BINDING_MISMATCH"
+    assert refusal["reason"] == "TRAJECTORY_RECORD_BINDING_MISMATCH"
+    assert str(root) not in streams.err
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        {
+            "state": "legacy_unattributed_report",
+            "reported_scope": "legacy_self_consistent_content_closure",
+        },
+        {"state": "not_performed", "reported_scope": "not_performed"},
+    ],
+)
+def test_v4_summary_schema_rejects_impossible_verifier_claim_families(
+    v2_exchange: Path, tmp_path: Path, claim: dict[str, str]
+) -> None:
+    root = tmp_path / "store"
+    command.run_record_trajectory(v2_exchange, root, "v4-claim", verifier=Stub())
+    summary = cast(dict[str, Any], command.run_read_trajectory_summary(root, "v4-claim"))
+    forged = deepcopy(summary)
+    forged["historical_verifier_claim"] = {**forged["historical_verifier_claim"], **claim}
+    with pytest.raises(ValidationError):
+        cast(Validator, packaged_validator(command.SUMMARY_SCHEMA_V2)).validate(forged)
+
+
 def test_summary_maps_frozen_legacy_result_and_error_populations(tmp_path: Path) -> None:
     fixture = Path(__file__).parents[2] / "fixtures/trajectory-record-v1"
     ledger = json.loads((fixture / "byte-ledger.json").read_bytes())
@@ -580,10 +860,40 @@ def test_summary_maps_frozen_legacy_result_and_error_populations(tmp_path: Path)
         for member in members:
             (tmp_path / member.name).chmod(member.mode)
     states: set[str] = set()
+    summary_tool_validator = _trajectory_summary_tool_validator()
     for identifier, record in ledger["records"].items():
         summary = cast(dict[str, Any], command.run_read_trajectory_summary(tmp_path, identifier))
         _assert_schema(summary)
+        assert summary["schema"] == command.SUMMARY_SCHEMA
         assert summary["record_layout"] == command.LAYOUT
+        assert "source_format" not in summary
+        assert "analysis_limitations" not in summary
+        union_validator = cast(Validator, packaged_validator(command.SUMMARY_SCHEMA_V2))
+        union_validator.validate(summary)
+        summary_tool_validator.validate(summary)
+        hybrid_fields: tuple[tuple[str, object], ...] = (
+            ("source_format", ingest.SOURCE_FORMAT_V2),
+            ("analysis_limitations", []),
+        )
+        for field, value in hybrid_fields:
+            hybrid = deepcopy(summary)
+            hybrid[field] = value
+            _assert_summary_rejected_by_both(
+                hybrid, summary_tool_validator, union_validator
+            )
+        if summary["analysis_state"] == "result":
+            impossible = deepcopy(summary)
+            impossible["historical_verifier_claim"] = {
+                **impossible["historical_verifier_claim"],
+                "state": "not_performed",
+                "reported_scope": "not_performed",
+            }
+            _assert_summary_rejected_by_both(
+                impossible, summary_tool_validator, union_validator
+            )
+        _assert_summary_nested_attacks_rejected(
+            summary, summary_tool_validator, union_validator
+        )
         assert summary["analysis_state"] == record["analysis_state"]
         states.add(cast(str, summary["analysis_state"]))
         if summary["analysis_state"] == "result":
@@ -591,6 +901,61 @@ def test_summary_maps_frozen_legacy_result_and_error_populations(tmp_path: Path)
         else:
             assert all(value is None for value in summary["populations"].values())
     assert states == {"result", "error"}
+
+
+def _trajectory_summary_tool_validator() -> Validator:
+    from underwrite.agent_surface.tools import catalog
+
+    schema = next(
+        tool["outputSchema"]
+        for tool in catalog()
+        if tool["name"] == "underwrite_records_read_trajectory"
+    )
+    return cast(Validator, Draft202012Validator(cast(dict[str, Any], schema)))
+
+
+def _assert_summary_rejected_by_both(
+    summary: dict[str, Any], advertised: Validator, packaged: Validator
+) -> None:
+    for validator in (advertised, packaged):
+        with pytest.raises(ValidationError):
+            validator.validate(summary)
+
+
+def _assert_summary_nested_attacks_rejected(
+    summary: dict[str, Any], advertised: Validator, packaged: Validator
+) -> None:
+    damaged_storage: dict[str, Any] = {
+        **summary,
+        "current_storage_verification": {},
+    }
+    _assert_summary_rejected_by_both(damaged_storage, advertised, packaged)
+    damaged_storage = {
+        **summary,
+        "current_storage_verification": {
+            **summary["current_storage_verification"],
+            "private_extra": True,
+        },
+    }
+    _assert_summary_rejected_by_both(damaged_storage, advertised, packaged)
+    damaged_detail = {
+        **summary,
+        "detail_state": {"analysis_diagnostic": "not_applicable"},
+    }
+    _assert_summary_rejected_by_both(damaged_detail, advertised, packaged)
+    damaged_detail = {
+        **summary,
+        "detail_state": {**summary["detail_state"], "private_extra": True},
+    }
+    _assert_summary_rejected_by_both(damaged_detail, advertised, packaged)
+    populations = dict(summary["populations"])
+    state = summary["analysis_state"]
+    populations["paired_rows"] = None if state == "result" else 1
+    damaged_populations = {**summary, "populations": populations}
+    _assert_summary_rejected_by_both(damaged_populations, advertised, packaged)
+    populations = {**summary["populations"], "private_extra": 1}
+    damaged_populations = {**summary, "populations": populations}
+    _assert_summary_rejected_by_both(damaged_populations, advertised, packaged)
 
 
 def test_read_cli_default_full_bytes_match_explicit_full_and_summary_is_typed(

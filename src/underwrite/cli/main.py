@@ -380,7 +380,7 @@ COMMAND_DESCRIPTORS: tuple[CommandDescriptor, ...] = (
                 "read-trajectory|summary",
                 ("root", "id", "view"),
                 (),
-                (record_trajectory.SUMMARY_SCHEMA,),
+                (record_trajectory.SUMMARY_SCHEMA_V2,),
             ),
             profile(
                 "review-artifacts",

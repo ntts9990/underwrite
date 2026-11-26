@@ -213,7 +213,7 @@ def _json_text(output: str) -> str:
 def _cli_result(
     handler: Callable[[list[str]], int],
     argv: list[str],
-    output_schema: str,
+    output_schema: str | tuple[str, ...],
     error_schema: str = "evidence_error.v1",
     result_exit_codes: tuple[int, ...] = (0,),
 ) -> dict[str, object]:
@@ -227,7 +227,9 @@ def _cli_result(
         if not isinstance(document, dict):
             raise ValueError("INVALID_CLI_RESULT")
         result = cast(dict[str, object], document)
-        if result.get("schema") != output_schema:
+        output_schemas = (output_schema,) if type(output_schema) is str else output_schema
+        schema_name = result.get("schema")
+        if type(schema_name) is not str or schema_name not in output_schemas:
             raise ValueError("INVALID_CLI_RESULT")
         return {
             "content": [{"type": "text", "text": text}],
@@ -682,7 +684,7 @@ class Session:
             _cli_result(
                 record_trajectory.main_read,
                 ["--root", root, "--id", identifier, "--view", "summary", "--json"],
-                record_trajectory.SUMMARY_SCHEMA,
+                (record_trajectory.SUMMARY_SCHEMA, record_trajectory.SUMMARY_SCHEMA_V2),
             ),
         )
 

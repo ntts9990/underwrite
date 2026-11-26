@@ -60,6 +60,11 @@ RESPONSE_SCHEMA_V2_FAMILY = "goppi_trajectory_verifier_response.v3"
 RESPONSE_SCHEMA = RESPONSE_SCHEMA_V2_FAMILY
 HISTORY_SCHEMA = "trajectory_verification_history.v1"
 HISTORY_SCHEMA_V2 = "trajectory_verification_history.v2"
+SOURCE_FORMAT_V1 = "goppi.paired_run_exchange.execution.v1"
+SOURCE_FORMAT_V2 = "goppi.paired_run_exchange.execution.v2"
+SOURCE_FORMAT_UNKNOWN = "unknown"
+SOURCE_FORMATS = (SOURCE_FORMAT_V1, SOURCE_FORMAT_V2, SOURCE_FORMAT_UNKNOWN)
+V4_SOURCE_FORMATS = (SOURCE_FORMAT_V2, SOURCE_FORMAT_UNKNOWN)
 CAPTURE_POLICY = CapturePolicy(len(MEMBERS), MAX_FAMILY_BYTES, 128 * 1024 * 1024, 2)
 
 _PRE_VERIFICATION_DIAGNOSTICS = {
@@ -290,6 +295,7 @@ class TrajectoryAnalysis:
     report: dict[str, object] | None
     error: CaptureError | TrajectoryInputError | TrajectoryError | None
     verification_history: dict[str, object]
+    source_format: str = SOURCE_FORMAT_UNKNOWN
 
     def __post_init__(self) -> None:
         if (self.report is None) == (self.error is None):
@@ -340,9 +346,9 @@ def _contracts(
 
 def _exchange_format_version(documents: Mapping[str, dict[str, object]]) -> int:
     execution_schema = documents["paired/execution.json"].get("schema")
-    if execution_schema == "goppi.paired_run_exchange.execution.v1":
+    if execution_schema == SOURCE_FORMAT_V1:
         return EXECUTION_FORMAT_V1
-    if execution_schema == "goppi.paired_run_exchange.execution.v2":
+    if execution_schema == SOURCE_FORMAT_V2:
         _require_schema(
             documents["trajectory/trajectory.json"],
             "goppi.paired_trajectory_exchange.document.v2",
@@ -352,6 +358,14 @@ def _exchange_format_version(documents: Mapping[str, dict[str, object]]) -> int:
     _unsupported_format(
         "TRAJECTORY_UNSUPPORTED_VALUE", "/paired/execution.json/schema"
     )
+
+
+def trajectory_source_format(document: Mapping[str, object]) -> str:
+    """Name only a readable execution family; an unreadable header stays unknown."""
+    schema = document.get("schema")
+    if type(schema) is str and schema in (SOURCE_FORMAT_V1, SOURCE_FORMAT_V2):
+        return schema
+    return SOURCE_FORMAT_UNKNOWN
 
 
 def _v2_manifest_bindings(
@@ -484,6 +498,30 @@ def _verifier_report_fields(state: str, source: str | None) -> dict[str, object]
     }
 
 
+def _decode_captured_documents(
+    captured: Mapping[str, CapturedBytes],
+    execution: dict[str, object],
+) -> tuple[
+    dict[str, dict[str, object]],
+    tuple[dict[str, object], ...],
+    dict[str, object],
+    int,
+]:
+    execution_name = "paired/execution.json"
+    documents = {execution_name: execution}
+    for name, item in captured.items():
+        if name.endswith("/schema.json"):
+            decode_captured_object(item, max_depth=MAX_DEPTH, location="/exchange/" + name)
+        elif name.endswith(".json") and name != execution_name:
+            documents[name] = decode_captured_object(
+                item, max_depth=MAX_DEPTH, location="/exchange/" + name
+            )
+    rows = _rows(captured["paired/rows.jsonl"])
+    trajectory = documents["trajectory/trajectory.json"]
+    format_version = _exchange_format_version(documents)
+    return documents, rows, trajectory, format_version
+
+
 def validate_trajectory_verifier_selection(
     verifier: TrajectoryVerifier | None,
     goppi_executable: object,
@@ -544,21 +582,22 @@ def _audit_captured_goppi_trajectory(
     history = _history(
         captured, state="not_performed", verifier_source=None, validator=contracts.history
     )
+    source_format = SOURCE_FORMAT_UNKNOWN
     try:
-        documents = {
-            name: decode_captured_object(item, max_depth=MAX_DEPTH, location="/exchange/" + name)
-            for name, item in captured.items()
-            if name.endswith(".json") and not name.endswith("/schema.json")
-        }
-        rows = _rows(captured["paired/rows.jsonl"])
-        trajectory = documents["trajectory/trajectory.json"]
-        format_version = _exchange_format_version(documents)
+        execution_name = "paired/execution.json"
+        execution = decode_captured_object(
+            captured[execution_name], max_depth=MAX_DEPTH, location="/exchange/" + execution_name
+        )
+        source_format = trajectory_source_format(execution)
+        documents, rows, trajectory, format_version = _decode_captured_documents(
+            captured, execution
+        )
         _manifest_bindings(format_version, documents, captured)
         _resource_limits(trajectory)
     except (CaptureError, TrajectoryInputError) as exc:
         if not trajectory_diagnostic_history_matches(exc.code, exc.reason, "not_performed"):
             raise
-        return TrajectoryAnalysis(None, exc, history)
+        return TrajectoryAnalysis(None, exc, history, source_format)
     try:
         with tempfile.TemporaryDirectory(prefix="underwrite-trajectory-") as temporary:
             snapshot = Path(temporary).resolve()
@@ -594,7 +633,7 @@ def _audit_captured_goppi_trajectory(
     except TrajectoryError as exc:
         if not trajectory_diagnostic_history_matches(exc.code, exc.reason, "report_accepted"):
             raise
-        return TrajectoryAnalysis(None, exc, history)
+        return TrajectoryAnalysis(None, exc, history, source_format)
     _object(report["trust_scope"]).update(
         _verifier_report_fields("report_accepted", verifier_source)
     )
@@ -608,7 +647,7 @@ def _audit_captured_goppi_trajectory(
         raise TrajectoryInputError("INVALID_INPUT", "TRAJECTORY_RESULT_ENCODING_FAILED") from None
     if size > MAX_REPORT_BYTES:
         raise TrajectoryInputError("OUTPUT_LIMIT_EXCEEDED", "TRAJECTORY_REPORT_LIMIT")
-    return TrajectoryAnalysis(report, None, history)
+    return TrajectoryAnalysis(report, None, history, source_format)
 
 
 def audit_goppi_trajectory(

@@ -5,12 +5,15 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
 from underwrite_core.canonical import canonical_bytes
 
+from underwrite.instrument.evidence import goppi_trajectory as goppi_trajectory_module
+from underwrite.instrument.evidence.goppi_identity import length_prefixed_digest
 from underwrite.instrument.evidence.goppi_trajectory import (
     AVAILABILITIES,
     MAX_ROWS,
@@ -18,6 +21,7 @@ from underwrite.instrument.evidence.goppi_trajectory import (
     MAX_UNITS,
     MEMBERS,
     RESULT_SCHEMA_V4,
+    V2_COMPARABILITY_INVARIANT_FIELDS,
     TrajectoryError,
     analyze_goppi_trajectory,
     analyze_goppi_trajectory_v2,
@@ -31,6 +35,19 @@ Documents = tuple[
 EXPECTED_OUTCOME_ACTION_SCOPES = 64
 V2_PAIRED_ROWS = 48
 V2_REFUSAL_FIXTURES = 13
+V2_SINGLE_CASE_COUNT = 1
+V2_TWO_REPEAT_COUNT = 2
+V2_SINGLE_CASE_TWO_REPEAT_ROWS = 2 * V2_SINGLE_CASE_COUNT * V2_TWO_REPEAT_COUNT
+V2Comparability = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
+V2StageParser = Callable[[dict[str, Any], list[dict[str, Any]]], list[dict[str, Any]]]
+V2RepeatRunId = Callable[[str, str, str, int], str]
+v2_comparability_impl = cast(
+    V2Comparability, goppi_trajectory_module.__dict__["_comparability_v2"]
+)
+v2_stage_parser_impl = cast(V2StageParser, goppi_trajectory_module.__dict__["_stages_v2"])
+v2_repeat_run_id_impl = cast(
+    V2RepeatRunId, goppi_trajectory_module.__dict__["_v2_repeat_run_id"]
+)
 
 
 @pytest.fixture
@@ -82,6 +99,286 @@ def pi15_documents(documents: Documents) -> Documents:
             unit["capture_profile"] = trajectory["profile"]
             unit["context"]["runner_profile"] = "pi_1_5_0"
     return documents
+
+
+def v2_arm_context(documents: Documents, arm: str) -> dict[str, Any]:
+    row = documents[1][0]
+    return next(
+        unit["context"]
+        for unit in documents[2]["units"]
+        if unit["unit"]["arm"] == arm
+        and unit["unit"]["stage"] == row["stage"]
+        and unit["unit"]["repeat_index"] == row["repeat_index"]
+    )
+
+
+def v2_comparison_side() -> dict[str, Any]:
+    return {
+        "context": {
+            field.removeprefix("context."): "shared"
+            for field in V2_COMPARABILITY_INVARIANT_FIELDS
+            if field.startswith("context.")
+        }
+        | {"harness_identity_digest": "sha256:" + "a" * 64},
+        "row_context": {
+            field.removeprefix("row."): "shared"
+            for field in V2_COMPARABILITY_INVARIANT_FIELDS
+            if field.startswith("row.")
+        },
+        "verifier": {
+            field.removeprefix("verifier."): "shared"
+            for field in V2_COMPARABILITY_INVARIANT_FIELDS
+            if field.startswith("verifier.")
+        },
+        "primary_inference": True,
+        "repeat_proof": "v2_attested_repeat",
+        "outcome": {"value_kind": "scalar"},
+    }
+
+
+def _set_v2_unit_roster(unit: dict[str, Any]) -> None:
+    case_ids = [case["row_key"]["case_id"] for case in unit["cases"]]
+    roster_digest = length_prefixed_digest(("goppi:paired-trajectory-roster:v1", *case_ids))
+    unit.update(roster_count=len(case_ids), roster_digest=roster_digest)
+    context = unit["context"]
+    if context is not None:
+        context.update(roster_count=len(case_ids), roster_digest=roster_digest)
+
+
+def v2_one_case_two_repeats(documents: Documents) -> Documents:
+    execution, rows, trajectory, identities = copy.deepcopy(documents)
+    case_id = next(row["case_id"] for row in rows if row["stage"] == "same_batch")
+    rows = tuple(
+        row
+        for row in rows
+        if row["stage"] != "same_batch" or row["case_id"] == case_id
+    )
+    stage = next(stage for stage in execution["stages"] if stage["stage"] == "same_batch")
+    stage.update(
+        planned_case_count=V2_SINGLE_CASE_COUNT,
+        exported_row_count=V2_SINGLE_CASE_TWO_REPEAT_ROWS,
+    )
+    execution["counts"].update(
+        planned_stage_case_count_total=sum(
+            stage["planned_case_count"] for stage in execution["stages"]
+        ),
+        row_count=len(rows),
+    )
+    for unit in trajectory["units"]:
+        unit["cases"] = [case for case in unit["cases"] if case["row_key"]["case_id"] == case_id]
+        _set_v2_unit_roster(unit)
+    trajectory["availability_counts"] = dict.fromkeys((*AVAILABILITIES, "total"), 0)
+    for unit in trajectory["units"]:
+        availability = unit["source_availability"]
+        case_count = len(unit["cases"])
+        trajectory["availability_counts"][availability] += case_count
+        trajectory["availability_counts"]["total"] += case_count
+    return execution, rows, trajectory, identities
+
+
+def v2_missing_case_from_repeat(documents: Documents) -> Documents:
+    execution, rows, trajectory, identities = copy.deepcopy(documents)
+    missing_case_id = next(
+        row["case_id"]
+        for row in rows
+        if row["stage"] == "same_batch" and row["repeat_index"] == 1
+    )
+    rows = tuple(
+        row
+        for row in rows
+        if not (
+            row["stage"] == "same_batch"
+            and row["repeat_index"] == 1
+            and row["case_id"] == missing_case_id
+        )
+    )
+    stage = next(stage for stage in execution["stages"] if stage["stage"] == "same_batch")
+    stage["exported_row_count"] = sum(row["stage"] == "same_batch" for row in rows)
+    execution["counts"]["row_count"] = len(rows)
+    for unit in trajectory["units"]:
+        if unit["unit"]["repeat_index"] == 1:
+            unit["cases"] = [
+                case for case in unit["cases"] if case["row_key"]["case_id"] != missing_case_id
+            ]
+            _set_v2_unit_roster(unit)
+    trajectory["availability_counts"] = dict.fromkeys((*AVAILABILITIES, "total"), 0)
+    for unit in trajectory["units"]:
+        availability = unit["source_availability"]
+        case_count = len(unit["cases"])
+        trajectory["availability_counts"][availability] += case_count
+        trajectory["availability_counts"]["total"] += case_count
+    return execution, rows, trajectory, identities
+
+
+def v2_replace_repeat_run_id(
+    documents: Documents, repeat_index: int, repeat_run_id: str
+) -> Documents:
+    execution, rows, trajectory, identities = copy.deepcopy(documents)
+    for row in rows:
+        if row["stage"] == "same_batch" and row["repeat_index"] == repeat_index:
+            row["repeat_run_id"] = repeat_run_id
+    for unit in trajectory["units"]:
+        if unit["unit"]["stage"] == "same_batch" and unit["unit"]["repeat_index"] == repeat_index:
+            unit["unit"]["repeat_run_id"] = repeat_run_id
+            for case in unit["cases"]:
+                case["row_key"]["repeat_run_id"] = repeat_run_id
+    return execution, rows, trajectory, identities
+
+
+def v2_split_repeat_index_run_ids(documents: Documents) -> Documents:
+    execution, rows, trajectory, identities = copy.deepcopy(documents)
+    baseline = next(
+        unit
+        for unit in trajectory["units"]
+        if unit["unit"]["stage"] == "same_batch"
+        and unit["unit"]["arm"] == "baseline"
+        and unit["unit"]["repeat_index"] == 0
+    )
+    case_ids = [case["row_key"]["case_id"] for case in baseline["cases"]]
+    split_case_ids = set(case_ids[len(case_ids) // 2 :])
+    replacement_id = "sha256:" + "f" * 64
+    for row in rows:
+        if (
+            row["stage"] == "same_batch"
+            and row["repeat_index"] == 0
+            and row["case_id"] in split_case_ids
+        ):
+            row["repeat_run_id"] = replacement_id
+    split_units: list[dict[str, Any]] = []
+    for unit in trajectory["units"]:
+        if unit["unit"]["stage"] != "same_batch" or unit["unit"]["repeat_index"] != 0:
+            continue
+        split_unit = copy.deepcopy(unit)
+        split_unit["cases"] = [
+            case for case in unit["cases"] if case["row_key"]["case_id"] in split_case_ids
+        ]
+        split_unit["unit"]["repeat_run_id"] = replacement_id
+        for case in split_unit["cases"]:
+            case["row_key"]["repeat_run_id"] = replacement_id
+        unit["cases"] = [
+            case for case in unit["cases"] if case["row_key"]["case_id"] not in split_case_ids
+        ]
+        _set_v2_unit_roster(unit)
+        _set_v2_unit_roster(split_unit)
+        split_units.append(split_unit)
+    trajectory["units"].extend(split_units)
+    return execution, rows, trajectory, identities
+
+
+def v2_single_repeat_with_attested_proof(documents: Documents) -> Documents:
+    execution, rows, trajectory, identities = v2_one_case_two_repeats(documents)
+    rows = tuple(row for row in rows if row["repeat_index"] == 0)
+    stage = next(stage for stage in execution["stages"] if stage["stage"] == "same_batch")
+    stage.update(authenticated_repeat_count=1, exported_row_count=2)
+    execution["counts"].update(authenticated_repeat_count_total=1, row_count=len(rows))
+    trajectory["units"] = [
+        unit for unit in trajectory["units"] if unit["unit"]["repeat_index"] == 0
+    ]
+    for unit in trajectory["units"]:
+        unit["context"]["declared_repeats"] = 1
+    trajectory["availability_counts"] = dict.fromkeys((*AVAILABILITIES, "total"), 0)
+    for unit in trajectory["units"]:
+        case_count = len(unit["cases"])
+        trajectory["availability_counts"][unit["source_availability"]] += case_count
+        trajectory["availability_counts"]["total"] += case_count
+    return execution, rows, trajectory, identities
+
+
+def v2_partial_units_claiming_full_roster(documents: Documents) -> Documents:
+    execution, rows, trajectory, identities = copy.deepcopy(documents)
+    unit = next(
+        unit
+        for unit in trajectory["units"]
+        if unit["unit"]["stage"] == "same_batch"
+        and unit["unit"]["arm"] == "baseline"
+        and unit["unit"]["repeat_index"] == 0
+    )
+    duplicate = copy.deepcopy(unit)
+    midpoint = len(unit["cases"]) // 2
+    unit["cases"] = unit["cases"][:midpoint]
+    duplicate["cases"] = duplicate["cases"][midpoint:]
+    trajectory["units"].append(duplicate)
+    return execution, rows, trajectory, identities
+
+
+def v2_reordered_later_repeat_roster(documents: Documents) -> Documents:
+    execution, rows, trajectory, identities = copy.deepcopy(documents)
+    for unit in trajectory["units"]:
+        if unit["unit"]["stage"] == "same_batch" and unit["unit"]["repeat_index"] == 1:
+            unit["cases"].reverse()
+            _set_v2_unit_roster(unit)
+    return execution, rows, trajectory, identities
+
+
+def v2_stage_run_id_mismatch(documents: Documents) -> Documents:
+    execution, rows, trajectory, identities = copy.deepcopy(documents)
+    forged_run_id = "sha256:" + "f" * 64
+    for stage in execution["stages"]:
+        if stage["stage"] == "same_batch":
+            stage["stage_run_id"] = forged_run_id
+    for row in rows:
+        if row["stage"] == "same_batch":
+            row["stage_run_id"] = forged_run_id
+    for unit in trajectory["units"]:
+        if unit["unit"]["stage"] == "same_batch":
+            unit["unit"]["stage_run_id"] = forged_run_id
+            for case in unit["cases"]:
+                case["row_key"]["stage_run_id"] = forged_run_id
+    return execution, rows, trajectory, identities
+
+
+def v2_arbitrary_repeat_run_id(documents: Documents) -> Documents:
+    return v2_replace_repeat_run_id(
+        v2_one_case_two_repeats(documents), 0, "sha256:" + "f" * 64
+    )
+
+
+def v2_reused_repeat_run_id(documents: Documents) -> Documents:
+    one_case_two_repeats = v2_one_case_two_repeats(documents)
+    repeat_zero_id = next(
+        row["repeat_run_id"] for row in one_case_two_repeats[1] if row["repeat_index"] == 0
+    )
+    return v2_replace_repeat_run_id(one_case_two_repeats, 1, repeat_zero_id)
+
+
+def v2_mixed_repeat_proofs(documents: Documents) -> Documents:
+    execution, rows, trajectory, identities = v2_one_case_two_repeats(documents)
+    next(
+        row
+        for row in rows
+        if row["stage"] == "same_batch"
+        and row["repeat_index"] == 0
+        and row["arm"] == "baseline"
+    )["repeat_proof"] = "v1_primary_only"
+    return execution, rows, trajectory, identities
+
+
+def v2_primary_only_proof_with_two_repeats(documents: Documents) -> Documents:
+    execution, rows, trajectory, identities = v2_one_case_two_repeats(documents)
+    for row in rows:
+        if row["stage"] == "same_batch":
+            row["repeat_proof"] = "v1_primary_only"
+    return execution, rows, trajectory, identities
+
+
+def v2_declared_repeat_mismatch(documents: Documents) -> Documents:
+    execution, rows, trajectory, identities = v2_one_case_two_repeats(documents)
+    trajectory["units"][0]["context"]["declared_repeats"] = 1
+    return execution, rows, trajectory, identities
+
+
+def v2_roster_digest_mismatch(documents: Documents) -> Documents:
+    execution, rows, trajectory, identities = copy.deepcopy(documents)
+    unit = trajectory["units"][0]
+    unit["roster_digest"] = "sha256:" + "f" * 64
+    unit["context"]["roster_digest"] = unit["roster_digest"]
+    return execution, rows, trajectory, identities
+
+
+def v2_roster_context_mismatch(documents: Documents) -> Documents:
+    execution, rows, trajectory, identities = copy.deepcopy(documents)
+    trajectory["units"][0]["context"]["roster_digest"] = "sha256:" + "f" * 64
+    return execution, rows, trajectory, identities
 
 
 def first_case(documents: Documents) -> dict[str, Any]:
@@ -184,6 +481,328 @@ def test_execution_v2_keeps_build_split_and_stage_states_separate(
     assert split["limitations"] == ["split_salt_guessable"]
     assert declarations["runner"]["identity_assurance"] == "declared"
     assert declarations["runner"]["independently_verified"] is False
+
+
+EXPECTED_V2_HELD_CONSTANT = (
+    "context.approved_draft_digest",
+    "context.assignment_digest",
+    "context.baseline_snapshot_digest",
+    "context.budget_policy_digest",
+    "context.candidate_snapshot_digest",
+    "context.config_digest",
+    "context.declared_repeats",
+    "context.evalset_digest",
+    "context.execution_identity_digest",
+    "context.plan_digest",
+    "context.primary_policy_digest",
+    "context.roster_count",
+    "context.roster_digest",
+    "context.runner_base_identity_digest",
+    "context.runner_model",
+    "context.runner_profile",
+    "context.split_policy_digest",
+    "context.verifier_profile_identity_digest",
+    "context.verifier_runtime_digest",
+    "outcome.value_kind",
+    "primary_inference",
+    "repeat_proof",
+    "row.assignment_digest",
+    "row.config_digest",
+    "row.evalset_digest",
+    "row.split_policy_digest",
+    "verifier.verifier_digest",
+    "verifier.verifier_id",
+)
+
+
+def test_execution_v2_reports_arm_harness_as_intervention(v2_documents: Documents) -> None:
+    baseline_context = v2_arm_context(v2_documents, "baseline")
+    candidate_context = v2_arm_context(v2_documents, "candidate")
+    assert baseline_context["harness_identity_digest"] != candidate_context[
+        "harness_identity_digest"
+    ]
+
+    item = target(analyze_goppi_trajectory_v2(*v2_documents), v2_documents)
+    assert item["comparability"] == {
+        "state": "comparable",
+        "intervention": {
+            "field": "context.harness_identity_digest",
+            "state": "changed",
+        },
+        "held_constant": list(EXPECTED_V2_HELD_CONSTANT),
+        "reasons": [],
+    }
+
+
+def test_execution_v2_reports_unchanged_arm_harness(v2_documents: Documents) -> None:
+    baseline_context = v2_arm_context(v2_documents, "baseline")
+    candidate_context = v2_arm_context(v2_documents, "candidate")
+    candidate_context["harness_identity_digest"] = baseline_context["harness_identity_digest"]
+
+    item = target(analyze_goppi_trajectory_v2(*v2_documents), v2_documents)
+    assert item["comparability"]["state"] == "comparable"
+    assert item["comparability"]["intervention"] == {
+        "field": "context.harness_identity_digest",
+        "state": "unchanged",
+    }
+    assert item["comparability"]["held_constant"] == list(EXPECTED_V2_HELD_CONSTANT)
+    assert item["comparability"]["reasons"] == []
+
+
+@pytest.mark.parametrize(
+    ("value", "expected_state", "expected_reason"),
+    [
+        ("sha256:" + "a" * 64, "not_comparable", "different_context"),
+        (None, "unknown", "missing_context"),
+    ],
+)
+def test_execution_v2_invariant_budget_context_fails_closed(
+    v2_documents: Documents,
+    value: str | None,
+    expected_state: str,
+    expected_reason: str,
+) -> None:
+    v2_arm_context(v2_documents, "candidate")["budget_policy_digest"] = value
+
+    item = target(analyze_goppi_trajectory_v2(*v2_documents), v2_documents)
+    assert item["comparability"]["state"] == expected_state
+    assert {
+        "field": "context.budget_policy_digest",
+        "reason": expected_reason,
+    } in item["comparability"]["reasons"]
+    assert "context.budget_policy_digest" not in item["comparability"]["held_constant"]
+    assert item["comparability"]["intervention"] == {
+        "field": "context.harness_identity_digest",
+        "state": "changed",
+    }
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "context.runner_model",
+        "context.runner_profile",
+        "context.verifier_runtime_digest",
+        "context.budget_policy_digest",
+        "context.declared_repeats",
+        "verifier.verifier_id",
+        "verifier.verifier_digest",
+        "repeat_proof",
+        "row.assignment_digest",
+    ],
+)
+def test_execution_v2_invariant_differences_are_not_comparable(field: str) -> None:
+    baseline = v2_comparison_side()
+    candidate = v2_comparison_side()
+    candidate["context"]["harness_identity_digest"] = "sha256:" + "b" * 64
+    if "." in field:
+        parent, child = field.split(".", maxsplit=1)
+        if parent == "row":
+            parent = "row_context"
+        candidate[parent][child] = "different"
+    else:
+        candidate[field] = "different"
+
+    comparability = v2_comparability_impl(baseline, candidate)
+    assert comparability["state"] == "not_comparable"
+    assert {"field": field, "reason": "different_context"} in comparability["reasons"]
+    assert field not in comparability["held_constant"]
+    assert comparability["intervention"]["state"] == "changed"
+
+
+@pytest.mark.parametrize("field", ["context.budget_policy_digest", "row.assignment_digest"])
+def test_execution_v2_missing_invariant_is_unknown(field: str) -> None:
+    baseline = v2_comparison_side()
+    candidate = v2_comparison_side()
+    parent, child = field.split(".", maxsplit=1)
+    if parent == "row":
+        parent = "row_context"
+    candidate[parent].pop(child)
+
+    comparability = v2_comparability_impl(baseline, candidate)
+    assert comparability["state"] == "unknown"
+    assert {"field": field, "reason": "missing_context"} in comparability["reasons"]
+    assert field not in comparability["held_constant"]
+
+
+def test_execution_v2_missing_intervention_is_disclosed_as_unknown() -> None:
+    baseline = v2_comparison_side()
+    candidate = v2_comparison_side()
+    candidate["context"].pop("harness_identity_digest")
+
+    comparability = v2_comparability_impl(baseline, candidate)
+    assert comparability["state"] == "unknown"
+    assert comparability["intervention"] == {
+        "field": "context.harness_identity_digest",
+        "state": "unknown",
+    }
+    assert {
+        "field": "context.harness_identity_digest",
+        "reason": "missing_context",
+    } in comparability["reasons"]
+
+
+def test_execution_v2_repeat_count_is_independent_of_planned_case_count(
+    v2_documents: Documents,
+) -> None:
+    documents = v2_one_case_two_repeats(v2_documents)
+
+    report = cast(dict[str, Any], analyze_goppi_trajectory_v2(*documents))
+    stage = next(stage for stage in report["stages"] if stage["stage"] == "same_batch")
+    pairs = [item for item in report["comparisons"] if item["key"]["stage"] == "same_batch"]
+
+    assert stage["planned_case_count"] == V2_SINGLE_CASE_COUNT
+    assert stage["paired_rows"] == V2_SINGLE_CASE_TWO_REPEAT_ROWS
+    assert stage["case_stage_repeat_pairs"] == V2_TWO_REPEAT_COUNT
+    assert {item["key"]["repeat_index"] for item in pairs} == {0, 1}
+
+
+@pytest.mark.parametrize("mutation", ["repeat_count_mismatch", "repeat_index_gap", "missing_case"])
+def test_execution_v2_rejects_repeat_row_coverage_mismatch(
+    v2_documents: Documents, mutation: str
+) -> None:
+    if mutation == "missing_case":
+        documents = v2_missing_case_from_repeat(v2_documents)
+    else:
+        execution, rows, trajectory, identities = v2_one_case_two_repeats(v2_documents)
+        documents = execution, rows, trajectory, identities
+        if mutation == "repeat_count_mismatch":
+            stage = next(stage for stage in execution["stages"] if stage["stage"] == "same_batch")
+            stage["authenticated_repeat_count"] = 1
+            execution["counts"]["authenticated_repeat_count_total"] = 1
+            for unit in trajectory["units"]:
+                unit["context"]["declared_repeats"] = 1
+        else:
+            for row in rows:
+                if row["stage"] == "same_batch" and row["repeat_index"] == 1:
+                    row["repeat_index"] = 2
+            for unit in trajectory["units"]:
+                if unit["unit"]["repeat_index"] == 1:
+                    unit["unit"]["repeat_index"] = 2
+                    for case in unit["cases"]:
+                        case["row_key"]["repeat_index"] = 2
+
+    with pytest.raises(TrajectoryError, match="TRAJECTORY_COVERAGE_MISMATCH"):
+        analyze_goppi_trajectory_v2(*documents)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "reason"),
+    [
+        ("arbitrary_repeat_run_id", "TRAJECTORY_BINDING_MISMATCH"),
+        ("split_same_index_run_ids", "TRAJECTORY_COVERAGE_MISMATCH"),
+        ("reused_repeat_run_id", "TRAJECTORY_COVERAGE_MISMATCH"),
+        ("mixed_proof_families", "TRAJECTORY_COVERAGE_MISMATCH"),
+        ("v1_proof_with_two_repeats", "TRAJECTORY_BINDING_MISMATCH"),
+        ("v2_proof_with_one_repeat", "TRAJECTORY_BINDING_MISMATCH"),
+        ("declared_repeat_mismatch", "TRAJECTORY_BINDING_MISMATCH"),
+        ("roster_digest_mismatch", "TRAJECTORY_BINDING_MISMATCH"),
+        ("roster_context_mismatch", "TRAJECTORY_BINDING_MISMATCH"),
+        ("reordered_later_repeat_roster", "TRAJECTORY_BINDING_MISMATCH"),
+        ("stage_run_id_mismatch", "TRAJECTORY_BINDING_MISMATCH"),
+        ("partial_units_claim_full_roster", "TRAJECTORY_COVERAGE_MISMATCH"),
+    ],
+)
+def test_execution_v2_rejects_repeat_identity_and_policy_attacks(
+    v2_documents: Documents, mutation: str, reason: str
+) -> None:
+    attack_builders = {
+        "arbitrary_repeat_run_id": v2_arbitrary_repeat_run_id,
+        "split_same_index_run_ids": v2_split_repeat_index_run_ids,
+        "reused_repeat_run_id": v2_reused_repeat_run_id,
+        "mixed_proof_families": v2_mixed_repeat_proofs,
+        "v1_proof_with_two_repeats": v2_primary_only_proof_with_two_repeats,
+        "v2_proof_with_one_repeat": v2_single_repeat_with_attested_proof,
+        "declared_repeat_mismatch": v2_declared_repeat_mismatch,
+        "roster_digest_mismatch": v2_roster_digest_mismatch,
+        "roster_context_mismatch": v2_roster_context_mismatch,
+        "reordered_later_repeat_roster": v2_reordered_later_repeat_roster,
+        "stage_run_id_mismatch": v2_stage_run_id_mismatch,
+        "partial_units_claim_full_roster": v2_partial_units_claiming_full_roster,
+    }
+    documents = attack_builders[mutation](v2_documents)
+
+    with pytest.raises(TrajectoryError) as caught:
+        analyze_goppi_trajectory_v2(*documents)
+    assert caught.value.reason == reason
+
+
+def test_execution_v2_evaluated_stages_share_repeat_policy(v2_documents: Documents) -> None:
+    documents = v2_one_case_two_repeats(v2_documents)
+    report = cast(dict[str, Any], analyze_goppi_trajectory_v2(*documents))
+    execution = documents[0]
+    first_stage = execution["stages"][0]
+    second_stage = copy.deepcopy(first_stage)
+    second_stage.update(
+        stage="held_in",
+        split="confirm",
+        stage_input_digest="sha256:" + "a" * 64,
+        primary_inference_repeat_index=1,
+    )
+    first_stage_comparisons = [
+        item
+        for item in report["comparisons"]
+        if item["key"]["stage"] == "same_batch"
+    ]
+    repeated_comparisons = [copy.deepcopy(item) for item in first_stage_comparisons]
+    for comparison in repeated_comparisons:
+        repeat_index = comparison["key"]["repeat_index"]
+        comparison["key"].update(
+            stage="held_in",
+            split=second_stage["split"],
+            stage_run_id=second_stage["stage_run_id"],
+            repeat_run_id=v2_repeat_run_id_impl(
+                execution["source"]["cycle_run_id"],
+                second_stage["stage"],
+                second_stage["stage_input_digest"],
+                repeat_index,
+            ),
+        )
+        for arm in ("baseline", "candidate"):
+            comparison[arm]["primary_inference"] = repeat_index == 1
+
+    with pytest.raises(TrajectoryError, match="TRAJECTORY_BINDING_MISMATCH"):
+        v2_stage_parser_impl(
+            {"source": execution["source"], "stages": [first_stage, second_stage]},
+            [*first_stage_comparisons, *repeated_comparisons],
+        )
+
+
+def test_execution_v2_evaluated_stages_share_repeat_count_and_proof(
+    v2_documents: Documents,
+) -> None:
+    documents = v2_one_case_two_repeats(v2_documents)
+    report = cast(dict[str, Any], analyze_goppi_trajectory_v2(*documents))
+    execution = documents[0]
+    first_stage = execution["stages"][0]
+    second_stage = copy.deepcopy(first_stage)
+    second_stage.update(
+        stage="held_in",
+        split="confirm",
+        authenticated_repeat_count=1,
+        exported_row_count=2,
+        primary_inference_repeat_index=0,
+    )
+    first_stage_comparisons = [
+        item for item in report["comparisons"] if item["key"]["stage"] == "same_batch"
+    ]
+    repeated_comparison = copy.deepcopy(
+        next(item for item in first_stage_comparisons if item["key"]["repeat_index"] == 0)
+    )
+    repeated_comparison["key"].update(
+        stage="held_in",
+        split="confirm",
+        repeat_run_id=second_stage["stage_run_id"],
+    )
+    for arm in ("baseline", "candidate"):
+        repeated_comparison[arm]["primary_inference"] = True
+        repeated_comparison[arm]["repeat_proof"] = "v1_primary_only"
+
+    with pytest.raises(TrajectoryError, match="TRAJECTORY_BINDING_MISMATCH"):
+        v2_stage_parser_impl(
+            {"source": execution["source"], "stages": [first_stage, second_stage]},
+            [*first_stage_comparisons, repeated_comparison],
+        )
 
 
 def test_execution_v2_unavailable_build_is_not_measured(v2_documents: Documents) -> None:

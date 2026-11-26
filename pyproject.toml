@@ -51,6 +51,7 @@ source-include = [
     "contracts/trajectory_record_read.v1.schema.json",
     "contracts/trajectory_record_read.v3.schema.json",
     "contracts/trajectory_record_read_summary.v1.schema.json",
+    "contracts/trajectory_record_read_summary.v2.schema.json",
     "contracts/trajectory_verification_history.v1.schema.json",
     "contracts/trajectory_verification_history.v2.schema.json",
     "contracts/evidence_result.v1.schema.json",

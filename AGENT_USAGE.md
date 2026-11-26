@@ -96,8 +96,13 @@ a score into a task verdict.
 `underwrite_records_read_trajectory` projects `underwrite records read-trajectory
 --root DIR --id ID --view summary --json` for an existing retained record. It checks current
 stored bytes without running Goppi; the historical verifier report is not a
-fresh native verification. Its bounded output is `trajectory_record_read_summary.v1`;
-the CLI's default full read is `trajectory_record_read.v3`.
+fresh native verification. Legacy v1/v2 record layouts keep the original bounded
+`trajectory_record_read_summary.v1` output bytes. A v4 record returns
+`trajectory_record_read_summary.v2`, adding its exact `source_format` and
+`analysis_limitations`; both summary versions omit full analysis details. The
+MCP tool advertises the v2 union schema, which accepts either summary version.
+The CLI's default full read is `trajectory_record_read.v3` or `.v4` according to
+the stored layout.
 `underwrite_review_pair` projects `underwrite review-pair --input FILE --policy
 FILE --context FILE --view summary --json`. It retains the paired evidence and
 context digests, declared condition counts and limitations, while omitting the

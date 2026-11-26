@@ -18,6 +18,8 @@ from typing import Any, NoReturn, cast
 
 from underwrite_core.canonical import CanonicalizationError, canonical_bytes
 
+from underwrite.instrument.evidence.goppi_identity import length_prefixed_digest
+
 RESULT_SCHEMA = "goppi_trajectory_review.v1"
 RESULT_SCHEMA_V2 = "goppi_trajectory_review.v2"
 RESULT_SCHEMA_V3 = "goppi_trajectory_review.v3"
@@ -264,6 +266,29 @@ _V2_CONTEXT_FIELDS = (
     "roster_count",
     "roster_digest",
 )
+_V2_ROSTER_DIGEST_DOMAIN = "goppi:paired-trajectory-roster:v1"
+_V2_REPEAT_RUN_ID_DOMAIN = "goppi:local-stage-repeat-run:v1"
+_V2_ATTESTED_REPEAT_MINIMUM = 2
+V2_COMPARABILITY_INTERVENTION_FIELD = "context.harness_identity_digest"
+_V2_INTERVENTION_CONTEXT_FIELD = "harness_identity_digest"
+V2_COMPARABILITY_INTERVENTION_STATES = ("changed", "unchanged", "unknown")
+V2_COMPARABILITY_INVARIANT_FIELDS = tuple(
+    sorted(
+        [
+            "context." + field
+            for field in _V2_CONTEXT_FIELDS
+            if field != _V2_INTERVENTION_CONTEXT_FIELD
+        ]
+        + ["row." + field for field in ROW_CONTEXT_FIELDS]
+        + [
+            "verifier.verifier_id",
+            "verifier.verifier_digest",
+            "primary_inference",
+            "repeat_proof",
+            "outcome.value_kind",
+        ]
+    )
+)
 _V2_TRAJECTORY_SOURCE_KEYS = frozenset({"cycle_run_id", "plan_digest", "execution_identity_digest"})
 _V2_ROW_KEY_FIELDS = frozenset(
     {
@@ -384,6 +409,8 @@ class _ExecutionBindings:
     split_policy_digest: str
     runner_model: str | None
     stage_input_digests: Mapping[str, str]
+    stage_case_counts: Mapping[str, int]
+    stage_repeat_counts: Mapping[str, int]
 
 
 @dataclass(frozen=True)
@@ -409,6 +436,7 @@ class _TrajectoryUnit:
     unavailable_reason: str | None
     bundle_digest: object
     context: dict[str, str | int | None]
+    roster_case_ids: tuple[str, ...]
     cases: list[Any]
 
 
@@ -728,6 +756,24 @@ def _context(
     return result
 
 
+def _v2_roster_digest(case_ids: list[str]) -> str:
+    return length_prefixed_digest((_V2_ROSTER_DIGEST_DOMAIN, *case_ids))
+
+
+def _v2_repeat_run_id(
+    cycle_run_id: str, stage: str, stage_input_digest: str, repeat_index: int
+) -> str:
+    return length_prefixed_digest(
+        (
+            _V2_REPEAT_RUN_ID_DOMAIN,
+            cycle_run_id,
+            stage,
+            stage_input_digest,
+            str(repeat_index),
+        )
+    )
+
+
 def _process(value: object, case_id: str, *, strict: bool = False) -> dict[str, Any]:
     if value is None:
         return {"state": "unlinked"}
@@ -835,9 +881,11 @@ def _parse_unit(index: int, raw: object, config: _JoinConfig, joined_count: int)
     identity = _object(unit.get("unit"))
     if bindings is not None:
         _exact_keys(identity, _V2_UNIT_IDENTITY_FIELDS)
-        stage = _enum(identity.get("stage"), STAGES)
+    unit_stage = _enum(identity.get("stage"), STAGES)
+    if bindings is not None:
         _require(
-            _digest(identity.get("stage_input_digest")) == bindings.stage_input_digests.get(stage),
+            _digest(identity.get("stage_input_digest"))
+            == bindings.stage_input_digests.get(unit_stage),
             "TRAJECTORY_BINDING_MISMATCH",
         )
     key = _key({**identity, "case_id": "unit", "split": "explore"})
@@ -864,6 +912,7 @@ def _parse_unit(index: int, raw: object, config: _JoinConfig, joined_count: int)
     else:
         reason = _enum(reason, UNAVAILABLE_REASONS)
     context = _context(raw_context, format_version=config.format_version)
+    roster_case_ids: tuple[str, ...] = ()
     if raw_context is not None:
         _require(
             context["runner_profile"] == config.runner_profile,
@@ -882,10 +931,28 @@ def _parse_unit(index: int, raw: object, config: _JoinConfig, joined_count: int)
                 context["split_policy_digest"] == bindings.split_policy_digest,
                 "TRAJECTORY_BINDING_MISMATCH",
             )
+            _require(
+                context["declared_repeats"] == bindings.stage_repeat_counts.get(unit_stage),
+                "TRAJECTORY_BINDING_MISMATCH",
+            )
             _require(context["roster_count"] == roster_count, "TRAJECTORY_BINDING_MISMATCH")
             _require(context["roster_digest"] == roster_digest, "TRAJECTORY_BINDING_MISMATCH")
     cases = _array(unit.get("cases"), MAX_ROWS)
     _require(len(cases) + joined_count <= MAX_ROWS, "TRAJECTORY_LIMIT_EXCEEDED")
+    if bindings is not None:
+        case_ids = [
+            _text(_object(_object(raw_case).get("row_key")).get("case_id"))
+            for raw_case in cases
+        ]
+        roster_case_ids = tuple(case_ids)
+        _require(
+            len(cases) == roster_count == bindings.stage_case_counts.get(unit_stage),
+            "TRAJECTORY_COVERAGE_MISMATCH",
+        )
+        _require(
+            _v2_roster_digest(case_ids) == cast(str, roster_digest),
+            "TRAJECTORY_BINDING_MISMATCH",
+        )
     return _TrajectoryUnit(
         index=index,
         key=key,
@@ -896,6 +963,7 @@ def _parse_unit(index: int, raw: object, config: _JoinConfig, joined_count: int)
         unavailable_reason=cast(str | None, reason),
         bundle_digest=unit.get("bundle_digest"),
         context=context,
+        roster_case_ids=roster_case_ids,
         cases=cases,
     )
 
@@ -956,8 +1024,13 @@ def _join(
     joined: dict[Key, dict[str, Any]] = {}
     coverage: dict[str, int] = dict.fromkeys(AVAILABILITIES, 0)
     unit_keys: set[Key] = set()
+    stage_rosters: dict[str, tuple[str, ...]] = {}
     for index, raw in enumerate(_array(trajectory.get("units"), MAX_UNITS)):
         unit = _parse_unit(index, raw, config, len(joined))
+        if config.bindings is not None:
+            stage = cast(str, unit.identity["stage"])
+            prior_roster = stage_rosters.setdefault(stage, unit.roster_case_ids)
+            _require(unit.roster_case_ids == prior_roster, "TRAJECTORY_BINDING_MISMATCH")
         _require(unit.key not in unit_keys, "TRAJECTORY_DUPLICATE_IDENTITY")
         unit_keys.add(unit.key)
         seen_spans: set[str] = set()
@@ -1003,6 +1076,66 @@ def _comparability(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any
     return {"state": state, "reasons": reasons}
 
 
+def _nested_value(value: dict[str, Any], field: str) -> Any:
+    current: Any = value
+    parts = field.split(".")
+    if parts[0] == "row":
+        parts[0] = "row_context"
+    for part in parts:
+        if not isinstance(current, Mapping):
+            return None
+        mapping = cast(Mapping[str, Any], current)
+        if part not in mapping:
+            return None
+        current = mapping[part]
+    return current
+
+
+def _comparability_v2(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
+    reasons: list[dict[str, str]] = []
+    held_constant: list[str] = []
+    for field in V2_COMPARABILITY_INVARIANT_FIELDS:
+        a = _nested_value(left, field)
+        b = _nested_value(right, field)
+        if a is None or b is None:
+            reasons.append({"field": field, "reason": "missing_context"})
+        elif type(a) is not type(b) or a != b:
+            reasons.append({"field": field, "reason": "different_context"})
+        else:
+            held_constant.append(field)
+
+    baseline_harness = _nested_value(left, V2_COMPARABILITY_INTERVENTION_FIELD)
+    candidate_harness = _nested_value(right, V2_COMPARABILITY_INTERVENTION_FIELD)
+    if baseline_harness is None or candidate_harness is None:
+        intervention_state = "unknown"
+        reasons.append(
+            {"field": V2_COMPARABILITY_INTERVENTION_FIELD, "reason": "missing_context"}
+        )
+    else:
+        intervention_state = (
+            "unchanged"
+            if type(baseline_harness) is type(candidate_harness)
+            and baseline_harness == candidate_harness
+            else "changed"
+        )
+
+    reasons.sort(key=lambda reason: (reason["field"], reason["reason"]))
+    state = (
+        "not_comparable"
+        if any(reason["reason"] == "different_context" for reason in reasons)
+        else ("unknown" if reasons else "comparable")
+    )
+    return {
+        "state": state,
+        "intervention": {
+            "field": V2_COMPARABILITY_INTERVENTION_FIELD,
+            "state": intervention_state,
+        },
+        "held_constant": held_constant,
+        "reasons": reasons,
+    }
+
+
 def _difference(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
     outcome_changed = left["outcome"] != right["outcome"]
     if left["tool_status_counts"] is None or right["tool_status_counts"] is None:
@@ -1037,7 +1170,9 @@ def _side(value: dict[str, Any]) -> dict[str, Any]:
     return {key: val for key, val in value.items() if key not in {"row_context", "context"}}
 
 
-def _comparisons(joined: dict[Key, dict[str, Any]]) -> list[dict[str, Any]]:
+def _comparisons(
+    joined: dict[Key, dict[str, Any]], *, format_version: int = EXECUTION_FORMAT_V1
+) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     pairs = sorted({key[:-1] for key in joined})
     for key in pairs:
@@ -1053,7 +1188,11 @@ def _comparisons(joined: dict[Key, dict[str, Any]]) -> list[dict[str, Any]]:
                 "key": coordinates,
                 "baseline": _side(left),
                 "candidate": _side(right),
-                "comparability": _comparability(left, right),
+                "comparability": (
+                    _comparability_v2(left, right)
+                    if format_version == EXECUTION_FORMAT_V2
+                    else _comparability(left, right)
+                ),
                 "difference": _difference(left, right),
             }
         )
@@ -1168,6 +1307,15 @@ def _validate_v2_execution(
     stage_names = [_enum(_object(stage).get("stage"), STAGES) for stage in stages]
     _require(len(set(stage_names)) == len(stage_names))
     _require(set(stage_names) == set(STAGES), "TRAJECTORY_COVERAGE_MISMATCH")
+    cycle_run_id = _digest(source.get("cycle_run_id"))
+    _require(
+        all(
+            status == "not_run"
+            or _digest(_object(stage).get("stage_run_id")) == cycle_run_id
+            for stage, status in zip(stages, statuses, strict=True)
+        ),
+        "TRAJECTORY_BINDING_MISMATCH",
+    )
     expected_counts = {
         "evaluated_stage_count": statuses.count("evaluated"),
         "closed_stage_count": statuses.count("closed"),
@@ -1352,7 +1500,6 @@ def _v2_stage_details(
     stage: dict[str, Any],
     status: str,
     authenticated_repeats: int,
-    planned_case_count: int,
     exported: int,
 ) -> dict[str, Any]:
     if status == "not_run":
@@ -1394,7 +1541,6 @@ def _v2_stage_details(
         result["reason_code"] = _enum(stage.get("reason_code"), CLOSED_STAGE_REASONS)
         _require(authenticated_repeats == 0, "TRAJECTORY_COVERAGE_MISMATCH")
         _require(stage.get("decision_digest") is None, "TRAJECTORY_BINDING_MISMATCH")
-    _require(authenticated_repeats <= planned_case_count, "TRAJECTORY_COVERAGE_MISMATCH")
     return result
 
 
@@ -1403,6 +1549,8 @@ def _stages_v2(
 ) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     seen: set[str] = set()
+    cycle_run_id = _digest(_object(execution.get("source")).get("cycle_run_id"))
+    run_repeat_policy: tuple[int, int, str] | None = None
     for raw in _array(execution.get("stages"), len(STAGES)):
         stage = _object(raw)
         name = _enum(stage.get("stage"), STAGES)
@@ -1458,17 +1606,87 @@ def _stages_v2(
                 stage,
                 status,
                 authenticated_repeats,
-                planned_case_count,
                 exported,
             )
         )
         if status == "evaluated":
             primary = _integer(stage.get("primary_inference_repeat_index"), 99)
-            repeat_indexes = {item["key"]["repeat_index"] for item in items}
+            repeat_case_ids: dict[int, set[str]] = {}
+            repeat_run_ids: dict[int, set[str]] = {}
+            repeat_row_counts: Counter[int] = Counter()
+            repeat_proofs = {
+                item[arm]["repeat_proof"]
+                for item in items
+                for arm in ("baseline", "candidate")
+            }
+            for item in items:
+                repeat_index = item["key"]["repeat_index"]
+                repeat_case_ids.setdefault(repeat_index, set()).add(item["key"]["case_id"])
+                repeat_run_ids.setdefault(repeat_index, set()).add(item["key"]["repeat_run_id"])
+                repeat_row_counts[repeat_index] += 1
+            repeat_indexes = set(repeat_case_ids)
             _require(
-                authenticated_repeats == len(repeat_indexes),
+                len(repeat_proofs) == 1
+                and authenticated_repeats > 0
+                and planned_case_count > 0
+                and primary < authenticated_repeats
+                and repeat_indexes == set(range(authenticated_repeats))
+                and len(items) == planned_case_count * authenticated_repeats
+                and all(
+                    repeat_row_counts[index] == planned_case_count
+                    and len(repeat_case_ids[index]) == planned_case_count
+                    for index in range(authenticated_repeats)
+                )
+                and all(
+                    repeat_case_ids[index] == repeat_case_ids[0]
+                    for index in range(1, authenticated_repeats)
+                ),
                 "TRAJECTORY_COVERAGE_MISMATCH",
             )
+            _require(
+                all(
+                    len(repeat_run_ids[index]) == 1
+                    for index in range(authenticated_repeats)
+                )
+                and len(
+                    {next(iter(repeat_run_ids[index])) for index in range(authenticated_repeats)}
+                )
+                == authenticated_repeats,
+                "TRAJECTORY_COVERAGE_MISMATCH",
+            )
+            repeat_proof = cast(str, next(iter(repeat_proofs)))
+            stage_run_id = _digest(stage.get("stage_run_id"))
+            stage_input_digest = _digest(stage.get("stage_input_digest"))
+            if repeat_proof == "v1_primary_only":
+                _require(
+                    authenticated_repeats == 1
+                    and primary == 0
+                    and repeat_run_ids[0] == {stage_run_id},
+                    "TRAJECTORY_BINDING_MISMATCH",
+                )
+            else:
+                _require(
+                    authenticated_repeats >= _V2_ATTESTED_REPEAT_MINIMUM
+                    and all(
+                        repeat_run_ids[index]
+                        == {
+                            _v2_repeat_run_id(
+                                cycle_run_id,
+                                name,
+                                stage_input_digest,
+                                index,
+                            )
+                        }
+                        for index in range(authenticated_repeats)
+                    ),
+                    "TRAJECTORY_BINDING_MISMATCH",
+                )
+            current_policy = (authenticated_repeats, primary, repeat_proof)
+            _require(
+                run_repeat_policy is None or current_policy == run_repeat_policy,
+                "TRAJECTORY_BINDING_MISMATCH",
+            )
+            run_repeat_policy = current_policy
             _require(
                 all(
                     i[arm]["primary_inference"] == (i["key"]["repeat_index"] == primary)
@@ -1558,12 +1776,26 @@ def _analysis_v2(
                 for stage in _array(execution.get("stages"), len(STAGES))
                 if _object(stage).get("execution_status") in ("evaluated", "closed")
             },
+            stage_case_counts={
+                _enum(_object(stage).get("stage"), STAGES): _integer(
+                    _object(stage).get("planned_case_count")
+                )
+                for stage in _array(execution.get("stages"), len(STAGES))
+                if _object(stage).get("execution_status") == "evaluated"
+            },
+            stage_repeat_counts={
+                _enum(_object(stage).get("stage"), STAGES): _integer(
+                    _object(stage).get("authenticated_repeat_count"), 100
+                )
+                for stage in _array(execution.get("stages"), len(STAGES))
+                if _object(stage).get("execution_status") == "evaluated"
+            },
         )
         if format_version == EXECUTION_FORMAT_V2
         else None
     )
     joined, coverage = _join(index, trajectory, capture_profile, runner_profile, bindings)
-    comparisons = _comparisons(joined)
+    comparisons = _comparisons(joined, format_version=EXECUTION_FORMAT_V2)
     stages = _stages(execution, comparisons, format_version=format_version)
     closed = [
         _enum(value, STAGES) for value in _array(trajectory.get("closed_stages"), len(STAGES))

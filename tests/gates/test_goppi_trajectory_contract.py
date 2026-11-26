@@ -208,6 +208,48 @@ def test_execution_v2_result_uses_v4_and_preserves_self_reported_limits() -> Non
     assert not_run["verdict_state"] == "not_measured"
 
 
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "missing_intervention",
+        "wrong_intervention_field",
+        "unknown_intervention_state",
+        "unrecognized_held_constant",
+        "duplicate_held_constant",
+    ],
+)
+def test_v4_schema_binds_intervention_and_held_constant_claims(mutation: str) -> None:
+    execution = json.loads((FIXTURE_V2 / "paired/execution.json").read_bytes())
+    rows = tuple(
+        json.loads(line) for line in (FIXTURE_V2 / "paired/rows.jsonl").read_text().splitlines()
+    )
+    trajectory = json.loads((FIXTURE_V2 / "trajectory/trajectory.json").read_bytes())
+    identities = {
+        path: (
+            "sha256:" + hashlib.sha256((FIXTURE_V2 / path).read_bytes()).hexdigest(),
+            (FIXTURE_V2 / path).stat().st_size,
+        )
+        for path in MEMBERS
+    }
+    report = cast(
+        dict[str, Any], analyze_goppi_trajectory(execution, rows, trajectory, identities)
+    )
+    validator = cast(Validator, packaged_validator(RESULT_SCHEMA_V4))
+    comparison = report["comparisons"][0]["comparability"]
+    if mutation == "missing_intervention":
+        comparison.pop("intervention")
+    elif mutation == "wrong_intervention_field":
+        comparison["intervention"]["field"] = "context.runner_model"
+    elif mutation == "unknown_intervention_state":
+        comparison["intervention"]["state"] = "maybe"
+    elif mutation == "unrecognized_held_constant":
+        comparison["held_constant"].append("context.harness_identity_digest")
+    else:
+        comparison["held_constant"].append(comparison["held_constant"][0])
+    with pytest.raises(ValidationError):
+        validator.validate(report)
+
+
 def test_execution_v2_unavailable_build_result_validates_against_v4_schema() -> None:
     execution = json.loads((FIXTURE_V2 / "paired/execution.json").read_bytes())
     rows = tuple(

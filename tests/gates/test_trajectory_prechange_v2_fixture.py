@@ -86,5 +86,8 @@ def test_prechange_v2_record_is_frozen_and_reopens_with_its_original_analysis(
 
         summary = cast(dict[str, Any], run_read_trajectory_summary(tmp_path, identifier))
         cast(Validator, packaged_validator(summary["schema"])).validate(summary)
+        assert summary["schema"] == "trajectory_record_read_summary.v1"
         assert summary["record_layout"] == LAYOUT_V2
+        assert "source_format" not in summary
+        assert "analysis_limitations" not in summary
         assert summary["populations"] == analysis["populations"]

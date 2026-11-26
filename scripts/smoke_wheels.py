@@ -4799,9 +4799,12 @@ def _trajectory_record_pilot(
     )
     wheel.require(
         selected["structuredContent"]["schema"] == "trajectory_record_read_summary.v1"
-        and selected["structuredContent"]["native_verification_performed_now"] is False,
+        and selected["structuredContent"]["native_verification_performed_now"] is False
+        and "source_format" not in selected["structuredContent"]
+        and "analysis_limitations" not in selected["structuredContent"],
         "MCP retained summary claimed fresh native verification",
     )
+    _trajectory_record_v4_summary_pilot(cli, work, expected)
     wheel.require("trajectory-records" not in str(selected), "MCP retained read leaked store path")
     interpretation = cast(dict[str, object], reopened["verification_interpretation"])
     wheel.require(
@@ -4828,6 +4831,140 @@ def _trajectory_record_pilot(
     restored = wheel.success([str(cli.parent / "python"), "-c", code, str(store), identifier], work)
     wheel.require(
         json.loads(restored.stdout) == hashes, "trajectory raw source recovery changed bytes"
+    )
+
+
+def _trajectory_record_v4_summary_pilot(
+    cli: Path, work: Path, legacy_review: dict[str, object]
+) -> None:
+    """Installed v4 records validate and retain exact summary source metadata."""
+    v2_source = wheel.ROOT / "fixtures/conformance/goppi-execution-v2/paired-exchange-v2"
+    exchange = work / "trajectory-exchange-v2"
+    exchange.mkdir()
+    for family in ("paired", "trajectory"):
+        shutil.copytree(v2_source / family, exchange / family)
+    verifier = work / "offline-v2-verifier-stub"
+    verifier.write_text(
+        f"#!{cli.parent / 'python'}\n"
+        + (wheel.ROOT / "tests/drivers/goppi_trajectory_verifier_stub.py").read_text(
+            encoding="utf-8"
+        ),
+        encoding="utf-8",
+    )
+    verifier.chmod(0o700)
+    store = work / "trajectory-records-v2"
+    identifier = "trajectory.v2-smoke-001"
+    captured = _cli_json(
+        cli,
+        [
+            "records",
+            "audit-trajectory",
+            "--exchange",
+            str(exchange),
+            "--goppi-executable",
+            str(verifier),
+            "--root",
+            str(store),
+            "--id",
+            identifier,
+        ],
+        work / "trajectory-record-v2.json",
+        work,
+    )
+    wheel.require(
+        captured["schema"] == "trajectory_record.v4"
+        and cast(dict[str, object], captured["source"])["source_format"]
+        == "goppi.paired_run_exchange.execution.v2",
+        "installed v2 trajectory capture lost its exact source format",
+    )
+    summary_path = work / "trajectory-record-read-v2-summary.json"
+    summary = _cli_json(
+        cli,
+        [
+            "records",
+            "read-trajectory",
+            "--root",
+            str(store),
+            "--id",
+            identifier,
+            "--view",
+            "summary",
+        ],
+        summary_path,
+        work,
+    )
+    wheel.require(
+        summary["schema"] == "trajectory_record_read_summary.v2"
+        and summary["record_layout"] == "trajectory-record.v4"
+        and summary["source_format"] == "goppi.paired_run_exchange.execution.v2"
+        and summary["analysis_limitations"] == []
+        and "analysis" not in summary
+        and len(summary_path.read_bytes()) <= 16 * 1024,
+        "installed v4 summary lost source or limitation metadata",
+    )
+    legacy_path = work / "trajectory-review-v3.json"
+    legacy_path.write_text(json.dumps(legacy_review), encoding="utf-8")
+    captured_path = work / "trajectory-record-v2.json"
+    rebind_legacy_report = (
+        "import json,sys; from pathlib import Path; "
+        "from underwrite_core.canonical import canonical_bytes,digest_bytes; "
+        "from underwrite.instrument.ingest.schema import packaged_validator; "
+        "store=Path(sys.argv[1]); identifier=sys.argv[2]; "
+        "report=json.loads(Path(sys.argv[3]).read_bytes()); "
+        "captured=json.loads(Path(sys.argv[4]).read_bytes()); "
+        "members=captured['source']['source_members']; "
+        "report['input_members']=["
+        "{'path':item['name'],'sha256':item['raw_hash'],'bytes':item['bytes']} "
+        "for item in members]; history=captured['verifier_report_history']; "
+        "fields=('verifier_report_state','verifier_source','verifier_identity_verified',"
+        "'response_snapshot_binding','snapshot_postcheck','content_closure','authenticity',"
+        "'source_authentication_independently_verified',"
+        "'producer_projection_independently_verified'); "
+        "report['trust_scope'].update({field:history[field] for field in fields}); "
+        "packaged_validator(report['schema']).validate(report); "
+        "record=store/'records'/identifier; path=record/'files/analysis/trajectory.json'; "
+        "raw=canonical_bytes(report)+b'\\n'; path.write_bytes(raw); "
+        "manifest_path=record/'manifest.json'; manifest=json.loads(manifest_path.read_bytes()); "
+        "entry=next(item for item in manifest['files'] "
+        "if item['name']=='analysis/trajectory.json'); "
+        "entry.update(bytes=len(raw),sha256=digest_bytes(raw)); "
+        "manifest_path.write_bytes(canonical_bytes(manifest))"
+    )
+    wheel.success(
+        [
+            str(cli.parent / "python"),
+            "-c",
+            rebind_legacy_report,
+            str(store),
+            identifier,
+            str(legacy_path),
+            str(captured_path),
+        ],
+        work,
+    )
+    refused = wheel.command(
+        [
+            str(cli),
+            "records",
+            "read-trajectory",
+            "--root",
+            str(store),
+            "--id",
+            identifier,
+            "--view",
+            "summary",
+            "--json",
+        ],
+        work,
+    )
+    refusal = json.loads(refused.stderr)
+    wheel.require(
+        refused.returncode == EVIDENCE_ERROR_EXIT
+        and refused.stdout == ""
+        and refusal["code"] == "INPUT_BINDING_MISMATCH"
+        and refusal["reason"] == "TRAJECTORY_RECORD_BINDING_MISMATCH"
+        and str(store) not in refused.stderr,
+        "installed v4 summary accepted a rebound v3 review",
     )
 
 
