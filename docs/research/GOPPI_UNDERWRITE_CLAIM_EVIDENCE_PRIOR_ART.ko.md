@@ -1,9 +1,11 @@
 # Goppi·Underwrite의 평가 주장 검증: 선행 연구·특허와 차별화 실험
 
-검토일: 2026-10-30. Underwrite 코드 기준: `0de74da` (개발 브랜치).
-Goppi의 수용된 `main` 기준: `4d5b7e7` (읽기 전용). 사용자가 말한 “아래”의
+검토일: 2026-10-30. Underwrite 코드 기준: `0de74da` (당시 개발 브랜치).
+제품 범위와 실행 순서는
+[현재 개발 정본](../plan/PRODUCT_IMPROVEMENT_MILESTONES.ko.md)을 따른다.
+사용자가 말한 “아래”의
 별도 조사 본문은 이번 메시지에 포함되지 않아, 이 보고서는 그 자료를
-평가했다고 주장하지 않는다. 두 저장소의 현재 코드와 수용된 문서, 링크한
+평가했다고 주장하지 않는다. Underwrite의 공개 코드·계약과 링크한
 원 논문·특허 공개 문서·특허청 지침을 대조했다. 검색 결과는 **선별한 선행기술
 지도**이지 전 세계 선행기술 전수 조사, 특허 가능성 의견 또는 실시 자유
 (freedom to operate) 분석이 아니다. 각 표의 “빈 곳”은 검증할 가설이며
@@ -11,10 +13,10 @@ Goppi의 수용된 `main` 기준: `4d5b7e7` (읽기 전용). 사용자가 말한
 
 ## 먼저 결론
 
-Goppi의 **하니스 평가를 실행하고 같은 조건의 두 평가를 비교하는 방식**, 그리고
-Underwrite의 **결과 바이트·모집단·결측·판정 한계를 보존하는 방식**은 각각
-유용하다. 그러나 이 요소들을 넓게 묶어 “처음 만든 평가 검증법”이라고 말할
-근거는 없다. 사전 정책을 둔 쌍대 결론·보류, 인프라 증거에 기반한 판정,
+생산자의 **원생 평가·검증**과 Underwrite의 **결과 바이트·모집단·결측·판정
+한계를 보존하는 방식**은 서로 다른 책임이다. 이 요소들을 넓게 묶어
+“처음 만든 평가 검증법”이라고 말할 근거는 없다. 사전 정책을 둔 쌍대 결론·보류,
+인프라 증거에 기반한 판정,
 검증기 감사, 영수증, 근거 프로필은 이미 논문·특허에 있다. 특히
 [ParEvalLayer](https://arxiv.org/abs/2608.02444),
 [BenchShield](https://arxiv.org/abs/2609.11028),
@@ -33,22 +35,18 @@ Underwrite의 **결과 바이트·모집단·결측·판정 한계를 보존하�
 
 ## 제품의 현재 범위: 구현, 선언, 계획을 분리
 
-| 기능과 주장 | Goppi 현재 구현 | Underwrite 현재 구현 | 더 큰 주장을 막는 경계 |
+| 기능과 주장 | 생산자 측 경계 | Underwrite 현재 구현 | 더 큰 주장을 막는 경계 |
 | --- | --- | --- | --- |
-| 원생 평가·검증 | Goppi가 evalset 실행, 검증기와 저장된 평가를 소유한다. | 완료된 파일을 소비하며 평가나 검증기를 실행하지 않는다. | 원천 `pass`는 곧 독립 정답이 아니다. |
-| 같은 생산자의 쌍 비교 | `evalset compare-assessments`는 맥락·사례 순서·control·검증기·자원 일치를 검사하고, 불일치는 `not_comparable`, 실패 조건은 `diagnostic_only`, 적격하면 `eligible_descriptive` 전이·표를 반환한다. Goppi에도 원생 paired 측정이 있다. | 선언된 계획 모집단과 완전한 쌍에 한해 별도 paired binary 추론을 제공한다. 불완전한 주 코호트는 `not_measured`다. | 서술 비교는 인과 효과나 개선의 독립 증거가 아니다. |
-| 생산자 간 파일 검토 | Underwrite 교환 스키마의 선택된 Goppi 출력은 제공하지만 외부 도구의 의미를 인증하지 않는다. | Goppi C55·Promptfoo 선택 원본의 바이트 해시, 선언된 사례 대응, 결측과 다음 검증 과제를 낸다. | 결과 계약의 `semantic_equivalence=unestablished`, `condition_alignment=not_established`를 유지한다. 같은 ID·해시도 동일 과제·지표·진실을 증명하지 않는다. |
-| claim-validity 카드와 사용자 효용 | Goppi의 연구·프로토콜 문서는 계획이다. 독립 gold, 사람/에이전트 효용 파일럿, 공개 validator는 아직 없다. | 근거에 묶인 수락 분류와 `indeterminate`가 있으나 여러 생산자의 의미 동등성을 확립하지 않는다. F2의 사람 시간·오판율도 미측정이다. | 계획을 완료 기능이나 실증 효과로 세지 않는다. |
+| 원생 평가·검증 | 생산자가 실행·trace·export·검증기를 소유한다. | 완료된 파일을 소비하며 평가나 검증기를 실행하지 않는다. | 원천 `pass`는 곧 독립 정답이 아니다. |
+| 같은 생산자의 쌍 비교 | 원생 비교의 입력·조건·검증기는 생산자가 확인한다. | 선언된 계획 모집단과 완전한 쌍에 한해 별도 paired binary 추론을 제공한다. 불완전한 주 코호트는 `not_measured`다. | 서술 비교는 인과 효과나 개선의 독립 증거가 아니다. |
+| 생산자 간 파일 검토 | 원생 출력의 의미는 생산자 주장이다. | Goppi C55·Promptfoo 선택 원본의 바이트 해시, 선언된 사례 대응, 결측과 다음 검증 과제를 낸다. | 결과 계약의 `semantic_equivalence=unestablished`, `condition_alignment=not_established`를 유지한다. 같은 ID·해시도 동일 과제·지표·진실을 증명하지 않는다. |
+| 수락 분류와 사용자 효용 | 생산자 측 사용자 효용은 이 문서에서 확인하지 않는다. | 근거에 묶인 수락 분류와 `indeterminate`가 있으나 여러 생산자의 의미 동등성을 확립하지 않는다. 사람 시간·오판율도 미측정이다. | 계획을 완료 기능이나 실증 효과로 세지 않는다. |
 
-근거: Goppi의 수용된 [비교 서비스](https://github.com/ntts9990/goppi/blob/4d5b7e7/src/application/offline-assessment/service.ts),
-[순수 비교](https://github.com/ntts9990/goppi/blob/4d5b7e7/src/application/offline-assessment/comparison.ts),
-[claim-validity 연구](https://github.com/ntts9990/goppi/blob/4d5b7e7/docs/research/GENAI_EVALUATION_TRUST_VALIDITY.ko.md),
-[실험 프로토콜](https://github.com/ntts9990/goppi/blob/4d5b7e7/docs/plan/EVALUATION_CLAIM_VALIDITY_PROTOCOL.ko.md);
+근거: [현재 개발 정본](../plan/PRODUCT_IMPROVEMENT_MILESTONES.ko.md),
 Underwrite의 [교차 검토 구현](../../src/underwrite/instrument/ingest/cross_artifact.py),
 [계약](../../contracts/cross_artifact_review.v1.schema.json),
 [paired binary](../../src/underwrite/instrument/evidence/paired_binary.py),
-[수락 주장](../../src/underwrite/acceptance/claims.py),
-[F2–F4 마일스톤](../plan/PRODUCT_IMPROVEMENT_MILESTONES.ko.md).
+[수락 주장](../../src/underwrite/acceptance/claims.py).
 이는 코드/문서 정적 대조이며 이번 조사에서 Goppi provider나 실사용자를
 실행하지 않았다.
 
@@ -105,12 +103,12 @@ Google Patents의 법적 상태 표시는 자체 경고가 있으므로, 권리 
    삭제하거나 바꾼 쌍에서, 실제로 달라져야 하는 결론만 달라지고 유효한
    대체 근거는 받아들이는가? 잘못된 승인과 잘못된 반려를 함께 잰다.
 3. **RQ3, 결측과 선택 편향:** 계획 모집단·실패 실행·검증기 결함이 섞일 때
-   서술 전이, 통계 추론, 인과 효과를 구분하는가? Goppi의 원생 paired
-   측정을 복제하지 않고 Underwrite의 소비자 추론 범위를 시험한다.
+   서술 전이, 통계 추론, 인과 효과를 구분하는가? 생산자의 원생 측정을
+   복제하지 않고 Underwrite의 소비자 추론 범위를 시험한다.
 4. **RQ4, 사람/에이전트 해석:** 동일한 원본을 두고 원시 점수/직접 링크/
    주장별 근거+명시적 unknown을 비교할 때, 실제 검토자의 올바른 수락·반려,
-   과신, 원본 확인 시간, 다음 행동 품질이 좋아지는가? F2의 사람 총 작업시간
-   계약을 그대로 사용한다.
+   과신, 원본 확인 시간, 다음 행동 품질이 좋아지는가? 현재 개발 계획의 사람
+   활동시간 정의를 따른다.
 
 데이터는 **주장 텍스트·대상 모집단·비교 조건·지표 단위/방향·원천/검증기
 권한·관련 파일 바이트·누락 이유**를 각 사례에 함께 둔다. 독립 전문가 두
@@ -130,12 +128,9 @@ Google Patents의 법적 상태 표시는 자체 경고가 있으므로, 권리 
 공개 파일이 정제본/예시이고 원천 점수의 독립 진실성이 없음을 밝힌다.
 [Goppi UME-4 안내](../../fixtures/conformance/ume4/SOURCE.md)와
 [궤적 안내](../../fixtures/conformance/goppi-trajectory/SOURCE.md)도 공개
-합성 자료의 범위를 제한한다. Goppi의 수용된
-[native executor fixture](https://github.com/ntts9990/goppi/blob/4d5b7e7/tests/fixtures/paired-trajectory/native-pi-v1/README.md)는
-구조·복구 시험에 유용하지만 [주장 파일](https://github.com/ntts9990/goppi/blob/4d5b7e7/tests/fixtures/paired-trajectory/native-pi-v1/claims.json)에
-유료 모델 호출 0건으로 기록돼 있으며 독립 실제 사용자 정답이
-아니다. 이 네 생산자의 현재 파일 사이에는 공통 사례 명부와 **서로 대응하는**
-원본 입력·출력, 독립 검토된 대응표가 없다. **현재 파일만으로 RQ1 주 분석의
+합성 자료의 범위를 제한한다. 이 네 생산자의 현재 파일 사이에는 공통 사례
+명부와 **서로 대응하는** 원본 입력·출력, 독립 검토된 대응표가 없다.
+**현재 파일만으로 RQ1 주 분석의
 동일 과제 이종 생산자 gold는 만들 수 없다.** 이 자료는 개별 합성 원천
 주장의 예비 gold/워크플로 시험과 결측·오염 반례에 쓸 수 있지만, 도구 간
 동일 사례·동일 과제라고 라벨하지 않는다.
@@ -192,12 +187,11 @@ README/논문/이슈에 먼저 쓰기 전에 공개 이력과 출원 순서를 �
 
 ## 제품·연구 실행 순서
 
-1. **겹침 제거:** Goppi는 원생 평가/같은 생산자 claim-validity 실험을
-   소유한다. Underwrite는 수용된 원본 파일의 이종 주장 해석을 소유한다.
-   Goppi 계획 단계의 L0a/L0b/L1 카드를 Underwrite 기능으로 복제하지 않는다.
-2. **현행 F2 완료:** 실제 완료 산출물과 검토 과제를 확보하고 현행/링크/파생
-   안내의 안전 판단·사람 활동시간을 기록한다. 현재 합성 에이전트 파일럿은
-   제품 효능이 아니다.
+1. **겹침 제거:** 생산자는 원생 평가·검증을 소유한다. Underwrite는
+   수용된 원본 파일의 이종 주장 해석을 소유한다.
+2. **최초 해석 파일럿:** 실제 완료 산출물과 검토 과제를 확보하고 현행/링크/파생
+   안내의 안전 판단·사람 활동시간을 기록한다. 합성 자료만으로 제품 효능을
+   주장하지 않는다.
 3. **RQ1·RQ2 코퍼스 입장 조건:** 현재 공개 fixture는 공통 사례 명부·서로
    대응하는 원본 입력/출력·독립 대응표가 없어 RQ1의 이종 주 분석 gold에
    부적격이다. 먼저 각 도구의 합성 단일 원천 주장에 대한 예비 gold와
@@ -216,8 +210,7 @@ README/논문/이슈에 먼저 쓰기 전에 공개 이력과 출원 순서를 �
 
 ### Goppi와 공유할 핵심 문장
 
-> Goppi의 같은 생산자 평가 비교는 이미 구현됐고 claim-validity 카드는
-> 계획 단계입니다. Underwrite는 이 기능을 복제하지 않고, 서로 다른 생산자의
+> 생산자는 원생 평가·검증을 소유합니다. Underwrite는 서로 다른 생산자의
 > 완료 산출물이 특정 개선 주장을 뒷받침할 수 있는지 독립 gold로 시험하겠습니다.
 > ParEvalLayer의 사전 정책·보류, BenchShield의 근거 기반 무결성,
 > VerifierBench의 과도한 반려 시험을 선행기술/대조군으로 놓겠습니다.
